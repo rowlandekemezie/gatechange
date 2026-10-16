@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- The test harness reads the checked-in migration SQL once before any Effect runs.
 import { readdirSync, readFileSync } from "node:fs";
 
 import { Effect, Layer, Schema } from "effect";
