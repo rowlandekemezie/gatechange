@@ -1,6 +1,6 @@
-import { Array, Effect, Option, pipe, Schema } from "effect";
 import { classifyRole, FeedUnavailable } from "@rat-stack/core";
 import type { PostingValue } from "@rat-stack/core";
+import { Array, Effect, Option, pipe, Schema } from "effect";
 
 import { fetchJson } from "./http.js";
 import { textOfHtml } from "./parse.js";
@@ -32,24 +32,39 @@ const firstLine = (html: string) => {
   return textOfHtml(head);
 };
 
-export const postingOfComment = (commentHtml: string, id: string, createdAtSeconds: number) => {
-  const segments = pipe(firstLine(commentHtml).split("|"), Array.map((segment) => segment.trim()));
+export const postingOfComment = (
+  commentHtml: string,
+  id: string,
+  createdAtSeconds: number
+) => {
+  const segments = pipe(
+    firstLine(commentHtml).split("|"),
+    Array.map((segment) => segment.trim())
+  );
+
   const [company = "", ...rest] = segments;
 
-  return pipe(Array.findFirst(rest, (segment) => Option.isSome(classifyRole(segment))), Option.map((title): PostingValue => ({
+  return pipe(
+    Array.findFirst(rest, (segment) => Option.isSome(classifyRole(segment))),
+    Option.map((title): PostingValue => ({
       company,
       externalId: id,
       location: pipe(
         rest,
-        Array.filter((segment) => segment !== title && !salaryPattern.test(segment)),
+        Array.filter(
+          (segment) => segment !== title && !salaryPattern.test(segment)
+        ),
         Array.join(" | ")
       ),
       postedAt: createdAtSeconds * 1000,
-      salary: Option.getOrNull(Array.findFirst(rest, (segment) => salaryPattern.test(segment))),
+      salary: Option.getOrNull(
+        Array.findFirst(rest, (segment) => salaryPattern.test(segment))
+      ),
       title,
       url: `https://news.ycombinator.com/item?id=${id}`,
       workplace: "Unspecified",
-    })));
+    }))
+  );
 };
 
 export const hackerNewsPostings = (feed: string) =>
@@ -67,7 +82,12 @@ export const hackerNewsPostings = (feed: string) =>
       Array.findFirst((candidate) => /who is hiring/iu.test(candidate.title)),
       Option.match({
         onNone: () =>
-          Effect.fail(new FeedUnavailable({ feed, message: "No 'Who is hiring?' thread found" })),
+          Effect.fail(
+            new FeedUnavailable({
+              feed,
+              message: "No 'Who is hiring?' thread found",
+            })
+          ),
         onSome: Effect.succeed,
       })
     );
@@ -82,9 +102,15 @@ export const hackerNewsPostings = (feed: string) =>
       comments.hits,
       Array.map((item) => Schema.decodeUnknownOption(Comment)(item)),
       Array.getSomes,
-      Array.filter((comment) => String(comment.parent_id ?? "") === story.objectID),
+      Array.filter(
+        (comment) => String(comment.parent_id ?? "") === story.objectID
+      ),
       Array.map((comment) =>
-        postingOfComment(comment.comment_text ?? "", comment.objectID, comment.created_at_i)
+        postingOfComment(
+          comment.comment_text ?? "",
+          comment.objectID,
+          comment.created_at_i
+        )
       ),
       Array.getSomes
     );

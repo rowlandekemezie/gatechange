@@ -1,7 +1,7 @@
+import { JobStoreUnavailable } from "@rat-stack/core";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import { Array, Effect, Layer, Schema, pipe } from "effect";
-import { JobStoreUnavailable } from "@rat-stack/core";
 
 import { jobStoreMigrationDirectory } from "./migrations.js";
 import { SqlExecutor } from "./sql-executor.js";
@@ -15,7 +15,8 @@ const unavailable = (operation: string, reason: string) =>
   });
 
 export const d1Executor = (client: Cloudflare.D1.QueryDatabaseClient) => {
-  const prepared = (sql: SqlStatement) => client.prepare(sql.sql).bind(...sql.params);
+  const prepared = (sql: SqlStatement) =>
+    client.prepare(sql.sql).bind(...sql.params);
 
   return SqlExecutor.of({
     all: (operation, sql, row) =>
@@ -23,10 +24,14 @@ export const d1Executor = (client: Cloudflare.D1.QueryDatabaseClient) => {
         .all()
         .pipe(
           Effect.provide(RuntimeContext.RuntimeContext.phantom),
-          Effect.catchDefect((defect) => Effect.fail(unavailable(operation, String(defect)))),
+          Effect.catchDefect((defect) =>
+            Effect.fail(unavailable(operation, String(defect)))
+          ),
           Effect.flatMap((result) =>
             Schema.decodeUnknownEffect(Schema.Array(row))(result.results).pipe(
-              Effect.mapError((decodeFailure) => unavailable(operation, decodeFailure.message))
+              Effect.mapError((decodeFailure) =>
+                unavailable(operation, decodeFailure.message)
+              )
             )
           )
         ),
@@ -34,8 +39,12 @@ export const d1Executor = (client: Cloudflare.D1.QueryDatabaseClient) => {
       Array.isReadonlyArrayNonEmpty(statements)
         ? client.batch(pipe(statements, Array.map(prepared))).pipe(
             Effect.provide(RuntimeContext.RuntimeContext.phantom),
-            Effect.catchDefect((defect) => Effect.fail(unavailable(operation, String(defect)))),
-            Effect.map(Array.map((result) => ({ changes: result.meta.changes ?? 0 })))
+            Effect.catchDefect((defect) =>
+              Effect.fail(unavailable(operation, String(defect)))
+            ),
+            Effect.map(
+              Array.map((result) => ({ changes: result.meta.changes ?? 0 }))
+            )
           )
         : Effect.succeed([]),
   });
@@ -47,4 +56,6 @@ export const JobsDatabase = Cloudflare.D1.Database("JobsDatabase", {
 });
 
 export const d1JobStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
-  jobStoreLayer.pipe(Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client))));
+  jobStoreLayer.pipe(
+    Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
+  );

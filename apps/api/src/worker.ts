@@ -50,7 +50,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           })
         ),
         Effect.tapError((error) => Effect.logError("ingest failed", error)),
-        Effect.annotateLogs({ cron: controller.cron, scheduledTime: controller.scheduledTime }),
+        Effect.annotateLogs({
+          cron: controller.cron,
+          scheduledTime: controller.scheduledTime,
+        }),
         Effect.provide(ingestLayer)
       )
     );
@@ -65,7 +68,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     );
   }).pipe(
     Effect.provide(
-      Layer.mergeAll(Cloudflare.D1.QueryDatabaseBinding, Cloudflare.Workers.CronEventSourceLive)
+      Layer.mergeAll(
+        Cloudflare.D1.QueryDatabaseBinding,
+        Cloudflare.Workers.CronEventSourceLive
+      )
     )
   )
 ) {}

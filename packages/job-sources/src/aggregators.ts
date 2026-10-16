@@ -1,5 +1,5 @@
-import { Array, Effect, pipe, Schema } from "effect";
 import type { PostingValue } from "@rat-stack/core";
+import { Array, Effect, pipe, Schema } from "effect";
 
 import { fetchJson } from "./http.js";
 import { epochMillisOf, nonEmpty, salaryRange, textOfHtml } from "./parse.js";
@@ -22,24 +22,26 @@ const RemoteOkJob = Schema.Struct({
 });
 
 export const remoteOkPostings = (feed: string) =>
-  fetchJson(feed, "https://remoteok.com/api", Schema.Array(Schema.Unknown)).pipe(
+  fetchJson(
+    feed,
+    "https://remoteok.com/api",
+    Schema.Array(Schema.Unknown)
+  ).pipe(
     Effect.map((jobs) =>
       pipe(
         jobs,
         Array.map((item) => Schema.decodeUnknownOption(RemoteOkJob)(item)),
         Array.getSomes,
-        Array.map(
-          (job): PostingValue => ({
-            company: job.company,
-            externalId: String(job.id),
-            location: job.location ?? "",
-            postedAt: epochMillisOf(job.epoch),
-            salary: salaryRange(job.salary_min, job.salary_max, "USD", "year"),
-            title: job.position,
-            url: job.url,
-            workplace: "Remote",
-          })
-        )
+        Array.map((job): PostingValue => ({
+          company: job.company,
+          externalId: String(job.id),
+          location: job.location ?? "",
+          postedAt: epochMillisOf(job.epoch),
+          salary: salaryRange(job.salary_min, job.salary_max, "USD", "year"),
+          title: job.position,
+          url: job.url,
+          workplace: "Remote",
+        }))
       )
     )
   );
@@ -65,18 +67,21 @@ export const remotivePostings = (feed: string, search: string) =>
         jobs,
         Array.map((item) => Schema.decodeUnknownOption(RemotiveJob)(item)),
         Array.getSomes,
-        Array.map(
-          (job): PostingValue => ({
-            company: job.company_name,
-            externalId: String(job.id),
-            location: job.candidate_required_location ?? "",
-            postedAt: epochMillisOf(job.publication_date),
-            salary: job.salary === null || job.salary === undefined || job.salary.length === 0 ? null : job.salary,
-            title: job.title,
-            url: job.url,
-            workplace: "Remote",
-          })
-        )
+        Array.map((job): PostingValue => ({
+          company: job.company_name,
+          externalId: String(job.id),
+          location: job.candidate_required_location ?? "",
+          postedAt: epochMillisOf(job.publication_date),
+          salary:
+            job.salary === null ||
+            job.salary === undefined ||
+            job.salary.length === 0
+              ? null
+              : job.salary,
+          title: job.title,
+          url: job.url,
+          workplace: "Remote",
+        }))
       )
     )
   );
@@ -86,10 +91,14 @@ const HimalayasJob = Schema.Struct({
   companyName: Schema.String,
   currency: OptionalString,
   guid: Schema.NonEmptyString,
-  locationRestrictions: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+  locationRestrictions: Schema.optional(
+    Schema.NullOr(Schema.Array(Schema.String))
+  ),
   maxSalary: OptionalNumber,
   minSalary: OptionalNumber,
-  pubDate: Schema.optional(Schema.NullOr(Schema.Union([Schema.Finite, Schema.String]))),
+  pubDate: Schema.optional(
+    Schema.NullOr(Schema.Union([Schema.Finite, Schema.String]))
+  ),
   salaryPeriod: OptionalString,
   title: Schema.String,
 });
@@ -105,18 +114,21 @@ export const himalayasPostings = (feed: string, query: string) =>
         jobs ?? [],
         Array.map((item) => Schema.decodeUnknownOption(HimalayasJob)(item)),
         Array.getSomes,
-        Array.map(
-          (job): PostingValue => ({
-            company: job.companyName,
-            externalId: job.guid,
-            location: nonEmpty(job.locationRestrictions ?? []).join("; "),
-            postedAt: epochMillisOf(job.pubDate),
-            salary: salaryRange(job.minSalary, job.maxSalary, job.currency, job.salaryPeriod),
-            title: job.title,
-            url: job.applicationLink ?? job.guid,
-            workplace: "Remote",
-          })
-        )
+        Array.map((job): PostingValue => ({
+          company: job.companyName,
+          externalId: job.guid,
+          location: nonEmpty(job.locationRestrictions ?? []).join("; "),
+          postedAt: epochMillisOf(job.pubDate),
+          salary: salaryRange(
+            job.minSalary,
+            job.maxSalary,
+            job.currency,
+            job.salaryPeriod
+          ),
+          title: job.title,
+          url: job.applicationLink ?? job.guid,
+          workplace: "Remote",
+        }))
       )
     )
   );
@@ -145,18 +157,21 @@ export const jobicyPostings = (feed: string, tag: string) =>
         jobs ?? [],
         Array.map((item) => Schema.decodeUnknownOption(JobicyJob)(item)),
         Array.getSomes,
-        Array.map(
-          (job): PostingValue => ({
-            company: textOfHtml(job.companyName),
-            externalId: String(job.id),
-            location: job.jobGeo ?? "",
-            postedAt: epochMillisOf(job.pubDate),
-            salary: salaryRange(job.salaryMin, job.salaryMax, job.salaryCurrency, job.salaryPeriod),
-            title: textOfHtml(job.jobTitle),
-            url: job.url,
-            workplace: "Remote",
-          })
-        )
+        Array.map((job): PostingValue => ({
+          company: textOfHtml(job.companyName),
+          externalId: String(job.id),
+          location: job.jobGeo ?? "",
+          postedAt: epochMillisOf(job.pubDate),
+          salary: salaryRange(
+            job.salaryMin,
+            job.salaryMax,
+            job.salaryCurrency,
+            job.salaryPeriod
+          ),
+          title: textOfHtml(job.jobTitle),
+          url: job.url,
+          workplace: "Remote",
+        }))
       )
     )
   );

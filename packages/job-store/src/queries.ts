@@ -3,7 +3,11 @@ import {
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
 } from "@rat-stack/core";
-import type { FeedStateValue, IngestReceiptValue, JobQueryValue, JobValue } from "@rat-stack/core";
+import type {
+  IngestReceiptValue,
+  JobQueryValue,
+  JobValue,
+} from "@rat-stack/core";
 
 import { statement } from "./sql-executor.js";
 import type { SqlStatement, SqlValue } from "./sql-executor.js";
@@ -15,9 +19,11 @@ export const FEED_STATE_LIMIT = 5000;
 export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
   `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
 
-const placeholders = (count: number) => Array.from({ length: count }, () => "?").join(", ");
+const placeholders = (count: number) =>
+  Array.from({ length: count }, () => "?").join(", ");
 
-const likePattern = (search: string) => `%${search.replaceAll(/[\\%_]/gu, (match) => `\\${match}`)}%`;
+const likePattern = (search: string) =>
+  `%${search.replaceAll(/[\\%_]/gu, (match) => `\\${match}`)}%`;
 
 const sourcePriority = `CASE source
   WHEN 'Greenhouse' THEN 0 WHEN 'Lever' THEN 0 WHEN 'Ashby' THEN 0
@@ -62,7 +68,10 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
   };
 };
 
-export const listJobsStatement = (query: JobQueryValue, now: number): SqlStatement => {
+export const listJobsStatement = (
+  query: JobQueryValue,
+  now: number
+): SqlStatement => {
   const filtered = filteredJobs(query, now);
 
   const order =
@@ -75,11 +84,19 @@ export const listJobsStatement = (query: JobQueryValue, now: number): SqlStateme
 SELECT ${jobColumns} FROM ranked WHERE duplicate_rank = 1
 ORDER BY ${order}
 LIMIT ? OFFSET ?`,
-    [...filtered.params, ...(query.sort === "Newest" ? [] : [now]), query.limit, query.offset]
+    [
+      ...filtered.params,
+      ...(query.sort === "Newest" ? [] : [now]),
+      query.limit,
+      query.offset,
+    ]
   );
 };
 
-export const countJobsStatement = (query: JobQueryValue, now: number): SqlStatement => {
+export const countJobsStatement = (
+  query: JobQueryValue,
+  now: number
+): SqlStatement => {
   const filtered = filteredJobs(query, now);
 
   return statement(
@@ -126,10 +143,19 @@ ON CONFLICT (id) DO UPDATE SET
     ]
   );
 
-export const removeUnseenStatement = (feedKey: string, seenAt: number): SqlStatement =>
-  statement("DELETE FROM jobs WHERE feed = ? AND last_seen_at < ?", [feedKey, seenAt]);
+export const removeUnseenStatement = (
+  feedKey: string,
+  seenAt: number
+): SqlStatement =>
+  statement("DELETE FROM jobs WHERE feed = ? AND last_seen_at < ?", [
+    feedKey,
+    seenAt,
+  ]);
 
-export const feedSucceededStatement = (feedKey: string, seenAt: number): SqlStatement =>
+export const feedSucceededStatement = (
+  feedKey: string,
+  seenAt: number
+): SqlStatement =>
   statement(
     `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
 VALUES (?, ?, ?, NULL, 0)
@@ -141,7 +167,11 @@ ON CONFLICT (key) DO UPDATE SET
     [feedKey, seenAt, seenAt]
   );
 
-export const feedFailedStatement = (feedKey: string, attemptedAt: number, message: string) =>
+export const feedFailedStatement = (
+  feedKey: string,
+  attemptedAt: number,
+  message: string
+) =>
   statement(
     `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
 VALUES (?, ?, NULL, ?, 1)
@@ -180,10 +210,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
 
 export const activeCountStatement = (now: number) =>
-  statement("SELECT COUNT(*) AS total FROM jobs WHERE posted_at >= ?", [now - MAX_AGE_DAYS * DAY_MILLIS]);
+  statement("SELECT COUNT(*) AS total FROM jobs WHERE posted_at >= ?", [
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+  ]);
 
 export const newTodayStatement = (now: number) =>
-  statement("SELECT COUNT(*) AS total FROM jobs WHERE first_seen_at >= ?", [now - DAY_MILLIS]);
+  statement("SELECT COUNT(*) AS total FROM jobs WHERE first_seen_at >= ?", [
+    now - DAY_MILLIS,
+  ]);
 
 export const regionCountsStatement = (now: number) =>
   statement(
@@ -205,4 +239,3 @@ export const lastRunStatement = statement(
   `SELECT started_at, finished_at, feeds_attempted, feeds_failed, jobs_upserted, jobs_pruned, outcome
 FROM ingest_runs ORDER BY started_at DESC LIMIT 1`
 );
-

@@ -1,4 +1,5 @@
 export { boardStats, capabilities, listJobs } from "./capabilities.js";
+
 export {
   backoffMinutes,
   FeedOutcome,
@@ -7,13 +8,21 @@ export {
   MAX_BACKOFF_DOUBLINGS,
   selectDueFeeds,
 } from "./feed.js";
+
 export type { FeedOutcomeValue, FeedRef, FeedStateValue } from "./feed.js";
+
 export { jobsFromPostings, retentionCutoff, runIngest } from "./ingest.js";
+
 export type { IngestPlan } from "./ingest.js";
+
 export { FeedReplacement, JobStore } from "./job-store.js";
+
 export type { FeedReplacementValue, JobListing } from "./job-store.js";
+
 export { classifyPlacement, regionWeight } from "./location.js";
+
 export type { PlaceEvidence, Placement } from "./location.js";
+
 export {
   DAY_MILLIS,
   normalizePosting,
@@ -22,10 +31,15 @@ export {
   REMOTE_BONUS,
   SALARY_BONUS,
 } from "./posting.js";
+
 export type { PostingValue } from "./posting.js";
+
 export { FeedUnavailable } from "./feed-unavailable.js";
+
 export { PostingFeeds } from "./posting-feeds.js";
+
 export { classifyRole, roleWeight } from "./role.js";
+
 export {
   Arrangement,
   BoardStats,
@@ -51,6 +65,7 @@ export {
   roleLevels,
   SourceName,
 } from "./contracts.js";
+
 export type {
   ArrangementValue,
   BoardStatsValue,

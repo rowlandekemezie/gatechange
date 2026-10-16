@@ -1,4 +1,3 @@
-import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 import {
   Arrangement,
   IngestOutcome,
@@ -7,7 +6,12 @@ import {
   RoleLevel,
   SourceName,
 } from "@rat-stack/core";
-import type { FeedStateValue, IngestReceiptValue, JobValue } from "@rat-stack/core";
+import type {
+  FeedStateValue,
+  IngestReceiptValue,
+  JobValue,
+} from "@rat-stack/core";
+import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
 import {
   activeCountStatement,
@@ -112,8 +116,11 @@ const receiptOfRow = (row: typeof RunRow.Type): IngestReceiptValue => ({
   startedAt: row.started_at,
 });
 
-const totalOf = (rows: readonly typeof TotalRow.Type[]) =>
-  Option.match(Array.head(rows), { onNone: () => 0, onSome: (row) => row.total });
+const totalOf = (rows: readonly (typeof TotalRow.Type)[]) =>
+  Option.match(Array.head(rows), {
+    onNone: () => 0,
+    onSome: (row) => row.total,
+  });
 
 export const makeJobStore = Effect.gen(function* makeJobStore() {
   const sql = yield* SqlExecutor;
@@ -139,16 +146,24 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     pruneOlderThan: (cutoff) =>
       sql
-        .batch("pruneOlderThan", [pruneJobsStatement(cutoff), pruneRunsStatement(cutoff)])
+        .batch("pruneOlderThan", [
+          pruneJobsStatement(cutoff),
+          pruneRunsStatement(cutoff),
+        ])
         .pipe(
           Effect.map((results) =>
-            Option.match(Array.head(results), { onNone: () => 0, onSome: (result) => result.changes })
+            Option.match(Array.head(results), {
+              onNone: () => 0,
+              onSome: (result) => result.changes,
+            })
           )
         ),
 
     recordFeedFailure: (feedKey, attemptedAt, message) =>
       sql
-        .batch("recordFeedFailure", [feedFailedStatement(feedKey, attemptedAt, message)])
+        .batch("recordFeedFailure", [
+          feedFailedStatement(feedKey, attemptedAt, message),
+        ])
         .pipe(Effect.asVoid),
 
     recordRun: (receipt) =>
@@ -156,11 +171,18 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     replaceFeed: (feedKey, jobs, seenAt) =>
       Effect.gen(function* replaceFeed() {
-        const chunks = Array.chunksOf(pipe(jobs, Array.map(upsertJobStatement)), UPSERT_CHUNK);
+        const chunks = Array.chunksOf(
+          pipe(jobs, Array.map(upsertJobStatement)),
+          UPSERT_CHUNK
+        );
 
-        yield* Effect.forEach(chunks, (chunk) => sql.batch("upsertJobs", chunk), {
-          discard: true,
-        });
+        yield* Effect.forEach(
+          chunks,
+          (chunk) => sql.batch("upsertJobs", chunk),
+          {
+            discard: true,
+          }
+        );
 
         const [removed] = yield* sql.batch("replaceFeed", [
           removeUnseenStatement(feedKey, seenAt),
@@ -177,7 +199,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           feeds: sql.all("feedHealth", feedHealthStatement, FeedHealthRow),
           lastRun: sql.all("lastRun", lastRunStatement, RunRow),
           newToday: sql.all("newToday", newTodayStatement(now), TotalRow),
-          regions: sql.all("regionCounts", regionCountsStatement(now), RegionCountRow),
+          regions: sql.all(
+            "regionCounts",
+            regionCountsStatement(now),
+            RegionCountRow
+          ),
           roles: sql.all("roleCounts", roleCountsStatement(now), RoleCountRow),
         },
         { concurrency: 3 }
@@ -187,9 +213,19 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
           return {
             activeJobs: totalOf(active),
-            feedsFailing: Option.match(health, { onNone: () => 0, onSome: (row) => row.failing }),
-            feedsTotal: Option.match(health, { onNone: () => 0, onSome: (row) => row.total }),
-            lastRun: pipe(Array.head(lastRun), Option.map(receiptOfRow), Option.getOrNull),
+            feedsFailing: Option.match(health, {
+              onNone: () => 0,
+              onSome: (row) => row.failing,
+            }),
+            feedsTotal: Option.match(health, {
+              onNone: () => 0,
+              onSome: (row) => row.total,
+            }),
+            lastRun: pipe(
+              Array.head(lastRun),
+              Option.map(receiptOfRow),
+              Option.getOrNull
+            ),
             newToday: totalOf(newToday),
             regions,
             roles,

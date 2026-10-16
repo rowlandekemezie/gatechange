@@ -7,7 +7,8 @@ interface EdgeBindings {
   readonly BACKEND: ServiceBinding;
 }
 
-const isRpc = (pathname: string) => pathname === "/rpc" || pathname.startsWith("/rpc/");
+const isRpc = (pathname: string) =>
+  pathname === "/rpc" || pathname.startsWith("/rpc/");
 
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.

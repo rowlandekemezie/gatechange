@@ -1,5 +1,9 @@
+import type {
+  RegionValue,
+  RoleLevelValue,
+  SourceNameValue,
+} from "@rat-stack/core/contracts";
 import { Match } from "effect";
-import type { RegionValue, RoleLevelValue, SourceNameValue } from "@rat-stack/core/contracts";
 
 import type { AgeWindowValue, RegionGroupValue } from "./filters.js";
 
@@ -66,7 +70,8 @@ const DAY = 86_400_000;
 
 const MINUTE = 60_000;
 
-export const daysAgo = (now: number, at: number) => Math.max(0, Math.floor((now - at) / DAY));
+export const daysAgo = (now: number, at: number) =>
+  Math.max(0, Math.floor((now - at) / DAY));
 
 export const postedAgo = (now: number, at: number) => {
   const days = daysAgo(now, at);
@@ -118,4 +123,5 @@ export const dayHeading = (now: number, at: number) => {
   return "Earlier this month";
 };
 
-export const roleCount = (count: number) => (count === 1 ? "1 role matches" : `${count} roles match`);
+export const roleCount = (count: number) =>
+  count === 1 ? "1 role matches" : `${count} roles match`;

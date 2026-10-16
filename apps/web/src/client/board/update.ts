@@ -19,8 +19,12 @@ import type { JobQueries } from "./queries.js";
 
 type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
 
-const withFilters = (model: ModelValue, filters: FiltersValue): UpdateReturn => {
+const withFilters = (
+  model: ModelValue,
+  filters: FiltersValue
+): UpdateReturn => {
   const generation = model.generation + 1;
+
   const nextModel = modifyFields(model, {
     filters: () => filters,
     generation: () => generation,
@@ -41,29 +45,44 @@ const withFilters = (model: ModelValue, filters: FiltersValue): UpdateReturn => 
   };
 };
 
-const shortlistWith = (model: ModelValue, marks: readonly MarkedJobValue[]): UpdateReturn => ({
+const shortlistWith = (
+  model: ModelValue,
+  marks: readonly MarkedJobValue[]
+): UpdateReturn => ({
   commands: [WriteShortlist({ marks })],
   model: modifyFields(model, { marks: () => marks }),
 });
 
 export const init = (): UpdateReturn => ({
   commands: [
-    FetchJobs({ generation: initialModel.generation, query: queryOf(initialModel.filters, 0) }),
+    FetchJobs({
+      generation: initialModel.generation,
+      query: queryOf(initialModel.filters, 0),
+    }),
     FetchStats(),
     ReadShortlist(),
   ],
   model: initialModel,
 });
 
-export const update = (model: ModelValue, message: MessageValue): UpdateReturn =>
+export const update = (
+  model: ModelValue,
+  message: MessageValue
+): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
-    ChangedAge: ({ maxAgeDays }) => withFilters(model, { ...model.filters, maxAgeDays }),
+    ChangedAge: ({ maxAgeDays }) =>
+      withFilters(model, { ...model.filters, maxAgeDays }),
     ChangedSort: ({ sort }) => withFilters(model, { ...model.filters, sort }),
-    ChangedView: ({ view }) => ({ model: modifyFields(model, { view: () => view }) }),
+    ChangedView: ({ view }) => ({
+      model: modifyFields(model, { view: () => view }),
+    }),
     ClickedClearMark: ({ id }) =>
       shortlistWith(
         model,
-        pipe(model.marks, Array.filter((mark) => mark.id !== id))
+        pipe(
+          model.marks,
+          Array.filter((mark) => mark.id !== id)
+        )
       ),
     ClickedLoadMore: () => {
       if (!Schema.is(JobsState.Loaded)(model.jobs)) {
@@ -82,18 +101,35 @@ export const update = (model: ModelValue, message: MessageValue): UpdateReturn =
     },
     ClickedMark: ({ job, kind }) =>
       shortlistWith(model, [
-        { company: job.company, id: job.id, kind, location: job.location, title: job.title, url: job.url },
-        ...pipe(model.marks, Array.filter((mark) => mark.id !== job.id)),
+        {
+          company: job.company,
+          id: job.id,
+          kind,
+          location: job.location,
+          title: job.title,
+          url: job.url,
+        },
+        ...pipe(
+          model.marks,
+          Array.filter((mark) => mark.id !== job.id)
+        ),
       ]),
     ClickedResetFilters: () =>
-      withFilters(modifyFields(model, { draftSearch: () => "" }), defaultFilters),
+      withFilters(
+        modifyFields(model, { draftSearch: () => "" }),
+        defaultFilters
+      ),
     ClickedRetry: () => withFilters(model, model.filters),
-    CompletedReadShortlist: ({ marks }) => ({ model: modifyFields(model, { marks: () => marks }) }),
+    CompletedReadShortlist: ({ marks }) => ({
+      model: modifyFields(model, { marks: () => marks }),
+    }),
     CompletedWriteShortlist: () => ({ model }),
     FailedFetchJobs: ({ generation, message: failure }) => ({
       model:
         generation === model.generation
-          ? modifyFields(model, { jobs: () => JobsState.Failed({ message: failure }) })
+          ? modifyFields(model, {
+              jobs: () => JobsState.Failed({ message: failure }),
+            })
           : model,
     }),
     FailedFetchMoreJobs: ({ generation }) => ({
@@ -119,12 +155,25 @@ export const update = (model: ModelValue, message: MessageValue): UpdateReturn =
           : model,
     }),
     SucceededFetchMoreJobs: ({ generation, page }) => {
-      if (generation !== model.generation || !Schema.is(JobsState.Loaded)(model.jobs)) {
+      if (
+        generation !== model.generation ||
+        !Schema.is(JobsState.Loaded)(model.jobs)
+      ) {
         return { model };
       }
 
       const known = model.jobs.jobs;
-      const fresh = pipe(page.jobs, Array.filter((job) => !pipe(known, Array.some((seen) => seen.id === job.id))));
+
+      const fresh = pipe(
+        page.jobs,
+        Array.filter(
+          (job) =>
+            !pipe(
+              known,
+              Array.some((seen) => seen.id === job.id)
+            )
+        )
+      );
 
       return {
         model: modifyFields(model, {
@@ -147,7 +196,10 @@ export const update = (model: ModelValue, message: MessageValue): UpdateReturn =
         regionGroups: toggled(model.filters.regionGroups, group),
       }),
     ToggledRole: ({ role }) =>
-      withFilters(model, { ...model.filters, roles: toggled(model.filters.roles, role) }),
+      withFilters(model, {
+        ...model.filters,
+        roles: toggled(model.filters.roles, role),
+      }),
     UpdatedDraftSearch: ({ value }) => ({
       model: modifyFields(model, { draftSearch: () => value }),
     }),

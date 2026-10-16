@@ -1,5 +1,5 @@
-import { Effect, Option, pipe, Predicate, Schema } from "effect";
 import { JobQuery } from "@rat-stack/core/contracts";
+import { Effect, Option, pipe, Predicate, Schema } from "effect";
 import { Command } from "foldkit";
 
 import { Message } from "./message.js";
@@ -18,7 +18,11 @@ export const FetchJobs = Command.define("FetchJobs", {
   execute: ({ generation, query }) =>
     JobQueries.use((queries) => queries.listJobs(query)).pipe(
       Effect.match({
-        onFailure: (failure) => Message.FailedFetchJobs({ generation, message: failureText(failure) }),
+        onFailure: (failure) =>
+          Message.FailedFetchJobs({
+            generation,
+            message: failureText(failure),
+          }),
         onSuccess: (page) => Message.SucceededFetchJobs({ generation, page }),
       })
     ),
@@ -31,7 +35,8 @@ export const FetchMoreJobs = Command.define("FetchMoreJobs", {
     JobQueries.use((queries) => queries.listJobs(query)).pipe(
       Effect.match({
         onFailure: () => Message.FailedFetchMoreJobs({ generation }),
-        onSuccess: (page) => Message.SucceededFetchMoreJobs({ generation, page }),
+        onSuccess: (page) =>
+          Message.SucceededFetchMoreJobs({ generation, page }),
       })
     ),
   messages: [Message.SucceededFetchMoreJobs, Message.FailedFetchMoreJobs],
@@ -47,7 +52,9 @@ export const FetchStats = Command.define("FetchStats", {
   messages: [Message.SucceededFetchStats, Message.FailedFetchStats],
 });
 
-const decodeShortlist = Schema.decodeUnknownOption(Schema.fromJsonString(Shortlist));
+const decodeShortlist = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Shortlist)
+);
 
 export const ReadShortlist = Command.define("ReadShortlist", {
   execute: Effect.sync(() => {
@@ -59,7 +66,10 @@ export const ReadShortlist = Command.define("ReadShortlist", {
   }).pipe(
     Effect.map((stored) =>
       Message.CompletedReadShortlist({
-        marks: Option.getOrElse(pipe(stored, Option.flatMap(decodeShortlist)), () => []),
+        marks: Option.getOrElse(
+          pipe(stored, Option.flatMap(decodeShortlist)),
+          () => []
+        ),
       })
     )
   ),

@@ -10,7 +10,8 @@
   --marigold: #e5b53a;
   --marigold-ink: #3a2a00;
   --focus: #1d6f7a;
-  --display: "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --display:
+    "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", sans-serif;
   --text: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --measure: 46rem;
   color-scheme: light;
@@ -86,7 +87,9 @@ a {
   font-family: var(--display);
   font-size: clamp(1.3rem, 3.4vw, 1.95rem);
   font-weight: 560;
-  font-variation-settings: "wdth" 88, "opsz" 72;
+  font-variation-settings:
+    "wdth" 88,
+    "opsz" 72;
   line-height: 1.45;
   letter-spacing: -0.012em;
   text-wrap: pretty;
@@ -342,6 +345,8 @@ a {
 
 @media (prefers-reduced-motion: no-preference) {
   .phrase {
-    transition: background-color 120ms ease-out, color 120ms ease-out;
+    transition:
+      background-color 120ms ease-out,
+      color 120ms ease-out;
   }
 }

@@ -1,6 +1,6 @@
+import type { JobStoreUnavailable } from "@rat-stack/core";
 import { Context } from "effect";
 import type { Effect, Schema } from "effect";
-import type { JobStoreUnavailable } from "@rat-stack/core";
 
 export type SqlValue = number | string | null;
 
@@ -32,7 +32,10 @@ export class SqlExecutor extends Context.Service<
   }
 >()("@rat-stack/job-store/SqlExecutor") {}
 
-export const statement = (sql: string, params: readonly SqlValue[] = []): SqlStatement => ({
+export const statement = (
+  sql: string,
+  params: readonly SqlValue[] = []
+): SqlStatement => ({
   params,
   sql,
 });

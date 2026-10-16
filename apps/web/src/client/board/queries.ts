@@ -1,5 +1,8 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
-import { boardStatsContract, listJobsContract } from "@rat-stack/core/contracts";
+import {
+  boardStatsContract,
+  listJobsContract,
+} from "@rat-stack/core/contracts";
 import type { JobQueryValue } from "@rat-stack/core/contracts";
 import { Context, Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -20,9 +23,9 @@ const make = Effect.gen(function* makeJobQueries() {
   };
 });
 
-export class JobQueries extends Context.Service<JobQueries, Effect.Success<typeof make>>()(
-  "@rat-stack/web/JobQueries",
-  { make }
-) {
+export class JobQueries extends Context.Service<
+  JobQueries,
+  Effect.Success<typeof make>
+>()("@rat-stack/web/JobQueries", { make }) {
   static readonly layer = Layer.effect(this, this.make);
 }

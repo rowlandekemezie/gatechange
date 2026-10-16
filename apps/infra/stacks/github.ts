@@ -5,7 +5,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-export const REPOSITORY = { owner: "rowlandekemezie", repository: "jobs" } as const;
+export const REPOSITORY = {
+  owner: "rowlandekemezie",
+  repository: "jobs",
+} as const;
 
 export default Alchemy.Stack(
   "JobBoardCi",
@@ -16,29 +19,36 @@ export default Alchemy.Stack(
   Effect.gen(function* ciCredentials() {
     const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment;
 
-    const deployToken = yield* Cloudflare.ApiToken.AccountApiToken("JobBoardDeployToken", {
-      accountId,
-      policies: [
-        {
-          effect: "allow",
-          permissionGroups: [
-            "Workers Scripts Write",
-            "Workers KV Storage Write",
-            "Workers R2 Storage Write",
-            "D1 Write",
-            "Account Settings Write",
-            "Secrets Store Write",
-            "Workers Tail Read",
-          ],
-          resources: { [`com.cloudflare.api.account.${accountId}`]: "*" },
-        },
-        {
-          effect: "allow",
-          permissionGroups: ["Zone Read", "DNS Write", "Workers Routes Write"],
-          resources: { "com.cloudflare.api.account.zone.*": "*" },
-        },
-      ],
-    });
+    const deployToken = yield* Cloudflare.ApiToken.AccountApiToken(
+      "JobBoardDeployToken",
+      {
+        accountId,
+        policies: [
+          {
+            effect: "allow",
+            permissionGroups: [
+              "Workers Scripts Write",
+              "Workers KV Storage Write",
+              "Workers R2 Storage Write",
+              "D1 Write",
+              "Account Settings Write",
+              "Secrets Store Write",
+              "Workers Tail Read",
+            ],
+            resources: { [`com.cloudflare.api.account.${accountId}`]: "*" },
+          },
+          {
+            effect: "allow",
+            permissionGroups: [
+              "Zone Read",
+              "DNS Write",
+              "Workers Routes Write",
+            ],
+            resources: { "com.cloudflare.api.account.zone.*": "*" },
+          },
+        ],
+      }
+    );
 
     yield* GitHub.Secret("CloudflareApiToken", {
       ...REPOSITORY,

@@ -2,7 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { Option, Schema } from "effect";
 
 import { classifyPlacement, classifyRole } from "../src/index.js";
-import type { ArrangementValue, RegionValue, RoleLevelValue } from "../src/index.js";
+import type {
+  ArrangementValue,
+  RegionValue,
+  RoleLevelValue,
+} from "../src/index.js";
 
 const leadershipTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["VP of Engineering", "VicePresident"],
@@ -27,11 +31,21 @@ const otherTitles = [
   "Engineering Lead",
 ];
 
-const placements: readonly (readonly [string, ArrangementValue, ArrangementValue, RegionValue])[] = [
+const placements: readonly (readonly [
+  string,
+  ArrangementValue,
+  ArrangementValue,
+  RegionValue,
+])[] = [
   ["Remote - Canada", "Unspecified", "Remote", "RemoteCanada"],
   ["Remote - US or Canada", "Unspecified", "Remote", "RemoteNorthAmerica"],
   ["United States", "Remote", "Remote", "RemoteUnitedStates"],
-  ["Vancouver, British Columbia, Canada", "Hybrid", "Hybrid", "BritishColumbia"],
+  [
+    "Vancouver, British Columbia, Canada",
+    "Hybrid",
+    "Hybrid",
+    "BritishColumbia",
+  ],
   ["Toronto, ON", "Unspecified", "Unspecified", "CanadaOnsite"],
   ["Hybrid - Seattle, WA", "Unspecified", "Hybrid", "UnitedStatesOnsite"],
   ["Remote (EMEA)", "Unspecified", "Remote", "Elsewhere"],
@@ -50,8 +64,17 @@ describe("role classification", () => {
   it.prop(
     "a sales, solutions, or program title is never classified as leadership",
     {
-      prefix: Schema.Literals(["Sales", "Solutions", "Customer Success", "Technical Program"]),
-      role: Schema.Literals(["Engineering Manager", "Director of Engineering", "VP Engineering"]),
+      prefix: Schema.Literals([
+        "Sales",
+        "Solutions",
+        "Customer Success",
+        "Technical Program",
+      ]),
+      role: Schema.Literals([
+        "Engineering Manager",
+        "Director of Engineering",
+        "VP Engineering",
+      ]),
     },
     ({ prefix, role }) => {
       expect(classifyRole(`${prefix} ${role}`)).toStrictEqual(Option.none());
@@ -60,17 +83,24 @@ describe("role classification", () => {
 });
 
 describe("placement classification", () => {
-  it.each(placements)("%s (%s) is %s in %s", (text, workplace, arrangement, region) => {
-    expect(classifyPlacement({ text, workplace })).toStrictEqual({ arrangement, region });
-  });
+  it.each(placements)(
+    "%s (%s) is %s in %s",
+    (text, workplace, arrangement, region) => {
+      expect(classifyPlacement({ text, workplace })).toStrictEqual({
+        arrangement,
+        region,
+      });
+    }
+  );
 
   it.prop(
     "a source's own workplace flag wins over words in the location text",
     { workplace: Schema.Literals(["Remote", "Hybrid", "Onsite"]) },
     ({ workplace }) => {
-      expect(classifyPlacement({ text: "Remote, hybrid or on-site", workplace }).arrangement).toBe(
-        workplace
-      );
+      expect(
+        classifyPlacement({ text: "Remote, hybrid or on-site", workplace })
+          .arrangement
+      ).toBe(workplace);
     }
   );
 });

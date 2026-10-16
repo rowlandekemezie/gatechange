@@ -4,7 +4,11 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "allowedUnstableApis": ["effect/Arbitrary", "effect/rpc/RpcGroup", "effect/rpc/Rpc"]
+        "allowedUnstableApis": [
+          "effect/Arbitrary",
+          "effect/rpc/RpcGroup",
+          "effect/rpc/Rpc"
+        ]
       }
     ]
   },

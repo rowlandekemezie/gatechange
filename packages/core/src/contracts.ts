@@ -1,8 +1,8 @@
 import { defineContract } from "@rat-stack/capability/contract";
 import { Schema } from "effect";
 
-import { BoardStats, JobPage, JobQuery } from "./job.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
+import { BoardStats, JobPage, JobQuery } from "./job.js";
 
 export {
   Arrangement,
@@ -59,4 +59,7 @@ export const boardStatsContract = defineContract("boardStats", {
   output: BoardStats,
 });
 
-export const jobBoardContracts = [listJobsContract, boardStatsContract] as const;
+export const jobBoardContracts = [
+  listJobsContract,
+  boardStatsContract,
+] as const;

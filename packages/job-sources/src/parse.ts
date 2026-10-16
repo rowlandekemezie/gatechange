@@ -1,9 +1,11 @@
-import { DateTime, Match, Option, Predicate, pipe } from "effect";
 import type { ArrangementValue } from "@rat-stack/core";
+import { DateTime, Match, Option, Predicate, pipe } from "effect";
 
 const SECONDS_THRESHOLD = 100_000_000_000;
 
-export const epochMillisOf = (value: number | string | null | undefined): number | null => {
+export const epochMillisOf = (
+  value: number | string | null | undefined
+): number | null => {
   if (value === null || value === undefined) {
     return null;
   }
@@ -23,7 +25,10 @@ export const epochMillisOf = (value: number | string | null | undefined): number
   }
 
   return Option.getOrNull(
-    pipe(DateTime.make(trimmed), Option.map((parsed) => DateTime.toEpochMillis(parsed)))
+    pipe(
+      DateTime.make(trimmed),
+      Option.map((parsed) => DateTime.toEpochMillis(parsed))
+    )
   );
 };
 
@@ -36,15 +41,25 @@ export const salaryRange = (
   currency: string | null | undefined,
   period: string | null | undefined
 ): string | null => {
-  const low = minimum !== null && minimum !== undefined && minimum > 0 ? minimum : null;
-  const high = maximum !== null && maximum !== undefined && maximum > 0 ? maximum : null;
+  const low =
+    minimum !== null && minimum !== undefined && minimum > 0 ? minimum : null;
+
+  const high =
+    maximum !== null && maximum !== undefined && maximum > 0 ? maximum : null;
 
   if (low === null && high === null) {
     return null;
   }
 
-  const unit = currency === null || currency === undefined || currency.length === 0 ? "" : ` ${currency.toUpperCase()}`;
-  const interval = period === null || period === undefined || period.length === 0 ? "" : ` / ${period.toLowerCase()}`;
+  const unit =
+    currency === null || currency === undefined || currency.length === 0
+      ? ""
+      : ` ${currency.toUpperCase()}`;
+
+  const interval =
+    period === null || period === undefined || period.length === 0
+      ? ""
+      : ` / ${period.toLowerCase()}`;
 
   if (low !== null && high !== null && low !== high) {
     return `${compactAmount(low)}–${compactAmount(high)}${unit}${interval}`;
@@ -53,7 +68,9 @@ export const salaryRange = (
   return `${compactAmount(low ?? high ?? 0)}${unit}${interval}`;
 };
 
-export const workplaceOf = (value: string | null | undefined): ArrangementValue =>
+export const workplaceOf = (
+  value: string | null | undefined
+): ArrangementValue =>
   Match.value((value ?? "").toLowerCase().replaceAll(/[\s_-]/gu, "")).pipe(
     Match.withReturnType<ArrangementValue>(),
     Match.when("remote", () => "Remote"),
@@ -64,7 +81,10 @@ export const workplaceOf = (value: string | null | undefined): ArrangementValue 
 
 export const periodOf = (value: string | null | undefined): string | null =>
   Option.getOrNull(
-    Option.fromNullishOr(/\b(?<period>year|month|week|day|hour)/iu.exec(value ?? "")?.groups?.["period"])
+    Option.fromNullishOr(
+      /\b(?<period>year|month|week|day|hour)/iu.exec(value ?? "")?.groups
+        ?.period
+    )
   );
 
 const entities: readonly (readonly [RegExp, string])[] = [
@@ -88,7 +108,9 @@ export const textOfHtml = (html: string): string => {
   return text.replaceAll(/\s+/gu, " ").trim();
 };
 
-export const nonEmpty = (values: readonly (string | null | undefined)[]): readonly string[] => {
+export const nonEmpty = (
+  values: readonly (string | null | undefined)[]
+): readonly string[] => {
   const kept: string[] = [];
 
   for (const value of values) {

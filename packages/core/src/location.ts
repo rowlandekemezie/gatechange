@@ -119,7 +119,10 @@ export const classifyPlacement = (evidence: PlaceEvidence): Placement => {
 
   return Match.value(arrangement).pipe(
     Match.withReturnType<Placement>(),
-    Match.when("Remote", () => ({ arrangement, region: remoteRegion(signals) })),
+    Match.when("Remote", () => ({
+      arrangement,
+      region: remoteRegion(signals),
+    })),
     Match.orElse(() => ({ arrangement, region: placedRegion(signals) }))
   );
 };

@@ -1,14 +1,8 @@
-import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
 import { roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
+import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import { ageWindows, regionGroups } from "./filters.js";
-import type { AgeWindowValue, RegionGroupValue } from "./filters.js";
-import { Message } from "./message.js";
-import type { MessageValue } from "./message.js";
-import { JobsState, MoreState, StatsState } from "./model.js";
-import type { MarkedJobValue, MarkKindValue, ModelValue } from "./model.js";
 import {
   ageChip,
   dayHeading,
@@ -20,12 +14,23 @@ import {
   roleCount,
   sourceLabel,
 } from "./copy.js";
+import { ageWindows, regionGroups } from "./filters.js";
+import type { AgeWindowValue, RegionGroupValue } from "./filters.js";
+import { Message } from "./message.js";
+import type { MessageValue } from "./message.js";
+import { JobsState, MoreState, StatsState } from "./model.js";
+import type { MarkedJobValue, MarkKindValue, ModelValue } from "./model.js";
 
 type H = HtmlBuilder<MessageValue>;
 
 const NEW_WINDOW = 86_400_000;
 
-const chip = (h: H, isOn: boolean, label: string, onClick: MessageValue): Html =>
+const chip = (
+  h: H,
+  isOn: boolean,
+  label: string,
+  onClick: MessageValue
+): Html =>
   h.button(
     [
       h.Type("button"),
@@ -36,35 +41,66 @@ const chip = (h: H, isOn: boolean, label: string, onClick: MessageValue): Html =
     [label]
   );
 
-const listed = (h: H, items: readonly Html[], conjunction: string, trailing: string): readonly (Html | string)[] =>
-  pipe(items, Array.flatMap((item, index) => {
-    const after = Match.value(items.length - 1 - index).pipe(
-      Match.withReturnType<string>(),
-      Match.when(0, () => trailing),
-      Match.when(1, () => ` ${conjunction}`),
-      Match.orElse(() => ",")
-    );
-    const group = h.span([h.Class("phrase-group")], [item, after]);
+const listed = (
+  h: H,
+  items: readonly Html[],
+  conjunction: string,
+  trailing: string
+): readonly (Html | string)[] =>
+  pipe(
+    items,
+    Array.flatMap((item, index) => {
+      const after = Match.value(items.length - 1 - index).pipe(
+        Match.withReturnType<string>(),
+        Match.when(0, () => trailing),
+        Match.when(1, () => ` ${conjunction}`),
+        Match.orElse(() => ",")
+      );
 
-    return index === 0 ? [group] : [" ", group];
-  }));
+      const group = h.span([h.Class("phrase-group")], [item, after]);
+
+      return index === 0 ? [group] : [" ", group];
+    })
+  );
 
 const sentenceView = (model: ModelValue, h: H): Html => {
   const { filters } = model;
 
-  const roles = pipe(roleLevels, Array.map((role: RoleLevelValue) =>
-    chip(h, Array.contains(filters.roles, role), roleChip(role), Message.ToggledRole({ role }))));
+  const roles = pipe(
+    roleLevels,
+    Array.map((role: RoleLevelValue) =>
+      chip(
+        h,
+        Array.contains(filters.roles, role),
+        roleChip(role),
+        Message.ToggledRole({ role })
+      )
+    )
+  );
 
-  const places = pipe(regionGroups, Array.map((group: RegionGroupValue) =>
-    chip(
-      h,
-      Array.contains(filters.regionGroups, group),
-      regionGroupChip(group),
-      Message.ToggledRegionGroup({ group })
-    )));
+  const places = pipe(
+    regionGroups,
+    Array.map((group: RegionGroupValue) =>
+      chip(
+        h,
+        Array.contains(filters.regionGroups, group),
+        regionGroupChip(group),
+        Message.ToggledRegionGroup({ group })
+      )
+    )
+  );
 
-  const ages = pipe(ageWindows, Array.map((maxAgeDays: AgeWindowValue) =>
-    chip(h, filters.maxAgeDays === maxAgeDays, ageChip(maxAgeDays), Message.ChangedAge({ maxAgeDays }))));
+  const ages = pipe(
+    ageWindows,
+    Array.map((maxAgeDays: AgeWindowValue) =>
+      chip(
+        h,
+        filters.maxAgeDays === maxAgeDays,
+        ageChip(maxAgeDays),
+        Message.ChangedAge({ maxAgeDays })
+      )
+    )
+  );
 
   return h.h1(
     [h.Class("sentence")],
@@ -79,8 +115,18 @@ const sentenceView = (model: ModelValue, h: H): Html => {
       ...listed(
         h,
         [
-          chip(h, filters.sort === "Relevance", "most relevant", Message.ChangedSort({ sort: "Relevance" })),
-          chip(h, filters.sort === "Newest", "newest", Message.ChangedSort({ sort: "Newest" })),
+          chip(
+            h,
+            filters.sort === "Relevance",
+            "most relevant",
+            Message.ChangedSort({ sort: "Relevance" })
+          ),
+          chip(
+            h,
+            filters.sort === "Newest",
+            "newest",
+            Message.ChangedSort({ sort: "Newest" })
+          ),
         ],
         "or",
         " first."
@@ -91,9 +137,16 @@ const sentenceView = (model: ModelValue, h: H): Html => {
 
 const searchView = (model: ModelValue, h: H): Html =>
   h.form(
-    [h.Class("search"), h.Role("search"), h.OnSubmit(Message.SubmittedSearch())],
     [
-      h.label([h.For("search"), h.Class("visually-hidden")], ["Filter by company, title or city"]),
+      h.Class("search"),
+      h.Role("search"),
+      h.OnSubmit(Message.SubmittedSearch()),
+    ],
+    [
+      h.label(
+        [h.For("search"), h.Class("visually-hidden")],
+        ["Filter by company, title or city"]
+      ),
       h.input([
         h.Id("search"),
         h.Type("search"),
@@ -110,7 +163,12 @@ const searchView = (model: ModelValue, h: H): Html =>
 const markOf = (model: ModelValue, id: string): Option.Option<MarkedJobValue> =>
   Array.findFirst(model.marks, (mark) => mark.id === id);
 
-const markButton = (h: H, job: JobValue, kind: MarkKindValue, current: Option.Option<MarkKindValue>) => {
+const markButton = (
+  h: H,
+  job: JobValue,
+  kind: MarkKindValue,
+  current: Option.Option<MarkKindValue>
+) => {
   const isOn = Option.contains(current, kind);
   const label = kind === "Saved" ? "Save" : "Applied";
 
@@ -119,16 +177,26 @@ const markButton = (h: H, job: JobValue, kind: MarkKindValue, current: Option.Op
       h.Type("button"),
       h.Class(isOn ? "mark mark-on" : "mark"),
       h.AriaPressed(isOn ? "true" : "false"),
-      h.OnClick(isOn ? Message.ClickedClearMark({ id: job.id }) : Message.ClickedMark({ job, kind })),
+      h.OnClick(
+        isOn
+          ? Message.ClickedClearMark({ id: job.id })
+          : Message.ClickedMark({ job, kind })
+      ),
     ],
     [isOn && kind === "Saved" ? "Saved" : label]
   );
 };
 
 const jobRow = (model: ModelValue, h: H, job: JobValue, now: number): Html => {
-  const current = pipe(markOf(model, job.id), Option.map((mark) => mark.kind));
+  const current = pipe(
+    markOf(model, job.id),
+    Option.map((mark) => mark.kind)
+  );
+
   const isNew = now - job.firstSeenAt < NEW_WINDOW;
-  const where = job.location.length > 0 ? job.location : regionLabel(job.region);
+
+  const where =
+    job.location.length > 0 ? job.location : regionLabel(job.region);
 
   return h.keyed("li")(
     job.id,
@@ -138,16 +206,29 @@ const jobRow = (model: ModelValue, h: H, job: JobValue, now: number): Html => {
         [h.Class("job-main")],
         [
           h.a(
-            [h.Class("job-title"), h.Href(job.url), h.Target("_blank"), h.Rel("noopener noreferrer")],
+            [
+              h.Class("job-title"),
+              h.Href(job.url),
+              h.Target("_blank"),
+              h.Rel("noopener noreferrer"),
+            ],
             [job.title]
           ),
           h.p([h.Class("job-company")], [job.company]),
           h.p(
             [h.Class("job-meta")],
             [
-              h.span([h.Class("job-where"), h.Title(regionLabel(job.region))], [where]),
-              ...(job.salary === null ? [] : [h.span([h.Class("job-pay")], [job.salary])]),
-              h.span([h.Class("job-source")], [`From ${sourceLabel(job.source)}`]),
+              h.span(
+                [h.Class("job-where"), h.Title(regionLabel(job.region))],
+                [where]
+              ),
+              ...(job.salary === null
+                ? []
+                : [h.span([h.Class("job-pay")], [job.salary])]),
+              h.span(
+                [h.Class("job-source")],
+                [`From ${sourceLabel(job.source)}`]
+              ),
             ]
           ),
         ]
@@ -159,12 +240,25 @@ const jobRow = (model: ModelValue, h: H, job: JobValue, now: number): Html => {
             [h.Class("job-age")],
             [
               ...(isNew ? [h.span([h.Class("fresh")], ["New"])] : []),
-              h.time([h.Datetime(DateTime.formatIso(DateTime.makeUnsafe(job.postedAt)))], [postedAgo(now, job.postedAt)]),
+              h.time(
+                [
+                  h.Datetime(
+                    DateTime.formatIso(DateTime.makeUnsafe(job.postedAt))
+                  ),
+                ],
+                [postedAgo(now, job.postedAt)]
+              ),
             ]
           ),
           h.div(
-            [h.Class("job-actions"), h.AriaLabel(`Track ${job.title} at ${job.company}`)],
-            [markButton(h, job, "Saved", current), markButton(h, job, "Applied", current)]
+            [
+              h.Class("job-actions"),
+              h.AriaLabel(`Track ${job.title} at ${job.company}`),
+            ],
+            [
+              markButton(h, job, "Saved", current),
+              markButton(h, job, "Applied", current),
+            ]
           ),
         ]
       ),
@@ -172,34 +266,70 @@ const jobRow = (model: ModelValue, h: H, job: JobValue, now: number): Html => {
   );
 };
 
-const groupedRows = (model: ModelValue, h: H, jobs: readonly JobValue[], now: number): readonly Html[] => {
+const groupedRows = (
+  model: ModelValue,
+  h: H,
+  jobs: readonly JobValue[],
+  now: number
+): readonly Html[] => {
   if (model.filters.sort === "Relevance") {
-    return [h.ol([h.Class("jobs")], pipe(jobs, Array.map((job) => jobRow(model, h, job, now))))];
+    return [
+      h.ol(
+        [h.Class("jobs")],
+        pipe(
+          jobs,
+          Array.map((job) => jobRow(model, h, job, now))
+        )
+      ),
+    ];
   }
 
   if (!Array.isReadonlyArrayNonEmpty(jobs)) {
     return [];
   }
 
-  const groups = Array.groupWith(jobs, (left, right) => dayHeading(now, left.postedAt) === dayHeading(now, right.postedAt));
+  const groups = Array.groupWith(
+    jobs,
+    (left, right) =>
+      dayHeading(now, left.postedAt) === dayHeading(now, right.postedAt)
+  );
 
-  return pipe(groups, Array.map((group) => {
-    const heading = dayHeading(now, Array.headNonEmpty(group).postedAt);
+  return pipe(
+    groups,
+    Array.map((group) => {
+      const heading = dayHeading(now, Array.headNonEmpty(group).postedAt);
 
-    return h.keyed("section")(
-      heading,
-      [h.Class("day")],
-      [
-        h.h2([h.Class("day-heading")], [heading]),
-        h.ol([h.Class("jobs")], pipe(group, Array.map((job) => jobRow(model, h, job, now)))),
-      ]
-    );
-  }));
+      return h.keyed("section")(
+        heading,
+        [h.Class("day")],
+        [
+          h.h2([h.Class("day-heading")], [heading]),
+          h.ol(
+            [h.Class("jobs")],
+            pipe(
+              group,
+              Array.map((job) => jobRow(model, h, job, now))
+            )
+          ),
+        ]
+      );
+    })
+  );
 };
 
-const moreView = (model: ModelValue, h: H, shown: number, total: number): Html => {
+const moreView = (
+  model: ModelValue,
+  h: H,
+  shown: number,
+  total: number
+): Html => {
   if (shown >= total) {
-    return h.p([h.Class("list-end")], ["That is every role that matches. Widen the window or add places to see more."]);
+    return h.p(
+      [h.Class("list-end")],
+      [
+        "That is every role that matches. Widen the window or add places to see more.",
+      ]
+    );
   }
 
   return MoreState.match<Html>(model.more, {
@@ -208,15 +338,29 @@ const moreView = (model: ModelValue, h: H, shown: number, total: number): Html =
         [h.Class("list-end")],
         [
           h.p([h.Role("alert")], ["The next roles did not load."]),
-          h.button([h.Type("button"), h.Class("more"), h.OnClick(Message.ClickedLoadMore())], ["Try again"]),
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("more"),
+              h.OnClick(Message.ClickedLoadMore()),
+            ],
+            ["Try again"]
+          ),
         ]
       ),
     Idle: () =>
       h.button(
-        [h.Type("button"), h.Class("more"), h.OnClick(Message.ClickedLoadMore())],
-        [`Show ${Math.min(40, total - shown)} more of ${total - shown} remaining`]
+        [
+          h.Type("button"),
+          h.Class("more"),
+          h.OnClick(Message.ClickedLoadMore()),
+        ],
+        [
+          `Show ${Math.min(40, total - shown)} more of ${total - shown} remaining`,
+        ]
       ),
-    Loading: () => h.p([h.Class("list-end"), h.Role("status")], ["Loading more roles"]),
+    Loading: () =>
+      h.p([h.Class("list-end"), h.Role("status")], ["Loading more roles"]),
   });
 };
 
@@ -225,8 +369,20 @@ const emptyView = (h: H): Html =>
     [h.Class("empty")],
     [
       h.p([], ["No roles match that sentence yet."]),
-      h.p([], ["Pick at least one role and one place, widen the window to a month, or clear the search."]),
-      h.button([h.Type("button"), h.Class("more"), h.OnClick(Message.ClickedResetFilters())], ["Reset the sentence"]),
+      h.p(
+        [],
+        [
+          "Pick at least one role and one place, widen the window to a month, or clear the search.",
+        ]
+      ),
+      h.button(
+        [
+          h.Type("button"),
+          h.Class("more"),
+          h.OnClick(Message.ClickedResetFilters()),
+        ],
+        ["Reset the sentence"]
+      ),
     ]
   );
 
@@ -237,7 +393,14 @@ const boardView = (model: ModelValue, h: H): Html =>
         [h.Class("empty"), h.Role("alert")],
         [
           h.p([], [message]),
-          h.button([h.Type("button"), h.Class("more"), h.OnClick(Message.ClickedRetry())], ["Try again"]),
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("more"),
+              h.OnClick(Message.ClickedRetry()),
+            ],
+            ["Try again"]
+          ),
         ]
       ),
     Loaded: ({ generatedAt, jobs, total }) =>
@@ -260,13 +423,21 @@ const shortlistView = (model: ModelValue, h: H): Html => {
       [h.Class("empty")],
       [
         h.p([], ["Your shortlist is empty."]),
-        h.p([], ["Press Save or Applied on any role. The list stays in this browser and nothing leaves your device."]),
+        h.p(
+          [],
+          [
+            "Press Save or Applied on any role. The list stays in this browser and nothing leaves your device.",
+          ]
+        ),
       ]
     );
   }
 
   const section = (kind: MarkKindValue, heading: string) => {
-    const marks = pipe(model.marks, Array.filter((mark) => mark.kind === kind));
+    const marks = pipe(
+      model.marks,
+      Array.filter((mark) => mark.kind === kind)
+    );
 
     return Array.isReadonlyArrayEmpty(marks)
       ? h.empty
@@ -276,33 +447,51 @@ const shortlistView = (model: ModelValue, h: H): Html => {
             h.h2([h.Class("day-heading")], [`${heading} (${marks.length})`]),
             h.ol(
               [h.Class("jobs")],
-              pipe(marks, Array.map((mark) =>
-                h.keyed("li")(
-                  mark.id,
-                  [h.Class("job")],
-                  [
-                    h.div(
-                      [h.Class("job-main")],
-                      [
-                        h.a(
-                          [h.Class("job-title"), h.Href(mark.url), h.Target("_blank"), h.Rel("noopener noreferrer")],
-                          [mark.title]
-                        ),
-                        h.p([h.Class("job-company")], [mark.company]),
-                        h.p([h.Class("job-meta")], [h.span([h.Class("job-where")], [mark.location])]),
-                      ]
-                    ),
-                    h.div(
-                      [h.Class("job-side")],
-                      [
-                        h.button(
-                          [h.Type("button"), h.Class("mark"), h.OnClick(Message.ClickedClearMark({ id: mark.id }))],
-                          ["Remove"]
-                        ),
-                      ]
-                    ),
-                  ]
-                )))
+              pipe(
+                marks,
+                Array.map((mark) =>
+                  h.keyed("li")(
+                    mark.id,
+                    [h.Class("job")],
+                    [
+                      h.div(
+                        [h.Class("job-main")],
+                        [
+                          h.a(
+                            [
+                              h.Class("job-title"),
+                              h.Href(mark.url),
+                              h.Target("_blank"),
+                              h.Rel("noopener noreferrer"),
+                            ],
+                            [mark.title]
+                          ),
+                          h.p([h.Class("job-company")], [mark.company]),
+                          h.p(
+                            [h.Class("job-meta")],
+                            [h.span([h.Class("job-where")], [mark.location])]
+                          ),
+                        ]
+                      ),
+                      h.div(
+                        [h.Class("job-side")],
+                        [
+                          h.button(
+                            [
+                              h.Type("button"),
+                              h.Class("mark"),
+                              h.OnClick(
+                                Message.ClickedClearMark({ id: mark.id })
+                              ),
+                            ],
+                            ["Remove"]
+                          ),
+                        ]
+                      ),
+                    ]
+                  )
+                )
+              )
             ),
           ]
         );
@@ -374,7 +563,15 @@ const footer = (h: H): Html =>
           " and the monthly Hacker News hiring thread. Each listing links to its original posting. Roles leave the board when their source removes them or after 30 days.",
         ]
       ),
-      h.p([], [h.a([h.Href("https://rowlandekemezie.com")], ["Made by Rowland Ekemezie"])]),
+      h.p(
+        [],
+        [
+          h.a(
+            [h.Href("https://rowlandekemezie.com")],
+            ["Made by Rowland Ekemezie"]
+          ),
+        ]
+      ),
     ]
   );
 
@@ -382,7 +579,10 @@ export const view = (model: ModelValue, h: H): Document => ({
   body: h.main(
     [h.Class("page")],
     [
-      h.header([h.Class("masthead")], [sentenceView(model, h), searchView(model, h), statusLine(model, h)]),
+      h.header(
+        [h.Class("masthead")],
+        [sentenceView(model, h), searchView(model, h), statusLine(model, h)]
+      ),
       tabs(model, h),
       model.view === "Board" ? boardView(model, h) : shortlistView(model, h),
       footer(h),

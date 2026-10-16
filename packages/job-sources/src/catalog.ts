@@ -1,7 +1,7 @@
-import { Array, Effect, Layer, Match, Option, pipe } from "effect";
-import { HttpClient } from "effect/http";
 import { FeedUnavailable, PostingFeeds } from "@rat-stack/core";
 import type { FeedRef } from "@rat-stack/core";
+import { Array, Effect, Layer, Match, Option, pipe } from "effect";
+import { HttpClient } from "effect/http";
 
 import {
   himalayasPostings,
@@ -31,13 +31,21 @@ export const aggregatorFeeds: readonly FeedSpecValue[] = [
 export const boardFeed = (board: CompanyBoardValue): FeedSpecValue =>
   Match.value(board.ats).pipe(
     Match.withReturnType<FeedSpecValue>(),
-    Match.when("ashby", () => FeedSpec.Ashby({ company: board.name, slug: board.slug })),
-    Match.when("greenhouse", () => FeedSpec.Greenhouse({ company: board.name, slug: board.slug })),
-    Match.when("lever", () => FeedSpec.Lever({ company: board.name, slug: board.slug })),
+    Match.when("ashby", () =>
+      FeedSpec.Ashby({ company: board.name, slug: board.slug })
+    ),
+    Match.when("greenhouse", () =>
+      FeedSpec.Greenhouse({ company: board.name, slug: board.slug })
+    ),
+    Match.when("lever", () =>
+      FeedSpec.Lever({ company: board.name, slug: board.slug })
+    ),
     Match.exhaustive
   );
 
-export const feedSpecs = (boards: readonly CompanyBoardValue[]): readonly FeedSpecValue[] => [
+export const feedSpecs = (
+  boards: readonly CompanyBoardValue[]
+): readonly FeedSpecValue[] => [
   ...aggregatorFeeds,
   ...pipe(boards, Array.map(boardFeed)),
 ];
@@ -57,7 +65,9 @@ const postingsOf = (spec: FeedSpecValue) => {
   });
 };
 
-export const postingFeedsLayer = (boards: readonly CompanyBoardValue[] = companyBoards) =>
+export const postingFeedsLayer = (
+  boards: readonly CompanyBoardValue[] = companyBoards
+) =>
   Layer.effect(
     PostingFeeds,
     Effect.gen(function* makePostingFeeds() {
@@ -75,11 +85,14 @@ export const postingFeedsLayer = (boards: readonly CompanyBoardValue[] = company
                 Effect.fail(
                   new FeedUnavailable({
                     feed: feed.key,
-                    message: "This feed is not in the catalog. Remove it from the feeds table.",
+                    message:
+                      "This feed is not in the catalog. Remove it from the feeds table.",
                   })
                 ),
               onSome: (spec) =>
-                postingsOf(spec).pipe(Effect.provideService(HttpClient.HttpClient, client)),
+                postingsOf(spec).pipe(
+                  Effect.provideService(HttpClient.HttpClient, client)
+                ),
             }
           ),
       });

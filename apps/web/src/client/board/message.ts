@@ -1,5 +1,5 @@
-import { Schema } from "effect";
 import { BoardStats, Job, JobPage, RoleLevel } from "@rat-stack/core/contracts";
+import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
 import { AgeWindow, RegionGroup, Sort } from "./filters.js";

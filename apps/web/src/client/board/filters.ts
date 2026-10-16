@@ -1,6 +1,6 @@
-import { Array, Match, pipe, Schema } from "effect";
 import { RoleLevel } from "@rat-stack/core/contracts";
 import type { JobQueryValue, RegionValue } from "@rat-stack/core/contracts";
+import { Array, Match, pipe, Schema } from "effect";
 
 export const PAGE_SIZE = 40;
 
@@ -19,8 +19,16 @@ export const regionGroups: readonly RegionGroupValue[] = RegionGroup.literals;
 
 export const regionsOfGroup = Match.type<RegionGroupValue>().pipe(
   Match.withReturnType<readonly RegionValue[]>(),
-  Match.when("RemoteCanada", () => ["RemoteCanada", "RemoteNorthAmerica", "RemoteGlobal"]),
-  Match.when("RemoteUnitedStates", () => ["RemoteUnitedStates", "RemoteNorthAmerica", "RemoteGlobal"]),
+  Match.when("RemoteCanada", () => [
+    "RemoteCanada",
+    "RemoteNorthAmerica",
+    "RemoteGlobal",
+  ]),
+  Match.when("RemoteUnitedStates", () => [
+    "RemoteUnitedStates",
+    "RemoteNorthAmerica",
+    "RemoteGlobal",
+  ]),
   Match.when("BritishColumbia", () => ["BritishColumbia"]),
   Match.when("CanadaOnsite", () => ["CanadaOnsite"]),
   Match.when("UnitedStatesOnsite", () => ["UnitedStatesOnsite"]),
@@ -49,26 +57,41 @@ export type FiltersValue = typeof Filters.Type;
 export const defaultFilters: FiltersValue = {
   maxAgeDays: 7,
   regionGroups: ["RemoteCanada", "RemoteUnitedStates", "BritishColumbia"],
-  roles: ["EngineeringManager", "Director", "HeadOfEngineering", "VicePresident"],
+  roles: [
+    "EngineeringManager",
+    "Director",
+    "HeadOfEngineering",
+    "VicePresident",
+  ],
   search: "",
   sort: "Relevance",
 };
 
 export const toggled = <A>(values: readonly A[], value: A): readonly A[] =>
   Array.contains(values, value)
-    ? pipe(values, Array.filter((current) => current !== value))
+    ? pipe(
+        values,
+        Array.filter((current) => current !== value)
+      )
     : Array.append(values, value);
 
-export const queryOf = (filters: FiltersValue, offset: number): JobQueryValue => ({
+export const queryOf = (
+  filters: FiltersValue,
+  offset: number
+): JobQueryValue => ({
   limit: PAGE_SIZE,
   maxAgeDays: filters.maxAgeDays,
   offset,
-  regions: pipe(filters.regionGroups, Array.flatMap(regionsOfGroup), Array.dedupe),
+  regions: pipe(
+    filters.regionGroups,
+    Array.flatMap(regionsOfGroup),
+    Array.dedupe
+  ),
   roles: filters.roles,
   search: filters.search.trim().slice(0, 80),
   sort: filters.sort,
 });
 
 export const hasNoSelection = (filters: FiltersValue) =>
-  Array.isReadonlyArrayEmpty(filters.roles) || Array.isReadonlyArrayEmpty(filters.regionGroups);
-
+  Array.isReadonlyArrayEmpty(filters.roles) ||
+  Array.isReadonlyArrayEmpty(filters.regionGroups);

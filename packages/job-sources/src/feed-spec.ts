@@ -1,5 +1,5 @@
-import { Data, Match, Option } from "effect";
 import type { FeedRef, SourceNameValue } from "@rat-stack/core";
+import { Data, Match, Option } from "effect";
 
 export type FeedSpecValue = Data.TaggedEnum<{
   Ashby: { readonly company: string; readonly slug: string };
@@ -36,7 +36,9 @@ const sourceOf = (spec: FeedSpecValue): SourceNameValue => spec._tag;
 const companyOf = (spec: FeedSpecValue): Option.Option<string> =>
   Match.value(spec).pipe(
     Match.withReturnType<Option.Option<string>>(),
-    Match.tag("Ashby", "Greenhouse", "Lever", ({ company }) => Option.some(company)),
+    Match.tag("Ashby", "Greenhouse", "Lever", ({ company }) =>
+      Option.some(company)
+    ),
     Match.orElse(() => Option.none())
   );
 

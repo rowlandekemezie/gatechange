@@ -2,12 +2,12 @@ import { Array, Clock, Effect, pipe } from "effect";
 
 import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
+import { JobStore } from "./job-store.js";
 import { MAX_AGE_DAYS } from "./job.js";
 import type { IngestReceiptValue, JobValue } from "./job.js";
-import { JobStore } from "./job-store.js";
+import { PostingFeeds } from "./posting-feeds.js";
 import { DAY_MILLIS, normalizePosting } from "./posting.js";
 import type { PostingValue } from "./posting.js";
-import { PostingFeeds } from "./posting-feeds.js";
 
 export interface IngestPlan {
   readonly feedConcurrency: number;
@@ -29,7 +29,10 @@ export const jobsFromPostings = (
     Array.dedupeWith((left, right) => left.id === right.id)
   );
 
-const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(feed: FeedRef, seenAt: number) {
+const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
+  feed: FeedRef,
+  seenAt: number
+) {
   const store = yield* JobStore;
   const feeds = yield* PostingFeeds;
 
@@ -46,22 +49,29 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(feed: FeedRef, s
           })
         ),
       onSuccess: (postings) =>
-        store.replaceFeed(feed.key, jobsFromPostings(feed, postings, seenAt), seenAt).pipe(
-          Effect.map(
-            (replacement): FeedOutcomeValue => ({
+        store
+          .replaceFeed(
+            feed.key,
+            jobsFromPostings(feed, postings, seenAt),
+            seenAt
+          )
+          .pipe(
+            Effect.map((replacement): FeedOutcomeValue => ({
               error: null,
               key: feed.key,
               pruned: replacement.removed,
               source: feed.source,
               upserted: replacement.upserted,
-            })
-          )
-        ),
+            }))
+          ),
     })
   );
 });
 
-const outcomeOf = (attempted: number, failed: number): IngestReceiptValue["outcome"] => {
+const outcomeOf = (
+  attempted: number,
+  failed: number
+): IngestReceiptValue["outcome"] => {
   if (failed === 0) {
     return "Succeeded";
   }
@@ -73,27 +83,49 @@ const outcomeOf = (attempted: number, failed: number): IngestReceiptValue["outco
   return "Partial";
 };
 
-export const runIngest = Effect.fn("runIngest")(function* runIngest(plan: IngestPlan) {
+export const runIngest = Effect.fn("runIngest")(function* runIngest(
+  plan: IngestPlan
+) {
   const store = yield* JobStore;
   const feeds = yield* PostingFeeds;
   const startedAt = yield* Clock.currentTimeMillis;
   const states = yield* store.feedStates;
-  const due = selectDueFeeds(feeds.catalog, states, startedAt, plan.feedsPerRun);
 
-  const outcomes = yield* Effect.forEach(due, (feed) => ingestFeed(feed, startedAt), {
-    concurrency: plan.feedConcurrency,
-  });
+  const due = selectDueFeeds(
+    feeds.catalog,
+    states,
+    startedAt,
+    plan.feedsPerRun
+  );
+
+  const outcomes = yield* Effect.forEach(
+    due,
+    (feed) => ingestFeed(feed, startedAt),
+    {
+      concurrency: plan.feedConcurrency,
+    }
+  );
 
   const expired = yield* store.pruneOlderThan(retentionCutoff(startedAt));
   const finishedAt = yield* Clock.currentTimeMillis;
-  const failed = pipe(outcomes, Array.filter((outcome) => outcome.error !== null)).length;
+
+  const failed = pipe(
+    outcomes,
+    Array.filter((outcome) => outcome.error !== null)
+  ).length;
 
   const receipt: IngestReceiptValue = {
     feedsAttempted: outcomes.length,
     feedsFailed: failed,
     finishedAt,
-    jobsPruned: expired + Array.reduce(outcomes, 0, (total, outcome) => total + outcome.pruned),
-    jobsUpserted: Array.reduce(outcomes, 0, (total, outcome) => total + outcome.upserted),
+    jobsPruned:
+      expired +
+      Array.reduce(outcomes, 0, (total, outcome) => total + outcome.pruned),
+    jobsUpserted: Array.reduce(
+      outcomes,
+      0,
+      (total, outcome) => total + outcome.upserted
+    ),
     outcome: outcomeOf(outcomes.length, failed),
     startedAt,
   };

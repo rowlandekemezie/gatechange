@@ -48,7 +48,9 @@ export const SourceName = Schema.Literals([
 
 export type SourceNameValue = typeof SourceName.Type;
 
-export const EpochMillis = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
+export const EpochMillis = Schema.Finite.check(
+  Schema.isGreaterThanOrEqualTo(0)
+);
 
 export const Job = Schema.Struct({
   arrangement: Arrangement,
@@ -81,8 +83,12 @@ export const DEFAULT_AGE_DAYS = 7;
 export const MAX_PAGE_SIZE = 100;
 
 export const JobQuery = Schema.Struct({
-  limit: Schema.Int.check(Schema.isBetween({ maximum: MAX_PAGE_SIZE, minimum: 1 })),
-  maxAgeDays: Schema.Int.check(Schema.isBetween({ maximum: MAX_AGE_DAYS, minimum: 1 })),
+  limit: Schema.Int.check(
+    Schema.isBetween({ maximum: MAX_PAGE_SIZE, minimum: 1 })
+  ),
+  maxAgeDays: Schema.Int.check(
+    Schema.isBetween({ maximum: MAX_AGE_DAYS, minimum: 1 })
+  ),
   offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   regions: Schema.Array(Region),
   roles: Schema.Array(RoleLevel),
@@ -110,7 +116,11 @@ export const RoleCount = Schema.Struct({
   role: RoleLevel,
 });
 
-export const IngestOutcome = Schema.Literals(["Succeeded", "Partial", "Failed"]);
+export const IngestOutcome = Schema.Literals([
+  "Succeeded",
+  "Partial",
+  "Failed",
+]);
 
 export const IngestReceipt = Schema.Struct({
   feedsAttempted: Schema.Int,
