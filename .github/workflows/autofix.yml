@@ -38,14 +38,16 @@ jobs:
             echo "Nothing to fix"
             exit 0
           fi
-          {
-            echo "### Autofix patch for ${GITHUB_SHA::7}"
-            echo
-            echo "Apply with \`git apply\`."
-            echo
-            echo '```diff'
-            head -c 60000 fixes.patch
-            echo '```'
-          } > comment.md
-          gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@comment.md > /dev/null
-          echo "Patch size: $(wc -c < fixes.patch) bytes"
+          gzip -9 -c fixes.patch | base64 -w0 > fixes.b64
+          split -b 60000 -d -a 3 fixes.b64 part-
+          total=$(ls part-* | wc -l)
+          index=0
+          for part in part-*; do
+            index=$((index + 1))
+            {
+              echo "autofix-patch ${index}/${total}"
+              cat "$part"
+            } > comment.txt
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@comment.txt > /dev/null
+          done
+          echo "Posted ${total} parts for $(wc -c < fixes.patch) bytes"
