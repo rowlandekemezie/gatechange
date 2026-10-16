@@ -1,0 +1,40 @@
+name: Autofix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build lint plugin inputs
+        run: pnpm turbo run build --filter=@rat-stack/capability
+
+      - name: Apply formatter and safe lint fixes
+        run: pnpm fix || true
+
+      - name: Commit fixes
+        run: |
+          if git diff --quiet; then
+            echo "Nothing to fix"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "style: apply formatter and safe lint fixes"
+          git push

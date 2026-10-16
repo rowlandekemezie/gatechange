@@ -1,20 +1,20 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Array, Effect, Layer, Option, Schema } from "effect";
+import { Array, Effect, Layer, Option, Predicate, Schema, pipe } from "effect";
 import * as Arbitrary from "effect/Arbitrary";
 import { TestClock } from "effect/testing";
 
 import { FeedUnavailable, PostingFeeds, runIngest } from "../src/index.js";
-import type { FeedRef, Posting } from "../src/index.js";
+import type { FeedRef, PostingValue } from "../src/index.js";
 import { makeMemoryJobStore } from "./memory-job-store.js";
 
 const feedKeys = ["greenhouse:acme", "lever:globex", "remoteok"] as const;
 
-const catalog: ReadonlyArray<FeedRef> = Array.map(feedKeys, (key) => ({
+const catalog: readonly FeedRef[] = pipe(feedKeys, Array.map((key) => ({
   company: Option.some("Acme"),
   key,
   minIntervalMinutes: 1,
   source: "Greenhouse",
-}));
+})));
 
 const onlyFeed: FeedRef = {
   company: Option.some("Acme"),
@@ -34,7 +34,7 @@ const Run = Schema.Tuple([FeedResponse, FeedResponse, FeedResponse]);
 
 const runs = Arbitrary.array(Arbitrary.schema(Run), { maxLength: 12, minLength: 1 });
 
-const postingFor = (id: string): Posting => ({
+const postingFor = (id: string): PostingValue => ({
   company: "Acme",
   externalId: id,
   location: "Remote - Canada",
@@ -45,7 +45,7 @@ const postingFor = (id: string): Posting => ({
   workplace: "Unspecified",
 });
 
-const uniqueIds = (ids: ReadonlyArray<string>) => [...new Set(ids)].toSorted();
+const uniqueIds = (ids: readonly string[]) => [...new Set(ids)].toSorted();
 
 describe("ingest", () => {
   it.effect.prop(
@@ -54,22 +54,19 @@ describe("ingest", () => {
     ({ schedule }) =>
       Effect.gen(function* replayRuns() {
         const memory = yield* makeMemoryJobStore;
-        const expected = new Map<string, ReadonlyArray<string>>();
+        const expected = new Map<string, readonly string[]>();
 
         for (const responses of schedule) {
           const feeds = PostingFeeds.of({
             catalog,
             fetch: (feed) => {
-              const response = Option.flatMap(
-                Array.findFirstIndex(feedKeys, (key) => key === feed.key),
-                (index) => Array.get(responses, index)
-              );
+              const response = pipe(Array.findFirstIndex(feedKeys, (key) => key === feed.key), Option.flatMap((index) => Array.get(responses, index)));
 
               return Option.match(response, {
                 onNone: () => Effect.fail(new FeedUnavailable({ feed: feed.key, message: "missing" })),
                 onSome: (found) =>
-                  found._tag === "Listed"
-                    ? Effect.succeed(Array.map(found.ids, postingFor))
+                  Predicate.isTagged(found, "Listed")
+                    ? Effect.succeed(pipe(found.ids, Array.map(postingFor)))
                     : Effect.fail(new FeedUnavailable({ feed: feed.key, message: "down" })),
               });
             },
@@ -82,15 +79,15 @@ describe("ingest", () => {
           for (const [index, key] of feedKeys.entries()) {
             const response = responses[index];
 
-            if (response?._tag === "Listed") {
+            if (response !== undefined && Predicate.isTagged(response, "Listed")) {
               expected.set(key, uniqueIds(response.ids));
             }
           }
 
           for (const key of feedKeys) {
-            const stored = Array.filter(memory.jobs(), (job) => job.feed === key);
+            const stored = pipe(memory.jobs(), Array.filter((job) => job.feed === key));
 
-            expect(uniqueIds(Array.map(stored, (job) => job.id.slice(key.length + 1)))).toStrictEqual(
+            expect(uniqueIds(pipe(stored, Array.map((job) => job.id.slice(key.length + 1))))).toStrictEqual(
               expected.get(key) ?? []
             );
           }
@@ -111,7 +108,7 @@ describe("ingest", () => {
         catalog: [onlyFeed],
         fetch: () =>
           Effect.succeed(
-            Array.map(titles, (title, index) => ({ ...postingFor(`t${index}`), title }))
+            pipe(titles, Array.map((title, index) => ({ ...postingFor(`t${index}`), title })))
           ),
       });
 
@@ -119,7 +116,7 @@ describe("ingest", () => {
         Effect.provide(Layer.merge(memory.layer, Layer.succeed(PostingFeeds, feeds)))
       );
 
-      expect(Array.map(memory.jobs(), (job) => job.title)).toStrictEqual(["VP of Engineering"]);
+      expect(pipe(memory.jobs(), Array.map((job) => job.title))).toStrictEqual(["VP of Engineering"]);
     })
   );
 });

@@ -27,16 +27,16 @@ export {
 } from "./job.js";
 
 export type {
-  Arrangement as ArrangementValue,
-  BoardStats as BoardStatsValue,
-  IngestReceipt as IngestReceiptValue,
-  Job as JobValue,
-  JobPage as JobPageValue,
-  JobQuery as JobQueryValue,
-  JobSort as JobSortValue,
-  Region as RegionValue,
-  RoleLevel as RoleLevelValue,
-  SourceName as SourceNameValue,
+  ArrangementValue,
+  BoardStatsValue,
+  IngestReceiptValue,
+  JobPageValue,
+  JobQueryValue,
+  JobSortValue,
+  JobValue,
+  RegionValue,
+  RoleLevelValue,
+  SourceNameValue,
 } from "./job.js";
 
 export { JobStoreUnavailable } from "./job-store-unavailable.js";

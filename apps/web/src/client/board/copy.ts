@@ -1,7 +1,7 @@
 import { Match } from "effect";
 import type { RegionValue, RoleLevelValue, SourceNameValue } from "@rat-stack/core/contracts";
 
-import type { AgeWindow, RegionGroup } from "../../client/board/filters.js";
+import type { AgeWindowValue, RegionGroupValue } from "./filters.js";
 
 export const roleChip = Match.type<RoleLevelValue>().pipe(
   Match.when("EngineeringManager", () => "engineering manager"),
@@ -19,7 +19,7 @@ export const roleLabel = Match.type<RoleLevelValue>().pipe(
   Match.exhaustive
 );
 
-export const regionGroupChip = Match.type<RegionGroup>().pipe(
+export const regionGroupChip = Match.type<RegionGroupValue>().pipe(
   Match.when("RemoteCanada", () => "remote in Canada"),
   Match.when("RemoteUnitedStates", () => "remote in the US"),
   Match.when("BritishColumbia", () => "in Vancouver and BC"),
@@ -41,7 +41,7 @@ export const regionLabel = Match.type<RegionValue>().pipe(
   Match.exhaustive
 );
 
-export const ageChip = Match.type<AgeWindow>().pipe(
+export const ageChip = Match.type<AgeWindowValue>().pipe(
   Match.when(1, () => "day"),
   Match.when(3, () => "3 days"),
   Match.when(7, () => "week"),

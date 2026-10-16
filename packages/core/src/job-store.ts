@@ -1,8 +1,8 @@
 import { Context, Schema } from "effect";
 import type { Effect } from "effect";
 
-import type { FeedState } from "./feed.js";
-import type { BoardStats, IngestReceipt, Job, JobQuery } from "./job.js";
+import type { FeedStateValue } from "./feed.js";
+import type { BoardStatsValue, IngestReceiptValue, JobValue, JobQueryValue } from "./job.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 
 export const FeedReplacement = Schema.Struct({
@@ -10,19 +10,19 @@ export const FeedReplacement = Schema.Struct({
   upserted: Schema.Int,
 });
 
-export type FeedReplacement = typeof FeedReplacement.Type;
+export type FeedReplacementValue = typeof FeedReplacement.Type;
 
 export interface JobListing {
-  readonly jobs: ReadonlyArray<Job>;
+  readonly jobs: readonly JobValue[];
   readonly total: number;
 }
 
 export class JobStore extends Context.Service<
   JobStore,
   {
-    readonly feedStates: Effect.Effect<ReadonlyArray<FeedState>, JobStoreUnavailable>;
+    readonly feedStates: Effect.Effect<readonly FeedStateValue[], JobStoreUnavailable>;
     readonly list: (
-      query: JobQuery,
+      query: JobQueryValue,
       now: number
     ) => Effect.Effect<JobListing, JobStoreUnavailable>;
     readonly pruneOlderThan: (cutoff: number) => Effect.Effect<number, JobStoreUnavailable>;
@@ -31,14 +31,14 @@ export class JobStore extends Context.Service<
       attemptedAt: number,
       message: string
     ) => Effect.Effect<void, JobStoreUnavailable>;
-    readonly recordRun: (receipt: IngestReceipt) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly recordRun: (receipt: IngestReceiptValue) => Effect.Effect<void, JobStoreUnavailable>;
     readonly replaceFeed: (
       feedKey: string,
-      jobs: ReadonlyArray<Job>,
+      jobs: readonly JobValue[],
       seenAt: number
-    ) => Effect.Effect<FeedReplacement, JobStoreUnavailable>;
+    ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
     readonly stats: (
       now: number
-    ) => Effect.Effect<Omit<BoardStats, "generatedAt">, JobStoreUnavailable>;
+    ) => Effect.Effect<Omit<BoardStatsValue, "generatedAt">, JobStoreUnavailable>;
   }
 >()("@rat-stack/core/JobStore") {}

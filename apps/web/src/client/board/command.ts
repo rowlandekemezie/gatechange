@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, pipe, Predicate, Schema } from "effect";
 import { JobQuery } from "@rat-stack/core/contracts";
 import { Command } from "foldkit";
 
@@ -8,8 +8,8 @@ import { JobQueries } from "./queries.js";
 
 const SHORTLIST_KEY = "jobs.shortlist.v1";
 
-const failureText = (error: { readonly _tag: string; readonly message?: string }) =>
-  error._tag === "JobStoreUnavailable"
+const failureText = (failure: { readonly _tag: string }) =>
+  Predicate.isTagged(failure, "JobStoreUnavailable")
     ? "The job list is unavailable right now. It usually comes back within a few minutes."
     : "Could not reach the job list. Check your connection, then try again.";
 
@@ -18,7 +18,7 @@ export const FetchJobs = Command.define("FetchJobs", {
   execute: ({ generation, query }) =>
     JobQueries.use((queries) => queries.listJobs(query)).pipe(
       Effect.match({
-        onFailure: (error) => Message.FailedFetchJobs({ generation, message: failureText(error) }),
+        onFailure: (failure) => Message.FailedFetchJobs({ generation, message: failureText(failure) }),
         onSuccess: (page) => Message.SucceededFetchJobs({ generation, page }),
       })
     ),
@@ -59,7 +59,7 @@ export const ReadShortlist = Command.define("ReadShortlist", {
   }).pipe(
     Effect.map((stored) =>
       Message.CompletedReadShortlist({
-        marks: Option.getOrElse(Option.flatMap(stored, decodeShortlist), () => []),
+        marks: Option.getOrElse(pipe(stored, Option.flatMap(decodeShortlist)), () => []),
       })
     )
   ),

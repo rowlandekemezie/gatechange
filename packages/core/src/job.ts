@@ -7,9 +7,9 @@ export const RoleLevel = Schema.Literals([
   "EngineeringManager",
 ]);
 
-export type RoleLevel = typeof RoleLevel.Type;
+export type RoleLevelValue = typeof RoleLevel.Type;
 
-export const roleLevels: ReadonlyArray<RoleLevel> = RoleLevel.literals;
+export const roleLevels: readonly RoleLevelValue[] = RoleLevel.literals;
 
 export const Region = Schema.Literals([
   "RemoteCanada",
@@ -22,9 +22,9 @@ export const Region = Schema.Literals([
   "Elsewhere",
 ]);
 
-export type Region = typeof Region.Type;
+export type RegionValue = typeof Region.Type;
 
-export const regions: ReadonlyArray<Region> = Region.literals;
+export const regions: readonly RegionValue[] = Region.literals;
 
 export const Arrangement = Schema.Literals([
   "Remote",
@@ -33,7 +33,7 @@ export const Arrangement = Schema.Literals([
   "Unspecified",
 ]);
 
-export type Arrangement = typeof Arrangement.Type;
+export type ArrangementValue = typeof Arrangement.Type;
 
 export const SourceName = Schema.Literals([
   "Greenhouse",
@@ -46,7 +46,7 @@ export const SourceName = Schema.Literals([
   "HackerNews",
 ]);
 
-export type SourceName = typeof SourceName.Type;
+export type SourceNameValue = typeof SourceName.Type;
 
 export const EpochMillis = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
 
@@ -68,11 +68,11 @@ export const Job = Schema.Struct({
   url: Schema.NonEmptyString,
 });
 
-export type Job = typeof Job.Type;
+export type JobValue = typeof Job.Type;
 
 export const JobSort = Schema.Literals(["Relevance", "Newest"]);
 
-export type JobSort = typeof JobSort.Type;
+export type JobSortValue = typeof JobSort.Type;
 
 export const MAX_AGE_DAYS = 30;
 
@@ -90,7 +90,7 @@ export const JobQuery = Schema.Struct({
   sort: JobSort,
 });
 
-export type JobQuery = typeof JobQuery.Type;
+export type JobQueryValue = typeof JobQuery.Type;
 
 export const JobPage = Schema.Struct({
   generatedAt: EpochMillis,
@@ -98,7 +98,7 @@ export const JobPage = Schema.Struct({
   total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 
-export type JobPage = typeof JobPage.Type;
+export type JobPageValue = typeof JobPage.Type;
 
 export const RegionCount = Schema.Struct({
   count: Schema.Int,
@@ -122,7 +122,7 @@ export const IngestReceipt = Schema.Struct({
   startedAt: EpochMillis,
 });
 
-export type IngestReceipt = typeof IngestReceipt.Type;
+export type IngestReceiptValue = typeof IngestReceipt.Type;
 
 export const BoardStats = Schema.Struct({
   activeJobs: Schema.Int,
@@ -135,4 +135,4 @@ export const BoardStats = Schema.Struct({
   roles: Schema.Array(RoleCount),
 });
 
-export type BoardStats = typeof BoardStats.Type;
+export type BoardStatsValue = typeof BoardStats.Type;

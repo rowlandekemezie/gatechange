@@ -1,6 +1,6 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import { Array, Effect, Layer, Schema } from "effect";
+import { Array, Effect, Layer, Schema, pipe } from "effect";
 import { JobStoreUnavailable } from "@rat-stack/core";
 
 import { jobStoreMigrationDirectory } from "./migrations.js";
@@ -26,13 +26,13 @@ export const d1Executor = (client: Cloudflare.D1.QueryDatabaseClient) => {
           Effect.catchDefect((defect) => Effect.fail(unavailable(operation, String(defect)))),
           Effect.flatMap((result) =>
             Schema.decodeUnknownEffect(Schema.Array(row))(result.results).pipe(
-              Effect.mapError((error) => unavailable(operation, error.message))
+              Effect.mapError((decodeFailure) => unavailable(operation, decodeFailure.message))
             )
           )
         ),
     batch: (operation, statements) =>
       Array.isReadonlyArrayNonEmpty(statements)
-        ? client.batch(Array.map(statements, prepared)).pipe(
+        ? client.batch(pipe(statements, Array.map(prepared))).pipe(
             Effect.provide(RuntimeContext.RuntimeContext.phantom),
             Effect.catchDefect((defect) => Effect.fail(unavailable(operation, String(defect)))),
             Effect.map(Array.map((result) => ({ changes: result.meta.changes ?? 0 })))

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Array, Option, Schema } from "effect";
+import { Array, Option, Schema, pipe } from "effect";
 import * as Arbitrary from "effect/Arbitrary";
 
 import { isFeedDue, selectDueFeeds } from "../src/index.js";
-import type { FeedRef, FeedState } from "../src/index.js";
+import type { FeedRef, FeedStateValue } from "../src/index.js";
 
 const MINUTE = 60_000;
 
@@ -17,26 +17,26 @@ const fixtures = Arbitrary.array(Arbitrary.schema(FeedFixture), { maxLength: 40 
 
 const NOW = 10_000 * MINUTE;
 
-const build = (rows: ReadonlyArray<typeof FeedFixture.Type>) => {
-  const catalog: ReadonlyArray<FeedRef> = Array.map(rows, (row, index) => ({
+const build = (rows: readonly typeof FeedFixture.Type[]) => {
+  const catalog: readonly FeedRef[] = pipe(rows, Array.map((row, index) => ({
     company: Option.none(),
     key: `feed-${index}`,
     minIntervalMinutes: row.intervalMinutes,
     source: "Greenhouse",
-  }));
+  })));
 
-  const states: ReadonlyArray<FeedState> = Array.map(rows, (row, index) => ({
+  const states: readonly FeedStateValue[] = pipe(rows, Array.map((row, index) => ({
     consecutiveFailures: row.failures,
     key: `feed-${index}`,
     lastAttemptAt: row.attemptedMinutesAgo === null ? null : NOW - row.attemptedMinutesAgo * MINUTE,
     lastError: null,
     lastSuccessAt: null,
-  }));
+  })));
 
   return { catalog, states };
 };
 
-const stateFor = (states: ReadonlyArray<FeedState>, feed: FeedRef) =>
+const stateFor = (states: readonly FeedStateValue[], feed: FeedRef) =>
   Array.findFirst(states, (state) => state.key === feed.key);
 
 describe("feed scheduling", () => {
@@ -60,7 +60,7 @@ describe("feed scheduling", () => {
     { limit: Schema.Int.check(Schema.isBetween({ maximum: 50, minimum: 0 })), rows: fixtures },
     ({ limit, rows }) => {
       const { catalog, states } = build(rows);
-      const due = Array.filter(catalog, (feed) => isFeedDue(feed, stateFor(states, feed), NOW));
+      const due = pipe(catalog, Array.filter((feed) => isFeedDue(feed, stateFor(states, feed), NOW)));
 
       expect(selectDueFeeds(catalog, states, NOW, limit).length).toBe(Math.min(limit, due.length));
     }
@@ -79,12 +79,11 @@ describe("feed scheduling", () => {
         });
       const firstAttempted = Array.findFirstIndex(selected, (feed) => !neverAttempted(feed));
 
-      Option.match(firstAttempted, {
-        onNone: () => undefined,
-        onSome: (index) => {
-          expect(Array.some(Array.drop(selected, index), neverAttempted)).toBe(false);
-        },
-      });
+      if (Option.isSome(firstAttempted)) {
+        expect(pipe(Array.drop(selected, firstAttempted.value), Array.some(neverAttempted))).toBe(
+          false
+        );
+      }
     }
   );
 
@@ -98,7 +97,7 @@ describe("feed scheduling", () => {
         minIntervalMinutes: 60,
         source: "Lever",
       };
-      const state: FeedState = {
+      const state: FeedStateValue = {
         consecutiveFailures: failures,
         key: "feed",
         lastAttemptAt: NOW - 61 * MINUTE,

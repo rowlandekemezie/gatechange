@@ -2,9 +2,9 @@ import { describe, expect, it } from "@effect/vitest";
 import { Option, Schema } from "effect";
 
 import { classifyPlacement, classifyRole } from "../src/index.js";
-import type { Arrangement, Region, RoleLevel } from "../src/index.js";
+import type { ArrangementValue, RegionValue, RoleLevelValue } from "../src/index.js";
 
-const leadershipTitles: ReadonlyArray<readonly [string, RoleLevel]> = [
+const leadershipTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["VP of Engineering", "VicePresident"],
   ["SVP, Software Development", "VicePresident"],
   ["Head of Platform Engineering", "HeadOfEngineering"],
@@ -27,7 +27,7 @@ const otherTitles = [
   "Engineering Lead",
 ];
 
-const placements: ReadonlyArray<readonly [string, Arrangement, Arrangement, Region]> = [
+const placements: readonly (readonly [string, ArrangementValue, ArrangementValue, RegionValue])[] = [
   ["Remote - Canada", "Unspecified", "Remote", "RemoteCanada"],
   ["Remote - US or Canada", "Unspecified", "Remote", "RemoteNorthAmerica"],
   ["United States", "Remote", "Remote", "RemoteUnitedStates"],

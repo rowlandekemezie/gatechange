@@ -1,6 +1,6 @@
 import { Array, Match, pipe, Schema } from "effect";
-import { JobQuery, RoleLevel } from "@rat-stack/core/contracts";
-import type { RegionValue, RoleLevelValue } from "@rat-stack/core/contracts";
+import { RoleLevel } from "@rat-stack/core/contracts";
+import type { JobQueryValue, RegionValue } from "@rat-stack/core/contracts";
 
 export const PAGE_SIZE = 40;
 
@@ -13,12 +13,12 @@ export const RegionGroup = Schema.Literals([
   "Elsewhere",
 ]);
 
-export type RegionGroup = typeof RegionGroup.Type;
+export type RegionGroupValue = typeof RegionGroup.Type;
 
-export const regionGroups: ReadonlyArray<RegionGroup> = RegionGroup.literals;
+export const regionGroups: readonly RegionGroupValue[] = RegionGroup.literals;
 
-export const regionsOfGroup = Match.type<RegionGroup>().pipe(
-  Match.withReturnType<ReadonlyArray<RegionValue>>(),
+export const regionsOfGroup = Match.type<RegionGroupValue>().pipe(
+  Match.withReturnType<readonly RegionValue[]>(),
   Match.when("RemoteCanada", () => ["RemoteCanada", "RemoteNorthAmerica", "RemoteGlobal"]),
   Match.when("RemoteUnitedStates", () => ["RemoteUnitedStates", "RemoteNorthAmerica", "RemoteGlobal"]),
   Match.when("BritishColumbia", () => ["BritishColumbia"]),
@@ -30,9 +30,9 @@ export const regionsOfGroup = Match.type<RegionGroup>().pipe(
 
 export const AgeWindow = Schema.Literals([1, 3, 7, 14, 30]);
 
-export type AgeWindow = typeof AgeWindow.Type;
+export type AgeWindowValue = typeof AgeWindow.Type;
 
-export const ageWindows: ReadonlyArray<AgeWindow> = AgeWindow.literals;
+export const ageWindows: readonly AgeWindowValue[] = AgeWindow.literals;
 
 export const Sort = Schema.Literals(["Relevance", "Newest"]);
 
@@ -44,9 +44,9 @@ export const Filters = Schema.Struct({
   sort: Sort,
 });
 
-export type Filters = typeof Filters.Type;
+export type FiltersValue = typeof Filters.Type;
 
-export const defaultFilters: Filters = {
+export const defaultFilters: FiltersValue = {
   maxAgeDays: 7,
   regionGroups: ["RemoteCanada", "RemoteUnitedStates", "BritishColumbia"],
   roles: ["EngineeringManager", "Director", "HeadOfEngineering", "VicePresident"],
@@ -54,12 +54,12 @@ export const defaultFilters: Filters = {
   sort: "Relevance",
 };
 
-export const toggled = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
+export const toggled = <A>(values: readonly A[], value: A): readonly A[] =>
   Array.contains(values, value)
-    ? Array.filter(values, (current) => current !== value)
+    ? pipe(values, Array.filter((current) => current !== value))
     : Array.append(values, value);
 
-export const queryOf = (filters: Filters, offset: number): typeof JobQuery.Type => ({
+export const queryOf = (filters: FiltersValue, offset: number): JobQueryValue => ({
   limit: PAGE_SIZE,
   maxAgeDays: filters.maxAgeDays,
   offset,
@@ -69,7 +69,6 @@ export const queryOf = (filters: Filters, offset: number): typeof JobQuery.Type 
   sort: filters.sort,
 });
 
-export const hasNoSelection = (filters: Filters) =>
+export const hasNoSelection = (filters: FiltersValue) =>
   Array.isReadonlyArrayEmpty(filters.roles) || Array.isReadonlyArrayEmpty(filters.regionGroups);
 
-export type { RoleLevelValue };

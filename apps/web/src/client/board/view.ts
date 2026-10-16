@@ -1,13 +1,14 @@
-import { Array, DateTime, Option, pipe, Schema } from "effect";
+import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
 import { roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import { ageWindows, regionGroups } from "../../client/board/filters.js";
-import type { AgeWindow, RegionGroup } from "../../client/board/filters.js";
-import { Message } from "../../client/board/message.js";
-import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
-import type { MarkedJob, MarkKind, Model } from "../../client/board/model.js";
+import { ageWindows, regionGroups } from "./filters.js";
+import type { AgeWindowValue, RegionGroupValue } from "./filters.js";
+import { Message } from "./message.js";
+import type { MessageValue } from "./message.js";
+import { JobsState, MoreState, StatsState } from "./model.js";
+import type { MarkedJobValue, MarkKindValue, ModelValue } from "./model.js";
 import {
   ageChip,
   dayHeading,
@@ -17,15 +18,14 @@ import {
   regionLabel,
   roleChip,
   roleCount,
-  roleLabel,
   sourceLabel,
 } from "./copy.js";
 
-type H = HtmlBuilder<Message>;
+type H = HtmlBuilder<MessageValue>;
 
 const NEW_WINDOW = 86_400_000;
 
-const chip = (h: H, isOn: boolean, label: string, onClick: Message): Html =>
+const chip = (h: H, isOn: boolean, label: string, onClick: MessageValue): Html =>
   h.button(
     [
       h.Type("button"),
@@ -36,34 +36,35 @@ const chip = (h: H, isOn: boolean, label: string, onClick: Message): Html =>
     [label]
   );
 
-const listed = (h: H, items: ReadonlyArray<Html>, conjunction: string, trailing: string): ReadonlyArray<Html | string> =>
-  Array.flatMap(items, (item, index) => {
-    const isLast = index === items.length - 1;
-    const after = isLast ? trailing : index === items.length - 2 ? ` ${conjunction}` : ",";
+const listed = (h: H, items: readonly Html[], conjunction: string, trailing: string): readonly (Html | string)[] =>
+  pipe(items, Array.flatMap((item, index) => {
+    const after = Match.value(items.length - 1 - index).pipe(
+      Match.withReturnType<string>(),
+      Match.when(0, () => trailing),
+      Match.when(1, () => ` ${conjunction}`),
+      Match.orElse(() => ",")
+    );
     const group = h.span([h.Class("phrase-group")], [item, after]);
 
     return index === 0 ? [group] : [" ", group];
-  });
+  }));
 
-const sentenceView = (model: Model, h: H): Html => {
+const sentenceView = (model: ModelValue, h: H): Html => {
   const { filters } = model;
 
-  const roles = Array.map(roleLevels, (role: RoleLevelValue) =>
-    chip(h, Array.contains(filters.roles, role), roleChip(role), Message.ToggledRole({ role }))
-  );
+  const roles = pipe(roleLevels, Array.map((role: RoleLevelValue) =>
+    chip(h, Array.contains(filters.roles, role), roleChip(role), Message.ToggledRole({ role }))));
 
-  const places = Array.map(regionGroups, (group: RegionGroup) =>
+  const places = pipe(regionGroups, Array.map((group: RegionGroupValue) =>
     chip(
       h,
       Array.contains(filters.regionGroups, group),
       regionGroupChip(group),
       Message.ToggledRegionGroup({ group })
-    )
-  );
+    )));
 
-  const ages = Array.map(ageWindows, (maxAgeDays: AgeWindow) =>
-    chip(h, filters.maxAgeDays === maxAgeDays, ageChip(maxAgeDays), Message.ChangedAge({ maxAgeDays }))
-  );
+  const ages = pipe(ageWindows, Array.map((maxAgeDays: AgeWindowValue) =>
+    chip(h, filters.maxAgeDays === maxAgeDays, ageChip(maxAgeDays), Message.ChangedAge({ maxAgeDays }))));
 
   return h.h1(
     [h.Class("sentence")],
@@ -88,7 +89,7 @@ const sentenceView = (model: Model, h: H): Html => {
   );
 };
 
-const searchView = (model: Model, h: H): Html =>
+const searchView = (model: ModelValue, h: H): Html =>
   h.form(
     [h.Class("search"), h.Role("search"), h.OnSubmit(Message.SubmittedSearch())],
     [
@@ -106,10 +107,10 @@ const searchView = (model: Model, h: H): Html =>
     ]
   );
 
-const markOf = (model: Model, id: string): Option.Option<MarkedJob> =>
+const markOf = (model: ModelValue, id: string): Option.Option<MarkedJobValue> =>
   Array.findFirst(model.marks, (mark) => mark.id === id);
 
-const markButton = (h: H, job: JobValue, kind: MarkKind, current: Option.Option<MarkKind>) => {
+const markButton = (h: H, job: JobValue, kind: MarkKindValue, current: Option.Option<MarkKindValue>) => {
   const isOn = Option.contains(current, kind);
   const label = kind === "Saved" ? "Save" : "Applied";
 
@@ -124,8 +125,8 @@ const markButton = (h: H, job: JobValue, kind: MarkKind, current: Option.Option<
   );
 };
 
-const jobRow = (model: Model, h: H, job: JobValue, now: number): Html => {
-  const current = Option.map(markOf(model, job.id), (mark) => mark.kind);
+const jobRow = (model: ModelValue, h: H, job: JobValue, now: number): Html => {
+  const current = pipe(markOf(model, job.id), Option.map((mark) => mark.kind));
   const isNew = now - job.firstSeenAt < NEW_WINDOW;
   const where = job.location.length > 0 ? job.location : regionLabel(job.region);
 
@@ -171,9 +172,9 @@ const jobRow = (model: Model, h: H, job: JobValue, now: number): Html => {
   );
 };
 
-const groupedRows = (model: Model, h: H, jobs: ReadonlyArray<JobValue>, now: number): ReadonlyArray<Html> => {
+const groupedRows = (model: ModelValue, h: H, jobs: readonly JobValue[], now: number): readonly Html[] => {
   if (model.filters.sort === "Relevance") {
-    return [h.ol([h.Class("jobs")], Array.map(jobs, (job) => jobRow(model, h, job, now)))];
+    return [h.ol([h.Class("jobs")], pipe(jobs, Array.map((job) => jobRow(model, h, job, now))))];
   }
 
   if (!Array.isReadonlyArrayNonEmpty(jobs)) {
@@ -182,7 +183,7 @@ const groupedRows = (model: Model, h: H, jobs: ReadonlyArray<JobValue>, now: num
 
   const groups = Array.groupWith(jobs, (left, right) => dayHeading(now, left.postedAt) === dayHeading(now, right.postedAt));
 
-  return Array.map(groups, (group) => {
+  return pipe(groups, Array.map((group) => {
     const heading = dayHeading(now, Array.headNonEmpty(group).postedAt);
 
     return h.keyed("section")(
@@ -190,13 +191,13 @@ const groupedRows = (model: Model, h: H, jobs: ReadonlyArray<JobValue>, now: num
       [h.Class("day")],
       [
         h.h2([h.Class("day-heading")], [heading]),
-        h.ol([h.Class("jobs")], Array.map(group, (job) => jobRow(model, h, job, now))),
+        h.ol([h.Class("jobs")], pipe(group, Array.map((job) => jobRow(model, h, job, now)))),
       ]
     );
-  });
+  }));
 };
 
-const moreView = (model: Model, h: H, shown: number, total: number): Html => {
+const moreView = (model: ModelValue, h: H, shown: number, total: number): Html => {
   if (shown >= total) {
     return h.p([h.Class("list-end")], ["That is every role that matches. Widen the window or add places to see more."]);
   }
@@ -229,7 +230,7 @@ const emptyView = (h: H): Html =>
     ]
   );
 
-const boardView = (model: Model, h: H): Html =>
+const boardView = (model: ModelValue, h: H): Html =>
   JobsState.match<Html>(model.jobs, {
     Failed: ({ message }) =>
       h.div(
@@ -253,7 +254,7 @@ const boardView = (model: Model, h: H): Html =>
     Loading: () => h.p([h.Class("count"), h.Role("status")], ["Finding roles"]),
   });
 
-const shortlistView = (model: Model, h: H): Html => {
+const shortlistView = (model: ModelValue, h: H): Html => {
   if (Array.isReadonlyArrayEmpty(model.marks)) {
     return h.div(
       [h.Class("empty")],
@@ -264,8 +265,8 @@ const shortlistView = (model: Model, h: H): Html => {
     );
   }
 
-  const section = (kind: MarkKind, heading: string) => {
-    const marks = Array.filter(model.marks, (mark) => mark.kind === kind);
+  const section = (kind: MarkKindValue, heading: string) => {
+    const marks = pipe(model.marks, Array.filter((mark) => mark.kind === kind));
 
     return Array.isReadonlyArrayEmpty(marks)
       ? h.empty
@@ -275,7 +276,7 @@ const shortlistView = (model: Model, h: H): Html => {
             h.h2([h.Class("day-heading")], [`${heading} (${marks.length})`]),
             h.ol(
               [h.Class("jobs")],
-              Array.map(marks, (mark) =>
+              pipe(marks, Array.map((mark) =>
                 h.keyed("li")(
                   mark.id,
                   [h.Class("job")],
@@ -301,8 +302,7 @@ const shortlistView = (model: Model, h: H): Html => {
                       ]
                     ),
                   ]
-                )
-              )
+                )))
             ),
           ]
         );
@@ -311,7 +311,7 @@ const shortlistView = (model: Model, h: H): Html => {
   return h.div([], [section("Saved", "Saved"), section("Applied", "Applied")]);
 };
 
-const statusLine = (model: Model, h: H): Html =>
+const statusLine = (model: ModelValue, h: H): Html =>
   StatsState.match<Html>(model.stats, {
     Loaded: ({ stats }) =>
       h.p(
@@ -331,7 +331,7 @@ const statusLine = (model: Model, h: H): Html =>
     Unavailable: () => h.empty,
   });
 
-const tabs = (model: Model, h: H): Html =>
+const tabs = (model: ModelValue, h: H): Html =>
   h.nav(
     [h.Class("tabs"), h.AriaLabel("Views")],
     [
@@ -378,7 +378,7 @@ const footer = (h: H): Html =>
     ]
   );
 
-export const view = (model: Model, h: H): Document => ({
+export const view = (model: ModelValue, h: H): Document => ({
   body: h.main(
     [h.Class("page")],
     [

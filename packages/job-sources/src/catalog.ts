@@ -1,4 +1,4 @@
-import { Array, Effect, Layer, Match, Option } from "effect";
+import { Array, Effect, Layer, Match, Option, pipe } from "effect";
 import { HttpClient } from "effect/http";
 import { FeedUnavailable, PostingFeeds } from "@rat-stack/core";
 import type { FeedRef } from "@rat-stack/core";
@@ -11,12 +11,13 @@ import {
 } from "./aggregators.js";
 import { ashbyPostings, greenhousePostings, leverPostings } from "./ats.js";
 import { companyBoards } from "./boards.js";
-import type { CompanyBoard } from "./boards.js";
+import type { CompanyBoardValue } from "./boards.js";
 import { FeedSpec, feedKey, feedRefOf } from "./feed-spec.js";
+import type { FeedSpecValue } from "./feed-spec.js";
 import { hackerNewsPostings } from "./hacker-news.js";
 
-export const aggregatorFeeds: ReadonlyArray<FeedSpec> = [
-  FeedSpec.RemoteOK(),
+export const aggregatorFeeds: readonly FeedSpecValue[] = [
+  FeedSpec.RemoteOK({ listing: "all" }),
   FeedSpec.Remotive({ search: "engineering manager" }),
   FeedSpec.Remotive({ search: "director of engineering" }),
   FeedSpec.Himalayas({ query: "engineering manager" }),
@@ -24,24 +25,24 @@ export const aggregatorFeeds: ReadonlyArray<FeedSpec> = [
   FeedSpec.Himalayas({ query: "vp engineering" }),
   FeedSpec.Jobicy({ tag: "engineering manager" }),
   FeedSpec.Jobicy({ tag: "director of engineering" }),
-  FeedSpec.HackerNews(),
+  FeedSpec.HackerNews({ thread: "who is hiring" }),
 ];
 
-export const boardFeed = (board: CompanyBoard): FeedSpec =>
+export const boardFeed = (board: CompanyBoardValue): FeedSpecValue =>
   Match.value(board.ats).pipe(
-    Match.withReturnType<FeedSpec>(),
+    Match.withReturnType<FeedSpecValue>(),
     Match.when("ashby", () => FeedSpec.Ashby({ company: board.name, slug: board.slug })),
     Match.when("greenhouse", () => FeedSpec.Greenhouse({ company: board.name, slug: board.slug })),
     Match.when("lever", () => FeedSpec.Lever({ company: board.name, slug: board.slug })),
     Match.exhaustive
   );
 
-export const feedSpecs = (boards: ReadonlyArray<CompanyBoard>): ReadonlyArray<FeedSpec> => [
+export const feedSpecs = (boards: readonly CompanyBoardValue[]): readonly FeedSpecValue[] => [
   ...aggregatorFeeds,
-  ...Array.map(boards, boardFeed),
+  ...pipe(boards, Array.map(boardFeed)),
 ];
 
-const postingsOf = (spec: FeedSpec) => {
+const postingsOf = (spec: FeedSpecValue) => {
   const key = feedKey(spec);
 
   return FeedSpec.$match(spec, {
@@ -56,13 +57,13 @@ const postingsOf = (spec: FeedSpec) => {
   });
 };
 
-export const postingFeedsLayer = (boards: ReadonlyArray<CompanyBoard> = companyBoards) =>
+export const postingFeedsLayer = (boards: readonly CompanyBoardValue[] = companyBoards) =>
   Layer.effect(
     PostingFeeds,
     Effect.gen(function* makePostingFeeds() {
       const client = yield* HttpClient.HttpClient;
       const specs = feedSpecs(boards);
-      const catalog: ReadonlyArray<FeedRef> = Array.map(specs, feedRefOf);
+      const catalog: readonly FeedRef[] = pipe(specs, Array.map(feedRefOf));
 
       return PostingFeeds.of({
         catalog,

@@ -23,7 +23,7 @@ export const StatsState = defineTaggedUnion({
 
 export const MarkKind = Schema.Literals(["Saved", "Applied"]);
 
-export type MarkKind = typeof MarkKind.Type;
+export type MarkKindValue = typeof MarkKind.Type;
 
 export const MarkedJob = Schema.Struct({
   company: Schema.String,
@@ -34,7 +34,7 @@ export const MarkedJob = Schema.Struct({
   url: Schema.String,
 });
 
-export type MarkedJob = typeof MarkedJob.Type;
+export type MarkedJobValue = typeof MarkedJob.Type;
 
 export const Shortlist = Schema.Array(MarkedJob);
 
@@ -51,9 +51,9 @@ export const Model = Schema.Struct({
   view: View,
 });
 
-export type Model = typeof Model.Type;
+export type ModelValue = typeof Model.Type;
 
-export const initialModel: Model = {
+export const initialModel: ModelValue = {
   draftSearch: "",
   filters: defaultFilters,
   generation: 0,

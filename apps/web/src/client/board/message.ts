@@ -28,4 +28,4 @@ export const Message = defineMessageUnion({
   UpdatedDraftSearch: { value: Schema.String },
 });
 
-export type Message = typeof Message.Type;
+export type MessageValue = typeof Message.Type;

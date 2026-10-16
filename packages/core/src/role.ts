@@ -1,6 +1,6 @@
 import { Match, Option } from "effect";
 
-import type { RoleLevel } from "./job.js";
+import type { RoleLevelValue } from "./job.js";
 
 const engineeringScope =
   "(?:engineering|software|platform|infrastructure|development|technology|technical|data (?:engineering|platform|infrastructure)|machine learning|ml|ai|security|devops|sre|site reliability|backend|frontend|mobile|cloud)";
@@ -28,14 +28,14 @@ const engineeringManager = new RegExp(
   "iu"
 );
 
-const rolePatterns: ReadonlyArray<readonly [RoleLevel, RegExp]> = [
+const rolePatterns: readonly (readonly [RoleLevelValue, RegExp])[] = [
   ["VicePresident", vicePresident],
   ["HeadOfEngineering", headOfEngineering],
   ["Director", director],
   ["EngineeringManager", engineeringManager],
 ];
 
-export const classifyRole = (title: string): Option.Option<RoleLevel> => {
+export const classifyRole = (title: string): Option.Option<RoleLevelValue> => {
   if (excludedFunction.test(title)) {
     return Option.none();
   }
@@ -49,7 +49,7 @@ export const classifyRole = (title: string): Option.Option<RoleLevel> => {
   return Option.none();
 };
 
-export const roleWeight = Match.type<RoleLevel>().pipe(
+export const roleWeight = Match.type<RoleLevelValue>().pipe(
   Match.when("VicePresident", () => 40),
   Match.when("HeadOfEngineering", () => 38),
   Match.when("Director", () => 36),

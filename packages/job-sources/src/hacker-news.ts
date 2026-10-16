@@ -1,6 +1,6 @@
 import { Array, Effect, Option, pipe, Schema } from "effect";
 import { classifyRole, FeedUnavailable } from "@rat-stack/core";
-import type { Posting } from "@rat-stack/core";
+import type { PostingValue } from "@rat-stack/core";
 
 import { fetchJson } from "./http.js";
 import { textOfHtml } from "./parse.js";
@@ -33,12 +33,10 @@ const firstLine = (html: string) => {
 };
 
 export const postingOfComment = (commentHtml: string, id: string, createdAtSeconds: number) => {
-  const segments = Array.map(firstLine(commentHtml).split("|"), (segment) => segment.trim());
+  const segments = pipe(firstLine(commentHtml).split("|"), Array.map((segment) => segment.trim()));
   const [company = "", ...rest] = segments;
 
-  return Option.map(
-    Array.findFirst(rest, (segment) => Option.isSome(classifyRole(segment))),
-    (title): Posting => ({
+  return pipe(Array.findFirst(rest, (segment) => Option.isSome(classifyRole(segment))), Option.map((title): PostingValue => ({
       company,
       externalId: id,
       location: pipe(
@@ -51,8 +49,7 @@ export const postingOfComment = (commentHtml: string, id: string, createdAtSecon
       title,
       url: `https://news.ycombinator.com/item?id=${id}`,
       workplace: "Unspecified",
-    })
-  );
+    })));
 };
 
 export const hackerNewsPostings = (feed: string) =>

@@ -5,7 +5,7 @@ import type { JobStoreUnavailable } from "@rat-stack/core";
 export type SqlValue = number | string | null;
 
 export interface SqlStatement {
-  readonly params: ReadonlyArray<SqlValue>;
+  readonly params: readonly SqlValue[];
   readonly sql: string;
 }
 
@@ -24,15 +24,15 @@ export class SqlExecutor extends Context.Service<
       operation: string,
       statement: SqlStatement,
       row: S
-    ) => Effect.Effect<ReadonlyArray<S["Type"]>, JobStoreUnavailable>;
+    ) => Effect.Effect<readonly S["Type"][], JobStoreUnavailable>;
     readonly batch: (
       operation: string,
-      statements: ReadonlyArray<SqlStatement>
-    ) => Effect.Effect<ReadonlyArray<StatementResult>, JobStoreUnavailable>;
+      statements: readonly SqlStatement[]
+    ) => Effect.Effect<readonly StatementResult[], JobStoreUnavailable>;
   }
 >()("@rat-stack/job-store/SqlExecutor") {}
 
-export const statement = (sql: string, params: ReadonlyArray<SqlValue> = []): SqlStatement => ({
+export const statement = (sql: string, params: readonly SqlValue[] = []): SqlStatement => ({
   params,
   sql,
 });

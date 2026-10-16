@@ -1,15 +1,15 @@
 import { Match } from "effect";
 
-import type { Arrangement, Region } from "./job.js";
+import type { ArrangementValue, RegionValue } from "./job.js";
 
 export interface PlaceEvidence {
   readonly text: string;
-  readonly workplace: Arrangement;
+  readonly workplace: ArrangementValue;
 }
 
 export interface Placement {
-  readonly arrangement: Arrangement;
-  readonly region: Region;
+  readonly arrangement: ArrangementValue;
+  readonly region: RegionValue;
 }
 
 const remoteWords =
@@ -35,7 +35,7 @@ const unitedStatesWords =
 const foreignWords =
   /\b(?:europe|emea|uk|united kingdom|london|germany|berlin|france|paris|spain|portugal|netherlands|amsterdam|ireland|dublin|poland|india|bangalore|bengaluru|singapore|australia|sydney|japan|tokyo|brazil|latam|latin america|mexico|argentina|colombia|israel|apac|asia|africa|nigeria|lagos|philippines|new zealand|sweden|switzerland|italy|romania|ukraine)\b/iu;
 
-const arrangementOf = (evidence: PlaceEvidence): Arrangement => {
+const arrangementOf = (evidence: PlaceEvidence): ArrangementValue => {
   if (evidence.workplace !== "Unspecified") {
     return evidence.workplace;
   }
@@ -77,7 +77,7 @@ const signalsOf = (text: string): Signals => {
   };
 };
 
-const remoteRegion = (signals: Signals): Region => {
+const remoteRegion = (signals: Signals): RegionValue => {
   if (signals.northAmerica || (signals.canada && signals.unitedStates)) {
     return "RemoteNorthAmerica";
   }
@@ -97,7 +97,7 @@ const remoteRegion = (signals: Signals): Region => {
   return "Elsewhere";
 };
 
-const placedRegion = (signals: Signals): Region => {
+const placedRegion = (signals: Signals): RegionValue => {
   if (signals.britishColumbia) {
     return "BritishColumbia";
   }
@@ -124,7 +124,7 @@ export const classifyPlacement = (evidence: PlaceEvidence): Placement => {
   );
 };
 
-export const regionWeight = Match.type<Region>().pipe(
+export const regionWeight = Match.type<RegionValue>().pipe(
   Match.when("RemoteCanada", () => 12),
   Match.when("RemoteNorthAmerica", () => 11),
   Match.when("BritishColumbia", () => 11),

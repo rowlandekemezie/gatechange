@@ -7,7 +7,7 @@ import {
   RoleLevel,
   SourceName,
 } from "@rat-stack/core";
-import type { FeedState, IngestReceipt, JobValue } from "@rat-stack/core";
+import type { FeedStateValue, IngestReceiptValue, JobValue } from "@rat-stack/core";
 
 import {
   activeCountStatement,
@@ -94,7 +94,7 @@ const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
   url: row.url,
 });
 
-const feedStateOfRow = (row: typeof FeedStateRow.Type): FeedState => ({
+const feedStateOfRow = (row: typeof FeedStateRow.Type): FeedStateValue => ({
   consecutiveFailures: row.consecutive_failures,
   key: row.key,
   lastAttemptAt: row.last_attempt_at,
@@ -102,7 +102,7 @@ const feedStateOfRow = (row: typeof FeedStateRow.Type): FeedState => ({
   lastSuccessAt: row.last_success_at,
 });
 
-const receiptOfRow = (row: typeof RunRow.Type): IngestReceipt => ({
+const receiptOfRow = (row: typeof RunRow.Type): IngestReceiptValue => ({
   feedsAttempted: row.feeds_attempted,
   feedsFailed: row.feeds_failed,
   finishedAt: row.finished_at,
@@ -112,7 +112,7 @@ const receiptOfRow = (row: typeof RunRow.Type): IngestReceipt => ({
   startedAt: row.started_at,
 });
 
-const totalOf = (rows: ReadonlyArray<typeof TotalRow.Type>) =>
+const totalOf = (rows: readonly typeof TotalRow.Type[]) =>
   Option.match(Array.head(rows), { onNone: () => 0, onSome: (row) => row.total });
 
 export const makeJobStore = Effect.gen(function* makeJobStore() {
@@ -132,7 +132,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         { concurrency: 2 }
       ).pipe(
         Effect.map(({ rows, total }) => ({
-          jobs: Array.map(rows, jobOfRow),
+          jobs: pipe(rows, Array.map(jobOfRow)),
           total: totalOf(total),
         }))
       ),
@@ -156,7 +156,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     replaceFeed: (feedKey, jobs, seenAt) =>
       Effect.gen(function* replaceFeed() {
-        const chunks = Array.chunksOf(Array.map(jobs, upsertJobStatement), UPSERT_CHUNK);
+        const chunks = Array.chunksOf(pipe(jobs, Array.map(upsertJobStatement)), UPSERT_CHUNK);
 
         yield* Effect.forEach(chunks, (chunk) => sql.batch("upsertJobs", chunk), {
           discard: true,

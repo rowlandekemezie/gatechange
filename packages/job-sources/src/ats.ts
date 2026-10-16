@@ -1,5 +1,5 @@
 import { Array, Effect, pipe, Schema } from "effect";
-import type { Posting } from "@rat-stack/core";
+import type { PostingValue } from "@rat-stack/core";
 
 import { fetchJson } from "./http.js";
 import { epochMillisOf, nonEmpty, periodOf, salaryRange, workplaceOf } from "./parse.js";
@@ -31,7 +31,7 @@ export const greenhousePostings = (feed: string, slug: string) =>
         Array.map((item) => Schema.decodeUnknownOption(GreenhouseJob)(item)),
         Array.getSomes,
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: "",
             externalId: String(job.id),
             location: job.location?.name ?? "",
@@ -84,7 +84,7 @@ export const leverPostings = (feed: string, slug: string) =>
         Array.map((item) => Schema.decodeUnknownOption(LeverJob)(item)),
         Array.getSomes,
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: "",
             externalId: job.id,
             location: nonEmpty([
@@ -142,12 +142,12 @@ export const ashbyPostings = (feed: string, slug: string) =>
         Array.getSomes,
         Array.filter((job) => job.isListed !== false),
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: "",
             externalId: job.id,
             location: nonEmpty([
               job.location,
-              ...Array.map(job.secondaryLocations ?? [], (secondary) => secondary.location),
+              ...pipe(job.secondaryLocations ?? [], Array.map((secondary) => secondary.location)),
             ]).join("; "),
             postedAt: epochMillisOf(job.publishedAt),
             salary:

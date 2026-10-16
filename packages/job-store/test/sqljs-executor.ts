@@ -12,25 +12,27 @@ const migrationSql = () =>
   readdirSync(jobStoreMigrationDirectory())
     .filter((file) => file.endsWith(".sql"))
     .toSorted()
-    .map((file) => readFileSync(`${jobStoreMigrationDirectory()}${file}`, "utf8"))
+    .map((file) => readFileSync(`${jobStoreMigrationDirectory()}${file}`, "utf-8"))
     .join("\n");
 
+const failure = (operation: string, cause: Error) =>
+  new JobStoreUnavailable({ message: cause.message, operation });
+
 export const sqlJsJobStore = Effect.gen(function* makeSqlJsStore() {
-  const SQL = yield* Effect.promise(() => initSqlJs());
+  // @effect-diagnostics-next-line asyncFunction:off -- sql.js only exposes a Promise-based loader.
+  const SQL = yield* Effect.promise(async () => await initSqlJs());
   const database = new SQL.Database();
 
   database.run(migrationSql());
 
-  const failure = (operation: string, error: Error) =>
-    new JobStoreUnavailable({ message: error.message, operation });
 
   const executor = SqlExecutor.of({
     all: (operation, sql: SqlStatement, row) =>
       Effect.try({
-        catch: (error) => failure(operation, error instanceof Error ? error : new Error(String(error))),
+        catch: (cause) => failure(operation, cause instanceof Error ? cause : new Error(String(cause))),
         try: () => {
           const prepared = database.prepare(sql.sql);
-          const rows: Array<Record<string, number | string | null | Uint8Array>> = [];
+          const rows: Record<string, number | string | null | Uint8Array>[] = [];
 
           prepared.bind([...sql.params]);
 
@@ -45,13 +47,13 @@ export const sqlJsJobStore = Effect.gen(function* makeSqlJsStore() {
       }).pipe(
         Effect.flatMap((rows) =>
           Schema.decodeUnknownEffect(Schema.Array(row))(rows).pipe(
-            Effect.mapError((error) => failure(operation, error))
+            Effect.mapError((decodeFailure) => failure(operation, decodeFailure))
           )
         )
       ),
     batch: (operation, statements) =>
       Effect.try({
-        catch: (error) => failure(operation, error instanceof Error ? error : new Error(String(error))),
+        catch: (cause) => failure(operation, cause instanceof Error ? cause : new Error(String(cause))),
         try: () =>
           statements.map((sql) => {
             database.run(sql.sql, [...sql.params]);

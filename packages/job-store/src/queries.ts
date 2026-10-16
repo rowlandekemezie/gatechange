@@ -3,7 +3,7 @@ import {
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
 } from "@rat-stack/core";
-import type { FeedState, IngestReceipt, JobQueryValue, JobValue } from "@rat-stack/core";
+import type { FeedStateValue, IngestReceiptValue, JobQueryValue, JobValue } from "@rat-stack/core";
 
 import { statement } from "./sql-executor.js";
 import type { SqlStatement, SqlValue } from "./sql-executor.js";
@@ -28,7 +28,7 @@ const jobColumns =
 
 const filteredJobs = (query: JobQueryValue, now: number) => {
   const conditions = ["posted_at >= ?"];
-  const params: Array<SqlValue> = [now - query.maxAgeDays * DAY_MILLIS];
+  const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
 
   if (query.roles.length > 0) {
     conditions.push(`role IN (${placeholders(query.roles.length)})`);
@@ -163,7 +163,7 @@ export const pruneJobsStatement = (cutoff: number) =>
 export const pruneRunsStatement = (cutoff: number) =>
   statement("DELETE FROM ingest_runs WHERE started_at < ?", [cutoff]);
 
-export const recordRunStatement = (receipt: IngestReceipt) =>
+export const recordRunStatement = (receipt: IngestReceiptValue) =>
   statement(
     `INSERT OR REPLACE INTO ingest_runs
   (started_at, finished_at, feeds_attempted, feeds_failed, jobs_upserted, jobs_pruned, outcome)
@@ -206,4 +206,3 @@ export const lastRunStatement = statement(
 FROM ingest_runs ORDER BY started_at DESC LIMIT 1`
 );
 
-export type FeedStateValue = FeedState;

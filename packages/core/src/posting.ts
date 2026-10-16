@@ -1,7 +1,7 @@
-import { Option, Schema } from "effect";
+import { Option, Schema, pipe } from "effect";
 
 import { Arrangement, EpochMillis } from "./job.js";
-import type { Job } from "./job.js";
+import type { JobValue } from "./job.js";
 import type { FeedRef } from "./feed.js";
 import { classifyPlacement, regionWeight } from "./location.js";
 import { classifyRole, roleWeight } from "./role.js";
@@ -17,7 +17,7 @@ export const Posting = Schema.Struct({
   workplace: Arrangement,
 });
 
-export type Posting = typeof Posting.Type;
+export type PostingValue = typeof Posting.Type;
 
 export const SALARY_BONUS = 3;
 
@@ -31,9 +31,9 @@ const collapseWhitespace = (text: string) => text.replaceAll(/\s+/gu, " ").trim(
 
 export const normalizePosting = (
   feed: FeedRef,
-  posting: Posting,
+  posting: PostingValue,
   seenAt: number
-): Option.Option<Job> => {
+): Option.Option<JobValue> => {
   const title = collapseWhitespace(posting.title);
   const company = collapseWhitespace(
     posting.company.length > 0 ? posting.company : Option.getOrElse(feed.company, () => "")
@@ -43,7 +43,7 @@ export const normalizePosting = (
     return Option.none();
   }
 
-  return Option.map(classifyRole(title), (role) => {
+  return pipe(classifyRole(title), Option.map((role) => {
     const location = collapseWhitespace(posting.location);
     const placement = classifyPlacement({ text: location, workplace: posting.workplace });
     const salary = posting.salary === null ? null : collapseWhitespace(posting.salary);
@@ -70,5 +70,5 @@ export const normalizePosting = (
       title,
       url: posting.url,
     };
-  });
+  }));
 };

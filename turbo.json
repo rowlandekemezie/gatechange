@@ -22,6 +22,9 @@
       "outputs": []
     },
     "//#lint": {
+      "dependsOn": [
+        "@rat-stack/capability#build"
+      ],
       "outputs": []
     },
     "//#typecheck-scripts": {

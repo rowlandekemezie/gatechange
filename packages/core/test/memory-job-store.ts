@@ -1,21 +1,21 @@
 import { Array, Effect, Layer, Option, pipe } from "effect";
 
-import { JobStore, MAX_AGE_DAYS } from "../src/index.js";
-import type { FeedState, IngestReceipt, Job } from "../src/index.js";
+import { JobStore } from "../src/index.js";
+import type { FeedStateValue, IngestReceiptValue, JobValue } from "../src/index.js";
 
 export interface MemoryJobStore {
-  readonly feedStates: () => ReadonlyArray<FeedState>;
-  readonly jobs: () => ReadonlyArray<Job>;
+  readonly feedStates: () => readonly FeedStateValue[];
+  readonly jobs: () => readonly JobValue[];
   readonly layer: Layer.Layer<JobStore>;
-  readonly runs: () => ReadonlyArray<IngestReceipt>;
+  readonly runs: () => readonly IngestReceiptValue[];
 }
 
 export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
-  const jobs = new Map<string, Job>();
-  const states = new Map<string, FeedState>();
-  const runs: Array<IngestReceipt> = [];
+  const jobs = new Map<string, JobValue>();
+  const states = new Map<string, FeedStateValue>();
+  const runs: IngestReceiptValue[] = [];
 
-  const stateOf = (key: string): FeedState =>
+  const stateOf = (key: string): FeedStateValue =>
     states.get(key) ?? {
       consecutiveFailures: 0,
       key,
@@ -40,7 +40,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       }),
     pruneOlderThan: (cutoff) =>
       Effect.sync(() => {
-        const expired = Array.filter([...jobs.values()], (job) => job.postedAt < cutoff);
+        const expired = pipe([...jobs.values()], Array.filter((job) => job.postedAt < cutoff));
 
         for (const job of expired) {
           jobs.delete(job.id);
@@ -65,10 +65,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       }),
     replaceFeed: (feedKey, incoming, seenAt) =>
       Effect.sync(() => {
-        const stale = Array.filter(
-          [...jobs.values()],
-          (job) => job.feed === feedKey && !Array.some(incoming, (next) => next.id === job.id)
-        );
+        const stale = pipe([...jobs.values()], Array.filter((job) => job.feed === feedKey && !pipe(incoming, Array.some((next) => next.id === job.id))));
 
         for (const job of stale) {
           jobs.delete(job.id);
@@ -103,7 +100,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     stats: () =>
       Effect.sync(() => ({
         activeJobs: jobs.size,
-        feedsFailing: Array.filter([...states.values()], (state) => state.consecutiveFailures > 0)
+        feedsFailing: pipe([...states.values()], Array.filter((state) => state.consecutiveFailures > 0))
           .length,
         feedsTotal: states.size,
         lastRun: Option.getOrNull(Array.last(runs)),
@@ -121,4 +118,3 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   };
 });
 
-export const retentionDays = MAX_AGE_DAYS;

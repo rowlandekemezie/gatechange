@@ -1,5 +1,5 @@
 import { Array, Effect, pipe, Schema } from "effect";
-import type { Posting } from "@rat-stack/core";
+import type { PostingValue } from "@rat-stack/core";
 
 import { fetchJson } from "./http.js";
 import { epochMillisOf, nonEmpty, salaryRange, textOfHtml } from "./parse.js";
@@ -29,7 +29,7 @@ export const remoteOkPostings = (feed: string) =>
         Array.map((item) => Schema.decodeUnknownOption(RemoteOkJob)(item)),
         Array.getSomes,
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: job.company,
             externalId: String(job.id),
             location: job.location ?? "",
@@ -66,7 +66,7 @@ export const remotivePostings = (feed: string, search: string) =>
         Array.map((item) => Schema.decodeUnknownOption(RemotiveJob)(item)),
         Array.getSomes,
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: job.company_name,
             externalId: String(job.id),
             location: job.candidate_required_location ?? "",
@@ -106,7 +106,7 @@ export const himalayasPostings = (feed: string, query: string) =>
         Array.map((item) => Schema.decodeUnknownOption(HimalayasJob)(item)),
         Array.getSomes,
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: job.companyName,
             externalId: job.guid,
             location: nonEmpty(job.locationRestrictions ?? []).join("; "),
@@ -146,7 +146,7 @@ export const jobicyPostings = (feed: string, tag: string) =>
         Array.map((item) => Schema.decodeUnknownOption(JobicyJob)(item)),
         Array.getSomes,
         Array.map(
-          (job): Posting => ({
+          (job): PostingValue => ({
             company: textOfHtml(job.companyName),
             externalId: String(job.id),
             location: job.jobGeo ?? "",

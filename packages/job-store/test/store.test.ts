@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Array, Effect, Option } from "effect";
+import { Array, Effect, Option, pipe } from "effect";
 import { DAY_MILLIS, JobStore } from "@rat-stack/core";
 import type { JobQueryValue, JobValue } from "@rat-stack/core";
 
@@ -42,7 +42,7 @@ const withStore = <A, E>(body: Effect.Effect<A, E, JobStore>) =>
     return yield* body.pipe(Effect.provide(layer));
   });
 
-const ids = (jobs: ReadonlyArray<JobValue>) => Array.map(jobs, (found) => found.id).toSorted();
+const ids = (jobs: readonly JobValue[]) => pipe(jobs, Array.map((found) => found.id)).toSorted();
 
 describe("D1 job store queries", () => {
   it.effect("replacing a feed keeps listed jobs, drops unlisted ones, and leaves other feeds alone", () =>
@@ -64,10 +64,7 @@ describe("D1 job store queries", () => {
         expect(replaced).toStrictEqual({ removed: 1, upserted: 1 });
         expect(ids(listing.jobs)).toStrictEqual(["a:2", "b:1"]);
 
-        const kept = Option.map(
-          Array.findFirst(listing.jobs, (found) => found.id === "a:2"),
-          (found) => [found.firstSeenAt, found.postedAt]
-        );
+        const kept = pipe(Array.findFirst(listing.jobs, (found) => found.id === "a:2"), Option.map((found) => [found.firstSeenAt, found.postedAt]));
 
         expect(kept).toStrictEqual(Option.some([NOW, NOW]));
       })
@@ -134,7 +131,7 @@ describe("D1 job store queries", () => {
 
         const listing = yield* store.list(query({ sort: "Relevance" }), NOW);
 
-        expect(Array.map(listing.jobs, (found) => found.id)).toStrictEqual(["a:fresh", "a:stale"]);
+        expect(pipe(listing.jobs, Array.map((found) => found.id))).toStrictEqual(["a:fresh", "a:stale"]);
       })
     )
   );
@@ -159,7 +156,7 @@ describe("D1 job store queries", () => {
         const stats = yield* store.stats(NOW);
 
         expect(pruned).toBe(1);
-        expect(Array.map(states, (state) => [state.key, state.consecutiveFailures])).toStrictEqual([
+        expect(pipe(states, Array.map((state) => [state.key, state.consecutiveFailures]))).toStrictEqual([
           ["a", 0],
           ["b", 2],
         ]);

@@ -8,9 +8,9 @@ export const CompanyBoard = Schema.Struct({
   slug: Schema.NonEmptyString,
 });
 
-export type CompanyBoard = typeof CompanyBoard.Type;
+export type CompanyBoardValue = typeof CompanyBoard.Type;
 
-export const companyBoards: ReadonlyArray<CompanyBoard> = [
+export const companyBoards: readonly CompanyBoardValue[] = [
   { ats: "greenhouse", name: "Databricks", slug: "databricks" },
   { ats: "greenhouse", name: "GitLab", slug: "gitlab" },
   { ats: "greenhouse", name: "Roblox", slug: "roblox" },

@@ -1,18 +1,18 @@
 import { Data, Match, Option } from "effect";
 import type { FeedRef, SourceNameValue } from "@rat-stack/core";
 
-export type FeedSpec = Data.TaggedEnum<{
+export type FeedSpecValue = Data.TaggedEnum<{
   Ashby: { readonly company: string; readonly slug: string };
   Greenhouse: { readonly company: string; readonly slug: string };
-  HackerNews: {};
+  HackerNews: { readonly thread: string };
   Himalayas: { readonly query: string };
   Jobicy: { readonly tag: string };
   Lever: { readonly company: string; readonly slug: string };
-  RemoteOK: {};
+  RemoteOK: { readonly listing: string };
   Remotive: { readonly search: string };
 }>;
 
-export const FeedSpec = Data.taggedEnum<FeedSpec>();
+export const FeedSpec = Data.taggedEnum<FeedSpecValue>();
 
 const slugOf = (text: string) =>
   text
@@ -20,20 +20,20 @@ const slugOf = (text: string) =>
     .replaceAll(/[^a-z0-9]+/gu, "-")
     .replaceAll(/^-|-$/gu, "");
 
-export const feedKey: (spec: FeedSpec) => string = FeedSpec.$match({
+export const feedKey: (spec: FeedSpecValue) => string = FeedSpec.$match({
   Ashby: ({ slug }) => `ashby:${slug}`,
   Greenhouse: ({ slug }) => `greenhouse:${slug}`,
-  HackerNews: () => "hackernews:who-is-hiring",
+  HackerNews: ({ thread }) => `hackernews:${slugOf(thread)}`,
   Himalayas: ({ query }) => `himalayas:${slugOf(query)}`,
   Jobicy: ({ tag }) => `jobicy:${slugOf(tag)}`,
   Lever: ({ slug }) => `lever:${slug}`,
-  RemoteOK: () => "remoteok:all",
+  RemoteOK: ({ listing }) => `remoteok:${slugOf(listing)}`,
   Remotive: ({ search }) => `remotive:${slugOf(search)}`,
 });
 
-const sourceOf = (spec: FeedSpec): SourceNameValue => spec._tag;
+const sourceOf = (spec: FeedSpecValue): SourceNameValue => spec._tag;
 
-const companyOf = (spec: FeedSpec): Option.Option<string> =>
+const companyOf = (spec: FeedSpecValue): Option.Option<string> =>
   Match.value(spec).pipe(
     Match.withReturnType<Option.Option<string>>(),
     Match.tag("Ashby", "Greenhouse", "Lever", ({ company }) => Option.some(company)),
@@ -48,7 +48,7 @@ export const REMOTIVE_INTERVAL_MINUTES = 360;
 
 export const HACKER_NEWS_INTERVAL_MINUTES = 360;
 
-const intervalOf: (spec: FeedSpec) => number = FeedSpec.$match({
+const intervalOf: (spec: FeedSpecValue) => number = FeedSpec.$match({
   Ashby: () => BOARD_INTERVAL_MINUTES,
   Greenhouse: () => BOARD_INTERVAL_MINUTES,
   HackerNews: () => HACKER_NEWS_INTERVAL_MINUTES,
@@ -59,7 +59,7 @@ const intervalOf: (spec: FeedSpec) => number = FeedSpec.$match({
   Remotive: () => REMOTIVE_INTERVAL_MINUTES,
 });
 
-export const feedRefOf = (spec: FeedSpec): FeedRef => ({
+export const feedRefOf = (spec: FeedSpecValue): FeedRef => ({
   company: companyOf(spec),
   key: feedKey(spec),
   minIntervalMinutes: intervalOf(spec),

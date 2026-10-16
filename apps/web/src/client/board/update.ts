@@ -1,4 +1,4 @@
-import { Array, Schema } from "effect";
+import { Array, Schema, pipe } from "effect";
 import type { Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 
@@ -10,15 +10,16 @@ import {
   WriteShortlist,
 } from "./command.js";
 import { defaultFilters, hasNoSelection, queryOf, toggled } from "./filters.js";
-import type { Filters } from "./filters.js";
+import type { FiltersValue } from "./filters.js";
 import { Message } from "./message.js";
+import type { MessageValue } from "./message.js";
 import { initialModel, JobsState, MoreState, StatsState } from "./model.js";
-import type { MarkedJob, Model } from "./model.js";
+import type { MarkedJobValue, ModelValue } from "./model.js";
 import type { JobQueries } from "./queries.js";
 
-type UpdateReturn = Update.Return<Model, Message, JobQueries>;
+type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
 
-const withFilters = (model: Model, filters: Filters): UpdateReturn => {
+const withFilters = (model: ModelValue, filters: FiltersValue): UpdateReturn => {
   const generation = model.generation + 1;
   const nextModel = modifyFields(model, {
     filters: () => filters,
@@ -40,7 +41,7 @@ const withFilters = (model: Model, filters: Filters): UpdateReturn => {
   };
 };
 
-const shortlistWith = (model: Model, marks: ReadonlyArray<MarkedJob>): UpdateReturn => ({
+const shortlistWith = (model: ModelValue, marks: readonly MarkedJobValue[]): UpdateReturn => ({
   commands: [WriteShortlist({ marks })],
   model: modifyFields(model, { marks: () => marks }),
 });
@@ -54,7 +55,7 @@ export const init = (): UpdateReturn => ({
   model: initialModel,
 });
 
-export const update = (model: Model, message: Message): UpdateReturn =>
+export const update = (model: ModelValue, message: MessageValue): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ChangedAge: ({ maxAgeDays }) => withFilters(model, { ...model.filters, maxAgeDays }),
     ChangedSort: ({ sort }) => withFilters(model, { ...model.filters, sort }),
@@ -62,7 +63,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     ClickedClearMark: ({ id }) =>
       shortlistWith(
         model,
-        Array.filter(model.marks, (mark) => mark.id !== id)
+        pipe(model.marks, Array.filter((mark) => mark.id !== id))
       ),
     ClickedLoadMore: () => {
       if (!Schema.is(JobsState.Loaded)(model.jobs)) {
@@ -82,7 +83,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
     ClickedMark: ({ job, kind }) =>
       shortlistWith(model, [
         { company: job.company, id: job.id, kind, location: job.location, title: job.title, url: job.url },
-        ...Array.filter(model.marks, (mark) => mark.id !== job.id),
+        ...pipe(model.marks, Array.filter((mark) => mark.id !== job.id)),
       ]),
     ClickedResetFilters: () =>
       withFilters(modifyFields(model, { draftSearch: () => "" }), defaultFilters),
@@ -123,7 +124,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       }
 
       const known = model.jobs.jobs;
-      const fresh = Array.filter(page.jobs, (job) => !Array.some(known, (seen) => seen.id === job.id));
+      const fresh = pipe(page.jobs, Array.filter((job) => !pipe(known, Array.some((seen) => seen.id === job.id))));
 
       return {
         model: modifyFields(model, {

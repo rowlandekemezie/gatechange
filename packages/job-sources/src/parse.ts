@@ -1,4 +1,4 @@
-import { DateTime, Match, Option, Predicate } from "effect";
+import { DateTime, Match, Option, Predicate, pipe } from "effect";
 import type { ArrangementValue } from "@rat-stack/core";
 
 const SECONDS_THRESHOLD = 100_000_000_000;
@@ -23,7 +23,7 @@ export const epochMillisOf = (value: number | string | null | undefined): number
   }
 
   return Option.getOrNull(
-    Option.map(DateTime.make(trimmed), (parsed) => DateTime.toEpochMillis(parsed))
+    pipe(DateTime.make(trimmed), Option.map((parsed) => DateTime.toEpochMillis(parsed)))
   );
 };
 
@@ -64,10 +64,10 @@ export const workplaceOf = (value: string | null | undefined): ArrangementValue 
 
 export const periodOf = (value: string | null | undefined): string | null =>
   Option.getOrNull(
-    Option.fromNullishOr(/\b(year|month|week|day|hour)/iu.exec(value ?? "")?.at(1))
+    Option.fromNullishOr(/\b(?<period>year|month|week|day|hour)/iu.exec(value ?? "")?.groups?.["period"])
   );
 
-const entities: ReadonlyArray<readonly [RegExp, string]> = [
+const entities: readonly (readonly [RegExp, string])[] = [
   [/&#x2F;/gu, "/"],
   [/&#x27;/gu, "'"],
   [/&#39;/gu, "'"],
@@ -88,8 +88,8 @@ export const textOfHtml = (html: string): string => {
   return text.replaceAll(/\s+/gu, " ").trim();
 };
 
-export const nonEmpty = (values: ReadonlyArray<string | null | undefined>): ReadonlyArray<string> => {
-  const kept: Array<string> = [];
+export const nonEmpty = (values: readonly (string | null | undefined)[]): readonly string[] => {
+  const kept: string[] = [];
 
   for (const value of values) {
     const trimmed = value?.trim() ?? "";
