@@ -28,13 +28,24 @@ jobs:
       - name: Apply formatter and safe lint fixes
         run: pnpm fix || true
 
-      - name: Commit fixes
+      - name: Post the fixes as a patch on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          if git diff --quiet; then
+          git diff > fixes.patch
+          if [ ! -s fixes.patch ]; then
             echo "Nothing to fix"
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "style: apply formatter and safe lint fixes"
-          git push
+          {
+            echo "### Autofix patch for ${GITHUB_SHA::7}"
+            echo
+            echo "Apply with \`git apply\`."
+            echo
+            echo '```diff'
+            head -c 60000 fixes.patch
+            echo '```'
+          } > comment.md
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@comment.md > /dev/null
+          echo "Patch size: $(wc -c < fixes.patch) bytes"
