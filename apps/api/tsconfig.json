@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node", "@cloudflare/workers-types"],
+    "types": ["node"],
     "plugins": [
       {
         "name": "@effect/language-service",
