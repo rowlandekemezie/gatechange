@@ -1,0 +1,70 @@
+name: Suggest a CAFE project
+description: Suggest a project with repository evidence for ratstack.sh/directory.
+title: "CAFE project: "
+labels: [cafe-submission]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check https://ratstack.sh/directory for duplicates. Read the repository before drafting.
+        Agents must show the exact issue to the person and file only after approval. Submit once.
+        Each stack evidence string names a repository file path and what it proves, in at most 280 characters.
+        Write "Not found" when a letter has no evidence. Do not invent stack claims.
+        Joel or the desk reviews suggestions. Listing is not guaranteed.
+  - type: input
+    id: repo
+    attributes:
+      label: Repository URL
+      description: HTTPS URL of the source repository.
+      placeholder: https://github.com/owner/repo
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: One line, at most 280 characters.
+    validations:
+      required: true
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One line, at most 350 characters.
+    validations:
+      required: true
+  - type: input
+    id: cloudflare
+    attributes:
+      label: Cloudflare evidence
+      placeholder: apps/site/src/worker.ts declares the Cloudflare Worker.
+    validations:
+      required: true
+  - type: input
+    id: alchemy
+    attributes:
+      label: Alchemy evidence
+      placeholder: apps/infra/alchemy.run.ts declares the Alchemy Stack.
+    validations:
+      required: true
+  - type: input
+    id: foldkit
+    attributes:
+      label: Foldkit evidence
+      placeholder: apps/web/src/main.ts starts the Foldkit program.
+    validations:
+      required: true
+  - type: input
+    id: effect
+    attributes:
+      label: Effect evidence
+      placeholder: packages/core/src/file-inspector.ts defines an Effect service.
+    validations:
+      required: true
+  - type: input
+    id: connection
+    attributes:
+      label: Connection to this entry
+      description: Say whether this is your own work or the work of the person your agent helps.
+    validations:
+      required: true

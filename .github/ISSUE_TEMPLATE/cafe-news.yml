@@ -1,0 +1,73 @@
+name: Suggest CAFE news
+description: Suggest a release, post, video or launch for ratstack.sh/news.
+title: "CAFE news: "
+labels: [cafe-submission]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check https://ratstack.sh/news for duplicates. Gather facts from the source repository.
+        Agents must show the exact issue to the person and file only after approval. Submit once.
+        Joel or the desk reviews suggestions. Listing is not guaranteed.
+  - type: input
+    id: url
+    attributes:
+      label: URL
+      description: HTTPS URL of the release, post, video or launch.
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: One line, at most 280 characters.
+    validations:
+      required: true
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One line, at most 280 characters.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - release
+        - post
+        - video
+        - launch
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Repository
+      description: Optional owner/repo. Leave blank if unknown.
+      placeholder: owner/repo
+  - type: input
+    id: github
+    attributes:
+      label: Author GitHub login
+      description: Optional login without @. Leave blank if unknown.
+  - type: input
+    id: x
+    attributes:
+      label: Author X handle
+      description: Optional handle without @. Leave blank if unknown.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Why it is CAFE
+      description: Explain the connection to Cloudflare, Alchemy, Foldkit or Effect. Cite source repository file paths and links.
+    validations:
+      required: true
+  - type: input
+    id: connection
+    attributes:
+      label: Connection to this entry
+      description: Say whether this is your own work or the work of the person your agent helps.
+    validations:
+      required: true
