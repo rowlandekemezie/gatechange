@@ -17,6 +17,8 @@ jobs:
   check:
     name: Check, test, build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +33,25 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Check, test, build
-        run: pnpm turbo run check test build --concurrency=1
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm turbo run check test build --concurrency=1 --continue --output-logs=errors-only 2>&1 | tee ci.log
+
+      - name: Report failures on the commit
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          {
+            echo "### CI failed on ${GITHUB_SHA::7}"
+            echo
+            echo '```text'
+            grep -E "error|Error|ERR|✗|×|FAIL|failed|warning" ci.log | grep -v "^\s*$" | head -c 60000
+            echo '```'
+          } > report.md
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@report.md > /dev/null
 
   deploy:
     name: Deploy to Cloudflare
