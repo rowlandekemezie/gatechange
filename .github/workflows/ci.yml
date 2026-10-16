@@ -1,31 +1,85 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  checks:
+  check:
+    name: Check, test, build
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-      - name: Use Node.js 24.18.0
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.18.0
-      - name: Enable corepack pnpm
-        run: corepack enable && corepack prepare pnpm@11.3.0 --activate
-      - name: Install dependencies
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Fetch pinned source objects
-        run: pnpm sources:fetch
-      - name: Check and test
-        # Serialize Turbo tasks so concurrent Vitest pools do not contend on the CI runner.
+
+      - name: Check, test, build
         run: pnpm turbo run check test build --concurrency=1
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://jobs.rowlandekemezie.com
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm turbo run build
+
+      - name: Check Cloudflare credentials
+        working-directory: apps/infra
+        run: pnpm exec alchemy provider check-env --provider Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy
+        working-directory: apps/infra
+        run: pnpm exec alchemy deploy --stage prod --yes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Smoke test
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/) && [ "$status" = "200" ] && exit 0
+            echo "Site answered $status, retrying in 10 seconds"
+            sleep 10
+          done
+          echo "jobs.rowlandekemezie.com did not answer 200 after deploy"
+          exit 1

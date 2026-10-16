@@ -38,15 +38,42 @@ pnpm turbo run check test build
 
 ## Deploy to Cloudflare
 
+Deploys run from GitHub Actions. Every pull request and push runs the full check, test and build. A push to `main` that passes deploys the `prod` stage and checks that `jobs.rowlandekemezie.com` answers.
+
+### One-time setup
+
 1. Make sure `rowlandekemezie.com` is a zone on your Cloudflare account.
-2. Add a Cloudflare profile for Alchemy: `pnpm alchemy profile edit --add Cloudflare`.
-3. Preview and apply:
+2. Install and commit the lockfile, since CI installs with `--frozen-lockfile`:
 
    ```sh
-   export ALCHEMY_PROFILE=<profile name>
-   pnpm infra:plan --stage prod
-   pnpm infra:deploy --stage prod
+   pnpm install
+   git add pnpm-lock.yaml && git commit -m "chore: lock dependencies" && git push
    ```
+
+3. Create an `admin` Alchemy profile with your Cloudflare **Global API Key** (it must be allowed to create API tokens), and sign in to GitHub with `gh auth login`:
+
+   ```sh
+   pnpm alchemy profile create admin
+   pnpm alchemy profile edit --profile admin --add Cloudflare
+   ```
+
+4. Mint the CI token and write it into this repo's secrets:
+
+   ```sh
+   pnpm infra:ci-credentials --profile admin
+   ```
+
+   This creates a Cloudflare token scoped to Workers, D1, the state store and your zones' DNS and Workers routes, then stores `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets. Re-run it to rotate the token.
+
+5. Push to `main`, or run the CI workflow by hand from the Actions tab.
+
+### Deploying from your machine
+
+```sh
+export ALCHEMY_PROFILE=<profile name>
+pnpm infra:plan --stage prod
+pnpm infra:deploy --stage prod
+```
 
 Alchemy creates the D1 database and applies `packages/job-store/migrations/`, deploys `JobsBackend` with its cron trigger, builds the Foldkit site, and attaches `jobs.rowlandekemezie.com`.
 
