@@ -46,7 +46,9 @@ export const BOARD_INTERVAL_MINUTES = 180;
 
 export const AGGREGATOR_INTERVAL_MINUTES = 120;
 
-export const REMOTIVE_INTERVAL_MINUTES = 360;
+export const REMOTIVE_INTERVAL_MINUTES = 720;
+
+export const JOBICY_INTERVAL_MINUTES = 120;
 
 export const HACKER_NEWS_INTERVAL_MINUTES = 360;
 
@@ -55,7 +57,7 @@ const intervalOf: (spec: FeedSpecValue) => number = FeedSpec.$match({
   Greenhouse: () => BOARD_INTERVAL_MINUTES,
   HackerNews: () => HACKER_NEWS_INTERVAL_MINUTES,
   Himalayas: () => AGGREGATOR_INTERVAL_MINUTES,
-  Jobicy: () => AGGREGATOR_INTERVAL_MINUTES,
+  Jobicy: () => JOBICY_INTERVAL_MINUTES,
   Lever: () => BOARD_INTERVAL_MINUTES,
   RemoteOK: () => AGGREGATOR_INTERVAL_MINUTES,
   Remotive: () => REMOTIVE_INTERVAL_MINUTES,
