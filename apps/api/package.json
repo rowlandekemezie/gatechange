@@ -16,6 +16,7 @@
   "dependencies": {
     "@rat-stack/capability": "workspace:*",
     "@rat-stack/core": "workspace:*",
+    "@rat-stack/job-enrichment": "workspace:*",
     "@rat-stack/job-sources": "workspace:*",
     "@rat-stack/job-store": "workspace:*",
     "alchemy": "2.0.0-beta.83",

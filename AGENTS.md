@@ -30,7 +30,8 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `@rat-stack/core` | `packages/core` | Job schemas, the `listJobs`, `boardStats` and `getJob` contracts and capabilities, role and placement classifiers, feed scheduling, the `JobStore` port (including `find` for one job by id) and the `PostingFeeds` port, and `runIngest` |
 | `@rat-stack/job-sources` | `packages/job-sources` | `PostingFeeds` adapter: Greenhouse, Lever and Ashby company boards, Remote OK, Remotive, Himalayas, Jobicy and the Hacker News hiring thread. `src/boards.ts` is the verified company registry |
 | `@rat-stack/job-store` | `packages/job-store` | `JobStore` adapter over a `SqlExecutor` port; `@rat-stack/job-store/d1` binds it to Cloudflare D1 and declares the `JobsDatabase` resource with `migrations/` |
-| `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc` and runs `runIngest` on a 20 minute cron |
+| `@rat-stack/job-enrichment` | `packages/job-enrichment` | Workers AI `ListingEnricher` (JSON mode, model from `ENRICHMENT_MODEL`) and the Cloudflare Queue `EnrichmentQueue` adapter |
+| `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc`, runs `runIngest` on a 20 minute cron, queues new company-board listings, and consumes `EnrichmentQueue` to enrich them |
 | `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` to `JobsBackend` and serves assets |
 | `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com` |
 
