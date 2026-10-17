@@ -12,7 +12,7 @@ import type {
   ListingHistory,
   PostingValue,
 } from "@rat-stack/core";
-import { Array, Effect, Layer, Option, pipe } from "effect";
+import { Array, Deferred, Effect, Layer, Option, pipe } from "effect";
 import { TestClock } from "effect/testing";
 
 import { sqlJsJobStore } from "./sqljs-executor.js";
@@ -25,15 +25,16 @@ type FeedKey = (typeof feeds)[number];
 
 type Response = readonly PostingValue[] | "down";
 
-const catalog: readonly FeedRef[] = pipe(
-  feeds,
-  Array.map((key) => ({
-    company: Option.some("Acme"),
-    key,
-    minIntervalMinutes: 1,
-    source: "Greenhouse" as const,
-  }))
-);
+const catalogIn = (order: readonly FeedKey[]): readonly FeedRef[] =>
+  pipe(
+    order,
+    Array.map((key) => ({
+      company: Option.some("Acme"),
+      key,
+      minIntervalMinutes: 1,
+      source: "Greenhouse" as const,
+    }))
+  );
 
 const posting = (
   externalId: string,
@@ -63,30 +64,89 @@ const listAll: JobQueryValue = {
 
 const ingestAt = (
   day: number,
-  responses: Partial<Readonly<Record<FeedKey, Response>>>
+  responses: Partial<Readonly<Record<FeedKey, Response>>>,
+  order: readonly FeedKey[] = feeds
 ) =>
   Effect.gen(function* ingestDay() {
     yield* TestClock.setTime(NOW + day * DAY_MILLIS);
 
+    const store = yield* JobStore;
+
+    const written = new Map<string, Deferred.Deferred<boolean>>(
+      Array.zip(
+        order,
+        yield* Effect.all(
+          pipe(
+            order,
+            Array.map(() => Deferred.make<boolean>())
+          )
+        )
+      )
+    );
+
+    const markWritten = (key: string) =>
+      Effect.suspend(() =>
+        Option.match(Option.fromNullishOr(written.get(key)), {
+          onNone: () => Effect.void,
+          onSome: (done) => Deferred.succeed(done, true),
+        })
+      );
+
+    const turnOf = (key: string) =>
+      pipe(
+        Array.findFirstIndex(order, (candidate) => candidate === key),
+        Option.flatMap((index) => Array.get(order, index - 1)),
+        Option.flatMap((previous) =>
+          Option.fromNullishOr(written.get(previous))
+        ),
+        Option.match({
+          onNone: () => Effect.void,
+          onSome: (previous) => Deferred.await(previous),
+        })
+      );
+
+    const ordered = JobStore.of({
+      ...store,
+      recordFeedFailure: (feedKey, attemptedAt, message) =>
+        store
+          .recordFeedFailure(feedKey, attemptedAt, message)
+          .pipe(Effect.ensuring(markWritten(feedKey))),
+      replaceFeed: (feedKey, jobs, seenAt) =>
+        store
+          .replaceFeed(feedKey, jobs, seenAt)
+          .pipe(Effect.ensuring(markWritten(feedKey))),
+    });
+
     const scripted = PostingFeeds.of({
-      catalog,
+      catalog: catalogIn(order),
       fetch: (feed) => {
         const response = Option.fromNullishOr(
           new Map(Object.entries(responses)).get(feed.key)
         ).pipe(Option.getOrElse((): Response => []));
 
-        return response === "down"
-          ? Effect.fail(
-              new FeedUnavailable({ feed: feed.key, message: "down" })
-            )
-          : Effect.succeed(response);
+        return turnOf(feed.key).pipe(
+          Effect.andThen(
+            response === "down"
+              ? Effect.fail(
+                  new FeedUnavailable({ feed: feed.key, message: "down" })
+                )
+              : Effect.succeed(response)
+          )
+        );
       },
     });
 
     return yield* runIngest({
-      feedConcurrency: 1,
+      feedConcurrency: feeds.length,
       feedsPerRun: feeds.length,
-    }).pipe(Effect.provide(Layer.succeed(PostingFeeds, scripted)));
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.succeed(PostingFeeds, scripted),
+          Layer.succeed(JobStore, ordered)
+        )
+      )
+    );
   });
 
 const historyOfRole = Effect.gen(function* readHistory() {
@@ -184,18 +244,26 @@ describe("listing history through runIngest on the SQL store", () => {
   );
 
   it.effect(
-    "a role that stays listed while its id changes counts no repost",
+    "a role its feed keeps listing under a new id for more than seven days, then under the old id again, counts no repost",
     () =>
       withSqlStore(
         Effect.gen(function* idSwap() {
-          yield* ingestAt(0, { "greenhouse:acme": [role] });
-          yield* ingestAt(1, { "greenhouse:acme": [posting("2")] });
-          yield* ingestAt(2, {
-            "greenhouse:acme": [],
-            "remoteok:all": [posting("3")],
-          });
+          const renumbered = posting("2");
 
-          expect(repostsOf(yield* historyOfRole)).toStrictEqual(Option.some(0));
+          yield* ingestAt(0, { "greenhouse:acme": [role] });
+          yield* ingestAt(1, { "greenhouse:acme": [renumbered] });
+          yield* ingestAt(5, { "greenhouse:acme": [renumbered] });
+          yield* ingestAt(9, { "greenhouse:acme": [renumbered] });
+          yield* ingestAt(12, { "greenhouse:acme": [role] });
+
+          expect(yield* historyOfRole).toStrictEqual(
+            Option.some({
+              firstSeenAt: NOW,
+              lastSeenAt: NOW + 12 * DAY_MILLIS,
+              reposts: 0,
+              sightings: 5,
+            })
+          );
         })
       )
   );
@@ -325,5 +393,221 @@ describe("listing history through runIngest on the SQL store", () => {
           ]);
         })
       )
+  );
+
+  it.effect(
+    "an older failed attempt that lands after a newer success never moves the feed's last attempt back",
+    () =>
+      withSqlStore(
+        Effect.gen(function* lateFailure() {
+          const store = yield* JobStore;
+          const key = "greenhouse:acme";
+
+          yield* store.replaceFeed(key, [], NOW + 10 * DAY_MILLIS);
+          yield* store.recordFeedFailure(key, NOW + 4 * DAY_MILLIS, "down");
+
+          expect(yield* store.feedStates).toStrictEqual([
+            {
+              consecutiveFailures: 1,
+              key,
+              lastAttemptAt: NOW + 10 * DAY_MILLIS,
+              lastError: "down",
+              lastSuccessAt: NOW + 10 * DAY_MILLIS,
+            },
+          ]);
+        })
+      )
+  );
+});
+
+const bothOrders: readonly (readonly FeedKey[])[] = [feeds, feeds.toReversed()];
+
+const historyInBothOrders = <E>(
+  script: (order: readonly FeedKey[]) => Effect.Effect<void, E, JobStore>
+) =>
+  Effect.all(
+    pipe(
+      bothOrders,
+      Array.map((order) =>
+        withSqlStore(script(order).pipe(Effect.andThen(historyOfRole)))
+      )
+    )
+  );
+
+const repostsInBothOrders = (expected: number) =>
+  Array.replicate(Option.some(expected), bothOrders.length);
+
+const daysBetween = (first: number, last: number) => Array.range(first, last);
+
+const listedByBoth = (order: readonly FeedKey[], laterFeed: FeedKey) =>
+  Effect.gen(function* script() {
+    const otherFeed =
+      laterFeed === "remoteok:all" ? "greenhouse:acme" : "remoteok:all";
+
+    yield* ingestAt(
+      0,
+      { "greenhouse:acme": [role], "remoteok:all": [role] },
+      order
+    );
+    yield* Effect.forEach(daysBetween(1, 9), (day) =>
+      ingestAt(day, { [laterFeed]: "down", [otherFeed]: [] }, order)
+    );
+    yield* ingestAt(10, { [laterFeed]: [role], [otherFeed]: "down" }, order);
+  });
+
+describe("reposts do not depend on which feed's write lands first", () => {
+  it.effect(
+    "a board down for nine days while an aggregator succeeds without the role, then both list it, counts no repost",
+    () =>
+      Effect.gen(function* boardOutage() {
+        const histories = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            yield* ingestAt(0, { "greenhouse:acme": [role] }, order);
+            yield* Effect.forEach(daysBetween(1, 9), (day) =>
+              ingestAt(
+                day,
+                { "greenhouse:acme": "down", "remoteok:all": [] },
+                order
+              )
+            );
+            yield* ingestAt(
+              10,
+              { "greenhouse:acme": [role], "remoteok:all": [role] },
+              order
+            );
+          })
+        );
+
+        expect(pipe(histories, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(0)
+        );
+      })
+  );
+
+  it.effect(
+    "an aggregator that picks up a role while its board is down counts no repost",
+    () =>
+      Effect.gen(function* aggregatorPickup() {
+        const histories = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            yield* ingestAt(0, { "greenhouse:acme": [role] }, order);
+            yield* Effect.forEach(daysBetween(1, 9), (day) =>
+              ingestAt(
+                day,
+                { "greenhouse:acme": "down", "remoteok:all": [] },
+                order
+              )
+            );
+            yield* ingestAt(
+              10,
+              { "greenhouse:acme": "down", "remoteok:all": [role] },
+              order
+            );
+          })
+        );
+
+        expect(pipe(histories, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(0)
+        );
+      })
+  );
+
+  it.effect(
+    "a board that succeeds without the role, then an aggregator listing it more than seven days later, counts one repost",
+    () =>
+      Effect.gen(function* boardDropped() {
+        const histories = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            yield* ingestAt(0, { "greenhouse:acme": [role] }, order);
+            yield* ingestAt(1, { "greenhouse:acme": [] }, order);
+            yield* ingestAt(9, { "remoteok:all": [role] }, order);
+          })
+        );
+
+        expect(pipe(histories, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(1)
+        );
+      })
+  );
+
+  it.effect(
+    "a role two feeds listed in the same run remembers the lower feed key as its last-seen feed",
+    () =>
+      Effect.gen(function* tiedLastSeen() {
+        const boardSawItGone = yield* historyInBothOrders((order) =>
+          listedByBoth(order, "remoteok:all")
+        );
+
+        const aggregatorSawItGone = yield* historyInBothOrders((order) =>
+          listedByBoth(order, "greenhouse:acme")
+        );
+
+        expect(pipe(boardSawItGone, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(1)
+        );
+        expect(pipe(aggregatorSawItGone, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(0)
+        );
+      })
+  );
+
+  it.effect(
+    "a last-seen feed that succeeds without the role in the run where another feed lists it is judged by its earlier successes",
+    () =>
+      Effect.gen(function* sameRunSuccess() {
+        const neverSawItGone = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            yield* ingestAt(0, { "greenhouse:acme": [role] }, order);
+            yield* ingestAt(5, { "greenhouse:acme": "down" }, order);
+            yield* ingestAt(
+              10,
+              { "greenhouse:acme": [], "remoteok:all": [role] },
+              order
+            );
+          })
+        );
+
+        const sawItGoneEarlier = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            yield* ingestAt(0, { "greenhouse:acme": [role] }, order);
+            yield* ingestAt(2, { "greenhouse:acme": [] }, order);
+            yield* ingestAt(
+              10,
+              { "greenhouse:acme": [], "remoteok:all": [role] },
+              order
+            );
+          })
+        );
+
+        expect(pipe(neverSawItGone, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(0)
+        );
+        expect(pipe(sawItGoneEarlier, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(1)
+        );
+      })
+  );
+
+  it.effect(
+    "a role that moves from the aggregator to the board is judged by the board once the board lists it",
+    () =>
+      Effect.gen(function* handoff() {
+        const histories = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            yield* ingestAt(0, { "remoteok:all": [role] }, order);
+            yield* ingestAt(
+              1,
+              { "greenhouse:acme": [role], "remoteok:all": "down" },
+              order
+            );
+            yield* ingestAt(2, { "remoteok:all": "down" }, order);
+            yield* ingestAt(11, { "remoteok:all": [role] }, order);
+          })
+        );
+
+        expect(pipe(histories, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(1)
+        );
+      })
   );
 });

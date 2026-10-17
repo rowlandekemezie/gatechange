@@ -28,15 +28,16 @@ import type { MemoryJobStore } from "./memory-job-store.js";
 
 const feedKeys = ["greenhouse:acme", "lever:globex", "remoteok"] as const;
 
-const catalog: readonly FeedRef[] = pipe(
-  feedKeys,
-  Array.map((key) => ({
-    company: Option.some("Acme"),
-    key,
-    minIntervalMinutes: 1,
-    source: "Greenhouse",
-  }))
-);
+const catalogIn = (keys: readonly string[]): readonly FeedRef[] =>
+  pipe(
+    keys,
+    Array.map((key) => ({
+      company: Option.some("Acme"),
+      key,
+      minIntervalMinutes: 1,
+      source: "Greenhouse",
+    }))
+  );
 
 const onlyFeed: FeedRef = {
   company: Option.some("Acme"),
@@ -64,7 +65,7 @@ const days = (maximum: number) =>
   Schema.Int.check(Schema.isBetween({ maximum, minimum: 1 }));
 
 const spacedRuns = Arbitrary.array(
-  Arbitrary.schema(Schema.Tuple([Run, days(10)])),
+  Arbitrary.schema(Schema.Tuple([Run, days(10), Schema.Boolean])),
   { maxLength: 12, minLength: 1 }
 );
 
@@ -72,6 +73,8 @@ const down = Down.make({});
 
 const between = (minimum: number, maximum: number) =>
   Schema.Int.check(Schema.isBetween({ maximum, minimum }));
+
+type ScheduledRun = readonly [typeof Run.Type, number, boolean];
 
 const outages = Arbitrary.map(
   Arbitrary.all([
@@ -83,7 +86,7 @@ const outages = Arbitrary.map(
   ([schedule, [feed, start, length]]) =>
     pipe(
       schedule,
-      Array.map(([run, gapDays], index): [typeof Run.Type, number] => {
+      Array.map(([run, gapDays, reversed], index): ScheduledRun => {
         const isDown = index >= start && index < start + length;
 
         return [
@@ -93,6 +96,7 @@ const outages = Arbitrary.map(
             isDown && feed === 2 ? down : run[2],
           ],
           gapDays,
+          reversed,
         ];
       })
     )
@@ -117,13 +121,11 @@ const postingFor = (id: string): PostingValue => ({
 const ingestResponses = (
   memory: MemoryJobStore,
   responses: typeof Run.Type,
-  fetched: string[] = []
+  catalog: readonly FeedRef[] = catalogIn(feedKeys)
 ) => {
   const feeds = PostingFeeds.of({
     catalog,
     fetch: (feed) => {
-      fetched.push(feed.key);
-
       const response = pipe(
         Array.findFirstIndex(feedKeys, (key) => key === feed.key),
         Option.flatMap((index) => Array.get(responses, index))
@@ -145,7 +147,7 @@ const ingestResponses = (
   });
 
   return runIngest({
-    feedConcurrency: 1,
+    feedConcurrency: 2,
     feedsPerRun: feedKeys.length,
   }).pipe(
     Effect.provide(
@@ -178,55 +180,66 @@ const listedIds = (responses: readonly (typeof FeedResponse.Type)[]) =>
     )
   );
 
-const replayHistory = (
-  schedule: readonly (readonly [typeof Run.Type, number])[]
-) =>
+const replayHistory = (schedule: readonly ScheduledRun[]) =>
   Effect.gen(function* replaySchedule() {
     const memory = yield* makeMemoryJobStore;
-    const lastSeen = new Map<string, number>();
+    const lastSeen = new Map<string, { at: number; feed: string }>();
     const lastSuccess = new Map<string, number>();
     const expectedReposts = new Map<string, number>();
     let before = new Map(memory.history());
 
-    for (const [responses, gapDays] of schedule) {
+    for (const [responses, gapDays, reversed] of schedule) {
       yield* TestClock.adjust(`${gapDays} days`);
-
-      const fetched: string[] = [];
-
-      yield* ingestResponses(memory, responses, fetched);
+      yield* ingestResponses(
+        memory,
+        responses,
+        catalogIn(reversed ? feedKeys.toReversed() : feedKeys)
+      );
 
       const seenAt = yield* Clock.currentTimeMillis;
 
-      for (const key of fetched) {
-        const response = pipe(
-          Array.findFirstIndex(feedKeys, (candidate) => candidate === key),
-          Option.flatMap((index) => Array.get(responses, index)),
-          Option.filter((found) => Predicate.isTagged(found, "Listed"))
-        );
+      const listing = pipe(
+        Array.zip(feedKeys, responses),
+        Array.flatMap(([key, response]) =>
+          Predicate.isTagged(response, "Listed")
+            ? [[key, listedIds([response])] as const]
+            : []
+        )
+      );
 
-        if (Option.isSome(response)) {
-          const feedLastSuccess = lastSuccess.get(key) ?? 0;
+      const listedBy = new Map<string, string>();
 
-          for (const id of listedIds([response.value])) {
-            const fingerprint = fingerprintOf(postingFor(id));
-            const previous = lastSeen.get(fingerprint);
+      for (const [key, ids] of listing) {
+        for (const id of ids) {
+          const fingerprint = fingerprintOf(postingFor(id));
+          const other = listedBy.get(fingerprint);
 
-            if (
-              previous !== undefined &&
-              seenAt - previous > REPOST_GAP &&
-              previous < feedLastSuccess
-            ) {
-              expectedReposts.set(
-                fingerprint,
-                (expectedReposts.get(fingerprint) ?? 0) + 1
-              );
-            }
-
-            lastSeen.set(fingerprint, seenAt);
-          }
-
-          lastSuccess.set(key, seenAt);
+          listedBy.set(
+            fingerprint,
+            other !== undefined && other < key ? other : key
+          );
         }
+      }
+
+      for (const [fingerprint, feed] of listedBy) {
+        const previous = lastSeen.get(fingerprint);
+
+        if (
+          previous !== undefined &&
+          seenAt - previous.at > REPOST_GAP &&
+          previous.at < (lastSuccess.get(previous.feed) ?? 0)
+        ) {
+          expectedReposts.set(
+            fingerprint,
+            (expectedReposts.get(fingerprint) ?? 0) + 1
+          );
+        }
+
+        lastSeen.set(fingerprint, { at: seenAt, feed });
+      }
+
+      for (const [key] of listing) {
+        lastSuccess.set(key, seenAt);
       }
 
       const after = new Map(memory.history());
@@ -294,7 +307,7 @@ describe("ingest", () => {
   );
 
   it.effect.prop(
-    "history first-seen never moves later, and a role counts a repost exactly when it was absent longer than the repost gap from a feed that succeeded since it was last seen",
+    "history first-seen never moves later, and a role counts a repost exactly when it was absent longer than the repost gap and the feed that last listed it succeeded since, whatever order the feeds land in",
     { schedule: spacedRuns },
     ({ schedule }) => replayHistory(schedule)
   );

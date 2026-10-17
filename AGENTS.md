@@ -107,6 +107,7 @@ Preserve existing work. Inspect status before editing, stage only files changed 
 - Core owns ports and domain rules. HTTP lives in `packages/job-sources`, SQL in `packages/job-store`.
 - The store is the system of record for listings. Each feed owns its rows: a successful fetch upserts what it listed and deletes that feed's rows it did not list. A failed fetch changes nothing and backs the feed off.
 - Rows older than 30 days are pruned on every run. Every run writes a receipt to `ingest_runs`.
+- `job_history` keeps one row per role fingerprint and survives the 30-day prune, so days open and repost counts outlive the `jobs` row.
 - Parse every external payload with Effect Schema at the boundary. One malformed listing is skipped, never the whole feed.
 - Respect sources: identify the crawler with `USER_AGENT`, keep the per-source minimum intervals in `feed-spec.ts`, link every listing to its original posting, and credit aggregators in the footer.
 - No comments in code (`no-comments/no-comments`). Directives with a reason and `SAFETY:` lines survive.
@@ -118,7 +119,7 @@ Preserve existing work. Inspect status before editing, stage only files changed 
 cron (20 min) ─▶ JobsBackend.runIngest ─▶ PostingFeeds ─▶ public job APIs
                          │
                          ▼
-                      JobStore ─▶ D1 (jobs, feeds, ingest_runs)
+                      JobStore ─▶ D1 (jobs, feeds, ingest_runs, job_history)
                          ▲
 browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats
 ```

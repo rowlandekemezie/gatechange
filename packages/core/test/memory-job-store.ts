@@ -22,13 +22,24 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const runs: IngestReceiptValue[] = [];
   const history = new Map<string, ListingHistory>();
 
-  const sight = (
-    job: JobValue,
-    seenAt: number,
-    feedLastSuccessAt: number | null
-  ) => {
+  const lastSeenFeeds = new Map<string, string>();
+  const previousSuccesses = new Map<string, number | null>();
+
+  const successBefore = (feedKey: string, seenAt: number) => {
+    const latest = states.get(feedKey)?.lastSuccessAt ?? null;
+    const previous = previousSuccesses.get(feedKey) ?? null;
+
+    if (latest !== null && latest < seenAt) {
+      return latest;
+    }
+
+    return previous !== null && previous < seenAt ? previous : null;
+  };
+
+  const sight = (job: JobValue, seenAt: number) => {
     const fingerprint = fingerprintOf(job);
     const previous = Option.fromNullishOr(history.get(fingerprint));
+    const lastSeenFeed = lastSeenFeeds.get(fingerprint) ?? job.feed;
 
     history.set(
       fingerprint,
@@ -45,8 +56,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           reposts:
             found.reposts +
             (isRepost({
-              feedLastSuccessAt,
               lastSeenAt: found.lastSeenAt,
+              lastSeenFeedSuccessAt: successBefore(lastSeenFeed, seenAt),
               seenAt,
             })
               ? 1
@@ -55,6 +66,18 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         }),
       })
     );
+
+    const lastSeenAt = Option.match(previous, {
+      onNone: () => Number.NEGATIVE_INFINITY,
+      onSome: (found) => found.lastSeenAt,
+    });
+
+    if (
+      lastSeenAt < seenAt ||
+      (lastSeenAt === seenAt && job.feed < lastSeenFeed)
+    ) {
+      lastSeenFeeds.set(fingerprint, job.feed);
+    }
   };
 
   const stateOf = (key: string): FeedStateValue =>
@@ -115,7 +138,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         states.set(feedKey, {
           ...previous,
           consecutiveFailures: previous.consecutiveFailures + 1,
-          lastAttemptAt: attemptedAt,
+          lastAttemptAt: Math.max(previous.lastAttemptAt ?? 0, attemptedAt),
           lastError: message,
         });
       }),
@@ -137,10 +160,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           )
         );
 
-        const { lastSuccessAt } = stateOf(feedKey);
-
         for (const job of incoming) {
-          sight(job, seenAt, lastSuccessAt);
+          sight(job, seenAt);
 
           const existing = Option.fromNullishOr(jobs.get(job.id));
 
@@ -161,12 +182,19 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           jobs.delete(job.id);
         }
 
+        const previous = stateOf(feedKey);
+        const lastSuccessAt = previous.lastSuccessAt ?? 0;
+
+        if (lastSuccessAt < seenAt) {
+          previousSuccesses.set(feedKey, previous.lastSuccessAt);
+        }
+
         states.set(feedKey, {
           consecutiveFailures: 0,
           key: feedKey,
-          lastAttemptAt: seenAt,
+          lastAttemptAt: Math.max(previous.lastAttemptAt ?? 0, seenAt),
           lastError: null,
-          lastSuccessAt: seenAt,
+          lastSuccessAt: Math.max(lastSuccessAt, seenAt),
         });
 
         return { removed: stale.length, upserted: incoming.length };

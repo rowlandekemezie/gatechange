@@ -391,6 +391,37 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
+    "migration 0002 judges a backfilled role by the feed of its most recently seen job",
+    () =>
+      Effect.gen(function* backfilledLastSeenFeed() {
+        const layer = yield* seededSqlJsJobStore({
+          "0001_jobs.sql": `INSERT INTO jobs (id, feed, source, title, company, location, region, arrangement, role, url, salary, relevance, posted_at, first_seen_at, last_seen_at, fingerprint) VALUES
+  ('g:1', 'greenhouse:acme', 'Greenhouse', 'Engineering Manager', 'Acme', 'Remote', 'RemoteCanada', 'Remote', 'EngineeringManager', 'https://jobs.example/1', NULL, 50, ${NOW - 5 * DAY_MILLIS}, ${NOW - 5 * DAY_MILLIS}, ${NOW - DAY_MILLIS}, 'acme|engineeringmanager'),
+  ('r:1', 'remoteok:all', 'RemoteOK', 'Engineering Manager', 'Acme', 'Remote', 'RemoteCanada', 'Remote', 'EngineeringManager', 'https://jobs.example/2', NULL, 50, ${NOW - 9 * DAY_MILLIS}, ${NOW - 9 * DAY_MILLIS}, ${NOW}, 'acme|engineeringmanager');`,
+        });
+
+        const reposts = yield* Effect.gen(function* sightAfterBackfill() {
+          const store = yield* JobStore;
+          const listed = job({ feed: "greenhouse:acme", id: "g:1" });
+
+          yield* store.replaceFeed("remoteok:all", [], NOW + DAY_MILLIS);
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [listed],
+            NOW + 9 * DAY_MILLIS
+          );
+
+          return pipe(
+            yield* store.historyOf(listed),
+            Option.map((found) => found.reposts)
+          );
+        }).pipe(Effect.provide(layer));
+
+        expect(reposts).toStrictEqual(Option.some(1));
+      })
+  );
+
+  it.effect(
     "a job written after the backfill but before history existed keeps its first-seen date on its first sighting",
     () =>
       Effect.gen(function* migrationWindow() {

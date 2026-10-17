@@ -172,15 +172,26 @@ export const sightingStatement = (
   seenAt: number
 ): SqlStatement =>
   statement(
-    `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, sightings, reposts)
-VALUES (?, MIN(COALESCE((SELECT MIN(first_seen_at) FROM jobs WHERE fingerprint = ?), ?), ?), ?, 1, 0)
+    `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, last_seen_feed, sightings, reposts)
+VALUES (?, MIN(COALESCE((SELECT MIN(first_seen_at) FROM jobs WHERE fingerprint = ?), ?), ?), ?, ?, 1, 0)
 ON CONFLICT (fingerprint) DO UPDATE SET
   first_seen_at = MIN(job_history.first_seen_at, excluded.first_seen_at),
   last_seen_at = MAX(job_history.last_seen_at, excluded.last_seen_at),
+  last_seen_feed = CASE
+    WHEN job_history.last_seen_at < excluded.last_seen_at THEN excluded.last_seen_feed
+    WHEN job_history.last_seen_at = excluded.last_seen_at THEN MIN(job_history.last_seen_feed, excluded.last_seen_feed)
+    ELSE job_history.last_seen_feed
+  END,
   sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
   reposts = job_history.reposts + (
     job_history.last_seen_at < excluded.last_seen_at - ?
-    AND job_history.last_seen_at < COALESCE((SELECT last_success_at FROM feeds WHERE key = ?), 0)
+    AND job_history.last_seen_at < COALESCE((
+      SELECT CASE
+        WHEN last_success_at < ? THEN last_success_at
+        WHEN previous_success_at < ? THEN previous_success_at
+      END
+      FROM feeds WHERE key = job_history.last_seen_feed
+    ), 0)
   )`,
     [
       fingerprintOf(job),
@@ -188,8 +199,10 @@ ON CONFLICT (fingerprint) DO UPDATE SET
       seenAt,
       seenAt,
       seenAt,
-      REPOST_GAP,
       job.feed,
+      REPOST_GAP,
+      seenAt,
+      seenAt,
     ]
   );
 
@@ -218,6 +231,10 @@ VALUES (?, ?, ?, NULL, 0)
 ON CONFLICT (key) DO UPDATE SET
   last_attempt_at = MAX(COALESCE(feeds.last_attempt_at, 0), excluded.last_attempt_at),
   last_success_at = MAX(COALESCE(feeds.last_success_at, 0), excluded.last_success_at),
+  previous_success_at = CASE
+    WHEN COALESCE(feeds.last_success_at, 0) < excluded.last_success_at THEN feeds.last_success_at
+    ELSE feeds.previous_success_at
+  END,
   last_error = NULL,
   consecutive_failures = 0`,
     [feedKey, seenAt, seenAt]
@@ -232,7 +249,7 @@ export const feedFailedStatement = (
     `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
 VALUES (?, ?, NULL, ?, 1)
 ON CONFLICT (key) DO UPDATE SET
-  last_attempt_at = excluded.last_attempt_at,
+  last_attempt_at = MAX(COALESCE(feeds.last_attempt_at, 0), excluded.last_attempt_at),
   last_error = excluded.last_error,
   consecutive_failures = feeds.consecutive_failures + 1`,
     [feedKey, attemptedAt, message]
