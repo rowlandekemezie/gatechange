@@ -10,7 +10,7 @@ import { FetchHttpClient } from "effect/http";
 import { RpcClient, RpcSerialization } from "effect/rpc";
 
 export interface ServiceBinding {
-  readonly fetch: (request: Request) => Promise<Response>;
+  readonly fetch: typeof globalThis.fetch;
 }
 
 const { group } = toRpcGroup(jobBoardContracts);
@@ -21,11 +21,7 @@ const clientOf = (backend: ServiceBinding) =>
       RpcClient.layerProtocolHttp({ url: "https://backend/rpc" }).pipe(
         Layer.provide([FetchHttpClient.layer, RpcSerialization.layerJson]),
         Layer.provide(
-          Layer.succeed(
-            FetchHttpClient.Fetch,
-            // @effect-diagnostics-next-line asyncFunction:off -- FetchHttpClient.Fetch takes the platform fetch signature, which returns a Promise.
-            async (input, init) => await backend.fetch(new Request(input, init))
-          )
+          Layer.succeed(FetchHttpClient.Fetch, backend.fetch.bind(backend))
         )
       )
     )
