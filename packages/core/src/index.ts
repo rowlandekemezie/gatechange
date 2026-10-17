@@ -62,43 +62,95 @@ export { Permission, SourceTerms } from "./source-terms.js";
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
 export {
+  AnnualAmount,
   Arrangement,
   BoardStats,
   boardStatsContract,
+  currencies,
+  Currency,
   DEFAULT_AGE_DAYS,
+  Enrichment,
   EpochMillis,
   getJobContract,
   IngestOutcome,
   IngestReceipt,
   Job,
   jobBoardContracts,
+  JobDetail,
   JobPage,
   JobQuery,
   JobSort,
   JobStoreUnavailable,
   ListedJob,
+  ListingDetails,
   listJobsContract,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
   Region,
   RegionCount,
   regions,
+  RemotePolicy,
   RoleCount,
   RoleLevel,
   roleLevels,
+  SalaryBand,
+  SalaryFloor,
+  Seniority,
+  seniorities,
   SourceName,
 } from "./contracts.js";
 
 export type {
   ArrangementValue,
   BoardStatsValue,
+  CurrencyValue,
+  EnrichmentValue,
   IngestReceiptValue,
+  JobDetailValue,
   JobPageValue,
   JobQueryValue,
   JobSortValue,
   JobValue,
   ListedJobValue,
+  ListingDetailsValue,
   RegionValue,
+  RemotePolicyValue,
   RoleLevelValue,
+  SalaryBandValue,
+  SalaryFloorValue,
+  SeniorityValue,
   SourceNameValue,
 } from "./contracts.js";
+
+export {
+  amountsIn,
+  detailsOfAnswer,
+  enqueueNewListings,
+  enrichableSources,
+  enrichListing,
+  EnrichmentOutcome,
+  ListingEnricher,
+  MAX_POSTING_CHARS,
+  ModelAnswer,
+  retryableSkips,
+  SalaryPeriod,
+  SkipReason,
+} from "./enrichment.js";
+
+export { EnricherUnavailable } from "./enricher-unavailable.js";
+
+export { EnrichmentQueue } from "./enrichment-queue.js";
+
+export { EnrichmentQueueUnavailable } from "./enrichment-queue-unavailable.js";
+
+export { PostingTexts } from "./posting-texts.js";
+
+export { PostingUnavailable } from "./posting-unavailable.js";
+
+export type {
+  EnrichmentOutcomeValue,
+  ModelAnswerValue,
+  PostingRequest,
+  SalaryPeriodValue,
+  SkipReasonValue,
+} from "./enrichment.js";

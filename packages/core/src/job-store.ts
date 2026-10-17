@@ -5,10 +5,13 @@ import type { FeedStateValue } from "./feed.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import type {
   BoardStatsValue,
+  EnrichmentValue,
   IngestReceiptValue,
+  JobDetailValue,
   JobValue,
   JobQueryValue,
   ListedJobValue,
+  SourceNameValue,
 } from "./job.js";
 import { DAY_MILLIS } from "./posting.js";
 
@@ -65,7 +68,7 @@ export class JobStore extends Context.Service<
     >;
     readonly find: (
       id: string
-    ) => Effect.Effect<Option.Option<JobValue>, JobStoreUnavailable>;
+    ) => Effect.Effect<Option.Option<JobDetailValue>, JobStoreUnavailable>;
     readonly historyOf: (
       job: Pick<JobValue, "company" | "title">
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;
@@ -73,6 +76,10 @@ export class JobStore extends Context.Service<
       query: JobQueryValue,
       now: number
     ) => Effect.Effect<JobListing, JobStoreUnavailable>;
+    readonly newListings: (
+      seenAt: number,
+      sources: readonly SourceNameValue[]
+    ) => Effect.Effect<readonly string[], JobStoreUnavailable>;
     readonly pruneOlderThan: (
       cutoff: number
     ) => Effect.Effect<number, JobStoreUnavailable>;
@@ -92,6 +99,10 @@ export class JobStore extends Context.Service<
       jobs: readonly JobValue[],
       seenAt: number
     ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
+    readonly saveEnrichment: (
+      id: string,
+      enrichment: EnrichmentValue
+    ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly stats: (
       now: number
     ) => Effect.Effect<

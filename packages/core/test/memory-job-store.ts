@@ -2,13 +2,16 @@ import { Array, Effect, Layer, Option, pipe } from "effect";
 
 import { daysOpen, fingerprintOf, isRepost, JobStore } from "../src/index.js";
 import type {
+  EnrichmentValue,
   FeedStateValue,
   IngestReceiptValue,
+  JobQueryValue,
   JobValue,
   ListingHistory,
 } from "../src/index.js";
 
 export interface MemoryJobStore {
+  readonly enrichments: () => ReadonlyMap<string, EnrichmentValue>;
   readonly feedStates: () => readonly FeedStateValue[];
   readonly history: () => ReadonlyMap<string, ListingHistory>;
   readonly jobs: () => readonly JobValue[];
@@ -21,6 +24,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const states = new Map<string, FeedStateValue>();
   const runs: IngestReceiptValue[] = [];
   const history = new Map<string, ListingHistory>();
+  const enrichments = new Map<string, EnrichmentValue>();
 
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
@@ -81,6 +85,25 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     }
   };
 
+  const enrichmentOf = (id: string) => enrichments.get(id) ?? null;
+
+  const matchesEnrichment = (query: JobQueryValue) => (job: JobValue) => {
+    const salary = enrichmentOf(job.id)?.salary ?? null;
+    const seniority = enrichmentOf(job.id)?.seniority ?? null;
+    const { salaryFloor } = query;
+
+    const salaryMatches =
+      salaryFloor === null ||
+      (salary?.currency === salaryFloor.currency &&
+        salary.max >= salaryFloor.amount);
+
+    const seniorityMatches =
+      query.seniorities.length === 0 ||
+      (seniority !== null && query.seniorities.includes(seniority));
+
+    return salaryMatches && seniorityMatches;
+  };
+
   const stateOf = (key: string): FeedStateValue =>
     states.get(key) ?? {
       consecutiveFailures: 0,
@@ -103,7 +126,13 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         return true;
       }),
     feedStates: Effect.sync(() => [...states.values()]),
-    find: (id) => Effect.sync(() => Option.fromNullishOr(jobs.get(id))),
+    find: (id) =>
+      Effect.sync(() =>
+        pipe(
+          Option.fromNullishOr(jobs.get(id)),
+          Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
+        )
+      ),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
     list: (query, now) =>
@@ -112,7 +141,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           [...jobs.values()],
           Array.filter(
             (job) => job.postedAt >= now - query.maxAgeDays * 86_400_000
-          )
+          ),
+          Array.filter(matchesEnrichment(query))
         );
 
         return {
@@ -124,6 +154,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               return {
                 ...job,
                 daysOpen: daysOpen(found?.firstSeenAt ?? job.firstSeenAt, now),
+                enrichment: enrichmentOf(job.id),
                 reposts: found?.reposts ?? 0,
               };
             })
@@ -131,6 +162,20 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           total: matching.length,
         };
       }),
+    newListings: (seenAt, sources) =>
+      Effect.sync(() =>
+        pipe(
+          [...jobs.values()],
+          Array.filter(
+            (job) =>
+              job.firstSeenAt === seenAt &&
+              sources.includes(job.source) &&
+              !enrichments.has(job.id)
+          ),
+          Array.map((job) => job.id),
+          (ids) => ids.toSorted()
+        )
+      ),
     pruneOlderThan: (cutoff) =>
       Effect.sync(() => {
         const expired = pipe(
@@ -140,6 +185,12 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         for (const job of expired) {
           jobs.delete(job.id);
+        }
+
+        for (const id of enrichments.keys()) {
+          if (!jobs.has(id)) {
+            enrichments.delete(id);
+          }
         }
 
         return expired.length;
@@ -226,6 +277,10 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         return { removed: stale.length, upserted: incoming.length };
       }),
+    saveEnrichment: (id, enrichment) =>
+      Effect.sync(() => {
+        enrichments.set(id, enrichment);
+      }),
     stats: () =>
       Effect.sync(() => ({
         activeJobs: jobs.size,
@@ -242,6 +297,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   });
 
   return {
+    enrichments: () => enrichments,
     feedStates: () => [...states.values()],
     history: () => history,
     jobs: () => [...jobs.values()],

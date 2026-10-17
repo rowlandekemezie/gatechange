@@ -1,15 +1,19 @@
 import {
   Arrangement,
   daysOpen,
+  Enrichment,
   IngestOutcome,
   JobStore,
+  JobStoreUnavailable,
   Region,
   RoleLevel,
   SourceName,
 } from "@rat-stack/core";
 import type {
+  EnrichmentValue,
   FeedStateValue,
   IngestReceiptValue,
+  JobDetailValue,
   JobValue,
   ListedJobValue,
   ListingHistory,
@@ -28,14 +32,17 @@ import {
   historyStatement,
   lastRunStatement,
   listJobsStatement,
+  newListingsStatement,
   newTodayStatement,
   pruneJobsStatement,
+  pruneOrphanEnrichmentStatement,
   pruneRunsStatement,
   recordRunStatement,
   regionCountsStatement,
   releaseIngestStatement,
   removeUnseenStatement,
   roleCountsStatement,
+  saveEnrichmentStatement,
   sightingStatement,
   UPSERT_CHUNK,
   upsertJobStatement,
@@ -62,11 +69,28 @@ const JobRow = Schema.Struct({
   url: Schema.String,
 });
 
-const ListedJobRow = Schema.Struct({
+const EnrichedJobRow = Schema.Struct({
   ...JobRow.fields,
+  enriched_at: Schema.NullOr(Count),
+  model: Schema.NullOr(Schema.String),
+  remote_policy: Schema.NullOr(Schema.String),
+  reports_to: Schema.NullOr(Schema.String),
+  salary_currency: Schema.NullOr(Schema.String),
+  salary_max: Schema.NullOr(Count),
+  salary_min: Schema.NullOr(Count),
+  seniority: Schema.NullOr(Schema.String),
+  team_size: Schema.NullOr(Count),
+});
+
+type EnrichedJobRowValue = typeof EnrichedJobRow.Type;
+
+const ListedJobRow = Schema.Struct({
+  ...EnrichedJobRow.fields,
   opened_at: Count,
   reposts: Count,
 });
+
+const IdRow = Schema.Struct({ id: Schema.String });
 
 const TotalRow = Schema.Struct({ total: Count });
 
@@ -119,13 +143,61 @@ const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
   url: row.url,
 });
 
-const listedJobOfRow =
-  (now: number) =>
-  (row: typeof ListedJobRow.Type): ListedJobValue => ({
-    ...jobOfRow(row),
-    daysOpen: daysOpen(row.opened_at, now),
-    reposts: row.reposts,
-  });
+const decodeEnrichment = Schema.decodeUnknownEffect(Schema.NullOr(Enrichment));
+
+const enrichmentOfRow = (
+  operation: string,
+  row: EnrichedJobRowValue
+): Effect.Effect<EnrichmentValue | null, JobStoreUnavailable> =>
+  decodeEnrichment(
+    row.model === null
+      ? null
+      : {
+          enrichedAt: row.enriched_at,
+          model: row.model,
+          remotePolicy: row.remote_policy,
+          reportsTo: row.reports_to,
+          salary:
+            row.salary_currency === null
+              ? null
+              : {
+                  currency: row.salary_currency,
+                  max: row.salary_max,
+                  min: row.salary_min,
+                },
+          seniority: row.seniority,
+          teamSize: row.team_size,
+        }
+  ).pipe(
+    Effect.mapError(
+      (failure) =>
+        new JobStoreUnavailable({
+          message:
+            `The job store holds an unreadable enrichment for ${row.id}: ${failure.message}`.slice(
+              0,
+              500
+            ),
+          operation,
+        })
+    )
+  );
+
+const jobDetailOfRow = (operation: string) => (row: EnrichedJobRowValue) =>
+  enrichmentOfRow(operation, row).pipe(
+    Effect.map((enrichment): JobDetailValue => ({
+      ...jobOfRow(row),
+      enrichment,
+    }))
+  );
+
+const listedJobOfRow = (now: number) => (row: typeof ListedJobRow.Type) =>
+  jobDetailOfRow("listJobs")(row).pipe(
+    Effect.map((detail): ListedJobValue => ({
+      ...detail,
+      daysOpen: daysOpen(row.opened_at, now),
+      reposts: row.reposts,
+    }))
+  );
 
 const historyOfRow = (row: typeof HistoryRow.Type): ListingHistory => ({
   firstSeenAt: row.first_seen_at,
@@ -173,9 +245,13 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     find: (id) =>
       sql
-        .all("findJob", findJobStatement(id), JobRow)
+        .all("findJob", findJobStatement(id), EnrichedJobRow)
         .pipe(
-          Effect.map((rows) => pipe(Array.head(rows), Option.map(jobOfRow)))
+          Effect.flatMap((rows) =>
+            Effect.transposeOption(
+              Option.map(Array.head(rows), jobDetailOfRow("findJob"))
+            )
+          )
         ),
 
     historyOf: (job) =>
@@ -194,17 +270,24 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         },
         { concurrency: 2 }
       ).pipe(
-        Effect.map(({ rows, total }) => ({
-          jobs: pipe(rows, Array.map(listedJobOfRow(now))),
-          total: totalOf(total),
-        }))
+        Effect.flatMap(({ rows, total }) =>
+          pipe(rows, Array.map(listedJobOfRow(now)), Effect.all).pipe(
+            Effect.map((jobs) => ({ jobs, total: totalOf(total) }))
+          )
+        )
       ),
+
+    newListings: (seenAt, sources) =>
+      sql
+        .all("newListings", newListingsStatement(seenAt, sources), IdRow)
+        .pipe(Effect.map(Array.map((row) => row.id))),
 
     pruneOlderThan: (cutoff) =>
       sql
         .batch("pruneOlderThan", [
           pruneJobsStatement(cutoff),
           pruneRunsStatement(cutoff),
+          pruneOrphanEnrichmentStatement,
         ])
         .pipe(
           Effect.map((results) =>
@@ -257,6 +340,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
         return { removed: removed?.changes ?? 0, upserted: jobs.length };
       }),
+
+    saveEnrichment: (id, enrichment) =>
+      sql
+        .batch("saveEnrichment", [saveEnrichmentStatement(id, enrichment)])
+        .pipe(Effect.asVoid),
 
     stats: (now) =>
       Effect.all(
