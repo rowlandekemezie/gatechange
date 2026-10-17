@@ -25,8 +25,7 @@ echo "$REPO" >"$RUN_DIR/repo"
 mkdir -p "$RUN_DIR/docker-config"
 d1_before="$(d1_files)"
 set -m
-auth_secret="${BETTER_AUTH_SECRET:-verify-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')}"
-(cd "$REPO" && export DOCKER_CONFIG="$RUN_DIR/docker-config" BETTER_AUTH_SECRET="$auth_secret" && exec "${PNPM[@]}" alchemy dev --stage "$STAGE" --no-input) >"$RUN_DIR/dev.log" 2>&1 &
+(cd "$REPO" && export DOCKER_CONFIG="$RUN_DIR/docker-config" && exec "${PNPM[@]}" alchemy dev --stage "$STAGE" --no-input) >"$RUN_DIR/dev.log" 2>&1 &
 pid=$!
 set +m
 echo "$pid" >"$RUN_DIR/pid"

@@ -28,6 +28,8 @@ $S/down.sh verify-lane-1
 - If the stage is already running and its URL answers 200, `up.sh` reuses it. A recorded pid counts as running only while `ps` shows it as `alchemy dev --stage <stage> --no-input`, so a stale pid that the system gave to another process is ignored.
 - `alchemy dev` reads and writes stage rows in the Cloudflare state store of the active Alchemy profile (`ALCHEMY_PROFILE`, or `default`). The rows are stamped `local`, but the store itself is a Worker on that account. `alchemy dev` plans with `updateStateStore` on (`Cli/exec.ts` in alchemy), so when that Worker is missing or older than the installed alchemy, as after an alchemy bump, `up.sh` deploys or upgrades it without asking, exactly as `pnpm dev` does.
 
+`lib.sh` exports a throwaway `BETTER_AUTH_SECRET` when the shell has none, because `JobsBackend` refuses to start without one and `down.sh` evaluates the same stack.
+
 One checkout runs one stage at a time, and `up.sh` refuses to start a second. Every stage keeps its D1 as a SQLite file in `apps/infra/.alchemy/local/d1/cloudflare-runtime-D1DatabaseObject/`. `up.sh` records the file the stage created in `/tmp/verify-jobs/<stage>/d1`, and the seed, doctor, and teardown use that path. To run lanes side by side, give each lane its own worktree.
 
 ## Seed
@@ -72,6 +74,10 @@ Scenarios:
 - `filter` clicks the `day` age chip and requires the count line and the row count to drop.
 - `search` types the first row's company into the search box, submits, and requires every row to show that company.
 - `shortlist` presses `Save` on the first row, opens the `Your shortlist` tab, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
+- `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), and requires the header to show the email.
+- `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
+- `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
+- `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.
 
 Flags:
 
