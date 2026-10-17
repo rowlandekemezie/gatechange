@@ -250,4 +250,80 @@ describe("listing history through runIngest on the SQL store", () => {
         })
       )
   );
+
+  it.effect(
+    "a feed that goes down for a week and recovers still listing the role counts no repost",
+    () =>
+      withSqlStore(
+        Effect.gen(function* downThenRecovered() {
+          yield* ingestAt(0, { "greenhouse:acme": [role] });
+          yield* ingestAt(1, { "greenhouse:acme": "down" });
+          yield* ingestAt(4, { "greenhouse:acme": "down" });
+          yield* ingestAt(8, { "greenhouse:acme": [role] });
+
+          expect(yield* historyOfRole).toStrictEqual(
+            Option.some({
+              firstSeenAt: NOW,
+              lastSeenAt: NOW + 8 * DAY_MILLIS,
+              reposts: 0,
+              sightings: 2,
+            })
+          );
+        })
+      )
+  );
+
+  it.effect(
+    "a listed role whose title is edited keeps its original first-seen date",
+    () =>
+      withSqlStore(
+        Effect.gen(function* titleEdit() {
+          const edited = posting("1", "Senior Engineering Manager, Billing");
+
+          yield* ingestAt(0, { "greenhouse:acme": [role] });
+          yield* ingestAt(3, { "greenhouse:acme": [edited] });
+
+          const store = yield* JobStore;
+          const page = yield* store.list(listAll, NOW + 3 * DAY_MILLIS);
+
+          expect(
+            pipe(
+              page.jobs,
+              Array.map((job) => [job.title, job.daysOpen, job.reposts])
+            )
+          ).toStrictEqual([[edited.title, 3, 0]]);
+          expect(
+            pipe(
+              yield* store.historyOf(edited),
+              Option.map((found) => found.firstSeenAt)
+            )
+          ).toStrictEqual(Option.some(NOW));
+        })
+      )
+  );
+
+  it.effect(
+    "an older run that finishes after a newer one never moves the feed's last attempt or success back",
+    () =>
+      withSqlStore(
+        Effect.gen(function* overlappingRuns() {
+          const store = yield* JobStore;
+          const key = "greenhouse:acme";
+
+          yield* store.recordFeedFailure(key, NOW + 5 * DAY_MILLIS, "down");
+          yield* store.replaceFeed(key, [], NOW + 10 * DAY_MILLIS);
+          yield* store.replaceFeed(key, [], NOW + 3 * DAY_MILLIS);
+
+          expect(yield* store.feedStates).toStrictEqual([
+            {
+              consecutiveFailures: 0,
+              key,
+              lastAttemptAt: NOW + 10 * DAY_MILLIS,
+              lastError: null,
+              lastSuccessAt: NOW + 10 * DAY_MILLIS,
+            },
+          ]);
+        })
+      )
+  );
 });

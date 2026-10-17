@@ -39,8 +39,14 @@ export const daysOpen = (firstSeenAt: number, now: number) =>
 
 export const REPOST_GAP = 7 * DAY_MILLIS;
 
-export const isRepost = (lastSeenAt: number, seenAt: number) =>
-  lastSeenAt < seenAt - REPOST_GAP;
+interface Sighting {
+  readonly feedLastSuccessAt: number | null;
+  readonly lastSeenAt: number;
+  readonly seenAt: number;
+}
+
+export const isRepost = ({ feedLastSuccessAt, lastSeenAt, seenAt }: Sighting) =>
+  lastSeenAt < seenAt - REPOST_GAP && lastSeenAt < (feedLastSuccessAt ?? 0);
 
 export class JobStore extends Context.Service<
   JobStore,

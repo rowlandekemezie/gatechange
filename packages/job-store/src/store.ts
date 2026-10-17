@@ -204,8 +204,8 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           Array.chunksOf(jobs, UPSERT_CHUNK),
           Array.map(
             Array.flatMap((job) => [
-              sightingStatement(job, seenAt),
               upsertJobStatement(job),
+              sightingStatement(job, seenAt),
             ])
           )
         );

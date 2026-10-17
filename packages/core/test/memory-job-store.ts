@@ -22,7 +22,11 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const runs: IngestReceiptValue[] = [];
   const history = new Map<string, ListingHistory>();
 
-  const sight = (job: JobValue, seenAt: number) => {
+  const sight = (
+    job: JobValue,
+    seenAt: number,
+    feedLastSuccessAt: number | null
+  ) => {
     const fingerprint = fingerprintOf(job);
     const previous = Option.fromNullishOr(history.get(fingerprint));
 
@@ -38,7 +42,15 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         onSome: (found) => ({
           firstSeenAt: Math.min(found.firstSeenAt, seenAt),
           lastSeenAt: Math.max(found.lastSeenAt, seenAt),
-          reposts: found.reposts + (isRepost(found.lastSeenAt, seenAt) ? 1 : 0),
+          reposts:
+            found.reposts +
+            (isRepost({
+              feedLastSuccessAt,
+              lastSeenAt: found.lastSeenAt,
+              seenAt,
+            })
+              ? 1
+              : 0),
           sightings: found.sightings + (found.lastSeenAt < seenAt ? 1 : 0),
         }),
       })
@@ -125,8 +137,10 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           )
         );
 
+        const { lastSuccessAt } = stateOf(feedKey);
+
         for (const job of incoming) {
-          sight(job, seenAt);
+          sight(job, seenAt, lastSuccessAt);
 
           const existing = Option.fromNullishOr(jobs.get(job.id));
 

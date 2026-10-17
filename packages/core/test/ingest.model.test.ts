@@ -68,6 +68,36 @@ const spacedRuns = Arbitrary.array(
   { maxLength: 12, minLength: 1 }
 );
 
+const down = Down.make({});
+
+const between = (minimum: number, maximum: number) =>
+  Schema.Int.check(Schema.isBetween({ maximum, minimum }));
+
+const outages = Arbitrary.map(
+  Arbitrary.all([
+    spacedRuns,
+    Arbitrary.schema(
+      Schema.Tuple([between(0, 2), between(0, 11), between(1, 12)])
+    ),
+  ]),
+  ([schedule, [feed, start, length]]) =>
+    pipe(
+      schedule,
+      Array.map(([run, gapDays], index): [typeof Run.Type, number] => {
+        const isDown = index >= start && index < start + length;
+
+        return [
+          [
+            isDown && feed === 0 ? down : run[0],
+            isDown && feed === 1 ? down : run[1],
+            isDown && feed === 2 ? down : run[2],
+          ],
+          gapDays,
+        ];
+      })
+    )
+);
+
 const weeklyListings = Arbitrary.array(
   Arbitrary.schema(Schema.Tuple([FeedResponse, days(7)])),
   { maxLength: 40, minLength: 31 }
@@ -86,11 +116,14 @@ const postingFor = (id: string): PostingValue => ({
 
 const ingestResponses = (
   memory: MemoryJobStore,
-  responses: typeof Run.Type
+  responses: typeof Run.Type,
+  fetched: string[] = []
 ) => {
   const feeds = PostingFeeds.of({
     catalog,
     fetch: (feed) => {
+      fetched.push(feed.key);
+
       const response = pipe(
         Array.findFirstIndex(feedKeys, (key) => key === feed.key),
         Option.flatMap((index) => Array.get(responses, index))
@@ -112,7 +145,7 @@ const ingestResponses = (
   });
 
   return runIngest({
-    feedConcurrency: 2,
+    feedConcurrency: 1,
     feedsPerRun: feedKeys.length,
   }).pipe(
     Effect.provide(
@@ -122,8 +155,6 @@ const ingestResponses = (
 };
 
 const listed = (ids: (typeof Listed.Type)["ids"]) => Listed.make({ ids });
-
-const down = Down.make({});
 
 const listAll: JobQueryValue = {
   limit: 100,
@@ -137,7 +168,7 @@ const listAll: JobQueryValue = {
 
 const uniqueIds = (ids: readonly string[]) => [...new Set(ids)].toSorted();
 
-const listedIds = (responses: typeof Run.Type) =>
+const listedIds = (responses: readonly (typeof FeedResponse.Type)[]) =>
   uniqueIds(
     pipe(
       responses,
@@ -146,6 +177,75 @@ const listedIds = (responses: typeof Run.Type) =>
       )
     )
   );
+
+const replayHistory = (
+  schedule: readonly (readonly [typeof Run.Type, number])[]
+) =>
+  Effect.gen(function* replaySchedule() {
+    const memory = yield* makeMemoryJobStore;
+    const lastSeen = new Map<string, number>();
+    const lastSuccess = new Map<string, number>();
+    const expectedReposts = new Map<string, number>();
+    let before = new Map(memory.history());
+
+    for (const [responses, gapDays] of schedule) {
+      yield* TestClock.adjust(`${gapDays} days`);
+
+      const fetched: string[] = [];
+
+      yield* ingestResponses(memory, responses, fetched);
+
+      const seenAt = yield* Clock.currentTimeMillis;
+
+      for (const key of fetched) {
+        const response = pipe(
+          Array.findFirstIndex(feedKeys, (candidate) => candidate === key),
+          Option.flatMap((index) => Array.get(responses, index)),
+          Option.filter((found) => Predicate.isTagged(found, "Listed"))
+        );
+
+        if (Option.isSome(response)) {
+          const feedLastSuccess = lastSuccess.get(key) ?? 0;
+
+          for (const id of listedIds([response.value])) {
+            const fingerprint = fingerprintOf(postingFor(id));
+            const previous = lastSeen.get(fingerprint);
+
+            if (
+              previous !== undefined &&
+              seenAt - previous > REPOST_GAP &&
+              previous < feedLastSuccess
+            ) {
+              expectedReposts.set(
+                fingerprint,
+                (expectedReposts.get(fingerprint) ?? 0) + 1
+              );
+            }
+
+            lastSeen.set(fingerprint, seenAt);
+          }
+
+          lastSuccess.set(key, seenAt);
+        }
+      }
+
+      const after = new Map(memory.history());
+
+      for (const [fingerprint, previous] of before) {
+        const next = after.get(fingerprint);
+
+        expect(next).toBeDefined();
+        expect(next?.firstSeenAt).toBeLessThanOrEqual(previous.firstSeenAt);
+        expect(next?.sightings).toBeGreaterThanOrEqual(previous.sightings);
+      }
+
+      for (const [fingerprint, found] of after) {
+        expect(found.reposts).toBe(expectedReposts.get(fingerprint) ?? 0);
+      }
+
+      before = after;
+    }
+  });
 
 describe("ingest", () => {
   it.effect.prop(
@@ -194,52 +294,15 @@ describe("ingest", () => {
   );
 
   it.effect.prop(
-    "history first-seen never moves later, and a role counts a repost exactly when no feed listed it for longer than the repost gap",
+    "history first-seen never moves later, and a role counts a repost exactly when it was absent longer than the repost gap from a feed that succeeded since it was last seen",
     { schedule: spacedRuns },
-    ({ schedule }) =>
-      Effect.gen(function* replayHistory() {
-        const memory = yield* makeMemoryJobStore;
-        const lastSeen = new Map<string, number>();
-        const expectedReposts = new Map<string, number>();
-        let before = new Map(memory.history());
+    ({ schedule }) => replayHistory(schedule)
+  );
 
-        for (const [responses, gapDays] of schedule) {
-          yield* TestClock.adjust(`${gapDays} days`);
-          yield* ingestResponses(memory, responses);
-
-          const seenAt = yield* Clock.currentTimeMillis;
-
-          for (const id of listedIds(responses)) {
-            const fingerprint = fingerprintOf(postingFor(id));
-            const previous = lastSeen.get(fingerprint);
-
-            if (previous !== undefined && seenAt - previous > REPOST_GAP) {
-              expectedReposts.set(
-                fingerprint,
-                (expectedReposts.get(fingerprint) ?? 0) + 1
-              );
-            }
-
-            lastSeen.set(fingerprint, seenAt);
-          }
-
-          const after = new Map(memory.history());
-
-          for (const [fingerprint, previous] of before) {
-            const next = after.get(fingerprint);
-
-            expect(next).toBeDefined();
-            expect(next?.firstSeenAt).toBeLessThanOrEqual(previous.firstSeenAt);
-            expect(next?.sightings).toBeGreaterThanOrEqual(previous.sightings);
-          }
-
-          for (const [fingerprint, found] of after) {
-            expect(found.reposts).toBe(expectedReposts.get(fingerprint) ?? 0);
-          }
-
-          before = after;
-        }
-      })
+  it.effect.prop(
+    "the repost rule holds when one feed stays down for many runs and recovers still listing its roles",
+    { schedule: outages },
+    ({ schedule }) => replayHistory(schedule)
   );
 
   it.effect.prop(

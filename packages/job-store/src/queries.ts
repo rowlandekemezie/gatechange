@@ -178,8 +178,19 @@ ON CONFLICT (fingerprint) DO UPDATE SET
   first_seen_at = MIN(job_history.first_seen_at, excluded.first_seen_at),
   last_seen_at = MAX(job_history.last_seen_at, excluded.last_seen_at),
   sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
-  reposts = job_history.reposts + (job_history.last_seen_at < excluded.last_seen_at - ?)`,
-    [fingerprintOf(job), fingerprintOf(job), seenAt, seenAt, seenAt, REPOST_GAP]
+  reposts = job_history.reposts + (
+    job_history.last_seen_at < excluded.last_seen_at - ?
+    AND job_history.last_seen_at < COALESCE((SELECT last_success_at FROM feeds WHERE key = ?), 0)
+  )`,
+    [
+      fingerprintOf(job),
+      fingerprintOf(job),
+      seenAt,
+      seenAt,
+      seenAt,
+      REPOST_GAP,
+      job.feed,
+    ]
   );
 
 export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
@@ -205,8 +216,8 @@ export const feedSucceededStatement = (
     `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
 VALUES (?, ?, ?, NULL, 0)
 ON CONFLICT (key) DO UPDATE SET
-  last_attempt_at = excluded.last_attempt_at,
-  last_success_at = excluded.last_success_at,
+  last_attempt_at = MAX(COALESCE(feeds.last_attempt_at, 0), excluded.last_attempt_at),
+  last_success_at = MAX(COALESCE(feeds.last_success_at, 0), excluded.last_success_at),
   last_error = NULL,
   consecutive_failures = 0`,
     [feedKey, seenAt, seenAt]
