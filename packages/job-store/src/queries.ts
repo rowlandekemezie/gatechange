@@ -94,6 +94,9 @@ LIMIT ? OFFSET ?`,
   );
 };
 
+export const findJobStatement = (id: string): SqlStatement =>
+  statement(`SELECT ${jobColumns} FROM jobs WHERE id = ? LIMIT 1`, [id]);
+
 export const countJobsStatement = (
   query: JobQueryValue,
   now: number

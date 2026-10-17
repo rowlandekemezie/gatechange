@@ -184,6 +184,7 @@ a {
   padding: 0.4rem 0.95rem;
   border-color: transparent;
   color: var(--ink-soft);
+  text-decoration: none;
 }
 
 .tab-on {
@@ -261,6 +262,10 @@ a {
   color: var(--ink);
 }
 
+.job-source {
+  text-underline-offset: 0.18em;
+}
+
 .job-side {
   display: flex;
   flex-direction: column;
@@ -321,6 +326,63 @@ a {
 
 .empty p {
   margin: 0 0 0.5rem;
+}
+
+.detail {
+  max-width: var(--measure);
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--ink-soft);
+  text-underline-offset: 0.18em;
+}
+
+.detail-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 5vw, 2.25rem);
+  font-weight: 650;
+  font-variation-settings: "wdth" 90;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.page-title {
+  margin: 1.5rem 0 1rem;
+}
+
+.detail-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.25rem;
+  margin: 1.25rem 0;
+}
+
+.detail-facts dt {
+  color: var(--ink-soft);
+}
+
+.detail-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.apply {
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .footer {
