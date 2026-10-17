@@ -21,10 +21,10 @@ $S/down.sh lane-1
 
 ## Launch
 
-`scripts/up.sh <stage>` starts `mise exec node@24.18.0 pnpm@11.3.0 -- pnpm dev --stage <stage> --no-input` in the background and waits for the line `{ websiteUrl: 'http://localhost:<port>' }` in `dev.log`. It writes the URL to `/tmp/verify-jobs/<stage>/url` and prints it.
+`scripts/up.sh <stage>` first runs `turbo run build --filter=@rat-stack/infra...`, because `alchemy dev` imports the workspace packages' `dist` output and a fresh checkout has none. Turbo's cache makes this a no-op on later runs. It then starts `mise exec node@24.18.0 pnpm@11.3.0 -- pnpm dev --stage <stage> --no-input` in the background and waits for the line `{ websiteUrl: 'http://localhost:<port>' }` in `dev.log`. It writes the URL to `/tmp/verify-jobs/<stage>/url` and prints it.
 
 - The first free port from 1337 goes to whichever Worker starts first. `alchemy dev` moves the other one up and logs `Port 1337 is in use by another process; serving on 1338 instead`. `up.sh` echoes that note. Always read the URL from `up.sh`, never assume a port.
-- If `alchemy dev` exits during boot, `up.sh` prints the last 20 log lines and exits 1. The boot timeout is 150 seconds, or `VERIFY_BOOT_TIMEOUT`.
+- If `alchemy dev` exits during boot, `up.sh` prints the last 20 log lines and exits 1. If it logs `alchemy dev: run failed`, it stays alive waiting for a file change, so `up.sh` prints the error and exits 1, and you run `down.sh`. The boot timeout is 150 seconds, or `VERIFY_BOOT_TIMEOUT`.
 - If the stage is already running and its URL answers 200, `up.sh` reuses it.
 
 One checkout runs one stage at a time, and `up.sh` refuses to start a second. Every stage keeps its D1 as a SQLite file in `apps/infra/.alchemy/local/d1/cloudflare-runtime-D1DatabaseObject/`. `up.sh` records the file the stage created in `/tmp/verify-jobs/<stage>/d1`, and the seed, doctor, and teardown use that path. To run lanes side by side, give each lane its own worktree.

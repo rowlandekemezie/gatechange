@@ -14,6 +14,11 @@ for other in /tmp/verify-jobs/*/pid; do
   fi
 done
 
+if ! (cd "$REPO" && "${PNPM[@]}" turbo run build --filter=@rat-stack/infra...) >"$RUN_DIR/build.log" 2>&1; then
+  echo "building the workspace packages alchemy dev imports failed; see $RUN_DIR/build.log" >&2
+  exit 1
+fi
+
 rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url"
 echo "$REPO" >"$RUN_DIR/repo"
 d1_before="$(d1_files)"
@@ -28,6 +33,11 @@ until url="$(grep -oE "websiteUrl: 'http://localhost:[0-9]+'" "$RUN_DIR/dev.log"
   if ! kill -0 "$pid" 2>/dev/null; then
     echo "alchemy dev exited before the Website was ready. Last log lines:" >&2
     tail -n 20 "$RUN_DIR/dev.log" >&2
+    exit 1
+  fi
+  if grep -q "alchemy dev: run failed" "$RUN_DIR/dev.log"; then
+    echo "alchemy dev failed to plan the stack and is waiting for a file change; run down.sh $STAGE after reading:" >&2
+    grep -A3 "run failed" "$RUN_DIR/dev.log" >&2
     exit 1
   fi
   if ((SECONDS > deadline)); then
