@@ -1,0 +1,104 @@
+---
+name: verify
+description: Boot the jobs.rowlandekemezie.com board locally with alchemy dev, seed its local D1 from recorded fixtures, drive the Foldkit board in headless Chrome, and save screenshots. Use to prove any change a person can see on the board, such as filters, search, the shortlist, layout, or dark mode, before calling it done.
+---
+
+# Verify the job board
+
+The board is a Foldkit web app served by the `Website` Worker, which forwards `/rpc` to the `JobsBackend` Worker over a local D1. This skill runs the real stack through `alchemy dev` on a stage you name, fills D1 with 100 recorded company-board listings, and drives the page in headless Chrome over the DevTools protocol. It needs no network for the board itself and adds no dependencies. It needs Node 24.18 (for `node:sqlite` and TypeScript stripping), pnpm 11.3 through `mise`, `curl`, `lsof`, and Google Chrome or Chromium.
+
+Every script takes the stage name first. Use a stage nobody else uses, such as `lane-3` or `j7-owner`. The scripts refuse `prod`. Run state lives in `/tmp/verify-jobs/<stage>/` (`dev.log`, `pid`, `url`).
+
+## Quick run
+
+```sh
+S=.claude/skills/verify/scripts
+VERIFY_OUT=/tmp/swarm-J7/worker-1 $S/verify.sh lane-1 --scenario board --full-page --name verify-cold
+$S/down.sh lane-1
+```
+
+`verify.sh` runs launch, seed, doctor, and one drive, then prints `PASS in <n>s from start to screenshot` or a `FAIL` line and exits non-zero. A cold run takes about 15 seconds after `pnpm install`. Run it again on the same stage and it reuses the running `alchemy dev`.
+
+## Launch
+
+`scripts/up.sh <stage>` starts `mise exec node@24.18.0 pnpm@11.3.0 -- pnpm dev --stage <stage> --no-input` in the background and waits for the line `{ websiteUrl: 'http://localhost:<port>' }` in `dev.log`. It writes the URL to `/tmp/verify-jobs/<stage>/url` and prints it.
+
+- The first free port from 1337 goes to whichever Worker starts first. `alchemy dev` moves the other one up and logs `Port 1337 is in use by another process; serving on 1338 instead`. `up.sh` echoes that note. Always read the URL from `up.sh`, never assume a port.
+- If `alchemy dev` exits during boot, `up.sh` prints the last 20 log lines and exits 1. The boot timeout is 150 seconds, or `VERIFY_BOOT_TIMEOUT`.
+- If the stage is already running and its URL answers 200, `up.sh` reuses it.
+
+One checkout runs one stage at a time. The local D1 lives in `apps/infra/.alchemy/local/d1/` and is shared by every stage in that checkout. The seed script writes to the most recently touched jobs database, which is the running stage's. To run lanes side by side, give each lane its own worktree.
+
+## Seed
+
+`scripts/seed.sh <stage>` loads `fixtures/jobs.json` into the running stage's local D1 with `node:sqlite`. It deletes rows whose feed starts with `fixture:`, inserts the 100 fixture jobs, and checks the count. Running it again gives the same 100 rows. Live rows from other feeds stay.
+
+- Fixture feed keys carry the `fixture:` prefix. `runIngest` replaces rows per feed key, so a cron run never deletes or overwrites a fixture row.
+- The fixture stores each job's age in hours, already divided by four, and the seed sets `posted_at` to now minus that age. About 92 of the 100 jobs fall inside the board's default 7-day window, and about 17 inside the 1-day window.
+- The fixtures hold only Greenhouse, Lever, and Ashby listings, which are the companies' own public postings. Aggregator listings stay out because their terms limit redistribution.
+- `packages/job-store/test/verify-seed.test.ts` loads the fixture into sql.js with the real migrations and checks the row count, idempotence, and that live rows survive.
+
+To refresh the fixtures, boot a stage, trigger live ingest runs through the dev cron hook (several runs, since each run takes 20 feeds), then record:
+
+```sh
+curl "$(cat /tmp/verify-jobs/<stage>/backend-url)/cdn-cgi/handler/scheduled?cron=*/20+*+*+*+*"
+mise exec node@24.18.0 -- node .claude/skills/verify/scripts/record-fixtures.ts
+```
+
+Recording reads live public job boards, so do it by hand and commit the result. Never record during a verification run. If the fixture count changes, update `FIXTURE_JOBS` in the seed test.
+
+## Doctor
+
+`scripts/doctor.sh <stage>` is read-only. Run it first whenever anything looks off. It prints one `ok` or `FAIL` line per check and exits 1 on any failure:
+
+- `alchemy dev` for the stage is running.
+- The Website answers 200 at the recorded URL.
+- The port is held by a process this stage started, not someone else's server.
+- The local D1 holds every fixture job.
+
+## Drive
+
+`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 20) and fails as soon as the board shows its error alert.
+
+```sh
+mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
+  --url "$(cat /tmp/verify-jobs/<stage>/url)" --out <dir> --scenario <name> [--mobile] [--dark] [--full-page] [--name <slug>]
+```
+
+Scenarios:
+
+- `board` loads the board and screenshots it.
+- `filter` clicks the `day` age chip and requires the count line and the row count to drop.
+- `search` types the first row's company into the search box, submits, and requires every row to show that company.
+- `shortlist` presses `Save` on the first row, opens the `Your shortlist` tab, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
+
+Flags:
+
+- `--mobile` emulates a 390 by 844 phone at 3x, so the PNG is 1170 pixels wide.
+- `--dark` sets `prefers-color-scheme: dark`. The report's `background` field shows the body color, so a dark run reads near black.
+- `--full-page` captures the whole page instead of the viewport.
+
+The handles come from `apps/web/src/client/board/view.ts`: `li.job` rows, `p.count` for the match count, `.status` for the board stats line, `button.phrase` chips by text (`day`, `3 days`, `week`, `remote in Canada`, `director`, and so on), `form.search input`, `li.job button.mark` for `Save` and `Applied`, `nav.tabs button.tab` for `Open roles` and `Your shortlist (n)`, and `.empty[role=alert]` for the load error. To add a scenario, add an entry to `actions` in `drive.ts` that clicks through these handles and throws when the end state is wrong.
+
+`drive.ts` prints one JSON line. On success it has `ok: true`, each step's row count and count text, and the screenshot path, and exits 0. On failure it has `ok: false`, a `reason`, and a `<name>-failed.png` screenshot when Chrome can still take one, and exits 1. Bad arguments exit 2.
+
+## Evidence
+
+Screenshots go to `--out`, or to `VERIFY_OUT` when you use `verify.sh`. The default is `/tmp/verify-jobs/<stage>/shots/`. Swarm lanes save to `/tmp/swarm-<pr>/worker-<n>/<slug>.png`.
+
+A proof drives the page the way a person does: chips, the search box, and buttons. It never calls `/rpc` directly or writes UI state into `localStorage`. Keep the JSON line with the screenshot, since it records the action and the state after it. For a change that writes data, also read the local D1 after the drive with `node:sqlite`. `seed-local-d1.ts --check` shows how to open the database read-only.
+
+## Cleanup
+
+`scripts/down.sh <stage>` stops the processes this stage started, by the recorded pid and its descendants and never by process name. It then runs `alchemy destroy --stage <stage>`, which deletes the stage's local Workers and D1 from the Alchemy state. The output lists each step. Screenshots in `VERIFY_OUT` or `shots/` stay. Always run `down.sh` after a lane, including after a failure.
+
+## Failure modes
+
+- `alchemy dev exited before the Website was ready`: read the log tail. A stale stage often clears with `down.sh` then `up.sh`.
+- `FAIL alchemy dev for stage <stage> exited during the run`: the dev server died mid-drive. `verify.sh` reports it even when the drive passed.
+- `board shows an error`: the RPC call failed. Check `dev.log` and `apps/infra/.alchemy/log/<stage>/JobsBackend`.
+- `timed out waiting for at least 20 job rows`: the seed did not reach this stage's D1. Run `doctor.sh`.
+
+## Feature map
+
+`features/README.md` lists every user-facing feature and how to drive it. Keep it current with `/maintain-verification-skill`.
