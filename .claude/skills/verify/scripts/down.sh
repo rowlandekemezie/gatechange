@@ -15,7 +15,8 @@ if pid="$(dev_pid)"; then
     for i in "${!pids[@]}"; do
       if unchanged "$i"; then
         kill "-$1" "${pids[$i]}" 2>/dev/null || true
-      elif now="$(ps -o command= -p "${pids[$i]}" 2>/dev/null)"; then
+      elif [[ "$(ps -o stat= -p "${pids[$i]}" 2>/dev/null)" != Z* ]] &&
+        now="$(ps -o command= -p "${pids[$i]}" 2>/dev/null)"; then
         echo "pid ${pids[$i]} now runs '$now', not what it ran when listed; did not send it SIG$1"
       fi
     done
