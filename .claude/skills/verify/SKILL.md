@@ -78,6 +78,13 @@ Scenarios:
 - `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
 - `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
 - `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.
+- `tracker-import` presses `Save` on the first two rows and `Applied` on the third while signed out, signs in, and requires all three in the tracker exactly once with the `jobs.shortlist.v1` key gone. Run it twice with the same `--email` to prove a second import adds nothing.
+- `tracker-list` signs in and reports the tracker's sections and titles. Run it with the same `--email` as another drive to act as a second browser.
+- `tracker-stages` signs in, saves the first row if the tracker is empty, and moves the first card through Applied, Offer, Rejected, Saved, and Interviewing, reloading after each move. It fails if the page scrolls sideways.
+- `tracker-note` signs in, writes a note on the first card, reloads, and requires the note.
+- `tracker-remove` signs in, removes the first card, reloads, and requires it gone.
+- `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
+- `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. Read the victim's row from the local D1 afterwards to prove it did not change.
 
 Flags:
 

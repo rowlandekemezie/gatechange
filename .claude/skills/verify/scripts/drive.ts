@@ -31,6 +31,7 @@ const { values } = parseArgs({
     scenario: { default: "board", type: "string" },
     "timeout-ms": { default: "45000", type: "string" },
     url: { type: "string" },
+    "victim-job": { type: "string" },
   },
 });
 
@@ -43,6 +44,13 @@ const scenarios = [
   "bad-email",
   "signout",
   "link-reuse",
+  "tracker-import",
+  "tracker-list",
+  "tracker-stages",
+  "tracker-note",
+  "tracker-remove",
+  "tracker-closed",
+  "tracker-isolation",
 ] as const;
 
 type Scenario = (typeof scenarios)[number];
@@ -333,6 +341,8 @@ const screenshot = async (slug: string) => {
 
 interface Step extends Partial<BoardStateValue> {
   readonly background?: string;
+  readonly detail?: string;
+  readonly tracker?: TrackerStateValue;
   readonly companies?: readonly string[];
   readonly email?: string;
   readonly header?: string;
@@ -447,6 +457,90 @@ const submitEmail = async (email: string) => {
   );
 };
 
+const TrackerState = Schema.Struct({
+  closed: Schema.Array(Schema.String),
+  empty: Schema.Boolean,
+  loading: Schema.Boolean,
+  notes: Schema.Array(Schema.String),
+  overflow: Schema.Finite,
+  pipeline: Schema.String,
+  problem: Schema.String,
+  sections: Schema.Array(
+    Schema.Struct({
+      heading: Schema.String,
+      titles: Schema.Array(Schema.String),
+    })
+  ),
+  stored: Schema.NullOr(Schema.String),
+  titles: Schema.Array(Schema.String),
+});
+
+type TrackerStateValue = typeof TrackerState.Type;
+
+const trackerState = async () =>
+  await evaluate(
+    TrackerState,
+    `({
+    closed: [...document.querySelectorAll("li.tracked-closed .job-title")].map((node) => node.textContent),
+    empty: [...document.querySelectorAll(".empty p")].some((node) => node.textContent === "Your tracker is empty."),
+    loading: document.querySelector(".empty [role=status]") !== null,
+    notes: [...document.querySelectorAll("li.tracked textarea")].map((node) => node.value),
+    overflow: document.documentElement.scrollWidth - window.innerWidth,
+    pipeline: document.querySelector("ol.pipeline")?.textContent ?? "",
+    problem: document.querySelector(".sign-in-problem[role=alert]")?.textContent ?? "",
+    sections: [...document.querySelectorAll("section.day")].map((section) => ({
+      heading: section.querySelector(".day-heading")?.textContent ?? "",
+      titles: [...section.querySelectorAll("li.tracked .job-title")].map((node) => node.textContent),
+    })),
+    stored: localStorage.getItem("jobs.shortlist.v1"),
+    titles: [...document.querySelectorAll("li.tracked .job-title")].map((node) => node.textContent),
+  })`
+  );
+
+const waitForTracker = async (
+  label: string,
+  accept: (state: TrackerStateValue) => boolean
+) =>
+  await waitFor(label, async () => {
+    const state = await trackerState();
+
+    return !state.loading && accept(state) ? state : undefined;
+  });
+
+const stageOfTitle = (state: TrackerStateValue, title: string) =>
+  state.sections
+    .find((section) => section.titles.includes(title))
+    ?.heading.replace(/ \(\d+\)$/u, "");
+
+const duplicatesOf = (titles: readonly string[]) =>
+  titles.filter((title, index) => titles.indexOf(title) !== index);
+
+const inCard = async (title: string, script: string) =>
+  await evaluate(
+    Schema.Boolean,
+    `(() => {
+    const card = [...document.querySelectorAll("li.tracked")]
+      .find((node) => node.querySelector(".job-title")?.textContent === ${JSON.stringify(title)});
+    if (card === undefined) return false;
+    ${script}
+    return true;
+  })()`
+  );
+
+const rpcCall = async (
+  tag: string,
+  payload: Readonly<Record<string, string>>
+) =>
+  await evaluate(
+    Schema.String,
+    `fetch("/rpc", {
+      body: JSON.stringify({ _tag: "Request", headers: [], id: "1", payload: ${JSON.stringify(payload)}, tag: ${JSON.stringify(tag)} }),
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    }).then((response) => response.text())`
+  );
+
 const Shortlist = Schema.Struct({
   heading: Schema.String,
   titles: Schema.Array(Schema.String),
@@ -539,6 +633,51 @@ const run = async () => {
     );
 
     steps.push({ step: "signed out and reloaded", ...reloaded });
+  };
+
+  const shortlistUrl = new URL("/shortlist", url).href;
+
+  const openTracker = async (label: string) => {
+    await goTo(shortlistUrl);
+
+    const tracker = await waitForTracker(
+      label,
+      (state) => state.empty || state.titles.length > 0 || state.problem !== ""
+    );
+
+    if (tracker.problem !== "") {
+      throw new Error(`the tracker shows a problem: ${tracker.problem}`);
+    }
+
+    steps.push({ step: label, tracker });
+
+    return tracker;
+  };
+
+  const firstTracked = async () => {
+    const tracker = await openTracker("opened the tracker");
+    const [title] = tracker.titles;
+
+    if (title !== undefined) {
+      return title;
+    }
+
+    await goTo(url);
+    await waitForRows("the board", (state) => state.rows > 0);
+
+    const saved = await evaluate(
+      Schema.String,
+      'document.querySelector("li.job .job-title")?.textContent ?? ""'
+    );
+
+    if (!(await clickButton("li.job button.mark", "Save"))) {
+      throw new Error("no Save button on the first job");
+    }
+
+    await sleep(1500);
+    await openTracker("opened the tracker after saving a job");
+
+    return saved;
   };
 
   const actions: Partial<Record<Scenario, () => Promise<void>>> = {
@@ -683,6 +822,194 @@ const run = async () => {
     signout: async () => {
       await signIn();
       await signOut();
+    },
+    "tracker-closed": async () => {
+      await signIn();
+
+      const tracker = await openTracker("opened the tracker");
+
+      if (tracker.closed.length === 0) {
+        throw new Error("no tracked job shows the closed-posting note");
+      }
+    },
+    "tracker-import": async () => {
+      const titles = await evaluate(
+        Schema.Array(Schema.String),
+        '[...document.querySelectorAll("li.job .job-title")].slice(0, 3).map((node) => node.textContent)'
+      );
+
+      await evaluate(
+        Ignored,
+        `[...document.querySelectorAll("li.job")].slice(0, 3).forEach((row, index) =>
+          [...row.querySelectorAll("button.mark")]
+            .find((button) => button.textContent.trim() === (index === 2 ? "Applied" : "Save"))
+            ?.click())`
+      );
+
+      steps.push({
+        step: "saved two and applied one while signed out",
+        titles,
+      });
+
+      await signIn();
+
+      const imported = await openTracker("opened the tracker after sign-in");
+
+      const missing = titles.filter(
+        (title) => !imported.titles.includes(title)
+      );
+
+      const duplicated = duplicatesOf(imported.titles);
+
+      if (missing.length > 0) {
+        throw new Error(`the import lost ${missing.join(", ")}`);
+      }
+
+      if (duplicated.length > 0) {
+        throw new Error(`the tracker repeats ${duplicated.join(", ")}`);
+      }
+
+      if (imported.stored !== null) {
+        throw new Error("the browser shortlist was not cleared after import");
+      }
+    },
+    "tracker-isolation": async () => {
+      const victim = values["victim-job"] ?? fail("--victim-job is required");
+
+      const anonymous = await rpcCall("trackedJobs", {});
+
+      steps.push({ detail: anonymous, step: "asked for a tracker signed out" });
+
+      if (!anonymous.includes("Unauthorized")) {
+        throw new Error("a signed-out viewer was not refused");
+      }
+
+      await signIn();
+
+      const replies = [
+        await rpcCall("trackedJobs", {}),
+        await rpcCall("noteTrackedJob", {
+          jobId: victim,
+          notes: "isolation probe",
+        }),
+        await rpcCall("untrackJob", { jobId: victim }),
+      ];
+
+      steps.push({
+        detail: replies.join("\n"),
+        step: `probed ${victim} as ${values.email}`,
+      });
+
+      if (replies.some((reply) => reply.includes(victim))) {
+        throw new Error("another member's tracked job came back");
+      }
+    },
+    "tracker-list": async () => {
+      await signIn();
+      await openTracker("opened the tracker");
+    },
+    "tracker-note": async () => {
+      await signIn();
+
+      const title = await firstTracked();
+      const note = `Recruiter screen booked ${new Date().toISOString()}`;
+
+      await inCard(
+        title,
+        `card.querySelector("details").open = true;
+        const area = card.querySelector("textarea");
+        area.value = ${JSON.stringify(note)};
+        area.dispatchEvent(new Event("change", { bubbles: true }));`
+      );
+
+      await sleep(1500);
+      await openTracker("reloaded the tracker");
+
+      const reloaded = await waitForTracker("the note after reload", (state) =>
+        state.notes.includes(note)
+      );
+
+      steps.push({ detail: note, step: `noted ${title}`, tracker: reloaded });
+    },
+    "tracker-remove": async () => {
+      await signIn();
+
+      const title = await firstTracked();
+
+      await inCard(
+        title,
+        `[...card.querySelectorAll("button.mark")].find((button) => button.textContent === "Remove")?.click();`
+      );
+
+      await waitForTracker(
+        "the card to leave",
+        (state) => !state.titles.includes(title)
+      );
+      await sleep(1500);
+
+      const reloaded = await openTracker("reloaded the tracker");
+
+      steps.push({ detail: title, step: "removed a tracked job" });
+
+      if (reloaded.titles.includes(title)) {
+        throw new Error(`${title} came back after reload`);
+      }
+    },
+    "tracker-stages": async () => {
+      await signIn();
+
+      const title = await firstTracked();
+
+      const moveThrough = async (
+        remaining: readonly string[]
+      ): Promise<void> => {
+        const [stage, ...rest] = remaining;
+
+        if (stage === undefined) {
+          return;
+        }
+
+        await inCard(
+          title,
+          `const select = card.querySelector("select");
+          select.value = ${JSON.stringify(stage)};
+          select.dispatchEvent(new Event("change", { bubbles: true }));`
+        );
+
+        await waitForTracker(
+          `${title} under ${stage}`,
+          (state) => stageOfTitle(state, title) === stage
+        );
+        await sleep(1500);
+        await openTracker(`reloaded after moving to ${stage}`);
+
+        const reloaded = await waitForTracker(
+          `${stage} after reload`,
+          (state) => stageOfTitle(state, title) === stage
+        );
+
+        steps.push({
+          detail: stage,
+          step: `moved ${title}`,
+          tracker: reloaded,
+        });
+
+        await moveThrough(rest);
+      };
+
+      await moveThrough([
+        "Applied",
+        "Offer",
+        "Rejected",
+        "Saved",
+        "Interviewing",
+      ]);
+
+      const final = await trackerState();
+
+      if (final.overflow > 0) {
+        throw new Error(`the tracker scrolls sideways by ${final.overflow}px`);
+      }
     },
   };
 
