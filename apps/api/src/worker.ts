@@ -21,7 +21,7 @@ import { postingFeedsLayer } from "@rat-stack/job-sources";
 import { d1JobStoreLayer, JobsDatabase } from "@rat-stack/job-store/d1";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import { Config, Effect, Layer, Option, Redacted } from "effect";
+import { Config, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { FetchHttpClient, HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
@@ -39,16 +39,30 @@ export const SITE_ORIGIN = "https://jobs.rowlandekemezie.com";
 
 export const AUTH_HOSTS = ["jobs.rowlandekemezie.com", "localhost:*"];
 
+export const MIN_AUTH_SECRET_LENGTH = 32;
+
+const authSecret = Config.schema(
+  Schema.Redacted(
+    Schema.String.check(Schema.isMinLength(MIN_AUTH_SECRET_LENGTH))
+  ),
+  "BETTER_AUTH_SECRET"
+);
+
 const socialCredentials = (prefix: string) =>
   Config.all({
-    clientId: Config.String(`${prefix}_CLIENT_ID`),
-    clientSecret: Config.Redacted(`${prefix}_CLIENT_SECRET`),
+    clientId: Config.String(`${prefix}_CLIENT_ID`).pipe(Config.withDefault("")),
+    clientSecret: Config.Redacted(`${prefix}_CLIENT_SECRET`).pipe(
+      Config.withDefault(Redacted.make(""))
+    ),
   }).pipe(
-    Config.map(({ clientId, clientSecret }): SocialCredentials => ({
-      clientId,
-      clientSecret: Redacted.value(clientSecret),
-    })),
-    Config.option
+    Config.map(({ clientId, clientSecret }) =>
+      clientId === "" || Redacted.value(clientSecret) === ""
+        ? Option.none<SocialCredentials>()
+        : Option.some({
+            clientId,
+            clientSecret: Redacted.value(clientSecret),
+          })
+    )
   );
 
 const isAuthPath = (url: string) =>
@@ -97,7 +111,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       )
     );
 
-    const secret = yield* Config.Redacted("BETTER_AUTH_SECRET");
+    const secret = yield* authSecret;
     const github = yield* socialCredentials("GITHUB");
     const google = yield* socialCredentials("GOOGLE");
 
