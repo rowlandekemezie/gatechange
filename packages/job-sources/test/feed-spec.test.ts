@@ -1,13 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import { selectDueFeeds } from "@rat-stack/core";
+import { selectDueFeeds, SourceTerms } from "@rat-stack/core";
 import type { FeedRef, FeedStateValue, SourceNameValue } from "@rat-stack/core";
 
-import {
-  companyBoards,
-  feedRefOf,
-  feedSpecs,
-  SourceTerms,
-} from "../src/index.js";
+import { companyBoards, feedRefOf, feedSpecs } from "../src/index.js";
 
 const MINUTE = 60_000;
 

@@ -1,10 +1,12 @@
-import { roleLevels } from "@rat-stack/core/contracts";
-import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
+import { roleLevels, SourceTerms } from "@rat-stack/core/contracts";
+import type {
+  JobValue,
+  RoleLevelValue,
+  SourceTermsValue,
+} from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
-import { SourceTerms } from "../../../../../packages/job-sources/src/source-terms.js";
-import type { SourceTermsValue } from "../../../../../packages/job-sources/src/source-terms.js";
 import {
   ageChip,
   dayHeading,

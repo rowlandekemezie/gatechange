@@ -1,4 +1,4 @@
-import type { SourceNameValue } from "@rat-stack/core";
+import type { SourceNameValue } from "./job.js";
 
 export interface SourceTermsValue {
   readonly creditUrl: string;

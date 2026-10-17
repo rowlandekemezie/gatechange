@@ -28,7 +28,3 @@ export {
   textOfHtml,
   workplaceOf,
 } from "./parse.js";
-
-export { SourceTerms } from "./source-terms.js";
-
-export type { SourceTermsValue } from "./source-terms.js";
