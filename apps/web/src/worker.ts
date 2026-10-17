@@ -18,10 +18,46 @@ interface EdgeBindings {
 const isRpc = (pathname: string) =>
   pathname === "/rpc" || pathname.startsWith("/rpc/");
 
-const respond = (body: string, contentType: string, status = 200) =>
+interface Lifetime {
+  readonly waitUntil: (work: Promise<unknown>) => void;
+}
+
+const respond = (
+  body: string,
+  contentType: string,
+  status = 200,
+  headers: Record<string, string> = {}
+) =>
   new Response(body, {
-    headers: { "content-type": `${contentType}; charset=utf-8` },
+    headers: { ...headers, "content-type": `${contentType}; charset=utf-8` },
     status,
+  });
+
+const PAGE_CACHE = "pages";
+
+const PAGE_CACHE_CONTROL = "public, max-age=0, s-maxage=600";
+
+const hexOf = (digest: ArrayBuffer) =>
+  [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+const cachedPage = (url: URL, shell: string) =>
+  // @effect-diagnostics-next-line asyncFunction:off -- The Workers Cache API and SubtleCrypto are Promise-based.
+  Effect.promise(async () => {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(shell)
+    );
+
+    const keyUrl = new URL(url.href);
+
+    keyUrl.searchParams.set("shell", hexOf(digest));
+
+    const key = new Request(keyUrl);
+    const cache = await caches.open(PAGE_CACHE);
+
+    return { cache, hit: await cache.match(key), key };
   });
 
 const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
@@ -51,21 +87,28 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
     })
   );
 
-const servePage = (bindings: EdgeBindings, url: URL) =>
+const servePage = (bindings: EdgeBindings, url: URL, lifetime: Lifetime) =>
   Effect.gen(function* serveRenderedPage() {
     const route = routeOfUrl(yield* Effect.fromOption(fromString(url.href)));
+    const shell = yield* shellOf(bindings.ASSETS, url.origin);
+    const { cache, hit, key } = yield* cachedPage(url, shell);
 
-    const [shell, preload] = yield* Effect.all(
-      [
-        shellOf(bindings.ASSETS, url.origin),
-        preloadOf(bindings.BACKEND, route),
-      ],
-      { concurrency: 2 }
-    );
+    if (hit !== undefined) {
+      return Option.some(hit);
+    }
 
+    const preload = yield* preloadOf(bindings.BACKEND, route);
     const page = yield* renderPage(shell, url, route, preload);
 
-    return Option.some(respond(page.html, "text/html", page.status));
+    const response = respond(page.html, "text/html", page.status, {
+      "cache-control": PAGE_CACHE_CONTROL,
+    });
+
+    yield* Effect.sync(() => {
+      lifetime.waitUntil(cache.put(key, response.clone()));
+    });
+
+    return Option.some(response);
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.as(
@@ -88,7 +131,8 @@ export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
   fetch: async (
     request: Request,
-    bindings: EdgeBindings
+    bindings: EdgeBindings,
+    lifetime: Lifetime
   ): Promise<Response> => {
     const url = new URL(request.url);
 
@@ -104,7 +148,7 @@ export default {
       return await Effect.runPromise(serveSitemap(bindings, url));
     }
 
-    const page = await Effect.runPromise(servePage(bindings, url));
+    const page = await Effect.runPromise(servePage(bindings, url, lifetime));
 
     return Option.isSome(page)
       ? page.value
