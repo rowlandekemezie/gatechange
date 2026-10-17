@@ -57,7 +57,7 @@ Each new piece of the product passes the cartridge test:
 - **Push in.** Adding it takes one package plus one `Layer.provide` or Stack line.
 - **Pull out.** Removing it leaves the rest of the board building and passing the gate.
 
-Debt only shrinks. Code that someone touches is finished the rat-stack way, and the old version is deleted. A lint exemption is retired, never added.
+Debt only shrinks. Code that someone touches is finished the rat-stack way, and the old version is deleted. A lint or diagnostics exemption follows `AGENTS.md`: a directive with a reason, at a real boundary.
 
 Behavior is proved on the running board, not only in tests. The project's verify skill at `.claude/skills/verify/` boots the board locally with recorded listings and drives it in a browser. A change to what a person sees ships with a screenshot from that skill.
 
@@ -73,7 +73,7 @@ Behavior is proved on the running board, not only in tests. The project's verify
 
 These changes need no sign-off beyond a clean gate and the review the stack requires:
 
-- A new company board in `packages/job-sources/src/boards.ts`, or a new feed adapter whose source terms allow the use.
+- A new company board in `packages/job-sources/src/boards.ts`, or a new feed adapter, as `AGENTS.md` allows. The source-terms rule still governs how its listings are used.
 - Tests, docs, and verify-skill scenarios.
 - Free features that make the board faster to use, as long as no listing moves behind a sign-in.
 - A deploy whose `pnpm infra:plan` shows only the intended diff, per `AGENTS.md`.
