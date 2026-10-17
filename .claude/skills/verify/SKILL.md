@@ -17,7 +17,7 @@ VERIFY_OUT=/tmp/swarm-J7/worker-1 $S/verify.sh lane-1 --scenario board --full-pa
 $S/down.sh lane-1
 ```
 
-`verify.sh` runs launch, seed, doctor, and one drive, then prints `PASS in <n>s from start to screenshot` or a `FAIL` line and exits non-zero. A cold run takes about 15 seconds after `pnpm install`. Run it again on the same stage and it reuses the running `alchemy dev`.
+`verify.sh` runs launch, seed, doctor, and one drive, then prints `PASS in <n>s from start to screenshot` or a `FAIL` line and exits non-zero. A run on a new stage took 25 seconds in a fresh clone after `pnpm install`, and 10 to 17 seconds once the build was cached. Run it again on the same stage and it reuses the running `alchemy dev`.
 
 ## Launch
 
