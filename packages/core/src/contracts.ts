@@ -41,9 +41,9 @@ export type {
 
 export { JobStoreUnavailable } from "./job-store-unavailable.js";
 
-export { SourceTerms } from "./source-terms.js";
+export { Permission, SourceTerms } from "./source-terms.js";
 
-export type { SourceTermsValue } from "./source-terms.js";
+export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
 export const listJobsContract = defineContract("listJobs", {
   annotations: { idempotent: true, readOnly: true },

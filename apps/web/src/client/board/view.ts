@@ -1,4 +1,4 @@
-import { roleLevels, SourceTerms } from "@rat-stack/core/contracts";
+import { roleLevels, SourceName, SourceTerms } from "@rat-stack/core/contracts";
 import type {
   JobValue,
   RoleLevelValue,
@@ -550,7 +550,9 @@ const tabs = (model: ModelValue, h: H): Html =>
   );
 
 const sourcesOf = (kind: SourceTermsValue["kind"]) =>
-  Object.values(SourceTerms).filter((terms) => terms.kind === kind);
+  SourceName.literals
+    .map((source) => SourceTerms[source])
+    .filter((terms) => terms.kind === kind);
 
 const creditList = (items: readonly (Html | string)[]) =>
   items.flatMap((item, index) => {
