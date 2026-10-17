@@ -176,7 +176,7 @@ describe("recorded company boards", () => {
   it.effect(
     "a SmartRecruiters board that returns fewer postings than it counts fails",
     () => {
-      const { layer } = listedBoard(250, 200);
+      const { layer, requested } = listedBoard(250, 200);
 
       return Effect.gen(function* refuseShortRead() {
         const failure = yield* Effect.flip(
@@ -184,6 +184,12 @@ describe("recorded company boards", () => {
         );
 
         expect(failure).toBeInstanceOf(FeedUnavailable);
+        expect(requested).toStrictEqual(
+          [0, 100, 200].map(
+            (offset) =>
+              `https://api.smartrecruiters.com/v1/companies/Acme/postings?offset=${offset}&limit=100`
+          )
+        );
       }).pipe(Effect.provide(layer));
     }
   );

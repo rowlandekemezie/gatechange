@@ -205,5 +205,4 @@ export const companyBoards: readonly CompanyBoardValue[] = [
   { ats: "ashby", name: "KOHO", slug: "koho" },
   { ats: "ashby", name: "Jobber", slug: "jobber" },
   { ats: "workable", name: "Upstream", slug: "upstream" },
-  { ats: "smartrecruiters", name: "Avery Dennison", slug: "AveryDennison" },
 ];
