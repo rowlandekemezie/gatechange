@@ -40,6 +40,10 @@ export { PostingFeeds } from "./posting-feeds.js";
 
 export { classifyRole, roleWeight } from "./role.js";
 
+export { Permission, SourceTerms } from "./source-terms.js";
+
+export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
+
 export {
   Arrangement,
   BoardStats,
