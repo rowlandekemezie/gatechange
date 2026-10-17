@@ -19,12 +19,12 @@ import type {
   AgeWindowValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
+import { markButtons, markKindOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
 import { jobRouter } from "../../client/route.js";
-import { markButtons, markKindOf } from "../job/view.js";
 
 const NEW_WINDOW = 86_400_000;
 

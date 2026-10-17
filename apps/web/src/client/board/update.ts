@@ -1,11 +1,11 @@
+import { roleLevels } from "@rat-stack/core/contracts";
 import { Array, Option, Schema, pipe } from "effect";
 import type { Update } from "foldkit";
 import { UrlRequest } from "foldkit/navigation";
 import { modifyFields } from "foldkit/struct";
-import { toString as urlToString } from "foldkit/url";
 import type { Url } from "foldkit/url";
 
-import { boardUrl, Route, routeOfUrl } from "../route.js";
+import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
 import type { RouteValue } from "../route.js";
 import {
   FetchJob,
@@ -15,6 +15,7 @@ import {
   LoadUrl,
   PushUrl,
   ReadShortlist,
+  ReplaceUrl,
   WriteShortlist,
 } from "./command.js";
 import {
@@ -22,6 +23,7 @@ import {
   Filters,
   hasNoSelection,
   queryOf,
+  regionGroups,
   toggled,
 } from "./filters.js";
 import type { FiltersValue } from "./filters.js";
@@ -34,6 +36,8 @@ import type { JobQueries } from "./queries.js";
 type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
 
 const sameFilters = Schema.toEquivalence(Filters);
+
+const sameRoute = Schema.toEquivalence(Route);
 
 const withFilters = (
   model: ModelValue,
@@ -61,20 +65,25 @@ const withFilters = (
   };
 };
 
-const navigatedTo = (
-  model: ModelValue,
-  filters: FiltersValue
-): UpdateReturn => {
-  const applied = withFilters(model, filters);
+const visiting = (
+  step: UpdateReturn,
+  visit: typeof PushUrl | typeof ReplaceUrl,
+  url: string
+): UpdateReturn => ({
+  commands: [...(step.commands ?? []), visit({ url })],
+  model: modifyFields(step.model, {
+    awaitingEcho: (pending) => [...pending, url],
+  }),
+});
 
-  return {
-    commands: [
-      ...(applied.commands ?? []),
-      PushUrl({ url: boardUrl(filters) }),
-    ],
-    model: applied.model,
-  };
-};
+const navigatedTo = (model: ModelValue, filters: FiltersValue): UpdateReturn =>
+  visiting(
+    withFilters(model, filters),
+    Schema.is(Route.Board)(model.route) && sameFilters(filters, model.filters)
+      ? ReplaceUrl
+      : PushUrl,
+    boardUrl(filters)
+  );
 
 const listedJob = (model: ModelValue, id: string) =>
   Schema.is(JobsState.Loaded)(model.jobs)
@@ -110,6 +119,44 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   });
 };
 
+const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
+  const route = routeOfUrl(url);
+  const routed = entered(model, route);
+
+  const address = addressOf(url);
+
+  const canonical = Schema.is(Route.Board)(route)
+    ? boardUrl(route.filters)
+    : address;
+
+  return canonical === address
+    ? routed
+    : visiting(routed, ReplaceUrl, canonical);
+};
+
+const echoed = (model: ModelValue, url: Url): UpdateReturn => {
+  const address = addressOf(url);
+
+  return Option.match(
+    pipe(
+      model.awaitingEcho,
+      Array.findFirstIndex((sent) => sent === address)
+    ),
+    {
+      onNone: () =>
+        arrivedAt(modifyFields(model, { awaitingEcho: () => [] }), url),
+      onSome: (index) => {
+        const later = model.awaitingEcho.slice(index + 1);
+        const settled = modifyFields(model, { awaitingEcho: () => later });
+
+        return Array.isReadonlyArrayEmpty(later)
+          ? arrivedAt(settled, url)
+          : { model: settled };
+      },
+    }
+  );
+};
+
 const isAwaitingJob = (model: ModelValue, id: string) =>
   Schema.is(JobState.Loading)(model.job) && model.job.id === id;
 
@@ -127,10 +174,9 @@ export const routing = {
 };
 
 export const init = (url: Url): UpdateReturn => {
-  const route = routeOfUrl(url);
-
-  const routed = entered(
+  const routed = arrivedAt(
     {
+      awaitingEcho: [],
       draftSearch: "",
       filters: defaultFilters,
       generation: 0,
@@ -138,10 +184,10 @@ export const init = (url: Url): UpdateReturn => {
       jobs: JobsState.NotAsked(),
       marks: [],
       more: MoreState.Idle(),
-      route,
+      route: routeOfUrl(url),
       stats: StatsState.Unavailable(),
     },
-    route
+    url
   );
 
   return {
@@ -158,7 +204,7 @@ export const update = (
     ChangedAge: ({ maxAgeDays }) =>
       navigatedTo(model, { ...model.filters, maxAgeDays }),
     ChangedSort: ({ sort }) => navigatedTo(model, { ...model.filters, sort }),
-    ChangedUrl: ({ url }) => entered(model, routeOfUrl(url)),
+    ChangedUrl: ({ url }) => echoed(model, url),
     ClickedClearMark: ({ id }) =>
       shortlistWith(
         model,
@@ -167,15 +213,16 @@ export const update = (
           Array.filter((mark) => mark.id !== id)
         )
       ),
-    ClickedLink: ({ request }) => ({
-      commands: [
-        UrlRequest.match(request, {
-          External: ({ href }) => LoadUrl({ href }),
-          Internal: ({ url }) => PushUrl({ url: urlToString(url) }),
-        }),
-      ],
-      model,
-    }),
+    ClickedLink: ({ request }) =>
+      UrlRequest.match(request, {
+        External: ({ href }) => ({ commands: [LoadUrl({ href })], model }),
+        Internal: ({ url }) =>
+          visiting(
+            { model },
+            sameRoute(routeOfUrl(url), model.route) ? ReplaceUrl : PushUrl,
+            addressOf(url)
+          ),
+      }),
     ClickedLoadMore: () => {
       if (!Schema.is(JobsState.Loaded)(model.jobs)) {
         return { model };
@@ -308,12 +355,12 @@ export const update = (
     ToggledRegionGroup: ({ group }) =>
       navigatedTo(model, {
         ...model.filters,
-        regionGroups: toggled(model.filters.regionGroups, group),
+        regionGroups: toggled(regionGroups, model.filters.regionGroups, group),
       }),
     ToggledRole: ({ role }) =>
       navigatedTo(model, {
         ...model.filters,
-        roles: toggled(model.filters.roles, role),
+        roles: toggled(roleLevels, model.filters.roles, role),
       }),
     UpdatedDraftSearch: ({ value }) => ({
       model: modifyFields(model, { draftSearch: () => value }),

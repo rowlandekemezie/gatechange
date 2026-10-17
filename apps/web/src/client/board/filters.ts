@@ -58,22 +58,35 @@ export const defaultFilters: FiltersValue = {
   maxAgeDays: 7,
   regionGroups: ["RemoteCanada", "RemoteUnitedStates", "BritishColumbia"],
   roles: [
-    "EngineeringManager",
-    "Director",
-    "HeadOfEngineering",
     "VicePresident",
+    "HeadOfEngineering",
+    "Director",
+    "EngineeringManager",
   ],
   search: "",
   sort: "Relevance",
 };
 
-export const toggled = <A>(values: readonly A[], value: A): readonly A[] =>
-  Array.contains(values, value)
-    ? pipe(
-        values,
-        Array.filter((current) => current !== value)
-      )
-    : Array.append(values, value);
+export const inOrderOf = <A>(
+  universe: readonly A[],
+  values: readonly A[]
+): readonly A[] =>
+  pipe(
+    universe,
+    Array.filter((candidate) => Array.contains(values, candidate))
+  );
+
+export const toggled = <A>(
+  universe: readonly A[],
+  values: readonly A[],
+  value: A
+): readonly A[] =>
+  pipe(
+    universe,
+    Array.filter(
+      (candidate) => (candidate === value) !== Array.contains(values, candidate)
+    )
+  );
 
 export const queryOf = (
   filters: FiltersValue,

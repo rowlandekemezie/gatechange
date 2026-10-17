@@ -84,10 +84,7 @@ const section = (
       );
 };
 
-export const shortlistPage = (
-  model: ModelValue,
-  h: HtmlBuilder<MessageValue>
-): Html =>
+const marksView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   Array.isReadonlyArrayEmpty(model.marks)
     ? h.div(
         [h.Class("empty")],
@@ -108,3 +105,15 @@ export const shortlistPage = (
           section(model, h, "Applied", "Applied"),
         ]
       );
+
+export const shortlistPage = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>
+): Html =>
+  h.div(
+    [],
+    [
+      h.h1([h.Class("detail-title page-title")], ["Your shortlist"]),
+      marksView(model, h),
+    ]
+  );

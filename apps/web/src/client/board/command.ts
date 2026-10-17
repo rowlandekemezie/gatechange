@@ -1,7 +1,7 @@
 import { JobQuery } from "@rat-stack/core/contracts";
 import { Effect, Option, pipe, Predicate, Schema } from "effect";
 import { Command } from "foldkit";
-import { load, pushUrl } from "foldkit/navigation";
+import { load, pushUrl, replaceUrl } from "foldkit/navigation";
 
 import { Message } from "./message.js";
 import { Shortlist } from "./model.js";
@@ -47,6 +47,13 @@ export const PushUrl = Command.define("PushUrl", {
   args: { url: Schema.String },
   execute: ({ url }) =>
     pushUrl(url).pipe(Effect.as(Message.CompletedNavigation())),
+  messages: [Message.CompletedNavigation],
+});
+
+export const ReplaceUrl = Command.define("ReplaceUrl", {
+  args: { url: Schema.String },
+  execute: ({ url }) =>
+    replaceUrl(url).pipe(Effect.as(Message.CompletedNavigation())),
   messages: [Message.CompletedNavigation],
 });
 

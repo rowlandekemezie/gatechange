@@ -79,7 +79,7 @@ Flags:
 - `--dark` sets `prefers-color-scheme: dark`. The report's `background` field shows the body color, so a dark run reads near black.
 - `--full-page` captures the whole page instead of the viewport.
 
-The handles come from `apps/web/src/client/board/view.ts`: `li.job` rows, `p.count` for the match count, `.status` for the board stats line, `button.phrase` chips by text (`day`, `3 days`, `week`, `remote in Canada`, `director`, and so on), `form.search input`, `li.job button.mark` for `Save` and `Applied`, `nav.tabs button.tab` for `Open roles` and `Your shortlist (n)`, and `.empty[role=alert]` for the load error. To add a scenario, add an entry to `actions` in `drive.ts` that clicks through these handles and throws when the end state is wrong.
+The handles come from `apps/web/src/features/board/view.ts`, `apps/web/src/features/job/view.ts`, `apps/web/src/client/board/marks.ts`, and `apps/web/src/client/board/view.ts`: `li.job` rows, `p.count` for the match count, `.status` for the board stats line, `button.phrase` chips by text (`day`, `3 days`, `week`, `remote in Canada`, `director`, and so on), `form.search input`, `li.job button.mark` for `Save` and `Applied`, `nav.tabs a.tab` for `Open roles` and `Your shortlist (n)`, and `.empty[role=alert]` for the load error. To add a scenario, add an entry to `actions` in `drive.ts` that clicks through these handles and throws when the end state is wrong.
 
 `drive.ts` prints one JSON line. On success it has `ok: true`, each step's row count and count text, and the screenshot path, and exits 0. On failure it has `ok: false`, a `reason`, and a `<name>-failed.png` screenshot when Chrome can still take one, and exits 1. Bad arguments exit 2.
 

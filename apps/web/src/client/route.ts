@@ -1,13 +1,17 @@
 import { roleLevels } from "@rat-stack/core/contracts";
 import {
   Array,
+  Effect,
   Equivalence,
   Option,
   pipe,
+  Result,
   Schema,
+  SchemaIssue,
   SchemaTransformation,
 } from "effect";
 import type { Types } from "effect";
+import { Base64Url } from "effect/encoding";
 import {
   defineRouteUnion,
   literal,
@@ -19,11 +23,13 @@ import {
   schemaSegment,
   slash,
 } from "foldkit/route";
+import type { Url } from "foldkit/url";
 
 import {
   ageWindows,
   defaultFilters,
   Filters,
+  inOrderOf,
   regionGroups,
   Sort,
 } from "./board/filters.js";
@@ -32,7 +38,7 @@ import type { FiltersValue } from "./board/filters.js";
 export const Route = defineRouteUnion({
   Board: { filters: Filters },
   Job: { id: Schema.NonEmptyString },
-  NotFound: { path: Schema.String },
+  NotFound: {},
   Shortlist: {},
 });
 
@@ -61,8 +67,9 @@ const listParam = <A extends string | number>(
     return [];
   }
 
-  const parsed = Array.getSomes(
-    pipe(raw.split(","), Array.map(fromSlug(values)))
+  const parsed = inOrderOf(
+    values,
+    Array.getSomes(pipe(raw.split(","), Array.map(fromSlug(values))))
   );
 
   return Array.isReadonlyArrayEmpty(parsed) ? fallback : parsed;
@@ -138,10 +145,29 @@ const BoardParams = BoardQuery.pipe(
   )
 );
 
+const idOfSegment = (segment: string) =>
+  pipe(
+    Result.getSuccess(Base64Url.decodeString(segment)),
+    Option.filter((id) => Base64Url.encode(id) === segment)
+  );
+
 const JobIdSegment = Schema.String.pipe(
   Schema.decodeTo(
     Schema.NonEmptyString,
-    SchemaTransformation.stringFromUriComponent
+    SchemaTransformation.transformEffect({
+      decode: (segment, options) =>
+        Effect.fromOption(idOfSegment(segment)).pipe(
+          Effect.mapError(
+            () =>
+              new SchemaIssue.InvalidValue(
+                { expected: "a canonical unpadded base64url job id" },
+                segment,
+                options
+              )
+          )
+        ),
+      encode: (id) => Effect.succeed(Base64Url.encode(id)),
+    })
   )
 );
 
@@ -160,7 +186,13 @@ export const jobRouter = pipe(
 
 export const routeOfUrl = parseUrlWithFallback(
   oneOf(jobRouter, shortlistRouter, boardRouter),
-  Route.NotFound
+  { make: () => Route.NotFound() }
 );
 
 export const boardUrl = (filters: FiltersValue) => boardRouter({ filters });
+
+export const addressOf = (url: Url) =>
+  Option.match(url.search, {
+    onNone: () => url.pathname,
+    onSome: (search) => `${url.pathname}?${search}`,
+  });

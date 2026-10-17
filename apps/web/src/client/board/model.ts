@@ -53,6 +53,7 @@ export type MarkedJobValue = typeof MarkedJob.Type;
 export const Shortlist = Schema.Array(MarkedJob);
 
 export const Model = Schema.Struct({
+  awaitingEcho: Schema.Array(Schema.String),
   draftSearch: Schema.String,
   filters: Filters,
   generation: Schema.Finite,

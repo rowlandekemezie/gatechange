@@ -1,5 +1,5 @@
 import type { JobValue } from "@rat-stack/core/contracts";
-import { Array, DateTime, Option, pipe } from "effect";
+import { DateTime, Option } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import {
@@ -7,70 +7,12 @@ import {
   regionLabel,
   sourceLabel,
 } from "../../client/board/copy.js";
+import { markButtons, markOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobState } from "../../client/board/model.js";
-import type {
-  MarkedJobValue,
-  MarkKindValue,
-  ModelValue,
-} from "../../client/board/model.js";
+import type { ModelValue } from "../../client/board/model.js";
 import { boardUrl } from "../../client/route.js";
-
-export const markOf = (
-  model: ModelValue,
-  id: string
-): Option.Option<MarkedJobValue> =>
-  Array.findFirst(model.marks, (mark) => mark.id === id);
-
-export const markKindOf = (model: ModelValue, id: string) =>
-  pipe(
-    markOf(model, id),
-    Option.map((mark) => mark.kind)
-  );
-
-const markButton = (
-  h: HtmlBuilder<MessageValue>,
-  job: JobValue,
-  kind: MarkKindValue,
-  current: Option.Option<MarkKindValue>
-) => {
-  const isOn = Option.contains(current, kind);
-  const label = kind === "Saved" ? "Save" : "Applied";
-
-  return h.button(
-    [
-      h.Type("button"),
-      h.Class(isOn ? "mark mark-on" : "mark"),
-      h.AriaPressed(isOn ? "true" : "false"),
-      h.OnClick(
-        isOn
-          ? Message.ClickedClearMark({ id: job.id })
-          : Message.ClickedMark({ job, kind })
-      ),
-    ],
-    [isOn && kind === "Saved" ? "Saved" : label]
-  );
-};
-
-export const markButtons = (
-  model: ModelValue,
-  h: HtmlBuilder<MessageValue>,
-  job: JobValue
-): Html => {
-  const current = markKindOf(model, job.id);
-
-  return h.div(
-    [
-      h.Class("job-actions"),
-      h.AriaLabel(`Track ${job.title} at ${job.company}`),
-    ],
-    [
-      markButton(h, job, "Saved", current),
-      markButton(h, job, "Applied", current),
-    ]
-  );
-};
 
 const backLink = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.a(
@@ -184,6 +126,7 @@ export const jobPage = (
       h.div(
         [h.Class("empty detail"), h.Role("alert")],
         [
+          h.h1([h.Class("detail-title")], ["This role could not load"]),
           h.p([], [message]),
           h.button(
             [
@@ -197,7 +140,11 @@ export const jobPage = (
         ]
       ),
     Found: ({ job }) => foundView(model, h, job),
-    Loading: () => h.p([h.Class("count"), h.Role("status")], ["Finding role"]),
+    Loading: () =>
+      h.div(
+        [h.Class("empty detail"), h.Role("status")],
+        [h.h1([h.Class("detail-title")], ["Finding role"])]
+      ),
     Missing: ({ id }) => missingView(model, h, id),
     NotAsked: () => h.empty,
   });
