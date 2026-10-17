@@ -31,6 +31,7 @@ export const ListingState = defineTaggedUnion({
     generatedAt: EpochMillis,
     jobs: Schema.Array(Job),
     route: ListingRoute,
+    total: Schema.Finite,
   },
   Loading: { route: ListingRoute },
   NotAsked: {},
@@ -39,7 +40,11 @@ export const ListingState = defineTaggedUnion({
 export const Preload = defineTaggedUnion({
   Job: { job: Job },
   JobMissing: {},
-  Listing: { generatedAt: EpochMillis, jobs: Schema.Array(Job) },
+  Listing: {
+    generatedAt: EpochMillis,
+    jobs: Schema.Array(Job),
+    total: Schema.Finite,
+  },
   Nothing: {},
 });
 

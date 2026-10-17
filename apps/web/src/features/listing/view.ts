@@ -1,3 +1,4 @@
+import { roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -7,7 +8,7 @@ import {
   roleCount,
   roleLabel,
 } from "../../client/board/copy.js";
-import { defaultFilters } from "../../client/board/filters.js";
+import { defaultFilters, regionGroups } from "../../client/board/filters.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { ListingState } from "../../client/board/model.js";
@@ -45,12 +46,44 @@ const boardLinkOf = (route: ListingRouteValue) =>
 const backLink = (h: H, route: ListingRouteValue): Html =>
   h.a([h.Class("back"), h.Href(boardLinkOf(route))], ["Back to open roles"]);
 
+const everyRoleOf = (route: ListingRouteValue, jobs: readonly JobValue[]) =>
+  Schema.is(Route.Company)(route)
+    ? boardUrl({
+        maxAgeDays: 30,
+        regionGroups,
+        roles: roleLevels,
+        search: companyNameOf(route.slug, jobs),
+        sort: "Newest",
+      })
+    : boardLinkOf(route);
+
+const moreLink = (
+  h: H,
+  route: ListingRouteValue,
+  jobs: readonly JobValue[],
+  total: number
+): readonly Html[] =>
+  total > jobs.length
+    ? [
+        h.p(
+          [h.Class("list-end")],
+          [
+            h.a(
+              [h.Href(everyRoleOf(route, jobs))],
+              [`See all ${total} on the board`]
+            ),
+          ]
+        ),
+      ]
+    : [];
+
 const loadedView = (
   model: ModelValue,
   h: H,
   route: ListingRouteValue,
   generatedAt: number,
-  jobs: readonly JobValue[]
+  jobs: readonly JobValue[],
+  total: number
 ): Html =>
   Array.isReadonlyArrayEmpty(jobs)
     ? h.div(
@@ -66,7 +99,7 @@ const loadedView = (
         [
           backLink(h, route),
           h.h1([h.Class("detail-title")], [listingHeading(route, jobs)]),
-          h.p([h.Class("count")], [roleCount(jobs.length)]),
+          h.p([h.Class("count")], [roleCount(total)]),
           h.ol(
             [h.Class("jobs")],
             pipe(
@@ -74,6 +107,7 @@ const loadedView = (
               Array.map((job) => jobRow(model, h, job, generatedAt))
             )
           ),
+          ...moreLink(h, route, jobs, total),
         ]
       );
 
@@ -99,8 +133,8 @@ export const listingPage = (
           backLink(h, route),
         ]
       ),
-    Loaded: ({ generatedAt, jobs, route }) =>
-      loadedView(model, h, route, generatedAt, jobs),
+    Loaded: ({ generatedAt, jobs, route, total }) =>
+      loadedView(model, h, route, generatedAt, jobs, total),
     Loading: () =>
       h.div(
         [h.Class("empty detail"), h.Role("status")],

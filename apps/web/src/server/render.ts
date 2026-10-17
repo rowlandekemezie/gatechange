@@ -1,9 +1,6 @@
 import type { JobValue } from "@rat-stack/core/contracts";
-import { Array, Effect, Option, Schema } from "effect";
-import {
-  injectIntoTemplate,
-  renderToString,
-} from "foldkit/experimental/server";
+import { Array, Data, Effect, Option, Schema } from "effect";
+import { renderToString } from "foldkit/experimental/server";
 
 import { application } from "../client/application.js";
 import { regionLabel, roleLabel } from "../client/board/copy.js";
@@ -38,6 +35,15 @@ const escapeScript = (json: string) => json.replaceAll("<", String.raw`\u003c`);
 const DESCRIPTION = /<meta\s+name="description"[^>]*\/>/u;
 
 const HEAD_END = "</head>";
+
+const ROOT = '<div id="root"></div>';
+
+const TITLE = /<title>[^<]*<\/title>/u;
+
+class ShellMismatch extends Data.TaggedError("ShellMismatch") {}
+
+const occursOnce = (text: string, part: string) =>
+  text.includes(part) && text.indexOf(part) === text.lastIndexOf(part);
 
 const missing = (description: string): PageMeta => ({
   description,
@@ -124,15 +130,22 @@ export const renderPage = (
       policy
     );
 
-    const html = yield* Effect.try(() => injectIntoTemplate(shell, rendered));
+    if (!occursOnce(shell, ROOT) || !TITLE.test(shell)) {
+      return yield* new ShellMismatch();
+    }
 
     return {
-      html: html
+      html: shell
+        .replace(ROOT, () => rendered.html)
+        .replace(TITLE, () => `<title>${escapeHtml(rendered.title)}</title>`)
         .replace(
           DESCRIPTION,
-          `<meta name="description" content="${escapeHtml(meta.description)}" />`
+          () =>
+            `<meta name="description" content="${escapeHtml(meta.description)}" />`
         )
-        .replace(HEAD_END, headTags(rendered.title, rendered.canonical, meta)),
+        .replace(HEAD_END, () =>
+          headTags(rendered.title, rendered.canonical, meta)
+        ),
       status: meta.status,
     } satisfies RenderedPage;
   });

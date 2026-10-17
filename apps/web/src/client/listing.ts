@@ -20,9 +20,12 @@ export type ListingRouteValue = typeof ListingRoute.Type;
 
 export const isListingRoute = Schema.is(ListingRoute);
 
+export const LISTING_ROWS = 12;
+
 export const Listing = Schema.Struct({
   generatedAt: EpochMillis,
   jobs: Schema.Array(Job),
+  total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 
 export type ListingValue = typeof Listing.Type;
@@ -81,18 +84,26 @@ export const collectListing = <E, R>(
           }
         }
 
+        const matching = pipe(seen, Array.filter(isAtCompany(route.slug)));
+
         return {
           generatedAt,
-          jobs: pipe(seen, Array.filter(isAtCompany(route.slug))),
+          jobs: matching.slice(0, LISTING_ROWS),
+          total: matching.length,
         };
       })
     : Effect.map(
         listJobs({
           ...baseQuery,
+          limit: LISTING_ROWS,
           regions: pipe(regionsOfGroup(route.place), Array.dedupe),
           roles: [route.role],
           search: "",
           sort: "Relevance",
         }),
-        (page) => ({ generatedAt: page.generatedAt, jobs: page.jobs })
+        (page) => ({
+          generatedAt: page.generatedAt,
+          jobs: page.jobs,
+          total: page.total,
+        })
       );

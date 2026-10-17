@@ -235,10 +235,11 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
       Schema.is(Route.Job)(route)
         ? modifyFields(model, { job: () => JobState.Missing({ id: route.id }) })
         : model,
-    Listing: ({ generatedAt, jobs }) =>
+    Listing: ({ generatedAt, jobs, total }) =>
       Schema.is(Route.Company)(route) || Schema.is(Route.Role)(route)
         ? modifyFields(model, {
-            listing: () => ListingState.Loaded({ generatedAt, jobs, route }),
+            listing: () =>
+              ListingState.Loaded({ generatedAt, jobs, route, total }),
           })
         : model,
     Nothing: () => model,

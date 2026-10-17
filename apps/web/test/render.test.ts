@@ -11,7 +11,7 @@ import { fromString } from "foldkit/url";
 import indexHtml from "../index.html?raw";
 import { Preload } from "../src/client/board/model.js";
 import type { PreloadValue } from "../src/client/board/model.js";
-import { collectListing } from "../src/client/listing.js";
+import { collectListing, LISTING_ROWS } from "../src/client/listing.js";
 import { Route, routeOfUrl } from "../src/client/route.js";
 import { allowedOnly, allowedOrUnstated } from "../src/server/markup.js";
 import type { MarkupPolicy } from "../src/server/markup.js";
@@ -152,6 +152,24 @@ describe("job page render", () => {
     )
   );
 
+  it.effect("keeps dollar patterns in listing data literal", () =>
+    Effect.map(
+      renderJob(
+        { ...greenhouse, company: "Cash $& Carry $'", title: "Lead $` ops" },
+        allowedOnly
+      ),
+      ({ html }) => {
+        expect(html).toContain(
+          "<title>Lead $` ops at Cash $&amp; Carry $'</title>"
+        );
+        expect(html).toContain(
+          '<meta name="description" content="Director role at Cash $&amp; Carry $\', Remote, Canada. Remote, Canada" />'
+        );
+        expect(textOf(html)).toContain("Cash $&amp; Carry $'");
+      }
+    )
+  );
+
   it.effect("answers a pruned job with 404 and a link back to the board", () =>
     Effect.map(
       render("/jobs/Z29uZQ", Preload.JobMissing(), allowedOrUnstated),
@@ -180,6 +198,7 @@ describe("listing page render", () => {
         Preload.Listing({
           generatedAt: 1_760_500_000_000,
           jobs: [acmeDirector, acmeVp],
+          total: 2,
         })
       ),
       ({ html, status }) => {
@@ -206,6 +225,7 @@ describe("listing page render", () => {
         Preload.Listing({
           generatedAt: 1_760_500_000_000,
           jobs: [acmeDirector],
+          total: 30,
         })
       ),
       ({ html, status }) => {
@@ -217,6 +237,11 @@ describe("listing page render", () => {
           `<link rel="canonical" href="${ORIGIN}/roles/director/remote-canada"`
         );
         expect(html).toContain('href="/jobs/Z3JlZW5ob3VzZTphY21lLzE"');
+        expect(textOf(html)).toContain("30 roles match");
+        expect(html).toContain(
+          'href="/?age=30&amp;place=remote-canada&amp;role=director"'
+        );
+        expect(textOf(html)).toContain("See all 30 on the board");
       }
     )
   );
@@ -225,7 +250,7 @@ describe("listing page render", () => {
     Effect.map(
       render(
         "/companies/gone-co",
-        Preload.Listing({ generatedAt: 1_760_500_000_000, jobs: [] })
+        Preload.Listing({ generatedAt: 1_760_500_000_000, jobs: [], total: 0 })
       ),
       ({ html, status }) => {
         expect(status).toBe(404);
@@ -288,10 +313,29 @@ describe("listing queries", () => {
         );
 
         expect(listing.jobs.map((job) => job.id)).toEqual(["ashby:acme/last"]);
+        expect(listing.total).toBe(1);
         expect(queries.map((query) => query.search)).toEqual([
           "robotics",
           "robotics",
         ]);
+      })
+  );
+
+  it.effect(
+    "a company listing keeps the first page of rows and counts the rest",
+    () =>
+      Effect.gen(function* cappedCompany() {
+        const jobs = Array.from({ length: 30 }, (_, index) =>
+          jobFrom("Ashby", `ashby:acme/${index}`)
+        );
+
+        const listing = yield* collectListing(
+          (query) => Effect.succeed(pageOf(jobs, query)),
+          Route.Company({ slug: "acme-robotics" })
+        );
+
+        expect(listing.jobs).toHaveLength(LISTING_ROWS);
+        expect(listing.total).toBe(30);
       })
   );
 
@@ -312,6 +356,7 @@ describe("listing queries", () => {
 
         expect(queries).toMatchObject([
           {
+            limit: LISTING_ROWS,
             regions: ["RemoteCanada", "RemoteNorthAmerica", "RemoteGlobal"],
             roles: ["Director"],
             search: "",

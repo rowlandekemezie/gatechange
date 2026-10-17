@@ -248,7 +248,11 @@ describe("server-rendered pages", () => {
   it("boots a hydrated role page from its preload without fetching", () => {
     const step = started(
       ROLE_PATH,
-      Preload.Listing({ generatedAt: 1_760_000_000_000, jobs: [listed] })
+      Preload.Listing({
+        generatedAt: 1_760_000_000_000,
+        jobs: [listed],
+        total: 1,
+      })
     );
 
     expect(named(step, "FetchListing")).toEqual([]);
@@ -270,7 +274,7 @@ describe("server-rendered pages", () => {
     const late = sent(
       left,
       Message.SucceededFetchListing({
-        listing: { generatedAt: 1, jobs: [listed] },
+        listing: { generatedAt: 1, jobs: [listed], total: 1 },
         route,
       })
     );

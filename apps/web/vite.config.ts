@@ -8,7 +8,7 @@ export default defineConfig({
   },
   plugins: [
     foldkit({
-      // @effect-diagnostics-next-line cryptoRandomUUID:off -- Vite loads this config once per build or dev server, outside any Effect runtime, so the client and Worker environments share this one id.
+      // @effect-diagnostics-next-line cryptoRandomUUID:off -- Vite config runs outside Effect; this one id per process is what the client and Worker builds share.
       buildId: process.env.FOLDKIT_BUILD_ID ?? globalThis.crypto.randomUUID(),
     }),
   ],
