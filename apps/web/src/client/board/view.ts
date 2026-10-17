@@ -3,6 +3,8 @@ import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
+import { SourceTerms } from "../../../../../packages/job-sources/src/source-terms.js";
+import type { SourceTermsValue } from "../../../../../packages/job-sources/src/source-terms.js";
 import {
   ageChip,
   dayHeading,
@@ -545,6 +547,18 @@ const tabs = (model: ModelValue, h: H): Html =>
     ]
   );
 
+const sourcesOf = (kind: SourceTermsValue["kind"]) =>
+  Object.values(SourceTerms).filter((terms) => terms.kind === kind);
+
+const creditList = (items: readonly (Html | string)[]) =>
+  items.flatMap((item, index) => {
+    if (index === 0) {
+      return [item];
+    }
+
+    return [index === items.length - 1 ? " and " : ", ", item];
+  });
+
 const footer = (h: H): Html =>
   h.footer(
     [h.Class("footer")],
@@ -552,15 +566,15 @@ const footer = (h: H): Html =>
       h.p(
         [],
         [
-          "Roles come from public company job boards on Greenhouse, Lever and Ashby, and from ",
-          h.a([h.Href("https://remoteok.com")], ["Remote OK"]),
-          ", ",
-          h.a([h.Href("https://remotive.com")], ["Remotive"]),
-          ", ",
-          h.a([h.Href("https://himalayas.app")], ["Himalayas"]),
-          ", ",
-          h.a([h.Href("https://jobicy.com")], ["Jobicy"]),
-          " and the monthly Hacker News hiring thread. Each listing links to its original posting. Roles leave the board when their source removes them or after 30 days.",
+          "Roles come from public company job boards on ",
+          ...creditList(sourcesOf("CompanyBoard").map(({ label }) => label)),
+          ", and from ",
+          ...creditList(
+            sourcesOf("Aggregator").map(({ creditUrl, label }) =>
+              h.a([h.Href(creditUrl)], [label])
+            )
+          ),
+          ". Each listing links to its original posting. Roles leave the board when their source removes them or after 30 days.",
         ]
       ),
       h.p(
