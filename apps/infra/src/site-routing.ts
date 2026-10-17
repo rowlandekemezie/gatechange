@@ -11,3 +11,6 @@ export const siteRouting = (stage: string) =>
         workersDev: false,
       }
     : { workersDev: true };
+
+export const siteIndexing = (stage: string) =>
+  stage === PROD_STAGE ? "index" : "noindex";

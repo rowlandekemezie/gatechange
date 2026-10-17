@@ -240,6 +240,16 @@ export const routeOfUrl = parseUrlWithFallback(
 
 export const boardUrl = (filters: FiltersValue) => boardRouter({ filters });
 
+export const canonicalPathOf = (route: RouteValue) =>
+  Route.match<Option.Option<string>>(route, {
+    Board: ({ filters }) => Option.some(boardUrl(filters)),
+    Company: ({ slug }) => Option.some(companyRouter({ slug })),
+    Job: ({ id }) => Option.some(jobRouter({ id })),
+    NotFound: () => Option.none(),
+    Role: ({ place, role }) => Option.some(roleRouter({ place, role })),
+    Shortlist: () => Option.none(),
+  });
+
 export const addressOf = (url: Url) =>
   Option.match(url.search, {
     onNone: () => url.pathname,

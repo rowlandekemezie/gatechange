@@ -51,8 +51,19 @@ const missing = (description: string): PageMeta => ({
   status: 404,
 });
 
+const comparable = (text: string) =>
+  text.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");
+
+const placeOf = (job: JobValue) => {
+  const region = regionLabel(job.region);
+
+  return comparable(job.location) === comparable(region)
+    ? region
+    : `${region}. ${job.location}`;
+};
+
 const jobMeta = (job: JobValue, canonical: string, policy: MarkupPolicy) => ({
-  description: `${roleLabel(job.role)} role at ${job.company}, ${regionLabel(job.region)}. ${job.location}`,
+  description: `${roleLabel(job.role)} role at ${job.company}, ${placeOf(job)}`,
   jsonLd: jobPostingOf(job, canonical, policy),
   status: 200 as const,
 });
@@ -99,8 +110,10 @@ const headTags = (
           `<link rel="canonical" href="${escapeHtml(canonical)}" />`,
           `<meta property="og:url" content="${escapeHtml(canonical)}" />`,
         ]),
+    `<meta property="og:type" content="website" />`,
     `<meta property="og:title" content="${escapeHtml(title)}" />`,
     `<meta property="og:description" content="${escapeHtml(meta.description)}" />`,
+    `<meta name="twitter:card" content="summary" />`,
     ...Option.match(meta.jsonLd, {
       onNone: () => [],
       onSome: (data) => [

@@ -3,7 +3,7 @@ import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
-import { siteRouting } from "./site-routing.js";
+import { siteIndexing, siteRouting } from "./site-routing.js";
 
 export class Website extends Cloudflare.Website.Foldkit<Website>()(
   "Website",
@@ -24,7 +24,7 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
         ],
       },
       ...siteRouting(stage),
-      env: { BACKEND: JobsBackend },
+      env: { BACKEND: JobsBackend, SITE_INDEXING: siteIndexing(stage) },
       main: "src/worker.ts",
       rootDir: "../web",
     };

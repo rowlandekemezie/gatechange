@@ -64,3 +64,5 @@ export const robotsTxt = (origin: string) =>
   ["User-agent: *", "Allow: /", `Sitemap: ${origin}/sitemap.xml`, ""].join(
     "\n"
   );
+
+export const closedRobotsTxt = ["User-agent: *", "Disallow: /", ""].join("\n");

@@ -3,61 +3,48 @@ import { fromString } from "foldkit/url";
 
 import { Preload } from "./client/board/model.js";
 import { collectListing, isListingRoute } from "./client/listing.js";
-import { Route, routeOfUrl } from "./client/route.js";
+import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
 import { clientOf, listedJobs, shellOf } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
+import { throughEdgeCache } from "./server/edge-cache.js";
+import type { Lifetime } from "./server/edge-cache.js";
 import { renderPage } from "./server/render.js";
-import { robotsTxt, sitemapXml } from "./server/sitemap.js";
+import { closedRobotsTxt, robotsTxt, sitemapXml } from "./server/sitemap.js";
 
 interface EdgeBindings {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
+  readonly SITE_INDEXING?: string;
 }
 
 const isRpc = (pathname: string) =>
   pathname === "/rpc" || pathname.startsWith("/rpc/");
 
-interface Lifetime {
-  readonly waitUntil: (work: Promise<unknown>) => void;
-}
-
-const respond = (
-  body: string,
-  contentType: string,
-  status = 200,
-  headers: Record<string, string> = {}
-) =>
+const respond = (body: string, contentType: string, status = 200) =>
   new Response(body, {
-    headers: { ...headers, "content-type": `${contentType}; charset=utf-8` },
+    headers: { "content-type": `${contentType}; charset=utf-8` },
     status,
   });
-
-const PAGE_CACHE = "pages";
-
-const PAGE_CACHE_CONTROL = "public, max-age=0, s-maxage=600";
 
 const hexOf = (digest: ArrayBuffer) =>
   [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
-const cachedPage = (url: URL, shell: string) =>
-  // @effect-diagnostics-next-line asyncFunction:off -- The Workers Cache API and SubtleCrypto are Promise-based.
+const pageKeyOf = (pageUrl: URL, shell: string) =>
+  // @effect-diagnostics-next-line asyncFunction:off -- SubtleCrypto is Promise-based.
   Effect.promise(async () => {
     const digest = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(shell)
     );
 
-    const keyUrl = new URL(url.href);
+    const keyUrl = new URL(pageUrl);
 
     keyUrl.searchParams.set("shell", hexOf(digest));
 
-    const key = new Request(keyUrl);
-    const cache = await caches.open(PAGE_CACHE);
-
-    return { cache, hit: await cache.match(key), key };
+    return new Request(keyUrl);
   });
 
 const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
@@ -87,28 +74,41 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
     })
   );
 
-const servePage = (bindings: EdgeBindings, url: URL, lifetime: Lifetime) =>
+const PAGE_PREFIXES = ["/jobs/", "/companies/", "/roles/"];
+
+const isPage = (pathname: string) =>
+  PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+
+const servePage = (
+  bindings: EdgeBindings,
+  request: Request,
+  url: URL,
+  lifetime: Lifetime
+) =>
   Effect.gen(function* serveRenderedPage() {
     const route = routeOfUrl(yield* Effect.fromOption(fromString(url.href)));
+
+    const pageUrl = new URL(
+      Option.getOrElse(canonicalPathOf(route), () => url.pathname),
+      url.origin
+    );
+
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
-    const { cache, hit, key } = yield* cachedPage(url, shell);
+    const key = yield* pageKeyOf(pageUrl, shell);
 
-    if (hit !== undefined) {
-      return Option.some(hit);
-    }
+    return Option.some(
+      yield* throughEdgeCache(
+        request,
+        key,
+        lifetime,
+        Effect.gen(function* renderFreshPage() {
+          const preload = yield* preloadOf(bindings.BACKEND, route);
+          const page = yield* renderPage(shell, pageUrl, route, preload);
 
-    const preload = yield* preloadOf(bindings.BACKEND, route);
-    const page = yield* renderPage(shell, url, route, preload);
-
-    const response = respond(page.html, "text/html", page.status, {
-      "cache-control": PAGE_CACHE_CONTROL,
-    });
-
-    yield* Effect.sync(() => {
-      lifetime.waitUntil(cache.put(key, response.clone()));
-    });
-
-    return Option.some(response);
+          return respond(page.html, "text/html", page.status);
+        })
+      )
+    );
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.as(
@@ -118,14 +118,59 @@ const servePage = (bindings: EdgeBindings, url: URL, lifetime: Lifetime) =>
     )
   );
 
-const serveSitemap = (bindings: EdgeBindings, url: URL) =>
-  listedJobs(bindings.BACKEND).pipe(
-    Effect.match({
-      onFailure: () => respond("", "application/xml", 503),
-      onSuccess: (jobs) =>
-        respond(sitemapXml(url.origin, jobs), "application/xml"),
-    })
+const serveSitemap = (
+  bindings: EdgeBindings,
+  request: Request,
+  url: URL,
+  lifetime: Lifetime
+) =>
+  throughEdgeCache(
+    request,
+    new Request(new URL("/sitemap.xml", url.origin)),
+    lifetime,
+    listedJobs(bindings.BACKEND).pipe(
+      Effect.match({
+        onFailure: () => respond("", "application/xml", 503),
+        onSuccess: (jobs) =>
+          respond(sitemapXml(url.origin, jobs), "application/xml"),
+      })
+    )
   );
+
+const serveSite = (
+  request: Request,
+  bindings: EdgeBindings,
+  lifetime: Lifetime
+): Effect.Effect<Option.Option<Response>> => {
+  const url = new URL(request.url);
+
+  if (url.pathname === "/robots.txt") {
+    return Effect.succeedSome(
+      respond(
+        bindings.SITE_INDEXING === "index"
+          ? robotsTxt(url.origin)
+          : closedRobotsTxt,
+        "text/plain"
+      )
+    );
+  }
+
+  if (url.pathname === "/sitemap.xml") {
+    return Effect.asSome(serveSitemap(bindings, request, url, lifetime));
+  }
+
+  return isPage(url.pathname)
+    ? servePage(bindings, request, url, lifetime)
+    : Effect.succeedNone;
+};
+
+const noindex = (response: Response) => {
+  const copy = new Response(response.body, response);
+
+  copy.headers.set("x-robots-tag", "noindex");
+
+  return copy;
+};
 
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
@@ -134,24 +179,18 @@ export default {
     bindings: EdgeBindings,
     lifetime: Lifetime
   ): Promise<Response> => {
-    const url = new URL(request.url);
-
-    if (isRpc(url.pathname)) {
+    if (isRpc(new URL(request.url).pathname)) {
       return await bindings.BACKEND.fetch(request);
     }
 
-    if (url.pathname === "/robots.txt") {
-      return respond(robotsTxt(url.origin), "text/plain");
-    }
+    const served = await Effect.runPromise(
+      serveSite(request, bindings, lifetime)
+    );
 
-    if (url.pathname === "/sitemap.xml") {
-      return await Effect.runPromise(serveSitemap(bindings, url));
-    }
-
-    const page = await Effect.runPromise(servePage(bindings, url, lifetime));
-
-    return Option.isSome(page)
-      ? page.value
+    const response = Option.isSome(served)
+      ? served.value
       : await bindings.ASSETS.fetch(request);
+
+    return bindings.SITE_INDEXING === "index" ? response : noindex(response);
   },
 };

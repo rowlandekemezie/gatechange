@@ -132,6 +132,72 @@ describe("job page render", () => {
       })
   );
 
+  it.effect(
+    "emits no JobPosting for a Greenhouse job under the default policy",
+    () =>
+      Effect.map(
+        renderPage(
+          indexHtml,
+          new URL(`${ORIGIN}${GREENHOUSE_PATH}`),
+          routeAt(GREENHOUSE_PATH),
+          Preload.Job({ job: greenhouse })
+        ),
+        ({ html }) => {
+          expect(Option.isNone(jsonLdOf(html))).toBe(true);
+        }
+      )
+  );
+
+  it.effect("names the place once when the location repeats the region", () =>
+    Effect.map(
+      renderJob(
+        { ...greenhouse, location: "Remote US", region: "RemoteUnitedStates" },
+        allowedOnly
+      ),
+      ({ html }) => {
+        expect(html).toContain(
+          '<meta name="description" content="Director role at Acme &lt;Robotics&gt;, Remote, US" />'
+        );
+      }
+    )
+  );
+
+  it.effect("keeps a location that adds to the region", () =>
+    Effect.map(
+      renderJob(
+        { ...greenhouse, location: "Austin, TX", region: "UnitedStatesOnsite" },
+        allowedOnly
+      ),
+      ({ html }) => {
+        expect(html).toContain(
+          '<meta name="description" content="Director role at Acme &lt;Robotics&gt;, United States. Austin, TX" />'
+        );
+      }
+    )
+  );
+
+  it.effect("declares the Open Graph type and a summary card", () =>
+    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+      expect(html).toContain('<meta property="og:type" content="website" />');
+      expect(html).toContain('<meta name="twitter:card" content="summary" />');
+    })
+  );
+
+  it.effect("escapes double quotes from job data inside head attributes", () =>
+    Effect.map(
+      renderJob(
+        { ...greenhouse, company: 'Acme" onload="alert(1)' },
+        allowedOnly
+      ),
+      ({ html }) => {
+        expect(html).not.toMatch(/<[^>]*\sonload="/u);
+        expect(html).toContain(
+          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1)" />'
+        );
+      }
+    )
+  );
+
   it.effect("never emits a JobPosting for a Remotive job", () =>
     Effect.forEach([allowedOnly, allowedOrUnstated], (policy) =>
       Effect.map(renderJob(remotive, policy), ({ html }) => {
@@ -166,7 +232,7 @@ describe("job page render", () => {
           "<title>Lead $` ops at Cash $&amp; Carry $'</title>"
         );
         expect(html).toContain(
-          '<meta name="description" content="Director role at Cash $&amp; Carry $\', Remote, Canada. Remote, Canada" />'
+          '<meta name="description" content="Director role at Cash $&amp; Carry $\', Remote, Canada" />'
         );
         expect(textOf(html)).toContain("Cash $&amp; Carry $'");
       }
