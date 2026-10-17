@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { ListedJobValue } from "@rat-stack/core/contracts";
-import { Array, Option, pipe } from "effect";
+import { Array, Option, pipe, Schema } from "effect";
 import { UrlRequest } from "foldkit/navigation";
 import { fromString } from "foldkit/url";
 
@@ -8,10 +8,10 @@ import { defaultFilters } from "../src/client/board/filters.js";
 import type { FiltersValue } from "../src/client/board/filters.js";
 import { Message } from "../src/client/board/message.js";
 import type { MessageValue } from "../src/client/board/message.js";
-import { JobState } from "../src/client/board/model.js";
-import type { ModelValue } from "../src/client/board/model.js";
+import { JobState, ListingState, Preload } from "../src/client/board/model.js";
+import type { PreloadValue, ModelValue } from "../src/client/board/model.js";
 import { init, update } from "../src/client/board/update.js";
-import { boardUrl, jobRouter } from "../src/client/route.js";
+import { boardUrl, jobRouter, Route } from "../src/client/route.js";
 
 const ORIGIN = "https://jobs.example";
 
@@ -26,8 +26,14 @@ interface Step {
   readonly model: ModelValue;
 }
 
-const started = (path: string): Step => {
-  const { commands = [], model } = init(urlAt(path));
+const started = (
+  path: string,
+  preload: PreloadValue = Preload.Nothing()
+): Step => {
+  const { commands = [], model } = init(
+    { origin: ORIGIN, preload },
+    urlAt(path)
+  );
 
   return { commands, model };
 };
@@ -218,5 +224,65 @@ describe("URL-driven board state", () => {
     ]);
 
     expect(named(changed, "PushUrl")).toHaveLength(1);
+  });
+});
+
+describe("server-rendered pages", () => {
+  const ROLE_PATH = "/roles/engineering-manager/remote-canada";
+
+  it("boots a hydrated job page from its preload without fetching the job again", () => {
+    const step = started(
+      jobRouter({ id: listed.id }),
+      Preload.Job({ job: listed })
+    );
+
+    expect(named(step, "FetchJob")).toEqual([]);
+    expect(step.model.job).toStrictEqual(JobState.Found({ job: listed }));
+  });
+
+  it("boots a hydrated pruned job page as missing", () => {
+    const step = started(jobRouter({ id: listed.id }), Preload.JobMissing());
+
+    expect(named(step, "FetchJob")).toEqual([]);
+    expect(step.model.job).toStrictEqual(JobState.Missing({ id: listed.id }));
+  });
+
+  it("boots a hydrated role page from its preload without fetching", () => {
+    const step = started(
+      ROLE_PATH,
+      Preload.Listing({
+        generatedAt: 1_760_000_000_000,
+        jobs: [listed],
+        total: 1,
+      })
+    );
+
+    expect(named(step, "FetchListing")).toEqual([]);
+    expect(Schema.is(ListingState.Loaded)(step.model.listing)).toBe(true);
+  });
+
+  it("a client visit to a role page fetches it, and drops a reply for a page already left", () => {
+    const opened = sent(started("/"), urlChange(ROLE_PATH));
+
+    const route = Route.Role({
+      place: "RemoteCanada",
+      role: "EngineeringManager",
+    });
+
+    expect(named(opened, "FetchListing")).toHaveLength(1);
+
+    const left = sent(opened, urlChange("/companies/moniepoint"));
+
+    const late = sent(
+      left,
+      Message.SucceededFetchListing({
+        listing: { generatedAt: 1, jobs: [listed], total: 1 },
+        route,
+      })
+    );
+
+    expect(late.model.listing).toStrictEqual(
+      ListingState.Loading({ route: Route.Company({ slug: "moniepoint" }) })
+    );
   });
 });

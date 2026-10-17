@@ -33,7 +33,7 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `@rat-stack/accounts` | `packages/accounts` | better-auth options (magic link, GitHub, Google), the `AccountStore` adapter that turns a session cookie into a `Viewer`, and the magic link email. Auth tables live in `packages/job-store/migrations/0004_accounts.sql` |
 | `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc` and runs `runIngest` on a 20 minute cron |
 | `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` and `/api/auth/*` to `JobsBackend` and serves assets |
-| `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com` |
+| `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com`. Only the `prod` stage attaches that domain (`src/site-routing.ts`); every other deployed stage serves on its `workers.dev` URL |
 
 ## Commands
 

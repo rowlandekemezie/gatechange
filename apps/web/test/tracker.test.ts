@@ -8,6 +8,7 @@ import { Message as AccountMessage } from "../src/client/account/message.js";
 import { shortlistSize, stageOf } from "../src/client/board/marks.js";
 import { Message } from "../src/client/board/message.js";
 import type { MessageValue } from "../src/client/board/message.js";
+import { Preload } from "../src/client/board/model.js";
 import type { ModelValue } from "../src/client/board/model.js";
 import { init, update } from "../src/client/board/update.js";
 
@@ -21,6 +22,7 @@ interface Step {
 
 const started = (): Step => {
   const { commands = [], model } = init(
+    { origin: "https://jobs.example", preload: Preload.Nothing() },
     Option.getOrThrow(fromString("https://jobs.example/shortlist"))
   );
 

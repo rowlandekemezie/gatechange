@@ -12,6 +12,7 @@ import { UrlRequest } from "foldkit/navigation";
 import { Url } from "foldkit/url";
 
 import { Message as AccountMessage } from "../account/message.js";
+import { Listing, ListingRoute } from "../listing.js";
 import { AgeWindow, RegionGroup, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
@@ -28,6 +29,7 @@ export const Message = defineMessageUnion({
   ClickedResetFilters: {},
   ClickedRetry: {},
   ClickedRetryJob: {},
+  ClickedRetryListing: {},
   ClickedRetryTracker: {},
   CompletedNavigation: {},
   CompletedReadShortlist: { marks: Shortlist },
@@ -35,6 +37,7 @@ export const Message = defineMessageUnion({
   CompletedWriteShortlist: {},
   FailedFetchJob: { id: Schema.String, message: Schema.String },
   FailedFetchJobs: { generation: Schema.Finite, message: Schema.String },
+  FailedFetchListing: { message: Schema.String, route: ListingRoute },
   FailedFetchMoreJobs: { generation: Schema.Finite },
   FailedFetchStats: {},
   FailedSyncTracker: { message: Schema.String, revision: Schema.Finite },
@@ -43,6 +46,7 @@ export const Message = defineMessageUnion({
   SubmittedSearch: {},
   SucceededFetchJob: { id: Schema.String, job: Schema.Option(Job) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },
+  SucceededFetchListing: { listing: Listing, route: ListingRoute },
   SucceededFetchMoreJobs: { generation: Schema.Finite, page: JobPage },
   SucceededFetchStats: { stats: BoardStats },
   SucceededTrackerChange: { jobs: TrackedJobs, revision: Schema.Finite },

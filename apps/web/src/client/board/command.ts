@@ -3,6 +3,7 @@ import { Array, Effect, Option, pipe, Predicate, Schema } from "effect";
 import { Command } from "foldkit";
 import { load, pushUrl, replaceUrl } from "foldkit/navigation";
 
+import { collectListing, ListingRoute } from "../listing.js";
 import { Message } from "./message.js";
 import { Shortlist, TrackerChange } from "./model.js";
 import type { MarkedJobValue } from "./model.js";
@@ -43,6 +44,20 @@ export const FetchJob = Command.define("FetchJob", {
       })
     ),
   messages: [Message.SucceededFetchJob, Message.FailedFetchJob],
+});
+
+export const FetchListing = Command.define("FetchListing", {
+  args: { route: ListingRoute },
+  execute: ({ route }) =>
+    JobQueries.use((queries) => collectListing(queries.listJobs, route)).pipe(
+      Effect.match({
+        onFailure: (failure) =>
+          Message.FailedFetchListing({ message: failureText(failure), route }),
+        onSuccess: (listing) =>
+          Message.SucceededFetchListing({ listing, route }),
+      })
+    ),
+  messages: [Message.SucceededFetchListing, Message.FailedFetchListing],
 });
 
 export const PushUrl = Command.define("PushUrl", {

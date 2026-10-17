@@ -8,11 +8,21 @@ import {
   defaultFilters,
   Filters,
   inOrderOf,
+  RegionGroup,
   regionGroups,
   toggled,
 } from "../src/client/board/filters.js";
 import type { FiltersValue } from "../src/client/board/filters.js";
-import { boardUrl, jobRouter, Route, routeOfUrl } from "../src/client/route.js";
+import { longestWord } from "../src/client/listing.js";
+import {
+  boardUrl,
+  companyRouter,
+  companySlugOf,
+  jobRouter,
+  roleRouter,
+  Route,
+  routeOfUrl,
+} from "../src/client/route.js";
 
 const ORIGIN = "https://jobs.example";
 
@@ -281,6 +291,58 @@ describe("job and shortlist routes", () => {
     "/jobs/%E0%A4%A",
     "/jobs/a.b",
     "/shortlist/extra",
+  ])("%s is not found", (path) => {
+    expect(routeAt(path)._tag).toBe("NotFound");
+  });
+});
+
+describe("company and role routes", () => {
+  it("a company slug keeps only lowercase ASCII words of the name", () => {
+    expect(companySlugOf("Acme, Inc.")).toStrictEqual(Option.some("acme-inc"));
+    expect(companySlugOf("  Zeta & Sons ")).toStrictEqual(
+      Option.some("zeta-sons")
+    );
+    expect(companySlugOf("漢字")).toStrictEqual(Option.none());
+  });
+
+  it.prop(
+    "any company name with a slug opens its company page",
+    { company: Schema.String },
+    ({ company }) => {
+      for (const slug of Option.toArray(companySlugOf(company))) {
+        expect(routeAt(companyRouter({ slug }))).toStrictEqual(
+          Route.Company({ slug })
+        );
+        expect(company.toLowerCase()).toContain(longestWord(slug));
+      }
+    }
+  );
+
+  it.prop(
+    "every role and place round-trips through its role page URL",
+    { place: RegionGroup, role: RoleLevel },
+    ({ place, role }) => {
+      expect(routeAt(roleRouter({ place, role }))).toStrictEqual(
+        Route.Role({ place, role })
+      );
+    }
+  );
+
+  it("role pages read as readable slugs", () => {
+    expect(roleRouter({ place: "RemoteCanada", role: "Director" })).toBe(
+      "/roles/director/remote-canada"
+    );
+  });
+
+  it.each([
+    "/companies",
+    "/companies/Acme",
+    "/companies/acme--inc",
+    "/companies/-acme",
+    "/roles/director",
+    "/roles/Director/remote-canada",
+    "/roles/director/remoteCanada",
+    "/roles/director/remote-canada/extra",
   ])("%s is not found", (path) => {
     expect(routeAt(path)._tag).toBe("NotFound");
   });
