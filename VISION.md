@@ -1,149 +1,98 @@
 # Vision
 
-rat-stack is the reference for how we build: an app and its cloud as one typed program. Effect owns the hard parts, Alchemy infers the infrastructure from the code, and the fence raises the floor, so an agent can build it reliably with high-trust.
+jobs.rowlandekemezie.com is a job board for engineering leaders who are looking for their next role. It lists engineering manager, director, head of engineering, and VP of engineering openings that are remote in Canada, remote in the US, or based in Vancouver and British Columbia. Every listing is free and public, and every listing links to the original posting.
 
-_An Effect stack so pure (aspirational) Kit Langton will blush._
+The board started as a personal tool. It is becoming a product with a paid tier, Jobs Pro. Pro sells speed, sharper filters, and company intel. It never sells access to a listing.
 
-The goal is to **build the best Effect + Alchemy application that we can**, as close to a perfect Effect application as we can get. Every change here moves toward that, and projects that grow out of rat-stack move toward it too. In practice:
+`AGENTS.md` is the law for commands, architecture, and the fence. This file sets intent. If the two disagree, `AGENTS.md` wins, and this file gets amended.
 
-- New code takes the rat-stack path: a shared contract, a job-shaped service port, a provider adapter outside core, and an outcome you can observe. Ports name the application's jobs; Layers supply the adapters. The fence keeps core free of HTTP-client and vendor implementations.
-- Existing code is finished that way when someone touches it, and the old version is deleted.
-- Debt only shrinks. Plain async code moves onto Effect, and lint exemptions get retired, never added.
-- The fence (lint, types, the Effect language service, CI) makes the easy path the right one.
-- Where a platform behaves differently from a test fake, test against the real thing. [Worker init runs twice](https://ratstack.sh/lore/init-runs-twice) is what happens when you don't.
+## Who it is for
 
-We and our agents use it to understand what we are building. Real projects take it in the way they take a library: vendor it, keep the bins they need, and pull the rest.
+The customer is the engineering leader running their own job search. They manage people today, or did recently, and they want leadership roles only. Generic boards bury these roles under hundreds of individual-contributor postings and stale reposts.
 
-It is also the working code behind a YouTube series by [Joel Hooks](https://www.youtube.com/@JoelHooks) on Alchemy and Effect. Every claim made on camera points at something that runs here. The series arc lives with the content research. `ratstack.sh` is the teaching surface.
+What this person needs from the board:
 
-**Public GitHub is a steal-the-ideas surface, not a supported product**.
+- Only leadership titles, filtered by role and by where they can work.
+- The freshest roles first. The board keeps 30 days of listings and ranks by relevance minus age.
+- One link to the real posting, preferring the company's own board over an aggregator copy.
+- A place to keep a shortlist and track applications.
 
-Any project that grows out of rat-stack writes its own vision.
+Employers are not the customer. The board does not sell job posts, featured slots, or candidate data.
 
-Scope: `joelhooks/rat-stack`, the reference repo, and the shape a project inherits when it vendors or clones it.
+## Free and Pro
 
-Audience: The agents that work from this reference, engineers who work through agents and want to trust what an agent built, and people watching the series who want the working code. This is not a support queue, compatibility promise, ghostwriting service, growth automation, thin npm init, or TypeScript tutorial dressed up as a template excited to go out on a Saturday night.
+The free board is the product. Pro makes a search faster and better informed.
 
-Status: `ratstack.sh` is deployed. Effect 4 is stable. XState and `@xstate/effect` are pinned to alphas, and Alchemy to a beta, so their APIs can drift.
+Free, forever, with or without an account:
 
-Some of it's still fuckin' pre-release. It's fine. Keep track 🙏
+- The full board and every listing on it.
+- Search and every role and region filter that exists today.
+- The link to apply on the original posting.
+- The application tracker.
+- A weekly email digest of a saved search.
 
-## Why it exists
+Pro, with the proposed prices of 19 USD a month, 49 USD a quarter, or 149 USD a year:
 
-Agents will take the shortest path. Lazy mfers.
+- Instant alerts when a new listing matches a saved search.
+- Salary and seniority filters.
+- Company intel next to a listing, such as hiring history and how long similar roles stayed open.
 
-A skeleton without commandments chiseled in stone produces a ball of mud. A pile of prose without a strong fence is legacy documentation.
+The prices are proposals. Changing them needs the owner's sign-off.
 
-This reference gives a project:
+## Rules the product keeps
 
-1. Why. `VISION.md` and `AGENTS.md` explain the point.
-2. Fence. Pins, `pnpm check`, lefthook, and harness hooks block hook bypass.
-3. Context. Vendored Effect, effect-solutions, XState, and Alchemy sources support source-first edits.
+**No listing is ever gated.** Every listing the board holds is visible without signing in and without paying. Pro adds features around listings. It never hides, delays, or truncates one. A design that shows a listing to Pro members first, or blurs part of it for free viewers, breaks this rule.
 
-The stack is the fundamental floor. The foundation. [Sam Goodwin's argument](https://www.youtube.com/watch?v=MtKHzAH6uXM&t=1790s) sets the bar: the whole cloud becomes a library, limited by the accounts you have, and the type system should guarantee that the infrastructure is correct.
+**Every source is used within its published terms.** The board reads public job APIs and aggregator feeds. Each one is fetched no more often than its terms allow, identified with the crawler's `USER_AGENT`, linked back to its original posting, and credited where its terms ask for credit. When a source's terms forbid a use, such as charging for its data or putting it behind a login, the board does not make that use. When a source publishes no terms, the board stays close to what the source shows in public and records the gap. That record is research, not legal advice.
 
-## Pieces, trust, floor, and range
+**The domain and regions stay.** The product lives on `jobs.rowlandekemezie.com`. Its regions are remote Canada, remote US, and Vancouver and British Columbia. Adding a region or moving to a new brand is a product decision for the owner.
 
-Four ideas hold this together.
+## How it gets built
 
-**Pieces.** Alchemy Layers as literally composable SaaS (next section). Each one is a product you can provide, swap, or pull out.
+The board runs on the rat-stack foundation. Effect owns the program, Alchemy declares the Cloudflare resources in code, and the fence of lint, types, the Effect language service, hooks, and CI makes the easy path the right one. `AGENTS.md` names the pins and the commands.
 
-**Trust.** [Lauren Tan ships thousands of agent-written PRs](https://x.com/poteto/status/2102050467505430555) because she trusts the environment her agents work in. She ranks five places a correction can live, hardest first: the codebase, static analysis (lint, compiler, CI), rules, skills, and the style guide. The hard rungs make a bad pattern impossible to write. Her team built Dune, an agent-friendly framework, on one principle: agents love taking shortcuts, so "what if we designed a framework such that the shortcut, the easy path, is the right path for agents?" Dune enforces process boundaries through the import graph and keeps a single paved path for each blessed pattern. Her point is that the framework itself matters less than owning one. rat-stack is ours. Alchemy puts infrastructure on the compiler rung: remove a binding and the code that uses it stops compiling. rat-stack's fence is the rest of the ladder, built in.
-
-**Floor.** [Theo Browne](https://www.youtube.com/watch?v=iBrAWpjXNxs&t=349s): "raising the floor is way more beneficial than raising the ceiling." [He gave the same advice about videos](https://www.youtube.com/watch?v=q9GCu3hiNjw&t=707s) on Joel's channel: "raise the baseline so that you average higher... the floor is the hardest part to get right." A higher floor also makes failure cheaper: "it'll also make it hurt less when the video you put a lot of effort into bombs." The floor is the worst thing that happens on a normal run. His math is about long runs. A step that fails 5% of the time every ten minutes fails about 70% of the time over four hours. Cut that 5% to 3% and the four-hour failure rate drops to about 50%. Small cuts to the failure rate multiply how long the work can run. [At CascadiaJS](https://www.youtube.com/watch?v=TV6f2weVgCI&t=135s) he also said failure got cheap: "experimentation is now significantly cheaper... it costs pennies." Theo applies the floor to models. We apply it to the environment. Types, the fence, and cartridges that pull out cleanly raise the floor for every agent working here. That floor is what makes long-running agent loops worth leaving unattended.
-
-**Range.** At [CascadiaJS 2026](https://www.youtube.com/watch?v=TV6f2weVgCI) Theo closed with "build bigger." A month later [he refined it](https://www.youtube.com/watch?v=xUnRQ9vLXxo&t=798s): "bigger is probably the wrong word... It's time to think wider." He means range, how much ground your software covers. A team could never match AWS's range without thousands of engineers. Now "you can build a database platform into your product in a day or two." He also says to architect products so users can build the features you are missing. And in his words, "wider prompting requires higher floors." He names the bottleneck too: "building is now like a thirty minute process... but the deploying hasn't went down at all." Composable Layers that carry their own infrastructure are our answer to that gap. The compiler checks resource requirements; plans and real-infrastructure checks prove the deployed behavior.
-
-Theo's case for ambition is to prompt further. Lauren's method is to build the environment. We take the ambition from him and the method from her.
-
-## Layers are composable SaaS
-
-With Alchemy, an Effect Layer can declare the cloud resources it needs. Providing the Layer provisions them on the next deploy. Sam calls this "SaaS as NPM." We build on it:
-
-- A service tag is the product's API.
-- A Layer is one vendor's implementation, and it carries its own infrastructure.
-- `Layer.provide` is that vendor's private supply chain. Swapping vendors is a one-line change.
-- Typed errors are the SLA, written in the type.
-
-Alchemy spans providers. One stack can run Cloudflare next to PlanetScale, and that range is part of the point.
-
-## The house rule: a clean playground
-
-The house rule is a clean, organized playground where real work gets done. It sets no limit on size. Picture clear, labeled bins on shelves that push in and pull out like game cartridges. Anything good can go in if it passes the cartridge test:
+Each new piece of the product passes the cartridge test:
 
 - **Labeled.** One package, one job, named for that job.
 - **Push in.** Adding it takes one package plus one `Layer.provide` or Stack line.
-- **Pull out.** Removing it takes deleting that package and that line, and `pnpm turbo run check test build` still passes.
-- **Self-contained.** It declares its own resources and bindings. Nothing spills into other bins.
-- **EZ to trash.** It can be tossed in the garbage without affecting anything else.
+- **Pull out.** Removing it leaves the rest of the board building and passing the gate.
 
-Everything built here is real.
+Debt only shrinks. Code that someone touches is finished the rat-stack way, and the old version is deleted. A lint exemption is retired, never added.
 
-## Outcomes
-
-- Agent-facing pages give the agent useful next actions, not only information. Markdown can carry AgentOnly guidance that HTML leaves out. Capability and MCP next-action links are a direction to prove, not something the projections guarantee today.
-- A project that vendors or clones rat-stack starts with a pnpm and Turborepo workspace, a real Effect CLI, and a trust fence.
-- Agents hit a loud failure when they cheat, including `git … --no-verify` and skipped checks. Consider adding hooks to your harness to stop them cold.
-- Prose explains the why. CI, lefthook, and agent hooks enforce the fence.
-- Someone can ask an agent for an Effect-shaped, Alchemy-shaped solution and catch it when the agent gets it wrong.
-- Product-specific corpora, tokens, and customer data stay out of the shared reference.
-
-## Current priorities
-
-1. Electrify the trust fence. Fuckin agent cheaters stay uncomfortable and obvious. They will feel shame and we will thwart them.
-2. Hold advocacy and judgment together. Teach the judgment and let Alchemy win on merit.
-3. Prove the claims in code, cheapest first:
-   1. Importing `apps/infra/alchemy.run.ts` deploys nothing, and removing a binding is a type error.
-   2. A database service tag with two vendor Layers, Cloudflare D1 and Hyperdrive in front of PlanetScale Postgres, with Drizzle inside each vendor. D1 is the free bin. PlanetScale has no free tier, and its cheapest database is single-node Postgres. The tag sits above Drizzle, so swapping vendors stays one line.
-4. Prove behavior against real infrastructure where local fakes differ. The database suite currently uses local SQLite and PGlite; per-PR deployed-resource tests remain a goal, not existing coverage.
-5. Keep the teaching surface aligned with the running application. `/systems` records what each shipped system does, the standard it keeps, and how to check it. Request analytics runs with a server-set persistent `rat_vid` cookie; event bodies exclude request bodies and sensitive query keys.
-6. Prove the signup lifecycle through an external list provider behind job-shaped ports. Submission starts double opt-in; a person confirms their email before joining. Agents apply through `joinInterest` over MCP, HTTP, or the CLI with a single-use page ticket and the person's approval of the exact card; confirmation is still required.
-7. Coming: extract the existing agent front door in `apps/site` (REST, MCP, A2A, code-mode sandbox, rate limits) into a cartridge that a project provides instead of inherits.
-
-## Questions this repo answers in code
-
-- Does the type system protect infrastructure correctness? Removing a binding should make typecheck fail. Not yet proven in this repo.
-- Does importing `apps/infra/alchemy.run.ts` stay pure? It should deploy nothing. Not yet proven by a test.
-- Can a vendor be swapped by changing one line? `packages/database` has one `DatabaseVendor` with D1 and Hyperdrive Postgres Layers, both tested. No test swaps them yet.
-- Where does a correction to an agent live? Lauren Tan's fence ladder puts code first, then lint and CI, then rules and skills, with the style guide last. The `--no-verify` rung is proven today by `packages/core/test/vcs-command-policy.test.ts`.
-- Can provider details stay outside core? Subscriber delivery lives in `packages/subscriber-delivery`; `no-core-adapters` and its fixture tests enforce the boundary.
-- Can the agent discover its next useful action from a response? Agent-only page guidance is built; next-action links in capability and MCP results still need proof.
-- Can agent-only signup stay double opt-in? Yes, so far: agents submit an approved application, and a person confirms their email through an email link in a browser. On 2026-10-01 a live `joinInterest` run sent one confirmation email, refused a reused ticket, and sent no second email for a repeat.
-
-## Open questions
-
-- Does `ratstack.sh` stay in this repo? For now it does: the [lore wiki](https://ratstack.sh/lore/) explains the ideas from `.brain/resources/lore/`; [systems](https://ratstack.sh/systems) documents shipped behavior from `.brain/areas/`. Both cite public sources and code.
-
-## Merge by default
-
-- Tests and checks that encode the existing fence
-- Docs that sharpen why and fence without adding a second product promise
-- Cartridges that pass the cartridge test and are real
-- Pin bumps that stay exact and reviewed as stack changes
-
-## Needs sign-off
-
-- Weakening lefthook, CI, or `--no-verify` blocks
-- Replacing pnpm, Turborepo, Effect, or XState as the default floor
-- Adding product-specific vendor corpora to the shared reference
-- Turning the public repo into a supported starter product
-- Resource destruction, replacement, or deletion, and deploys whose plans include them. `AGENTS.md` owns the full approval rules for infrastructure changes and deploys.
+Behavior is proved on the running board, not only in tests. The project's verify skill at `.claude/skills/verify/` boots the board locally with recorded listings and drives it in a browser. A change to what a person sees ships with a screenshot from that skill.
 
 ## Will not do for now
 
-- Support SLAs or a promise that it works on every agent harness
-- Vendoring x-algorithm or other app-specific source
-- Generating publishable copy as part of the reference
-- Toy examples that exist only to demonstrate a pattern
-- Bun or npm as the install story
-- A gut-me-on-day-one scaffold with no fence
+- Gate listings behind a signup. It breaks Remotive's terms, removes the board from Google for Jobs, and weakens the public job pages.
+- Charge employers first. Remote Rocketship tried it and found no demand, and employer demand on the Pragmatic Engineer board fell after 2022.
+- Sell AI resume tailoring. Himalayas already sells it for 9 USD a month, so it would not set this board apart.
+- Take on a new brand or wider regions.
+- Sell or share candidate data.
 
-## Decision boundaries
+## Merge by default
 
-- Safe by default: changes that keep the why in VISION and AGENTS, the fence enforceable, and every bin removable
-- Needs owner sign-off: new promises, toolchain swaps, or making the fence optional
-- Evidence expected: `pnpm check` and `pnpm test` green, plus hook policy tests that still block `git commit --no-verify`
+These changes need no sign-off beyond a clean gate and the review the stack requires:
+
+- A new company board in `packages/job-sources/src/boards.ts`, or a new feed adapter whose source terms allow the use.
+- Tests, docs, and verify-skill scenarios.
+- Free features that make the board faster to use, as long as no listing moves behind a sign-in.
+- A deploy whose `pnpm infra:plan` shows only the intended diff, per `AGENTS.md`.
+
+## Needs sign-off
+
+The owner, Rowland Ekemezie, signs off on these before the work lands:
+
+- Any change that gates, delays, or hides a listing from a free viewer.
+- Using a source in a way its published terms do not clearly allow, or adding a source with no published terms to a paid feature.
+- Prices, the contents of the free tier, or moving a feature from free to Pro.
+- A new domain, brand, or region.
+- Dependency version changes, including new dependencies such as an auth or billing library.
+- Loosening the lint, diagnostics, or hook fence.
+- `pnpm infra:destroy`, and any plan that replaces or deletes the D1 database.
+- Paid platform plans and accounts, such as Workers Paid for email or a Stripe account for billing.
+
+`AGENTS.md` owns the full approval rules for infrastructure and deploys. Every push to `main` deploys prod through CI, so the owner lands each PR.
 
 ## Amendment policy
 
-This document changes when the thesis is wrong, not when a downstream project's product is different. Agents may propose amendments with receipts. Joel approves. A project that grows out of rat-stack writes its own `VISION.md` instead of stretching this one.
+This document changes when the product changes: a new customer, a new tier, a new rule about sources or listings. Agents may propose an amendment with evidence, such as a measured result, a source's published terms, or a user report. The owner approves it. An amendment that contradicts `AGENTS.md` changes `AGENTS.md` in the same PR or does not land.
