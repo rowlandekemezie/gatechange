@@ -9,6 +9,7 @@ import {
   jobStoreLayer,
   jobStoreMigrationDirectory,
   SqlExecutor,
+  trackerStoreLayer,
 } from "../src/index.js";
 import type { SqlStatement } from "../src/index.js";
 
@@ -83,7 +84,7 @@ export const seededSqlJsJobStore = Effect.fnUntraced(function* makeSqlJsStore(
       }),
   });
 
-  return jobStoreLayer.pipe(
+  return Layer.mergeAll(jobStoreLayer, trackerStoreLayer).pipe(
     Layer.provideMerge(Layer.succeed(SqlExecutor, executor))
   );
 });
