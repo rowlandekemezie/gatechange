@@ -6,7 +6,7 @@ import {
 } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
 import { Effect, Layer } from "effect";
-import { FetchHttpClient } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { RpcClient, RpcSerialization } from "effect/rpc";
 
 export interface ServiceBinding {
@@ -15,21 +15,27 @@ export interface ServiceBinding {
 
 const { group } = toRpcGroup(jobBoardContracts);
 
-const clientOf = (backend: ServiceBinding) =>
+const httpOver = (binding: ServiceBinding) =>
+  FetchHttpClient.layer.pipe(
+    Layer.provide(
+      Layer.succeed(FetchHttpClient.Fetch, binding.fetch.bind(binding))
+    )
+  );
+
+export const clientOf = (backend: ServiceBinding) =>
   RpcClient.make(group).pipe(
     Effect.provide(
       RpcClient.layerProtocolHttp({ url: "https://backend/rpc" }).pipe(
-        Layer.provide([FetchHttpClient.layer, RpcSerialization.layerJson]),
-        Layer.provide(
-          Layer.succeed(FetchHttpClient.Fetch, backend.fetch.bind(backend))
-        )
+        Layer.provide([httpOver(backend), RpcSerialization.layerJson])
       )
     )
   );
 
-export const findJob = (backend: ServiceBinding, id: string) =>
-  Effect.scoped(
-    Effect.flatMap(clientOf(backend), (client) => client.getJob({ id }))
+export const shellOf = (assets: ServiceBinding, origin: string) =>
+  HttpClient.get(new URL("/", origin)).pipe(
+    Effect.flatMap(HttpClientResponse.filterStatusOk),
+    Effect.flatMap((response) => response.text),
+    Effect.provide(httpOver(assets))
   );
 
 const SITEMAP_PAGES = 10;

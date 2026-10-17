@@ -4,6 +4,7 @@ import { defineMessageUnion } from "foldkit/message";
 import { UrlRequest } from "foldkit/navigation";
 import { Url } from "foldkit/url";
 
+import { Listing, ListingRoute } from "../listing.js";
 import { AgeWindow, RegionGroup, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
@@ -18,16 +19,19 @@ export const Message = defineMessageUnion({
   ClickedResetFilters: {},
   ClickedRetry: {},
   ClickedRetryJob: {},
+  ClickedRetryListing: {},
   CompletedNavigation: {},
   CompletedReadShortlist: { marks: Shortlist },
   CompletedWriteShortlist: {},
   FailedFetchJob: { id: Schema.String, message: Schema.String },
   FailedFetchJobs: { generation: Schema.Finite, message: Schema.String },
+  FailedFetchListing: { message: Schema.String, route: ListingRoute },
   FailedFetchMoreJobs: { generation: Schema.Finite },
   FailedFetchStats: {},
   SubmittedSearch: {},
   SucceededFetchJob: { id: Schema.String, job: Schema.Option(Job) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },
+  SucceededFetchListing: { listing: Listing, route: ListingRoute },
   SucceededFetchMoreJobs: { generation: Schema.Finite, page: JobPage },
   SucceededFetchStats: { stats: BoardStats },
   ToggledRegionGroup: { group: RegionGroup },

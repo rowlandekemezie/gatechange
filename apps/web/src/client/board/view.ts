@@ -1,6 +1,6 @@
 import { SourceName, SourceTerms } from "@rat-stack/core/contracts";
 import type { SourceTermsValue } from "@rat-stack/core/contracts";
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import {
@@ -9,8 +9,17 @@ import {
   boardTitle,
 } from "../../features/board/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
+import { listingPage, listingTitle } from "../../features/listing/view.js";
 import { shortlistPage } from "../../features/shortlist/view.js";
-import { boardUrl, Route, shortlistRouter } from "../route.js";
+import {
+  boardUrl,
+  companyRouter,
+  jobRouter,
+  Route,
+  roleRouter,
+  shortlistRouter,
+} from "../route.js";
+import type { RouteValue } from "../route.js";
 import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
 
@@ -101,25 +110,48 @@ const footer = (h: H): Html =>
     ]
   );
 
-export const view = (model: ModelValue, h: H): Document => ({
-  body: h.main(
-    [h.Class("page")],
-    [
-      ...(Schema.is(Route.Board)(model.route) ? [boardMasthead(model, h)] : []),
-      tabs(model, h),
-      Route.match<Html>(model.route, {
-        Board: () => boardPage(model, h),
-        Job: () => jobPage(model, h),
-        NotFound: () => notFoundPage(model, h),
-        Shortlist: () => shortlistPage(model, h),
-      }),
-      footer(h),
-    ]
-  ),
-  title: Route.match<string>(model.route, {
-    Board: () => boardTitle(model),
-    Job: () => jobTitle(model),
-    NotFound: () => "Page not found",
-    Shortlist: () => `Your shortlist (${model.marks.length})`,
-  }),
-});
+const canonicalPath = (route: RouteValue) =>
+  Route.match<Option.Option<string>>(route, {
+    Board: ({ filters }) => Option.some(boardUrl(filters)),
+    Company: ({ slug }) => Option.some(companyRouter({ slug })),
+    Job: ({ id }) => Option.some(jobRouter({ id })),
+    NotFound: () => Option.none(),
+    Role: ({ place, role }) => Option.some(roleRouter({ place, role })),
+    Shortlist: () => Option.none(),
+  });
+
+const withCanonical = (model: ModelValue, document: Document): Document =>
+  Option.match(canonicalPath(model.route), {
+    onNone: () => document,
+    onSome: (path) => ({ ...document, canonical: `${model.origin}${path}` }),
+  });
+
+export const view = (model: ModelValue, h: H): Document =>
+  withCanonical(model, {
+    body: h.main(
+      [h.Class("page")],
+      [
+        ...(Schema.is(Route.Board)(model.route)
+          ? [boardMasthead(model, h)]
+          : []),
+        tabs(model, h),
+        Route.match<Html>(model.route, {
+          Board: () => boardPage(model, h),
+          Company: () => listingPage(model, h),
+          Job: () => jobPage(model, h),
+          NotFound: () => notFoundPage(model, h),
+          Role: () => listingPage(model, h),
+          Shortlist: () => shortlistPage(model, h),
+        }),
+        footer(h),
+      ]
+    ),
+    title: Route.match<string>(model.route, {
+      Board: () => boardTitle(model),
+      Company: () => listingTitle(model),
+      Job: () => jobTitle(model),
+      NotFound: () => "Page not found",
+      Role: () => listingTitle(model),
+      Shortlist: () => `Your shortlist (${model.marks.length})`,
+    }),
+  });

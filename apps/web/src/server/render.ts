@@ -1,16 +1,24 @@
 import type { JobValue } from "@rat-stack/core/contracts";
-import { Option } from "effect";
+import { Array, Effect, Option, Schema } from "effect";
+import {
+  injectIntoTemplate,
+  renderToString,
+} from "foldkit/experimental/server";
 
-import { regionLabel, roleLabel, sourceLabel } from "../client/board/copy.js";
-import { jobRouter } from "../client/route.js";
+import { application } from "../client/application.js";
+import { regionLabel, roleLabel } from "../client/board/copy.js";
+import { Preload } from "../client/board/model.js";
+import type { PreloadValue } from "../client/board/model.js";
+import { Route } from "../client/route.js";
+import type { RouteValue } from "../client/route.js";
+import { listingHeading } from "../features/listing/view.js";
 import { jobPostingOf, markupPolicy } from "./markup.js";
 import type { JobPostingLd, MarkupPolicy } from "./markup.js";
 
-export interface PageHead {
-  readonly canonical: string;
+export interface PageMeta {
   readonly description: string;
   readonly jsonLd: Option.Option<JobPostingLd>;
-  readonly title: string;
+  readonly status: 200 | 404;
 }
 
 export interface RenderedPage {
@@ -27,85 +35,104 @@ const escapeHtml = (text: string) =>
 
 const escapeScript = (json: string) => json.replaceAll("<", String.raw`\u003c`);
 
-const TITLE = /<title>[^<]*<\/title>/u;
-
 const DESCRIPTION = /<meta\s+name="description"[^>]*\/>/u;
 
-const ROOT = '<div id="root"></div>';
+const HEAD_END = "</head>";
 
-const headTags = (head: PageHead) =>
+const missing = (description: string): PageMeta => ({
+  description,
+  jsonLd: Option.none(),
+  status: 404,
+});
+
+const jobMeta = (job: JobValue, canonical: string, policy: MarkupPolicy) => ({
+  description: `${roleLabel(job.role)} role at ${job.company}, ${regionLabel(job.region)}. ${job.location}`,
+  jsonLd: jobPostingOf(job, canonical, policy),
+  status: 200 as const,
+});
+
+const listingMeta = (route: RouteValue, jobs: readonly JobValue[]) =>
+  Schema.is(Route.Company)(route) || Schema.is(Route.Role)(route)
+    ? Option.match(Array.head(jobs), {
+        onNone: () => missing("Nothing is open here right now."),
+        onSome: () => ({
+          description: `${listingHeading(route, jobs)}: ${jobs
+            .slice(0, 3)
+            .map((job) => job.title)
+            .join(
+              ", "
+            )}${jobs.length > 3 ? `, and ${jobs.length - 3} more` : ""}.`,
+          jsonLd: Option.none(),
+          status: 200 as const,
+        }),
+      })
+    : missing("There is no page here.");
+
+export const pageMeta = (
+  route: RouteValue,
+  preload: PreloadValue,
+  canonical: string,
+  policy: MarkupPolicy = markupPolicy
+): PageMeta =>
+  Preload.match<PageMeta>(preload, {
+    Job: ({ job }) => jobMeta(job, canonical, policy),
+    JobMissing: () => missing("This role is no longer listed."),
+    Listing: ({ jobs }) => listingMeta(route, jobs),
+    Nothing: () => missing("There is no page here."),
+  });
+
+const headTags = (
+  title: string,
+  canonical: string | undefined,
+  meta: PageMeta
+) =>
   [
-    `<title>${escapeHtml(head.title)}</title>`,
-    `<meta name="description" content="${escapeHtml(head.description)}" />`,
-    `<link rel="canonical" href="${escapeHtml(head.canonical)}" />`,
-    `<meta property="og:title" content="${escapeHtml(head.title)}" />`,
-    `<meta property="og:description" content="${escapeHtml(head.description)}" />`,
-    `<meta property="og:url" content="${escapeHtml(head.canonical)}" />`,
-    ...Option.match(head.jsonLd, {
+    ...(canonical === undefined
+      ? []
+      : [
+          `<link rel="canonical" href="${escapeHtml(canonical)}" />`,
+          `<meta property="og:url" content="${escapeHtml(canonical)}" />`,
+        ]),
+    `<meta property="og:title" content="${escapeHtml(title)}" />`,
+    `<meta property="og:description" content="${escapeHtml(meta.description)}" />`,
+    ...Option.match(meta.jsonLd, {
       onNone: () => [],
       onSome: (data) => [
         `<script type="application/ld+json">${escapeScript(JSON.stringify(data))}</script>`,
       ],
     }),
+    HEAD_END,
   ].join("\n    ");
 
-export const renderShell = (shell: string, head: PageHead, body: string) =>
-  shell
-    .replace(DESCRIPTION, "")
-    .replace(TITLE, headTags(head))
-    .replace(ROOT, `<div id="root">${body}</div>`);
-
-export const jobPath = (id: string) => jobRouter({ id });
-
-export const jobHead = (
-  job: JobValue,
-  origin: string,
-  policy: MarkupPolicy = markupPolicy
-): PageHead => {
-  const canonical = `${origin}${jobPath(job.id)}`;
-
-  return {
-    canonical,
-    description: `${roleLabel(job.role)} role at ${job.company}, ${regionLabel(job.region)}. ${job.location}`,
-    jsonLd: jobPostingOf(job, canonical, policy),
-    title: `${job.title} at ${job.company}`,
-  };
-};
-
-const jobBody = (job: JobValue) =>
-  [
-    "<main>",
-    `<h1>${escapeHtml(job.title)}</h1>`,
-    `<p>${escapeHtml(job.company)}, ${escapeHtml(job.location)}</p>`,
-    ...(job.salary === null ? [] : [`<p>${escapeHtml(job.salary)}</p>`]),
-    `<p><a href="${escapeHtml(job.url)}" rel="nofollow">Apply on ${escapeHtml(sourceLabel(job.source))}</a></p>`,
-    '<p><a href="/">See every open role</a></p>',
-    "</main>",
-  ].join("");
-
-export const renderJobPage = (
+export const renderPage = (
   shell: string,
-  origin: string,
-  path: string,
-  job: Option.Option<JobValue>,
+  url: URL,
+  route: RouteValue,
+  preload: PreloadValue,
   policy: MarkupPolicy = markupPolicy
-): RenderedPage =>
-  Option.match(job, {
-    onNone: () => ({
-      html: renderShell(
-        shell,
-        {
-          canonical: `${origin}${path}`,
-          description: "This role is no longer listed.",
-          jsonLd: Option.none(),
-          title: "Role no longer listed",
-        },
-        '<main><h1>This role is no longer listed</h1><p><a href="/">See every open role</a></p></main>'
-      ),
-      status: 404,
-    }),
-    onSome: (found) => ({
-      html: renderShell(shell, jobHead(found, origin, policy), jobBody(found)),
-      status: 200,
-    }),
+) =>
+  Effect.gen(function* renderServerPage() {
+    const rendered = yield* renderToString(application, {
+      flags: { origin: url.origin, preload },
+      url: url.href,
+    });
+
+    const meta = pageMeta(
+      route,
+      preload,
+      rendered.canonical ?? url.href,
+      policy
+    );
+
+    const html = yield* Effect.try(() => injectIntoTemplate(shell, rendered));
+
+    return {
+      html: html
+        .replace(
+          DESCRIPTION,
+          `<meta name="description" content="${escapeHtml(meta.description)}" />`
+        )
+        .replace(HEAD_END, headTags(rendered.title, rendered.canonical, meta)),
+      status: meta.status,
+    } satisfies RenderedPage;
   });

@@ -12,6 +12,8 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()("Website", {
       "/rpc",
       "/rpc/*",
       "/jobs/*",
+      "/companies/*",
+      "/roles/*",
       "/sitemap.xml",
       "/robots.txt",
     ],
