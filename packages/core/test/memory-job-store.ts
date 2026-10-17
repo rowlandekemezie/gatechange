@@ -185,8 +185,16 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         const previous = stateOf(feedKey);
         const lastSuccessAt = previous.lastSuccessAt ?? 0;
 
-        if (lastSuccessAt < seenAt) {
-          previousSuccesses.set(feedKey, previous.lastSuccessAt);
+        if (
+          previous.lastSuccessAt !== null &&
+          previous.lastSuccessAt !== seenAt
+        ) {
+          const below = Math.min(previous.lastSuccessAt, seenAt);
+
+          previousSuccesses.set(
+            feedKey,
+            Math.max(previousSuccesses.get(feedKey) ?? below, below)
+          );
         }
 
         states.set(feedKey, {

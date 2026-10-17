@@ -232,7 +232,8 @@ ON CONFLICT (key) DO UPDATE SET
   last_attempt_at = MAX(COALESCE(feeds.last_attempt_at, 0), excluded.last_attempt_at),
   last_success_at = MAX(COALESCE(feeds.last_success_at, 0), excluded.last_success_at),
   previous_success_at = CASE
-    WHEN COALESCE(feeds.last_success_at, 0) < excluded.last_success_at THEN feeds.last_success_at
+    WHEN excluded.last_success_at > feeds.last_success_at THEN MAX(COALESCE(feeds.previous_success_at, 0), feeds.last_success_at)
+    WHEN excluded.last_success_at < feeds.last_success_at THEN MAX(COALESCE(feeds.previous_success_at, 0), excluded.last_success_at)
     ELSE feeds.previous_success_at
   END,
   last_error = NULL,

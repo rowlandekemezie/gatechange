@@ -84,7 +84,7 @@ export const seededSqlJsJobStore = Effect.fnUntraced(function* makeSqlJsStore(
   });
 
   return jobStoreLayer.pipe(
-    Layer.provide(Layer.succeed(SqlExecutor, executor))
+    Layer.provideMerge(Layer.succeed(SqlExecutor, executor))
   );
 });
 

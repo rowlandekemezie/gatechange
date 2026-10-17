@@ -12,9 +12,10 @@ import type {
   ListingHistory,
   PostingValue,
 } from "@rat-stack/core";
-import { Array, Deferred, Effect, Layer, Option, pipe } from "effect";
+import { Array, Deferred, Effect, Layer, Option, pipe, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
+import { SqlExecutor, statement } from "../src/index.js";
 import { sqlJsJobStore } from "./sqljs-executor.js";
 
 const NOW = 1_760_000_000_000;
@@ -155,7 +156,9 @@ const historyOfRole = Effect.gen(function* readHistory() {
   return yield* store.historyOf(role);
 });
 
-const withSqlStore = <A, E>(body: Effect.Effect<A, E, JobStore>) =>
+const withSqlStore = <A, E>(
+  body: Effect.Effect<A, E, JobStore | SqlExecutor>
+) =>
   Effect.gen(function* runWithSqlStore() {
     const layer = yield* sqlJsJobStore;
 
@@ -418,6 +421,55 @@ describe("listing history through runIngest on the SQL store", () => {
         })
       )
   );
+
+  it.effect(
+    "two successes landing in either order leave the same last and previous success",
+    () =>
+      Effect.gen(function* successOrder() {
+        const key = "greenhouse:acme";
+        const earlier = NOW + 8 * DAY_MILLIS;
+        const later = earlier + 2;
+
+        const successesLandingIn = (order: readonly number[]) =>
+          withSqlStore(
+            Effect.gen(function* landSuccesses() {
+              const store = yield* JobStore;
+              const sql = yield* SqlExecutor;
+
+              yield* store.replaceFeed(key, [], NOW);
+              yield* Effect.all(
+                pipe(
+                  order,
+                  Array.map((seenAt) => store.replaceFeed(key, [], seenAt))
+                )
+              );
+
+              return yield* sql.all(
+                "read feed successes",
+                statement(
+                  "SELECT last_success_at, previous_success_at FROM feeds WHERE key = ?",
+                  [key]
+                ),
+                Schema.Struct({
+                  last_success_at: Schema.Number,
+                  previous_success_at: Schema.NullOr(Schema.Number),
+                })
+              );
+            })
+          );
+
+        const landed = [
+          { last_success_at: later, previous_success_at: earlier },
+        ];
+
+        expect(yield* successesLandingIn([earlier, later])).toStrictEqual(
+          landed
+        );
+        expect(yield* successesLandingIn([later, earlier])).toStrictEqual(
+          landed
+        );
+      })
+  );
 });
 
 const bothOrders: readonly (readonly FeedKey[])[] = [feeds, feeds.toReversed()];
@@ -583,6 +635,43 @@ describe("reposts do not depend on which feed's write lands first", () => {
           repostsInBothOrders(0)
         );
         expect(pipe(sawItGoneEarlier, Array.map(repostsOf))).toStrictEqual(
+          repostsInBothOrders(1)
+        );
+      })
+  );
+
+  it.effect(
+    "two overlapping runs that both see the board without the role count one repost whichever board write lands first",
+    () =>
+      Effect.gen(function* overlappingBoardSuccesses() {
+        const runA = NOW + 8 * DAY_MILLIS;
+        const runB = runA + 2;
+
+        const histories = yield* historyInBothOrders((order) =>
+          Effect.gen(function* script() {
+            const store = yield* JobStore;
+
+            const boardWrites =
+              order[0] === "greenhouse:acme" ? [runA, runB] : [runB, runA];
+
+            yield* ingestAt(0, { "greenhouse:acme": [role] }, order);
+            yield* Effect.all(
+              pipe(
+                boardWrites,
+                Array.map((seenAt) =>
+                  store.replaceFeed("greenhouse:acme", [], seenAt)
+                )
+              )
+            );
+            yield* ingestAt(
+              (runB - NOW) / DAY_MILLIS,
+              { "remoteok:all": [role] },
+              ["remoteok:all"]
+            );
+          })
+        );
+
+        expect(pipe(histories, Array.map(repostsOf))).toStrictEqual(
           repostsInBothOrders(1)
         );
       })
