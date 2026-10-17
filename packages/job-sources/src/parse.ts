@@ -95,6 +95,7 @@ const entities: readonly (readonly [RegExp, string])[] = [
   [/&gt;/gu, ">"],
   [/&lt;/gu, "<"],
   [/&nbsp;/gu, " "],
+  [/&#xa0;/giu, " "],
   [/&amp;/gu, "&"],
 ];
 

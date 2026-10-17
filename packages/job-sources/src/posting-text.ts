@@ -47,6 +47,27 @@ const AshbyDetail = Schema.Struct({
   id: Schema.String,
 });
 
+const SmartRecruitersSection = Schema.optional(
+  Schema.NullOr(Schema.Struct({ text: OptionalString, title: OptionalString }))
+);
+
+const SmartRecruitersDetail = Schema.Struct({
+  jobAd: Schema.Struct({
+    sections: Schema.Struct({
+      additionalInformation: SmartRecruitersSection,
+      companyDescription: SmartRecruitersSection,
+      jobDescription: SmartRecruitersSection,
+      qualifications: SmartRecruitersSection,
+    }),
+  }),
+});
+
+const WorkableDetail = Schema.Struct({
+  benefits: OptionalString,
+  description: OptionalString,
+  requirements: OptionalString,
+});
+
 const AshbyBoard = Schema.Struct({ jobs: Schema.Array(Schema.Unknown) });
 
 const greenhouseText = (id: string, slug: string, externalId: string) =>
@@ -135,6 +156,45 @@ const ashbyText = (id: string, slug: string, externalId: string) =>
     )
   );
 
+const smartRecruitersText = (id: string, slug: string, externalId: string) =>
+  fetchJson(
+    id,
+    `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings/${encodeURIComponent(externalId)}`,
+    SmartRecruitersDetail
+  ).pipe(
+    Effect.map(({ jobAd: { sections } }) =>
+      nonEmpty(
+        pipe(
+          [
+            sections.companyDescription,
+            sections.jobDescription,
+            sections.qualifications,
+            sections.additionalInformation,
+          ],
+          Array.flatMap((section) => [
+            section?.title,
+            textOfHtml(section?.text ?? ""),
+          ])
+        )
+      ).join("\n\n")
+    )
+  );
+
+const workableText = (id: string, slug: string, externalId: string) =>
+  fetchJson(
+    id,
+    `https://apply.workable.com/api/v2/accounts/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
+    WorkableDetail
+  ).pipe(
+    Effect.map((job) =>
+      nonEmpty(
+        Array.map([job.description, job.requirements, job.benefits], (html) =>
+          textOfHtml(html ?? "")
+        )
+      ).join("\n\n")
+    )
+  );
+
 const textOfAts: Record<
   typeof CompanyAts.Type,
   (
@@ -150,6 +210,8 @@ const textOfAts: Record<
   ashby: ashbyText,
   greenhouse: greenhouseText,
   lever: leverText,
+  smartrecruiters: smartRecruitersText,
+  workable: workableText,
 };
 
 const JobKey = Schema.Struct({

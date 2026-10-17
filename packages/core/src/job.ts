@@ -39,6 +39,8 @@ export const SourceName = Schema.Literals([
   "Greenhouse",
   "Lever",
   "Ashby",
+  "Workable",
+  "SmartRecruiters",
   "RemoteOK",
   "Remotive",
   "Himalayas",

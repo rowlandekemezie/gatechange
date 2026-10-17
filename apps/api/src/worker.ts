@@ -1,9 +1,11 @@
 import { toRpc } from "@rat-stack/capability/rpc";
 import {
   capabilities,
+  DEFAULT_FEEDS_PER_RUN,
   enqueueNewListings,
   enrichListing,
   EnrichmentOutcome,
+  INGEST_INTERVAL_MINUTES,
   retryableSkips,
   runIngest,
 } from "@rat-stack/core";
@@ -22,9 +24,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 export const rpcProjection = toRpc(capabilities);
 
-export const INGEST_SCHEDULE = "*/20 * * * *";
-
-export const DEFAULT_FEEDS_PER_RUN = 20;
+export const INGEST_SCHEDULE = `*/${INGEST_INTERVAL_MINUTES} * * * *`;
 
 export const DEFAULT_FEED_CONCURRENCY = 6;
 

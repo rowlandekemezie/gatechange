@@ -8,12 +8,18 @@ import { postingTextsLayer } from "../src/index.js";
 import ashbyFixture from "./fixtures/ashby-board.json" with { type: "json" };
 import greenhouseFixture from "./fixtures/greenhouse-job.json" with { type: "json" };
 import leverFixture from "./fixtures/lever-posting.json" with { type: "json" };
+import smartRecruitersFixture from "./fixtures/smartrecruiters-posting.json" with { type: "json" };
+import workableFixture from "./fixtures/workable-job.json" with { type: "json" };
 
 const greenhouseJob = JSON.stringify(greenhouseFixture);
 
 const leverPosting = JSON.stringify(leverFixture);
 
 const ashbyBoard = JSON.stringify(ashbyFixture);
+
+const smartRecruitersPosting = JSON.stringify(smartRecruitersFixture);
+
+const workableJob = JSON.stringify(workableFixture);
 
 const serving = (body: string, status = 200) => {
   const requested: string[] = [];
@@ -132,6 +138,49 @@ describe("posting texts", () => {
           text.endsWith("Compensation: $200K – $250K USD per 1 YEAR")
         ).toBe(true);
         expect(amountsIn(text).has(200_000)).toBe(true);
+      }).pipe(Effect.provide(server.layer));
+    }
+  );
+
+  it.effect(
+    "a SmartRecruiters posting joins its job ad sections as plain text",
+    () => {
+      const server = serving(smartRecruitersPosting);
+
+      return Effect.gen(function* readSmartRecruiters() {
+        const text = yield* fetchText(
+          "smartrecruiters:ServiceNow:744000156092859"
+        );
+
+        expect(server.requested).toStrictEqual([
+          "https://api.smartrecruiters.com/v1/companies/ServiceNow/postings/744000156092859",
+        ]);
+        expect(text.startsWith("Company Description")).toBe(true);
+        expect(text).toContain("Sr Software Engineering Manager");
+        expect(text).toContain("Qualifications");
+        expect(text).not.toMatch(/[<>]|&[a-z#0-9]+;/u);
+        expect(amountsIn(text).has(190_900)).toBe(true);
+        expect(amountsIn(text).has(334_100)).toBe(true);
+      }).pipe(Effect.provide(server.layer));
+    }
+  );
+
+  it.effect(
+    "a Workable job joins its description, requirements and benefits",
+    () => {
+      const server = serving(workableJob);
+
+      return Effect.gen(function* readWorkable() {
+        const text = yield* fetchText("workable:huggingface:81B46579FE");
+
+        expect(server.requested).toStrictEqual([
+          "https://apply.workable.com/api/v2/accounts/huggingface/jobs/81B46579FE",
+        ]);
+        expect(text.startsWith("At Hugging Face, we're on a journey")).toBe(
+          true
+        );
+        expect(text).toContain("Please provide a cover letter");
+        expect(text).not.toMatch(/[<>]|&[a-z#0-9]+;/u);
       }).pipe(Effect.provide(server.layer));
     }
   );

@@ -2,8 +2,10 @@ export { boardStats, capabilities, getJob, listJobs } from "./capabilities.js";
 
 export {
   backoffMinutes,
+  DEFAULT_FEEDS_PER_RUN,
   FeedOutcome,
   FeedState,
+  INGEST_INTERVAL_MINUTES,
   isFeedDue,
   MAX_BACKOFF_DOUBLINGS,
   selectDueFeeds,

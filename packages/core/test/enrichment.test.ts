@@ -20,6 +20,7 @@ import {
   EnrichmentOutcome,
   EnrichmentQueue,
   enqueueNewListings,
+  enrichableSources,
   enrichListing,
   JobStore,
   ListingEnricher,
@@ -555,6 +556,18 @@ describe("enqueueNewListings", () => {
         expect(queued).toStrictEqual([[boardId("a"), boardId("b")], []]);
       })
   );
+});
+
+describe("enrichableSources", () => {
+  it("is every company board and no aggregator", () => {
+    expect(enrichableSources.toSorted()).toStrictEqual([
+      "Ashby",
+      "Greenhouse",
+      "Lever",
+      "SmartRecruiters",
+      "Workable",
+    ]);
+  });
 });
 
 describe("amountsIn", () => {
