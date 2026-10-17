@@ -1,6 +1,12 @@
 import { Schema } from "effect";
 
-export const CompanyAts = Schema.Literals(["greenhouse", "lever", "ashby"]);
+export const CompanyAts = Schema.Literals([
+  "greenhouse",
+  "lever",
+  "ashby",
+  "workable",
+  "smartrecruiters",
+]);
 
 export const CompanyBoard = Schema.Struct({
   ats: CompanyAts,

@@ -10,6 +10,8 @@ export type FeedSpecValue = Data.TaggedEnum<{
   Lever: { readonly company: string; readonly slug: string };
   RemoteOK: { readonly listing: string };
   Remotive: { readonly search: string };
+  SmartRecruiters: { readonly company: string; readonly slug: string };
+  Workable: { readonly company: string; readonly slug: string };
 }>;
 
 export const FeedSpec = Data.taggedEnum<FeedSpecValue>();
@@ -29,6 +31,8 @@ export const feedKey: (spec: FeedSpecValue) => string = FeedSpec.$match({
   Lever: ({ slug }) => `lever:${slug}`,
   RemoteOK: ({ listing }) => `remoteok:${slugOf(listing)}`,
   Remotive: ({ search }) => `remotive:${slugOf(search)}`,
+  SmartRecruiters: ({ slug }) => `smartrecruiters:${slug}`,
+  Workable: ({ slug }) => `workable:${slug}`,
 });
 
 const sourceOf = (spec: FeedSpecValue): SourceNameValue => spec._tag;
@@ -36,8 +40,13 @@ const sourceOf = (spec: FeedSpecValue): SourceNameValue => spec._tag;
 const companyOf = (spec: FeedSpecValue): Option.Option<string> =>
   Match.value(spec).pipe(
     Match.withReturnType<Option.Option<string>>(),
-    Match.tag("Ashby", "Greenhouse", "Lever", ({ company }) =>
-      Option.some(company)
+    Match.tag(
+      "Ashby",
+      "Greenhouse",
+      "Lever",
+      "SmartRecruiters",
+      "Workable",
+      ({ company }) => Option.some(company)
     ),
     Match.orElse(() => Option.none())
   );
@@ -61,6 +70,8 @@ const intervalOf: (spec: FeedSpecValue) => number = FeedSpec.$match({
   Lever: () => BOARD_INTERVAL_MINUTES,
   RemoteOK: () => AGGREGATOR_INTERVAL_MINUTES,
   Remotive: () => REMOTIVE_INTERVAL_MINUTES,
+  SmartRecruiters: () => BOARD_INTERVAL_MINUTES,
+  Workable: () => BOARD_INTERVAL_MINUTES,
 });
 
 export const feedRefOf = (spec: FeedSpecValue): FeedRef => ({

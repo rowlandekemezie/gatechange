@@ -27,6 +27,7 @@ const likePattern = (search: string) =>
 
 const sourcePriority = `CASE source
   WHEN 'Greenhouse' THEN 0 WHEN 'Lever' THEN 0 WHEN 'Ashby' THEN 0
+  WHEN 'Workable' THEN 0 WHEN 'SmartRecruiters' THEN 0
   WHEN 'HackerNews' THEN 1 ELSE 2 END`;
 
 const jobColumns =
