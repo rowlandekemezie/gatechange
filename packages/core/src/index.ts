@@ -19,7 +19,9 @@ export {
   daysOpen,
   FeedReplacement,
   fingerprintOf,
+  isRepost,
   JobStore,
+  REPOST_GAP,
 } from "./job-store.js";
 
 export type {

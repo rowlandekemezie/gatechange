@@ -300,38 +300,31 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
-    "a role that disappears and comes back counts one repost and keeps its first-seen date",
+    "an older run that finishes late never moves a listing's last sighting back",
     () =>
       withStore(
-        Effect.gen(function* repost() {
+        Effect.gen(function* overlappingRuns() {
           const store = yield* JobStore;
-          const role = job({ feed: "a", id: "a:1" });
-          const back = NOW + 3 * DAY_MILLIS;
+          const late = NOW + DAY_MILLIS;
 
-          yield* store.replaceFeed("a", [role], NOW);
           yield* store.replaceFeed(
             "a",
-            [{ ...role, lastSeenAt: NOW + DAY_MILLIS }],
-            NOW + DAY_MILLIS
+            [job({ feed: "a", id: "a:1", lastSeenAt: late })],
+            late
           );
-          yield* store.replaceFeed("a", [], NOW + 2 * DAY_MILLIS);
-          yield* store.replaceFeed(
-            "a",
-            [job({ feed: "a", id: "a:2", lastSeenAt: back, postedAt: back })],
-            back
-          );
+          yield* store.replaceFeed("a", [job({ feed: "a", id: "a:1" })], NOW);
 
-          const listing = yield* store.list(query(), NOW + 5 * DAY_MILLIS);
+          const listing = yield* store.list(query(), late);
 
-          expect(yield* store.historyOf(role)).toStrictEqual(
-            history(NOW, back, 3, 1)
-          );
           expect(
             pipe(
               listing.jobs,
-              Array.map((found) => [found.id, found.daysOpen, found.reposts])
+              Array.map((found) => [found.id, found.lastSeenAt])
             )
-          ).toStrictEqual([["a:2", 5, 1]]);
+          ).toStrictEqual([["a:1", late]]);
+          expect(
+            yield* store.historyOf(job({ feed: "a", id: "a:1" }))
+          ).toStrictEqual(history(NOW, late, 1, 0));
         })
       )
   );
@@ -394,6 +387,28 @@ describe("D1 job store queries", () => {
             Array.map((found) => [found.id, found.daysOpen])
           )
         ).toStrictEqual([["g:1", 9]]);
+      })
+  );
+
+  it.effect(
+    "a job written after the backfill but before history existed keeps its first-seen date on its first sighting",
+    () =>
+      Effect.gen(function* migrationWindow() {
+        const layer = yield* seededSqlJsJobStore({
+          "0002_job_history.sql": `INSERT INTO jobs (id, feed, source, title, company, location, region, arrangement, role, url, salary, relevance, posted_at, first_seen_at, last_seen_at, fingerprint) VALUES
+  ('a:1', 'a', 'Greenhouse', 'Engineering Manager', 'Acme', 'Remote', 'RemoteCanada', 'Remote', 'EngineeringManager', 'https://jobs.example/1', NULL, 50, ${NOW - 3 * DAY_MILLIS}, ${NOW - 3 * DAY_MILLIS}, ${NOW - DAY_MILLIS}, 'acme|engineeringmanager');`,
+        });
+
+        const kept = yield* Effect.gen(function* sightAfterWindow() {
+          const store = yield* JobStore;
+          const listed = job({ feed: "a", id: "a:1" });
+
+          yield* store.replaceFeed("a", [listed], NOW);
+
+          return yield* store.historyOf(listed);
+        }).pipe(Effect.provide(layer));
+
+        expect(kept).toStrictEqual(history(NOW - 3 * DAY_MILLIS, NOW, 1, 0));
       })
   );
 });

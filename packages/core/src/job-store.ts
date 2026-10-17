@@ -37,6 +37,11 @@ export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
 export const daysOpen = (firstSeenAt: number, now: number) =>
   Math.max(0, Math.floor((now - firstSeenAt) / DAY_MILLIS));
 
+export const REPOST_GAP = 7 * DAY_MILLIS;
+
+export const isRepost = (lastSeenAt: number, seenAt: number) =>
+  lastSeenAt < seenAt - REPOST_GAP;
+
 export class JobStore extends Context.Service<
   JobStore,
   {

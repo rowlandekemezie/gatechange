@@ -111,7 +111,7 @@ export type ListedJobValue = typeof ListedJob.Type;
 export const JobPage = Schema.Struct({
   generatedAt: EpochMillis,
   jobs: Schema.Array(ListedJob),
-  total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  total: Count,
 });
 
 export type JobPageValue = typeof JobPage.Type;

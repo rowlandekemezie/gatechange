@@ -1,6 +1,6 @@
 import { Array, Effect, Layer, Option, pipe } from "effect";
 
-import { daysOpen, fingerprintOf, JobStore } from "../src/index.js";
+import { daysOpen, fingerprintOf, isRepost, JobStore } from "../src/index.js";
 import type {
   FeedStateValue,
   IngestReceiptValue,
@@ -26,11 +26,6 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     const fingerprint = fingerprintOf(job);
     const previous = Option.fromNullishOr(history.get(fingerprint));
 
-    const listed = pipe(
-      [...jobs.values()],
-      Array.some((found) => fingerprintOf(found) === fingerprint)
-    );
-
     history.set(
       fingerprint,
       Option.match(previous, {
@@ -43,7 +38,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         onSome: (found) => ({
           firstSeenAt: Math.min(found.firstSeenAt, seenAt),
           lastSeenAt: Math.max(found.lastSeenAt, seenAt),
-          reposts: found.reposts + (listed ? 0 : 1),
+          reposts: found.reposts + (isRepost(found.lastSeenAt, seenAt) ? 1 : 0),
           sightings: found.sightings + (found.lastSeenAt < seenAt ? 1 : 0),
         }),
       })

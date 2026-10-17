@@ -3,6 +3,7 @@ import {
   fingerprintOf,
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
+  REPOST_GAP,
 } from "@rat-stack/core";
 import type {
   IngestReceiptValue,
@@ -144,7 +145,7 @@ ON CONFLICT (id) DO UPDATE SET
   salary = excluded.salary,
   relevance = excluded.relevance,
   posted_at = MIN(jobs.posted_at, excluded.posted_at),
-  last_seen_at = excluded.last_seen_at,
+  last_seen_at = MAX(jobs.last_seen_at, excluded.last_seen_at),
   fingerprint = excluded.fingerprint`,
     [
       job.id,
@@ -172,13 +173,13 @@ export const sightingStatement = (
 ): SqlStatement =>
   statement(
     `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, sightings, reposts)
-VALUES (?, ?, ?, 1, 0)
+VALUES (?, MIN(COALESCE((SELECT MIN(first_seen_at) FROM jobs WHERE fingerprint = ?), ?), ?), ?, 1, 0)
 ON CONFLICT (fingerprint) DO UPDATE SET
   first_seen_at = MIN(job_history.first_seen_at, excluded.first_seen_at),
   last_seen_at = MAX(job_history.last_seen_at, excluded.last_seen_at),
   sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
-  reposts = job_history.reposts + NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.fingerprint = excluded.fingerprint)`,
-    [fingerprintOf(job), seenAt, seenAt]
+  reposts = job_history.reposts + (job_history.last_seen_at < excluded.last_seen_at - ?)`,
+    [fingerprintOf(job), fingerprintOf(job), seenAt, seenAt, seenAt, REPOST_GAP]
   );
 
 export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>

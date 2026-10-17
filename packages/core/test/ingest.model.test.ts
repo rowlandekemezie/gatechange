@@ -15,8 +15,11 @@ import { TestClock } from "effect/testing";
 import {
   DAY_MILLIS,
   FeedUnavailable,
+  fingerprintOf,
   JobStore,
+  MAX_AGE_DAYS,
   PostingFeeds,
+  REPOST_GAP,
   runIngest,
 } from "../src/index.js";
 import type { FeedRef, JobQueryValue, PostingValue } from "../src/index.js";
@@ -56,6 +59,19 @@ const runs = Arbitrary.array(Arbitrary.schema(Run), {
   maxLength: 12,
   minLength: 1,
 });
+
+const days = (maximum: number) =>
+  Schema.Int.check(Schema.isBetween({ maximum, minimum: 1 }));
+
+const spacedRuns = Arbitrary.array(
+  Arbitrary.schema(Schema.Tuple([Run, days(10)])),
+  { maxLength: 12, minLength: 1 }
+);
+
+const weeklyListings = Arbitrary.array(
+  Arbitrary.schema(Schema.Tuple([FeedResponse, days(7)])),
+  { maxLength: 40, minLength: 31 }
+);
 
 const postingFor = (id: string): PostingValue => ({
   company: "Acme",
@@ -121,6 +137,16 @@ const listAll: JobQueryValue = {
 
 const uniqueIds = (ids: readonly string[]) => [...new Set(ids)].toSorted();
 
+const listedIds = (responses: typeof Run.Type) =>
+  uniqueIds(
+    pipe(
+      responses,
+      Array.flatMap((response) =>
+        Predicate.isTagged(response, "Listed") ? response.ids : []
+      )
+    )
+  );
+
 describe("ingest", () => {
   it.effect.prop(
     "each feed holds exactly its last successful listing, and a feed that goes down keeps what it had",
@@ -168,16 +194,34 @@ describe("ingest", () => {
   );
 
   it.effect.prop(
-    "history first-seen never moves later, sightings and repost counts only grow, and no history is lost",
-    { schedule: runs },
+    "history first-seen never moves later, and a role counts a repost exactly when no feed listed it for longer than the repost gap",
+    { schedule: spacedRuns },
     ({ schedule }) =>
       Effect.gen(function* replayHistory() {
         const memory = yield* makeMemoryJobStore;
+        const lastSeen = new Map<string, number>();
+        const expectedReposts = new Map<string, number>();
         let before = new Map(memory.history());
 
-        for (const responses of schedule) {
+        for (const [responses, gapDays] of schedule) {
+          yield* TestClock.adjust(`${gapDays} days`);
           yield* ingestResponses(memory, responses);
-          yield* TestClock.adjust("1 day");
+
+          const seenAt = yield* Clock.currentTimeMillis;
+
+          for (const id of listedIds(responses)) {
+            const fingerprint = fingerprintOf(postingFor(id));
+            const previous = lastSeen.get(fingerprint);
+
+            if (previous !== undefined && seenAt - previous > REPOST_GAP) {
+              expectedReposts.set(
+                fingerprint,
+                (expectedReposts.get(fingerprint) ?? 0) + 1
+              );
+            }
+
+            lastSeen.set(fingerprint, seenAt);
+          }
 
           const after = new Map(memory.history());
 
@@ -187,7 +231,10 @@ describe("ingest", () => {
             expect(next).toBeDefined();
             expect(next?.firstSeenAt).toBeLessThanOrEqual(previous.firstSeenAt);
             expect(next?.sightings).toBeGreaterThanOrEqual(previous.sightings);
-            expect(next?.reposts).toBeGreaterThanOrEqual(previous.reposts);
+          }
+
+          for (const [fingerprint, found] of after) {
+            expect(found.reposts).toBe(expectedReposts.get(fingerprint) ?? 0);
           }
 
           before = after;
@@ -195,8 +242,30 @@ describe("ingest", () => {
       })
   );
 
+  it.effect.prop(
+    "a role listed at least once a week past the retention window keeps its first-seen date and never counts a repost",
+    { schedule: weeklyListings },
+    ({ schedule }) =>
+      Effect.gen(function* listedPastRetention() {
+        const memory = yield* makeMemoryJobStore;
+        const firstSeenAt = yield* Clock.currentTimeMillis;
+
+        for (const [others, gapDays] of schedule) {
+          yield* ingestResponses(memory, [listed(["a"]), others, others]);
+          yield* TestClock.adjust(`${gapDays} days`);
+        }
+
+        const now = yield* Clock.currentTimeMillis;
+        const history = memory.history().get(fingerprintOf(postingFor("a")));
+
+        expect(now - firstSeenAt).toBeGreaterThan(MAX_AGE_DAYS * DAY_MILLIS);
+        expect(history?.firstSeenAt).toBe(firstSeenAt);
+        expect(history?.reposts).toBe(0);
+      })
+  );
+
   it.effect(
-    "a role that disappears and comes back keeps its first-seen date and counts one repost",
+    "a role that disappears for longer than the repost gap and comes back keeps its first-seen date and counts one repost",
     () =>
       Effect.gen(function* repost() {
         const memory = yield* makeMemoryJobStore;
@@ -205,7 +274,7 @@ describe("ingest", () => {
         yield* ingestResponses(memory, [listed(["a"]), down, down]);
         yield* TestClock.adjust("2 days");
         yield* ingestResponses(memory, [listed([]), listed([]), listed([])]);
-        yield* TestClock.adjust("2 days");
+        yield* TestClock.adjust("6 days");
         yield* ingestResponses(memory, [listed(["a"]), down, down]);
         yield* TestClock.adjust("1 day");
 
@@ -223,7 +292,7 @@ describe("ingest", () => {
         expect(history).toStrictEqual(
           Option.some({
             firstSeenAt,
-            lastSeenAt: firstSeenAt + 4 * DAY_MILLIS,
+            lastSeenAt: firstSeenAt + 8 * DAY_MILLIS,
             reposts: 1,
             sightings: 2,
           })
@@ -233,7 +302,7 @@ describe("ingest", () => {
             page.jobs,
             Array.map((job) => [job.daysOpen, job.reposts])
           )
-        ).toStrictEqual([[5, 1]]);
+        ).toStrictEqual([[9, 1]]);
       })
   );
 
