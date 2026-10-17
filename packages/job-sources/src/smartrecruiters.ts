@@ -1,6 +1,6 @@
 import { FeedUnavailable } from "@rat-stack/core";
 import type { ArrangementValue, PostingValue } from "@rat-stack/core";
-import { Array, Effect, pipe, Schema } from "effect";
+import { Array, Effect, Option, pipe, Schema } from "effect";
 
 import { fetchJson } from "./http.js";
 import { epochMillisOf, nonEmpty } from "./parse.js";
@@ -38,6 +38,8 @@ const PostingPage = Schema.Struct({
   content: Schema.Array(Schema.Unknown),
   totalFound: Schema.Int,
 });
+
+const PostingId = Schema.Struct({ id: Schema.String });
 
 const workplaceOf = (job: SmartRecruitersPostingValue): ArrangementValue => {
   if (job.location?.remote === true) {
@@ -99,10 +101,19 @@ const readAllPages = (feed: string, slug: string) =>
 
     const content = [first, ...rest].flatMap((page) => page.content);
 
-    if (content.length < first.totalFound) {
+    const distinct = new Set(
+      content.map((item, index) =>
+        Option.match(Schema.decodeUnknownOption(PostingId)(item), {
+          onNone: () => `unidentified:${index}`,
+          onSome: (posting) => posting.id,
+        })
+      )
+    ).size;
+
+    if (distinct < first.totalFound) {
       return yield* new FeedUnavailable({
         feed,
-        message: `SmartRecruiters returned ${content.length} of ${first.totalFound} postings`,
+        message: `SmartRecruiters returned ${distinct} distinct of ${first.totalFound} postings`,
       });
     }
 

@@ -195,6 +195,69 @@ describe("recorded company boards", () => {
   );
 
   it.effect(
+    "a SmartRecruiters board of exactly the posting cap is read in five requests",
+    () => {
+      const { layer, requested } = listedBoard(500, 500);
+
+      return Effect.gen(function* readCapBoard() {
+        const postings = yield* smartRecruitersPostings(
+          "smartrecruiters:Acme",
+          "Acme"
+        );
+
+        expect(postings).toHaveLength(500);
+        expect(requested).toHaveLength(5);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
+    "a SmartRecruiters board one posting over the cap fails after one request",
+    () => {
+      const { layer, requested } = listedBoard(501, 501);
+
+      return Effect.gen(function* refuseJustOverCap() {
+        const failure = yield* Effect.flip(
+          smartRecruitersPostings("smartrecruiters:Acme", "Acme")
+        );
+
+        expect(failure).toBeInstanceOf(FeedUnavailable);
+        expect(requested).toHaveLength(1);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
+    "a SmartRecruiters duplicate posting across pages cannot stand in for a skipped one",
+    () => {
+      const ids = Array.from({ length: 250 }, (_, index) => `${index}`);
+
+      ids[150] = "5";
+
+      const { layer } = serve((url) => {
+        const offset = Number(url.searchParams.get("offset"));
+
+        return {
+          content: ids.slice(offset, offset + 100).map((id) => ({
+            company: { identifier: "Acme" },
+            id,
+            name: `Engineering Manager ${id}`,
+          })),
+          totalFound: 250,
+        };
+      });
+
+      return Effect.gen(function* refuseDuplicateFill() {
+        const failure = yield* Effect.flip(
+          smartRecruitersPostings("smartrecruiters:Acme", "Acme")
+        );
+
+        expect(failure).toBeInstanceOf(FeedUnavailable);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
     "an unknown SmartRecruiters company, listed as zero postings, is unavailable",
     () => {
       const { layer } = listedBoard(0, 0);
