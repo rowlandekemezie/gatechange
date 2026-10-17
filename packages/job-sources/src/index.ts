@@ -22,6 +22,8 @@ export { hackerNewsPostings, postingOfComment } from "./hacker-news.js";
 
 export { USER_AGENT } from "./http.js";
 
+export { postingTextsLayer } from "./posting-text.js";
+
 export {
   epochMillisOf,
   salaryRange,
