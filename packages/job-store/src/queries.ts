@@ -264,6 +264,18 @@ export const feedStatesStatement = statement(
 FROM feeds ORDER BY key LIMIT ${FEED_STATE_LIMIT}`
 );
 
+export const claimIngestStatement = (startedAt: number, heldUntil: number) =>
+  statement(
+    "UPDATE ingest_lease SET started_at = ?, held_until = ? WHERE id = 1 AND held_until <= ?",
+    [startedAt, heldUntil, startedAt]
+  );
+
+export const releaseIngestStatement = (startedAt: number) =>
+  statement(
+    "UPDATE ingest_lease SET held_until = started_at WHERE id = 1 AND started_at = ?",
+    [startedAt]
+  );
+
 export const pruneJobsStatement = (cutoff: number) =>
   statement("DELETE FROM jobs WHERE posted_at < ?", [cutoff]);
 

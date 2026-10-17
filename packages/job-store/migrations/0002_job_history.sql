@@ -19,3 +19,11 @@ SELECT latest.fingerprint, latest.first_seen_at, latest.last_seen_at,
   (SELECT MIN(jobs.feed) FROM jobs WHERE jobs.fingerprint = latest.fingerprint AND jobs.last_seen_at = latest.last_seen_at),
   1, 0
 FROM latest;
+
+CREATE TABLE ingest_lease (
+  id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+  started_at INTEGER NOT NULL,
+  held_until INTEGER NOT NULL
+);
+
+INSERT INTO ingest_lease (id, started_at, held_until) VALUES (1, 0, 0);

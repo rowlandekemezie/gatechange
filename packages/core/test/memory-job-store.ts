@@ -24,6 +24,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
+  const lease = { heldUntil: 0, startedAt: 0 };
 
   const successBefore = (feedKey: string, seenAt: number) => {
     const latest = states.get(feedKey)?.lastSuccessAt ?? null;
@@ -90,6 +91,17 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     };
 
   const store = JobStore.of({
+    claimIngest: (startedAt, heldUntil) =>
+      Effect.sync(() => {
+        if (lease.heldUntil > startedAt) {
+          return false;
+        }
+
+        lease.startedAt = startedAt;
+        lease.heldUntil = heldUntil;
+
+        return true;
+      }),
     feedStates: Effect.sync(() => [...states.values()]),
     find: (id) => Effect.sync(() => Option.fromNullishOr(jobs.get(id))),
     historyOf: (job) =>
@@ -146,6 +158,12 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     recordRun: (receipt) =>
       Effect.sync(() => {
         runs.push(receipt);
+      }),
+    releaseIngest: (startedAt) =>
+      Effect.sync(() => {
+        if (lease.startedAt === startedAt) {
+          lease.heldUntil = startedAt;
+        }
       }),
     replaceFeed: (feedKey, incoming, seenAt) =>
       Effect.sync(() => {

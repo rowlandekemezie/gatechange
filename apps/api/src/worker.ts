@@ -49,6 +49,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
             receipt,
           })
         ),
+        Effect.catchTag("IngestInProgress", (busy) =>
+          Effect.logInfo("ingest skipped: another run holds the lease", busy)
+        ),
         Effect.tapError((error) => Effect.logError("ingest failed", error)),
         Effect.annotateLogs({
           cron: controller.cron,

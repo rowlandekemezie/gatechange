@@ -107,6 +107,7 @@ Preserve existing work. Inspect status before editing, stage only files changed 
 - Core owns ports and domain rules. HTTP lives in `packages/job-sources`, SQL in `packages/job-store`.
 - The store is the system of record for listings. Each feed owns its rows: a successful fetch upserts what it listed and deletes that feed's rows it did not list. A failed fetch changes nothing and backs the feed off.
 - Rows older than 30 days are pruned on every run. Every run writes a receipt to `ingest_runs`.
+- Ingest runs never overlap. A run first claims the one-row `ingest_lease` for 15 minutes, the Cron Trigger wall-time limit, and releases it when done; a run that finds it held fails with `IngestInProgress` and writes nothing. `job_history.sightings` counts runs in start order, so it is only correct under this lease.
 - `job_history` keeps one row per role fingerprint and survives the 30-day prune, so days open and repost counts outlive the `jobs` row.
 - Parse every external payload with Effect Schema at the boundary. One malformed listing is skipped, never the whole feed.
 - Respect sources: identify the crawler with `USER_AGENT`, keep the per-source minimum intervals in `feed-spec.ts`, link every listing to its original posting, and credit aggregators in the footer.

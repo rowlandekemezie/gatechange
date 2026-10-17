@@ -1,4 +1,4 @@
-import { Array, Clock, Effect, pipe } from "effect";
+import { Array, Clock, Effect, pipe, Schema } from "effect";
 
 import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
@@ -13,6 +13,13 @@ export interface IngestPlan {
   readonly feedConcurrency: number;
   readonly feedsPerRun: number;
 }
+
+export const INGEST_LEASE_MILLIS = 15 * 60 * 1000;
+
+export class IngestInProgress extends Schema.TaggedError<IngestInProgress>()(
+  "IngestInProgress",
+  { startedAt: Schema.Number }
+) {}
 
 export const retentionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
 
@@ -83,12 +90,12 @@ const outcomeOf = (
   return "Partial";
 };
 
-export const runIngest = Effect.fn("runIngest")(function* runIngest(
-  plan: IngestPlan
+const ingestDueFeeds = Effect.fn("ingestDueFeeds")(function* ingestDueFeeds(
+  plan: IngestPlan,
+  startedAt: number
 ) {
   const store = yield* JobStore;
   const feeds = yield* PostingFeeds;
-  const startedAt = yield* Clock.currentTimeMillis;
   const states = yield* store.feedStates;
 
   const due = selectDueFeeds(
@@ -133,4 +140,22 @@ export const runIngest = Effect.fn("runIngest")(function* runIngest(
   yield* store.recordRun(receipt);
 
   return { outcomes, receipt };
+});
+
+export const runIngest = Effect.fn("runIngest")(function* runIngest(
+  plan: IngestPlan
+) {
+  const store = yield* JobStore;
+  const startedAt = yield* Clock.currentTimeMillis;
+
+  return yield* Effect.acquireUseRelease(
+    store.claimIngest(startedAt, startedAt + INGEST_LEASE_MILLIS).pipe(
+      Effect.filterOrFail(
+        (claimed) => claimed,
+        () => new IngestInProgress({ startedAt })
+      )
+    ),
+    () => ingestDueFeeds(plan, startedAt),
+    () => store.releaseIngest(startedAt)
+  );
 });

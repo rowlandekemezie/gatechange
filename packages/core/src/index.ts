@@ -11,7 +11,13 @@ export {
 
 export type { FeedOutcomeValue, FeedRef, FeedStateValue } from "./feed.js";
 
-export { jobsFromPostings, retentionCutoff, runIngest } from "./ingest.js";
+export {
+  INGEST_LEASE_MILLIS,
+  IngestInProgress,
+  jobsFromPostings,
+  retentionCutoff,
+  runIngest,
+} from "./ingest.js";
 
 export type { IngestPlan } from "./ingest.js";
 

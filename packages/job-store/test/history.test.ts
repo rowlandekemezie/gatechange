@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   DAY_MILLIS,
   FeedUnavailable,
+  INGEST_LEASE_MILLIS,
   JobStore,
   PostingFeeds,
   runIngest,
@@ -12,7 +13,17 @@ import type {
   ListingHistory,
   PostingValue,
 } from "@rat-stack/core";
-import { Array, Deferred, Effect, Layer, Option, pipe, Schema } from "effect";
+import {
+  Array,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  pipe,
+  Schema,
+} from "effect";
 import { TestClock } from "effect/testing";
 
 import { SqlExecutor, statement } from "../src/index.js";
@@ -698,5 +709,194 @@ describe("reposts do not depend on which feed's write lands first", () => {
           repostsInBothOrders(1)
         );
       })
+  );
+});
+
+interface Run {
+  readonly at: number;
+  readonly responses: Partial<Readonly<Record<FeedKey, Response>>>;
+}
+
+const runGated = (run: Run, gate: Effect.Effect<void>) =>
+  Effect.gen(function* gatedRun() {
+    yield* TestClock.setTime(run.at);
+
+    return yield* runIngest({
+      feedConcurrency: feeds.length,
+      feedsPerRun: feeds.length,
+    }).pipe(
+      Effect.provideService(
+        PostingFeeds,
+        PostingFeeds.of({
+          catalog: catalogIn(feeds),
+          fetch: (feed) => {
+            const response =
+              new Map<string, Response>(Object.entries(run.responses)).get(
+                feed.key
+              ) ?? [];
+
+            return gate.pipe(
+              Effect.andThen(
+                response === "down"
+                  ? Effect.fail(
+                      new FeedUnavailable({ feed: feed.key, message: "down" })
+                    )
+                  : Effect.succeed(response)
+              )
+            );
+          },
+        })
+      )
+    );
+  });
+
+const listedOnce: Run = {
+  at: NOW,
+  responses: { "greenhouse:acme": [role] },
+};
+
+const historyAfterOverlap = (earlier: Run, later: Run) =>
+  withSqlStore(
+    Effect.gen(function* overlap() {
+      const fetching = yield* Deferred.make<boolean>();
+      const laterLanded = yield* Deferred.make<boolean>();
+
+      yield* runGated(listedOnce, Effect.void);
+
+      const earlierRun = yield* runGated(
+        earlier,
+        Deferred.succeed(fetching, true).pipe(
+          Effect.andThen(Deferred.await(laterLanded))
+        )
+      ).pipe(Effect.exit, Effect.forkChild);
+
+      yield* Deferred.await(fetching);
+
+      const laterExit = yield* runGated(later, Effect.void).pipe(
+        Effect.exit,
+        Effect.ensuring(Deferred.succeed(laterLanded, true))
+      );
+
+      const earlierExit = yield* Fiber.join(earlierRun);
+
+      return {
+        history: yield* historyOfRole,
+        ran: pipe(
+          [
+            [earlier, earlierExit],
+            [later, laterExit],
+          ] as const,
+          Array.filter(([, exit]) => Exit.isSuccess(exit)),
+          Array.map(([run]) => run)
+        ),
+      };
+    })
+  );
+
+const historyAfterSerial = (runs: readonly Run[]) =>
+  withSqlStore(
+    Effect.forEach([listedOnce, ...runs], (run) =>
+      runGated(run, Effect.void)
+    ).pipe(Effect.andThen(historyOfRole))
+  );
+
+const laterRuns: readonly Run["responses"][] = [
+  { "greenhouse:acme": [role] },
+  { "remoteok:all": [role] },
+];
+
+describe("overlapping ingest runs", () => {
+  it.effect(
+    "a run that starts while another is ingesting leaves history equal to the runs that ingested, one after another",
+    () =>
+      Effect.all(
+        pipe(
+          laterRuns,
+          Array.map((responses) =>
+            Effect.gen(function* overlapMatchesSerial() {
+              const earlier: Run = {
+                at: NOW + DAY_MILLIS,
+                responses: { "greenhouse:acme": [role] },
+              };
+
+              const later: Run = {
+                at: NOW + DAY_MILLIS + 2 * 60_000,
+                responses,
+              };
+
+              const overlapped = yield* historyAfterOverlap(earlier, later);
+
+              expect(overlapped.history).toStrictEqual(
+                yield* historyAfterSerial(overlapped.ran)
+              );
+              expect(overlapped.ran).toStrictEqual([earlier]);
+            })
+          )
+        )
+      )
+  );
+
+  it.effect(
+    "the ingest lease admits one run at a time, frees on release, never goes back in time, readmits the same start, and lapses after its window",
+    () =>
+      withSqlStore(
+        Effect.gen(function* leaseRules() {
+          const store = yield* JobStore;
+
+          const claim = (startedAt: number) =>
+            store.claimIngest(startedAt, startedAt + INGEST_LEASE_MILLIS);
+
+          const crashed = NOW + 10;
+
+          expect(
+            yield* Effect.all([
+              claim(NOW),
+              claim(NOW + 1),
+              store.releaseIngest(NOW + 1).pipe(Effect.andThen(claim(NOW + 2))),
+              store.releaseIngest(NOW).pipe(Effect.andThen(claim(NOW + 3))),
+              store.releaseIngest(NOW + 3).pipe(Effect.andThen(claim(NOW + 2))),
+              claim(NOW + 3),
+              store.releaseIngest(NOW + 3).pipe(Effect.andThen(claim(crashed))),
+              claim(crashed + INGEST_LEASE_MILLIS - 1),
+              claim(crashed + INGEST_LEASE_MILLIS),
+            ])
+          ).toStrictEqual([
+            true,
+            false,
+            false,
+            true,
+            false,
+            true,
+            true,
+            false,
+            true,
+          ]);
+        })
+      )
+  );
+
+  it.effect(
+    "a run that starts minutes after the previous run finished still ingests",
+    () =>
+      withSqlStore(
+        Effect.gen(function* backToBack() {
+          yield* runGated(listedOnce, Effect.void);
+
+          const next = yield* runGated(
+            { at: NOW + 2 * 60_000, responses: { "greenhouse:acme": [role] } },
+            Effect.void
+          );
+
+          expect(next.receipt.feedsAttempted).toBe(feeds.length);
+          expect(yield* historyOfRole).toStrictEqual(
+            Option.some({
+              firstSeenAt: NOW,
+              lastSeenAt: NOW + 2 * 60_000,
+              reposts: 0,
+              sightings: 2,
+            })
+          );
+        })
+      )
   );
 });

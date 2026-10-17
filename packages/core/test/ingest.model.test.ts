@@ -382,6 +382,33 @@ describe("ingest", () => {
       })
   );
 
+  it.effect(
+    "a role back exactly the repost gap after it was last seen counts no repost",
+    () =>
+      Effect.gen(function* backAtTheGap() {
+        const memory = yield* makeMemoryJobStore;
+
+        yield* ingestResponses(memory, [listed(["a"]), down, down]);
+        yield* TestClock.adjust("1 day");
+        yield* ingestResponses(memory, [listed([]), down, down]);
+        yield* TestClock.adjust("6 days");
+        yield* ingestResponses(memory, [listed(["a"]), down, down]);
+
+        const history = yield* Effect.gen(function* readHistory() {
+          const store = yield* JobStore;
+
+          return yield* store.historyOf(postingFor("a"));
+        }).pipe(Effect.provide(memory.layer));
+
+        expect(
+          pipe(
+            history,
+            Option.map((found) => found.reposts)
+          )
+        ).toStrictEqual(Option.some(0));
+      })
+  );
+
   it.effect("titles outside engineering leadership never reach the store", () =>
     Effect.gen(function* filterTitles() {
       const memory = yield* makeMemoryJobStore;

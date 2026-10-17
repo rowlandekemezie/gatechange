@@ -55,6 +55,10 @@ export const isRepost = ({
 export class JobStore extends Context.Service<
   JobStore,
   {
+    readonly claimIngest: (
+      startedAt: number,
+      heldUntil: number
+    ) => Effect.Effect<boolean, JobStoreUnavailable>;
     readonly feedStates: Effect.Effect<
       readonly FeedStateValue[],
       JobStoreUnavailable
@@ -79,6 +83,9 @@ export class JobStore extends Context.Service<
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly recordRun: (
       receipt: IngestReceiptValue
+    ) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly releaseIngest: (
+      startedAt: number
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly replaceFeed: (
       feedKey: string,

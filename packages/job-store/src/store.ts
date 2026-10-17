@@ -18,6 +18,7 @@ import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
 import {
   activeCountStatement,
+  claimIngestStatement,
   countJobsStatement,
   feedFailedStatement,
   feedHealthStatement,
@@ -32,6 +33,7 @@ import {
   pruneRunsStatement,
   recordRunStatement,
   regionCountsStatement,
+  releaseIngestStatement,
   removeUnseenStatement,
   roleCountsStatement,
   sightingStatement,
@@ -160,6 +162,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
   const sql = yield* SqlExecutor;
 
   return JobStore.of({
+    claimIngest: (startedAt, heldUntil) =>
+      sql
+        .batch("claimIngest", [claimIngestStatement(startedAt, heldUntil)])
+        .pipe(Effect.map(([claim]) => claim?.changes === 1)),
+
     feedStates: sql
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
@@ -217,6 +224,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     recordRun: (receipt) =>
       sql.batch("recordRun", [recordRunStatement(receipt)]).pipe(Effect.asVoid),
+
+    releaseIngest: (startedAt) =>
+      sql
+        .batch("releaseIngest", [releaseIngestStatement(startedAt)])
+        .pipe(Effect.asVoid),
 
     replaceFeed: (feedKey, jobs, seenAt) =>
       Effect.gen(function* replaceFeed() {
