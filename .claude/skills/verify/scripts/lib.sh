@@ -26,6 +26,12 @@ dev_pid() {
   echo "$pid"
 }
 
+D1_DIR="$REPO/apps/infra/.alchemy/local/d1/cloudflare-runtime-D1DatabaseObject"
+
+d1_files() {
+  ls "$D1_DIR" 2>/dev/null | grep -E '^[0-9a-f]{64}\.sqlite$' | sed "s|^|$D1_DIR/|" || true
+}
+
 tree_pids() {
   local child
   echo "$1"

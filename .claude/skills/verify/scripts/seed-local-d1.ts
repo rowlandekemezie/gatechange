@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
-import { findLocalJobsDatabase, fixturePath } from "./local-d1.ts";
+import { cliOptions, fixturePath, stageDatabasePath } from "./local-d1.ts";
 import { decodeFixture, FIXTURE_FEED_PREFIX, seedStatements } from "./seed.ts";
 
-const checkOnly = process.argv.includes("--check");
+const checkOnly = cliOptions.check === true;
 const fixture = decodeFixture(JSON.parse(readFileSync(fixturePath, "utf8")));
-const file = findLocalJobsDatabase();
+const file = stageDatabasePath();
 const database = new DatabaseSync(file, { readOnly: checkOnly });
 
 if (!checkOnly) {

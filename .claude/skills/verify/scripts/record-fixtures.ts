@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
-import { findLocalJobsDatabase, fixturePath } from "./local-d1.ts";
+import { fixturePath, stageDatabasePath } from "./local-d1.ts";
 import { FIXTURE_FEED_PREFIX } from "./seed.ts";
 
 const COMPANY_BOARDS = ["Ashby", "Greenhouse", "Lever"];
@@ -21,7 +21,7 @@ interface Row {
 }
 
 const now = Date.now();
-const database = new DatabaseSync(findLocalJobsDatabase(), { readOnly: true });
+const database = new DatabaseSync(stageDatabasePath(), { readOnly: true });
 const rows = database
   .prepare(
     `SELECT * FROM jobs WHERE source IN (${COMPANY_BOARDS.map(() => "?").join(", ")}) AND feed NOT LIKE ? ORDER BY relevance DESC, id`

@@ -22,5 +22,11 @@ else
   exit 1
 fi
 
-rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url"
+if [[ -f "$RUN_DIR/d1" ]]; then
+  d1="$(cat "$RUN_DIR/d1")"
+  rm -f "$d1" "$d1-wal" "$d1-shm"
+  echo "removed the stage's local D1 file $(basename "$d1")"
+fi
+
+rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url" "$RUN_DIR/d1" "$RUN_DIR/repo"
 echo "evidence kept in ${VERIFY_OUT:-$RUN_DIR/shots}"

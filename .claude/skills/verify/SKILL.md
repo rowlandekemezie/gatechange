@@ -27,7 +27,7 @@ $S/down.sh lane-1
 - If `alchemy dev` exits during boot, `up.sh` prints the last 20 log lines and exits 1. The boot timeout is 150 seconds, or `VERIFY_BOOT_TIMEOUT`.
 - If the stage is already running and its URL answers 200, `up.sh` reuses it.
 
-One checkout runs one stage at a time. The local D1 lives in `apps/infra/.alchemy/local/d1/` and is shared by every stage in that checkout. The seed script writes to the most recently touched jobs database, which is the running stage's. To run lanes side by side, give each lane its own worktree.
+One checkout runs one stage at a time, and `up.sh` refuses to start a second. Every stage keeps its D1 as a SQLite file in `apps/infra/.alchemy/local/d1/cloudflare-runtime-D1DatabaseObject/`. `up.sh` records the file the stage created in `/tmp/verify-jobs/<stage>/d1`, and the seed, doctor, and teardown use that path. To run lanes side by side, give each lane its own worktree.
 
 ## Seed
 
@@ -42,7 +42,7 @@ To refresh the fixtures, boot a stage, trigger live ingest runs through the dev 
 
 ```sh
 curl "$(cat /tmp/verify-jobs/<stage>/backend-url)/cdn-cgi/handler/scheduled?cron=*/20+*+*+*+*"
-mise exec node@24.18.0 -- node .claude/skills/verify/scripts/record-fixtures.ts
+mise exec node@24.18.0 -- node .claude/skills/verify/scripts/record-fixtures.ts --db "$(cat /tmp/verify-jobs/<stage>/d1)"
 ```
 
 Recording reads live public job boards, so do it by hand and commit the result. Never record during a verification run. If the fixture count changes, update `FIXTURE_JOBS` in the seed test.
@@ -86,11 +86,11 @@ The handles come from `apps/web/src/client/board/view.ts`: `li.job` rows, `p.cou
 
 Screenshots go to `--out`, or to `VERIFY_OUT` when you use `verify.sh`. The default is `/tmp/verify-jobs/<stage>/shots/`. Swarm lanes save to `/tmp/swarm-<pr>/worker-<n>/<slug>.png`.
 
-A proof drives the page the way a person does: chips, the search box, and buttons. It never calls `/rpc` directly or writes UI state into `localStorage`. Keep the JSON line with the screenshot, since it records the action and the state after it. For a change that writes data, also read the local D1 after the drive with `node:sqlite`. `seed-local-d1.ts --check` shows how to open the database read-only.
+A proof drives the page the way a person does: chips, the search box, and buttons. It never calls `/rpc` directly or writes UI state into `localStorage`. Keep the JSON line with the screenshot, since it records the action and the state after it. For a change that writes data, also read the local D1 after the drive with `node:sqlite`. The stage's database is the file named in `/tmp/verify-jobs/<stage>/d1`, and `seed-local-d1.ts --check` shows how to open it read-only.
 
 ## Cleanup
 
-`scripts/down.sh <stage>` stops the processes this stage started, by the recorded pid and its descendants and never by process name. It then runs `alchemy destroy --stage <stage>`, which deletes the stage's local Workers and D1 from the Alchemy state. The output lists each step. Screenshots in `VERIFY_OUT` or `shots/` stay. Always run `down.sh` after a lane, including after a failure.
+`scripts/down.sh <stage>` stops the processes this stage started, by the recorded pid and its descendants and never by process name. It then runs `alchemy destroy --stage <stage>`, which deletes the stage's local Workers and D1 from the Alchemy state, and removes the stage's D1 file, which `alchemy destroy` leaves on disk. The output lists each step. Screenshots in `VERIFY_OUT` or `shots/` stay. Always run `down.sh` after a lane, including after a failure.
 
 ## Failure modes
 
@@ -98,6 +98,7 @@ A proof drives the page the way a person does: chips, the search box, and button
 - `FAIL alchemy dev for stage <stage> exited during the run`: the dev server died mid-drive. `verify.sh` reports it even when the drive passed.
 - `board shows an error`: the RPC call failed. Check `dev.log` and `apps/infra/.alchemy/log/<stage>/JobsBackend`.
 - `timed out waiting for at least 20 job rows`: the seed did not reach this stage's D1. Run `doctor.sh`.
+- `cannot tell which local D1 belongs to stage`: an old stage left its D1 file behind. Run `down.sh` on the old stage, or boot under a new stage name.
 
 ## Feature map
 

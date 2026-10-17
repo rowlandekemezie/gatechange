@@ -14,5 +14,6 @@ check "alchemy dev for stage $STAGE is running (pid ${pid:-none})" '[[ -n "$pid"
 check "Website answers 200 at ${url:-unknown}" '[[ -n "$url" ]] && answers "$url"'
 check "port ${port:-unknown} is held by a process this stage started" \
   '[[ -n "$pid" && -n "$port" ]] && lsof -nP -a -p "$(tree_pids "$pid" | paste -sd, -)" -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1'
-check "local D1 holds every fixture job" '"${NODE[@]}" "$SCRIPTS/seed-local-d1.ts" --check >/dev/null'
+check "local D1 $(basename "$(cat "$RUN_DIR/d1" 2>/dev/null || echo unknown)") holds every fixture job" \
+  '"${NODE[@]}" "$SCRIPTS/seed-local-d1.ts" --check --db "$(cat "$RUN_DIR/d1")" >/dev/null 2>&1'
 exit "$status"
