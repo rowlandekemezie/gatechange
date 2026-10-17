@@ -59,7 +59,7 @@ Run `pnpm fix` only when you intend to rewrite files. Finish with `pnpm turbo ru
 - CI (`.github/workflows/ci.yml`) runs `pnpm turbo run check test build --concurrency=1` on every pull request and push. A push to `main` that passes deploys the `prod` stage and smoke-tests `https://jobs.rowlandekemezie.com`.
 - CI authenticates with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `apps/infra/stacks/github.ts` mints that scoped token and writes both secrets; run it with `pnpm infra:ci-credentials --profile admin` to create or rotate them.
 - Local deploys use an Alchemy profile: `pnpm alchemy profile edit --add Cloudflare`, then `ALCHEMY_PROFILE=<name> pnpm infra:plan --stage prod` and `pnpm infra:deploy --stage prod`.
-- The zone `rowlandekemezie.com` must already be on the Cloudflare account. Alchemy attaches `jobs.rowlandekemezie.com` as a Worker custom domain.
+- The zone `rowlandekemezie.com` must already be on the Cloudflare account. Alchemy attaches `jobs.rowlandekemezie.com` as a Worker custom domain on the `prod` stage only (`apps/infra/src/site-routing.ts`). Every other deployed stage serves the Website on its `workers.dev` URL instead, so a preview stage never claims the production hostname.
 - `INGEST_FEEDS_PER_RUN` and `INGEST_FEED_CONCURRENCY` (apps/api/.env.schema) tune the cron. Workers Free allows 50 subrequests and 10 ms CPU per invocation; keep feeds per run near 8 there.
 
 ## Fence (cheating is uncomfortable)
