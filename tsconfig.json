@@ -4,7 +4,12 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["*.config.ts", "scripts/*.ts", "tools/oxlint/**/*.ts"],
+  "include": [
+    "*.config.ts",
+    "scripts/*.ts",
+    "tools/oxlint/**/*.ts",
+    ".claude/skills/verify/scripts/*.ts"
+  ],
   "exclude": [
     "node_modules",
     "dist",

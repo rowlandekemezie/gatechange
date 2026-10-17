@@ -40,6 +40,7 @@ export default defineConfig({
     ".pi/**",
     ".cursor/**",
     ".claude/**",
+    "!.claude/skills/verify/scripts/*.ts",
     "scripts/hooks/**",
     "tools/oxlint/anti-slop/**",
   ],
