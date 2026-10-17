@@ -62,6 +62,7 @@ const listed: ListedJobValue = {
   arrangement: "Remote",
   company: "Moniepoint",
   daysOpen: 0,
+  enrichment: null,
   feed: "himalayas:engineering-manager",
   firstSeenAt: 1_760_000_000_000,
   id: "himalayas:https://himalayas.app/companies/moniepoint/jobs/engineering-manager-9245044553",
@@ -218,5 +219,77 @@ describe("URL-driven board state", () => {
     ]);
 
     expect(named(changed, "PushUrl")).toHaveLength(1);
+  });
+});
+
+const lastQuery = (step: Step) =>
+  pipe(named(step, "FetchJobs"), Array.last, Option.getOrThrow);
+
+describe("pay and level filters", () => {
+  it("a pay floor keeps the chosen currency and reaches the job query and URL", () => {
+    const step = sentAll(started("/"), [
+      Message.ChangedPayFloor({ amount: 200_000 }),
+      Message.ChangedPayCurrency({ currency: "CAD" }),
+      Message.ChangedPayFloor({ amount: 300_000 }),
+    ]);
+
+    const floor = { amount: 300_000, currency: "CAD" };
+
+    expect(step.model.filters.salaryFloor).toStrictEqual(floor);
+    expect(lastQuery(step).args).toMatchObject({
+      query: { salaryFloor: floor, seniorities: [] },
+    });
+    expect(named(step, "PushUrl")).toStrictEqual([
+      expect.objectContaining({
+        args: { url: "/?currency=cad&pay=300000" },
+      }),
+    ]);
+  });
+
+  it("a currency change without a pay floor fetches nothing and keeps the filters", () => {
+    const step = sent(
+      started("/"),
+      Message.ChangedPayCurrency({ currency: "EUR" })
+    );
+
+    expect(step.commands).toStrictEqual([]);
+    expect(step.model.filters).toStrictEqual(defaultFilters);
+  });
+
+  it("any pay clears the floor back to the default board", () => {
+    const step = sent(
+      started("/?pay=250000&currency=gbp"),
+      Message.ChangedPayFloor({ amount: null })
+    );
+
+    expect(step.model.filters).toStrictEqual(defaultFilters);
+    expect(lastQuery(step).args).toMatchObject({
+      query: { salaryFloor: null },
+    });
+    expect(named(step, "PushUrl")).toStrictEqual([
+      expect.objectContaining({ args: { url: "/" } }),
+    ]);
+  });
+
+  it("levels toggle into canonical order and any level clears them", () => {
+    const picked = sentAll(started("/"), [
+      Message.ToggledSeniority({ seniority: "Director" }),
+      Message.ToggledSeniority({ seniority: "Manager" }),
+    ]);
+
+    expect(picked.model.filters.seniorities).toStrictEqual([
+      "Manager",
+      "Director",
+    ]);
+    expect(lastQuery(picked).args).toMatchObject({
+      query: { seniorities: ["Manager", "Director"] },
+    });
+
+    const cleared = sent(picked, Message.ClickedAnySeniority());
+
+    expect(cleared.model.filters).toStrictEqual(defaultFilters);
+    expect(lastQuery(cleared).args).toMatchObject({
+      query: { seniorities: [] },
+    });
   });
 });

@@ -130,6 +130,16 @@ a {
   color: var(--glacier-ink);
 }
 
+.sentence-refine {
+  margin-top: -0.75rem;
+  font-size: clamp(1.1rem, 2.6vw, 1.45rem);
+}
+
+.phrase-select {
+  padding: 0 0.12em;
+  appearance: auto;
+}
+
 .search {
   display: flex;
   gap: 0.5rem;
@@ -367,6 +377,21 @@ a {
 .detail-facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.detail-subhead {
+  margin: 1.75rem 0 0;
+  font-family: var(--display);
+  font-size: 1.125rem;
+  font-weight: 650;
+  font-variation-settings: "wdth" 90;
+  color: var(--pine);
+}
+
+.detail-note {
+  margin: 0 0 1.5rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
 }
 
 .detail-actions {

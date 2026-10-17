@@ -1,4 +1,4 @@
-import { BoardStats, Job } from "@rat-stack/core/contracts";
+import { BoardStats, JobDetail, ListedJob } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
@@ -9,7 +9,7 @@ export const JobsState = defineTaggedUnion({
   Failed: { message: Schema.String },
   Loaded: {
     generatedAt: Schema.Finite,
-    jobs: Schema.Array(Job),
+    jobs: Schema.Array(ListedJob),
     total: Schema.Finite,
   },
   Loading: {},
@@ -18,7 +18,7 @@ export const JobsState = defineTaggedUnion({
 
 export const JobState = defineTaggedUnion({
   Failed: { id: Schema.String, message: Schema.String },
-  Found: { job: Job },
+  Found: { job: JobDetail },
   Loading: { id: Schema.String },
   Missing: { id: Schema.String },
   NotAsked: {},

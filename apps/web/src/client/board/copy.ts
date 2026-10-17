@@ -1,6 +1,9 @@
 import type {
   RegionValue,
+  RemotePolicyValue,
   RoleLevelValue,
+  SalaryBandValue,
+  SeniorityValue,
   SourceNameValue,
 } from "@rat-stack/core/contracts";
 import { Match } from "effect";
@@ -22,6 +25,45 @@ export const roleLabel = Match.type<RoleLevelValue>().pipe(
   Match.when("VicePresident", () => "VP"),
   Match.exhaustive
 );
+
+export const seniorityChip = Match.type<SeniorityValue>().pipe(
+  Match.when("Manager", () => "manager"),
+  Match.when("SeniorManager", () => "senior manager"),
+  Match.when("Director", () => "director"),
+  Match.when("SeniorDirector", () => "senior director"),
+  Match.when("VicePresident", () => "VP"),
+  Match.when("Executive", () => "executive"),
+  Match.exhaustive
+);
+
+export const seniorityLabel = Match.type<SeniorityValue>().pipe(
+  Match.when("Manager", () => "Manager"),
+  Match.when("SeniorManager", () => "Senior manager"),
+  Match.when("Director", () => "Director"),
+  Match.when("SeniorDirector", () => "Senior director"),
+  Match.when("VicePresident", () => "Vice president"),
+  Match.when("Executive", () => "Executive"),
+  Match.exhaustive
+);
+
+export const remotePolicyLabel = Match.type<RemotePolicyValue>().pipe(
+  Match.when("Remote", () => "Fully remote"),
+  Match.when("RemoteInRegion", () => "Remote within a region"),
+  Match.when("Hybrid", () => "Hybrid"),
+  Match.when("Onsite", () => "On-site"),
+  Match.exhaustive
+);
+
+export const thousands = (amount: number) =>
+  `${Math.round(amount / 100) / 10}k`;
+
+export const bandLabel = (band: SalaryBandValue) =>
+  band.min === band.max
+    ? `${band.currency} ${thousands(band.max)}`
+    : `${band.currency} ${thousands(band.min)} to ${thousands(band.max)}`;
+
+export const teamSizeLabel = (size: number) =>
+  size === 1 ? "1 person" : `${size} people`;
 
 export const regionGroupChip = Match.type<RegionGroupValue>().pipe(
   Match.when("RemoteCanada", () => "remote in Canada"),

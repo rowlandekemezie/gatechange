@@ -1,16 +1,27 @@
-import { BoardStats, Job, JobPage, RoleLevel } from "@rat-stack/core/contracts";
+import {
+  BoardStats,
+  Currency,
+  Job,
+  JobDetail,
+  JobPage,
+  RoleLevel,
+  Seniority,
+} from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 import { UrlRequest } from "foldkit/navigation";
 import { Url } from "foldkit/url";
 
-import { AgeWindow, RegionGroup, Sort } from "./filters.js";
+import { AgeWindow, RegionGroup, SalaryStep, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
 export const Message = defineMessageUnion({
   ChangedAge: { maxAgeDays: AgeWindow },
+  ChangedPayCurrency: { currency: Currency },
+  ChangedPayFloor: { amount: Schema.NullOr(SalaryStep) },
   ChangedSort: { sort: Sort },
   ChangedUrl: { url: Url },
+  ClickedAnySeniority: {},
   ClickedClearMark: { id: Schema.String },
   ClickedLink: { request: UrlRequest },
   ClickedLoadMore: {},
@@ -26,12 +37,13 @@ export const Message = defineMessageUnion({
   FailedFetchMoreJobs: { generation: Schema.Finite },
   FailedFetchStats: {},
   SubmittedSearch: {},
-  SucceededFetchJob: { id: Schema.String, job: Schema.Option(Job) },
+  SucceededFetchJob: { id: Schema.String, job: Schema.Option(JobDetail) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },
   SucceededFetchMoreJobs: { generation: Schema.Finite, page: JobPage },
   SucceededFetchStats: { stats: BoardStats },
   ToggledRegionGroup: { group: RegionGroup },
   ToggledRole: { role: RoleLevel },
+  ToggledSeniority: { seniority: Seniority },
   UpdatedDraftSearch: { value: Schema.String },
 });
 
