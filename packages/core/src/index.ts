@@ -3,6 +3,7 @@ export {
   AccountId,
   CurrentViewer,
   currentMember,
+  MAGIC_LINK_TTL_MINUTES,
   SignInOptions,
   SocialProvider,
   Viewer,

@@ -36,6 +36,7 @@ import {
 import type { FiltersValue } from "./board/filters.js";
 
 export const Route = defineRouteUnion({
+  Account: { linkRefused: Schema.Boolean },
   Board: { filters: Filters },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
@@ -173,6 +174,25 @@ const JobIdSegment = Schema.String.pipe(
 
 export const boardRouter = pipe(root, query(BoardParams), mapTo(Route.Board));
 
+const AccountParams = Schema.Struct({
+  error: Schema.optionalKey(Schema.String),
+}).pipe(
+  Schema.decodeTo(
+    Schema.Struct({ linkRefused: Schema.Boolean }),
+    SchemaTransformation.transform({
+      decode: ({ error }) => ({ linkRefused: error !== undefined }),
+      encode: ({ linkRefused }) =>
+        linkRefused ? { error: "INVALID_TOKEN" } : {},
+    })
+  )
+);
+
+export const accountRouter = pipe(
+  literal("account"),
+  query(AccountParams),
+  mapTo(Route.Account)
+);
+
 export const shortlistRouter = pipe(
   literal("shortlist"),
   mapTo(Route.Shortlist)
@@ -185,7 +205,7 @@ export const jobRouter = pipe(
 );
 
 export const routeOfUrl = parseUrlWithFallback(
-  oneOf(jobRouter, shortlistRouter, boardRouter),
+  oneOf(jobRouter, shortlistRouter, accountRouter, boardRouter),
   { make: () => Route.NotFound() }
 );
 

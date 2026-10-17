@@ -44,6 +44,7 @@ export type {
 export {
   Account,
   AccountId,
+  MAGIC_LINK_TTL_MINUTES,
   SignInOptions,
   SocialProvider,
 } from "./account.js";

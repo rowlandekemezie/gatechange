@@ -1,10 +1,9 @@
+import { MAGIC_LINK_TTL_MINUTES } from "@rat-stack/core";
 import type { SocialProviderValue } from "@rat-stack/core";
 import type { BetterAuthOptions } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 
 export const AUTH_BASE_PATH = "/api/auth";
-
-export const MAGIC_LINK_TTL_SECONDS = 15 * 60;
 
 export interface SocialCredentials {
   readonly clientId: string;
@@ -31,7 +30,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
   },
   plugins: [
     magicLink({
-      expiresIn: MAGIC_LINK_TTL_SECONDS,
+      expiresIn: MAGIC_LINK_TTL_MINUTES * 60,
       // @effect-diagnostics-next-line asyncFunction:off -- better-auth's magic link plugin awaits a Promise-returning sender.
       sendMagicLink: async ({ email, url }) => {
         await settings.sendMagicLink({ email, url });

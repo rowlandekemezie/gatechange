@@ -2,6 +2,8 @@ import { Context, Data, Effect, Schema } from "effect";
 
 import { Unauthorized } from "./unauthorized.js";
 
+export const MAGIC_LINK_TTL_MINUTES = 15;
+
 export const AccountId = Schema.NonEmptyString.pipe(Schema.brand("AccountId"));
 
 export type AccountIdValue = typeof AccountId.Type;

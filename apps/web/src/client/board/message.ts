@@ -4,6 +4,7 @@ import { defineMessageUnion } from "foldkit/message";
 import { UrlRequest } from "foldkit/navigation";
 import { Url } from "foldkit/url";
 
+import { Message as AccountMessage } from "../account/message.js";
 import { AgeWindow, RegionGroup, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
@@ -25,6 +26,7 @@ export const Message = defineMessageUnion({
   FailedFetchJobs: { generation: Schema.Finite, message: Schema.String },
   FailedFetchMoreJobs: { generation: Schema.Finite },
   FailedFetchStats: {},
+  GotAccountMessage: { message: AccountMessage },
   SubmittedSearch: {},
   SucceededFetchJob: { id: Schema.String, job: Schema.Option(Job) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },

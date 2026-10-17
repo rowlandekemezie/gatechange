@@ -4,6 +4,11 @@ import { Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import {
+  accountTitle,
+  accountView,
+  sessionLink,
+} from "../../features/account/view.js";
+import {
   boardMasthead,
   boardPage,
   boardTitle,
@@ -11,6 +16,7 @@ import {
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { shortlistPage } from "../../features/shortlist/view.js";
 import { boardUrl, Route, shortlistRouter } from "../route.js";
+import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
 
@@ -41,6 +47,11 @@ const tabs = (model: ModelValue, h: H): Html =>
         shortlistRouter(),
         Schema.is(Route.Shortlist)(model.route),
         `Your shortlist (${model.marks.length})`
+      ),
+      sessionLink(
+        model.account.session,
+        Schema.is(Route.Account)(model.route),
+        h
       ),
     ]
   );
@@ -108,6 +119,15 @@ export const view = (model: ModelValue, h: H): Document => ({
       ...(Schema.is(Route.Board)(model.route) ? [boardMasthead(model, h)] : []),
       tabs(model, h),
       Route.match<Html>(model.route, {
+        Account: ({ linkRefused }) =>
+          h.submodel({
+            model: model.account,
+            slotId: "account",
+            toParentMessage: (message) =>
+              Message.GotAccountMessage({ message }),
+            view: accountView,
+            viewInputs: { linkRefused },
+          }),
         Board: () => boardPage(model, h),
         Job: () => jobPage(model, h),
         NotFound: () => notFoundPage(model, h),
@@ -117,6 +137,7 @@ export const view = (model: ModelValue, h: H): Document => ({
     ]
   ),
   title: Route.match<string>(model.route, {
+    Account: () => accountTitle(model.account.session),
     Board: () => boardTitle(model),
     Job: () => jobTitle(model),
     NotFound: () => "Page not found",

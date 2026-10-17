@@ -1,5 +1,7 @@
+import { Layer } from "effect";
 import { Runtime } from "foldkit";
 
+import { AuthClient } from "./account/auth-client.js";
 import { Message } from "./board/message.js";
 import { Model } from "./board/model.js";
 import { JobQueries } from "./board/queries.js";
@@ -13,7 +15,7 @@ const application = Runtime.makeApplication({
   container: document.querySelector("#root"),
   devTools: import.meta.env.DEV ? { Message } : false,
   init,
-  resources: JobQueries.layer,
+  resources: Layer.mergeAll(JobQueries.layer, AuthClient.layer),
   routing,
   update,
   view,
