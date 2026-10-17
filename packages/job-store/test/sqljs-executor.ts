@@ -12,24 +12,27 @@ import {
 } from "../src/index.js";
 import type { SqlStatement } from "../src/index.js";
 
-const migrationSql = () =>
+const migrationSql = (seeds: Readonly<Record<string, string>>) =>
   readdirSync(jobStoreMigrationDirectory())
     .filter((file) => file.endsWith(".sql"))
     .toSorted()
-    .map((file) =>
-      readFileSync(`${jobStoreMigrationDirectory()}${file}`, "utf-8")
+    .map(
+      (file) =>
+        `${readFileSync(`${jobStoreMigrationDirectory()}${file}`, "utf-8")}\n${seeds[file] ?? ""}`
     )
     .join("\n");
 
 const failure = (operation: string, cause: Error) =>
   new JobStoreUnavailable({ message: cause.message, operation });
 
-export const sqlJsJobStore = Effect.gen(function* makeSqlJsStore() {
+export const seededSqlJsJobStore = Effect.fnUntraced(function* makeSqlJsStore(
+  seeds: Readonly<Record<string, string>>
+) {
   // @effect-diagnostics-next-line asyncFunction:off -- sql.js only exposes a Promise-based loader.
   const SQL = yield* Effect.promise(async () => await initSqlJs());
   const database = new SQL.Database();
 
-  database.run(migrationSql());
+  database.run(migrationSql(seeds));
 
   const executor = SqlExecutor.of({
     all: (operation, sql: SqlStatement, row) =>
@@ -81,6 +84,8 @@ export const sqlJsJobStore = Effect.gen(function* makeSqlJsStore() {
   });
 
   return jobStoreLayer.pipe(
-    Layer.provide(Layer.succeed(SqlExecutor, executor))
+    Layer.provideMerge(Layer.succeed(SqlExecutor, executor))
   );
 });
+
+export const sqlJsJobStore = seededSqlJsJobStore({});

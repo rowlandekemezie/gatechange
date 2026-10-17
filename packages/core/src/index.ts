@@ -11,13 +11,30 @@ export {
 
 export type { FeedOutcomeValue, FeedRef, FeedStateValue } from "./feed.js";
 
-export { jobsFromPostings, retentionCutoff, runIngest } from "./ingest.js";
+export {
+  INGEST_LEASE_MILLIS,
+  IngestInProgress,
+  jobsFromPostings,
+  retentionCutoff,
+  runIngest,
+} from "./ingest.js";
 
 export type { IngestPlan } from "./ingest.js";
 
-export { FeedReplacement, JobStore } from "./job-store.js";
+export {
+  daysOpen,
+  FeedReplacement,
+  fingerprintOf,
+  isRepost,
+  JobStore,
+  REPOST_GAP,
+} from "./job-store.js";
 
-export type { FeedReplacementValue, JobListing } from "./job-store.js";
+export type {
+  FeedReplacementValue,
+  JobListing,
+  ListingHistory,
+} from "./job-store.js";
 
 export { classifyPlacement, regionWeight } from "./location.js";
 
@@ -59,6 +76,7 @@ export {
   JobQuery,
   JobSort,
   JobStoreUnavailable,
+  ListedJob,
   listJobsContract,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
@@ -79,6 +97,7 @@ export type {
   JobQueryValue,
   JobSortValue,
   JobValue,
+  ListedJobValue,
   RegionValue,
   RoleLevelValue,
   SourceNameValue,

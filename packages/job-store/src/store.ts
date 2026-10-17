@@ -1,5 +1,6 @@
 import {
   Arrangement,
+  daysOpen,
   IngestOutcome,
   JobStore,
   Region,
@@ -10,17 +11,21 @@ import type {
   FeedStateValue,
   IngestReceiptValue,
   JobValue,
+  ListedJobValue,
+  ListingHistory,
 } from "@rat-stack/core";
 import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
 import {
   activeCountStatement,
+  claimIngestStatement,
   countJobsStatement,
   feedFailedStatement,
   feedHealthStatement,
   feedStatesStatement,
   feedSucceededStatement,
   findJobStatement,
+  historyStatement,
   lastRunStatement,
   listJobsStatement,
   newTodayStatement,
@@ -28,8 +33,10 @@ import {
   pruneRunsStatement,
   recordRunStatement,
   regionCountsStatement,
+  releaseIngestStatement,
   removeUnseenStatement,
   roleCountsStatement,
+  sightingStatement,
   UPSERT_CHUNK,
   upsertJobStatement,
 } from "./queries.js";
@@ -55,7 +62,20 @@ const JobRow = Schema.Struct({
   url: Schema.String,
 });
 
+const ListedJobRow = Schema.Struct({
+  ...JobRow.fields,
+  opened_at: Count,
+  reposts: Count,
+});
+
 const TotalRow = Schema.Struct({ total: Count });
+
+const HistoryRow = Schema.Struct({
+  first_seen_at: Count,
+  last_seen_at: Count,
+  reposts: Count,
+  sightings: Count,
+});
 
 const FeedStateRow = Schema.Struct({
   consecutive_failures: Count,
@@ -99,6 +119,21 @@ const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
   url: row.url,
 });
 
+const listedJobOfRow =
+  (now: number) =>
+  (row: typeof ListedJobRow.Type): ListedJobValue => ({
+    ...jobOfRow(row),
+    daysOpen: daysOpen(row.opened_at, now),
+    reposts: row.reposts,
+  });
+
+const historyOfRow = (row: typeof HistoryRow.Type): ListingHistory => ({
+  firstSeenAt: row.first_seen_at,
+  lastSeenAt: row.last_seen_at,
+  reposts: row.reposts,
+  sightings: row.sightings,
+});
+
 const feedStateOfRow = (row: typeof FeedStateRow.Type): FeedStateValue => ({
   consecutiveFailures: row.consecutive_failures,
   key: row.key,
@@ -127,6 +162,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
   const sql = yield* SqlExecutor;
 
   return JobStore.of({
+    claimIngest: (startedAt, heldUntil) =>
+      sql
+        .batch("claimIngest", [claimIngestStatement(startedAt, heldUntil)])
+        .pipe(Effect.map(([claim]) => claim?.changes === 1)),
+
     feedStates: sql
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
@@ -138,16 +178,24 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           Effect.map((rows) => pipe(Array.head(rows), Option.map(jobOfRow)))
         ),
 
+    historyOf: (job) =>
+      sql
+        .all("historyOf", historyStatement(job), HistoryRow)
+        .pipe(Effect.map((rows) => Option.map(Array.head(rows), historyOfRow))),
     list: (query, now) =>
       Effect.all(
         {
-          rows: sql.all("listJobs", listJobsStatement(query, now), JobRow),
+          rows: sql.all(
+            "listJobs",
+            listJobsStatement(query, now),
+            ListedJobRow
+          ),
           total: sql.all("countJobs", countJobsStatement(query, now), TotalRow),
         },
         { concurrency: 2 }
       ).pipe(
         Effect.map(({ rows, total }) => ({
-          jobs: pipe(rows, Array.map(jobOfRow)),
+          jobs: pipe(rows, Array.map(listedJobOfRow(now))),
           total: totalOf(total),
         }))
       ),
@@ -177,11 +225,21 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
     recordRun: (receipt) =>
       sql.batch("recordRun", [recordRunStatement(receipt)]).pipe(Effect.asVoid),
 
+    releaseIngest: (startedAt) =>
+      sql
+        .batch("releaseIngest", [releaseIngestStatement(startedAt)])
+        .pipe(Effect.asVoid),
+
     replaceFeed: (feedKey, jobs, seenAt) =>
       Effect.gen(function* replaceFeed() {
-        const chunks = Array.chunksOf(
-          pipe(jobs, Array.map(upsertJobStatement)),
-          UPSERT_CHUNK
+        const chunks = pipe(
+          Array.chunksOf(jobs, UPSERT_CHUNK),
+          Array.map(
+            Array.flatMap((job) => [
+              upsertJobStatement(job),
+              sightingStatement(job, seenAt),
+            ])
+          )
         );
 
         yield* Effect.forEach(
