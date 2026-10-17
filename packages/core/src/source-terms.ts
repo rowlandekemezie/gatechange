@@ -84,7 +84,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       label: "Himalayas",
       paidFeatures: Permission.Allowed({
         quote:
-          "You may use the API in personal and commercial integrations on these conditions:",
+          "You may use the API in personal and commercial integrations on these conditions: (a) Every Apply action for a job from Himalayas must use the applicationLink supplied by the API. Do not replace it with a direct employer or applicant tracking system link. (b) Clearly identify Himalayas as the source of the jobs, with a visible link to the Himalayas job or to himalayas.app. (c) Do not redistribute jobs from Himalayas to other job boards, aggregators or job search engines. (d) Cache job data where you can, stay within your request limits, and remove jobs once they expire. (e) Keep your API keys private and use them only from your own servers. (f) API keys grant read access to public job data only. We set and may change request limits, and we may suspend keys or accounts that break these terms. For higher limits or other uses, contact hi@himalayas.app.",
         url: "https://himalayas.app/terms",
       }),
     },
@@ -98,11 +98,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       jobPostingMarkup: unstated,
       kind: "Aggregator",
       label: "Jobicy",
-      paidFeatures: Permission.Forbidden({
-        quote:
-          "resold or redistributed without the prior written consent of Jobicy.com",
-        url: "https://jobicy.com/terms-and-conditions",
-      }),
+      paidFeatures: unstated,
     },
     Lever: {
       creditUrl: "https://www.lever.co",
