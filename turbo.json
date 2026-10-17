@@ -14,7 +14,10 @@
       "outputs": []
     },
     "//#lint": {
-      "dependsOn": ["@rat-stack/capability#build"],
+      "dependsOn": [
+        "@rat-stack/capability#build",
+        "@rat-stack/job-sources#build"
+      ],
       "outputs": []
     },
     "//#typecheck-scripts": {
