@@ -56,13 +56,17 @@ tree_pids() {
   done
 }
 
+identity() {
+  ps -o lstart=,command= -p "$1" 2>/dev/null
+}
+
 record_tree() {
-  local p command checkout
+  local p seen checkout
   checkout="$(cd "$REPO" && pwd -P)"
   for p in $(tree_pids "$1"); do
-    command="$(ps -o command= -p "$p" 2>/dev/null)" || continue
-    [[ "$command" == *"$checkout/"* ]] || continue
-    grep -qxF "$p $command" "$RUN_DIR/procs" 2>/dev/null || echo "$p $command" >>"$RUN_DIR/procs"
+    seen="$(identity "$p")" || continue
+    [[ "$seen" == *"$checkout/"* ]] || continue
+    grep -qxF "$p $seen" "$RUN_DIR/procs" 2>/dev/null || echo "$p $seen" >>"$RUN_DIR/procs"
   done
 }
 

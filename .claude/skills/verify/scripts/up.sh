@@ -20,7 +20,7 @@ if ! (cd "$REPO" && "${PNPM[@]}" turbo run build --filter=@rat-stack/infra...) >
   exit 1
 fi
 
-rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url"
+rm -f "$RUN_DIR/pid" "$RUN_DIR/procs" "$RUN_DIR/url" "$RUN_DIR/backend-url"
 echo "$REPO" >"$RUN_DIR/repo"
 mkdir -p "$RUN_DIR/docker-config"
 d1_before="$(d1_files)"

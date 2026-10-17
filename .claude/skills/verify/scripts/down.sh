@@ -6,8 +6,8 @@ if pid="$(dev_pid)"; then
   pids+=($(tree_pids "$pid"))
 fi
 if [[ -f "$RUN_DIR/procs" ]]; then
-  while read -r p command; do
-    if [[ "$(ps -o command= -p "$p" 2>/dev/null)" == "$command" ]]; then
+  while read -r p seen; do
+    if [[ "$(identity "$p")" == "$seen" ]]; then
       pids+=($(tree_pids "$p"))
     fi
   done <"$RUN_DIR/procs"
@@ -15,12 +15,12 @@ fi
 
 if ((${#pids[@]})); then
   pids=($(printf '%s\n' "${pids[@]}" | awk '!seen[$0]++'))
-  commands=()
+  identities=()
   for p in "${pids[@]}"; do
-    commands+=("$(ps -o command= -p "$p" 2>/dev/null || true)")
+    identities+=("$(identity "$p" || true)")
   done
   unchanged() {
-    [[ -n "${commands[$1]}" && "$(ps -o command= -p "${pids[$1]}" 2>/dev/null || true)" == "${commands[$1]}" ]]
+    [[ -n "${identities[$1]}" && "$(identity "${pids[$1]}" || true)" == "${identities[$1]}" ]]
   }
   signal() {
     local i now
@@ -43,6 +43,7 @@ if ((${#pids[@]})); then
     sleep 0.5
   done
   signal KILL
+  rm -f "$RUN_DIR/procs"
   echo "stopped the alchemy processes of stage $STAGE (pids ${pids[*]})"
 elif [[ -f "$RUN_DIR/pid" ]]; then
   echo "pid $(cat "$RUN_DIR/pid") recorded for stage $STAGE is not its alchemy dev any more; signalled nothing"
