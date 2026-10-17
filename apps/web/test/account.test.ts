@@ -8,6 +8,7 @@ import type { MessageValue } from "../src/client/account/message.js";
 import { SessionState, SignInState } from "../src/client/account/model.js";
 import type { ModelValue } from "../src/client/account/model.js";
 import { init, update } from "../src/client/account/update.js";
+import { Preload } from "../src/client/board/model.js";
 import { init as boardInit } from "../src/client/board/update.js";
 import { accountRouter, Route, routeOfUrl } from "../src/client/route.js";
 
@@ -39,12 +40,14 @@ const signedOut = sent(
 const typed = (email: string) =>
   sent(signedOut, Message.UpdatedSignInEmail({ value: email }));
 
+const flags = { origin: "https://jobs.example", preload: Preload.Nothing() };
+
 const urlAt = (path: string) =>
   Option.getOrThrow(fromString(`https://jobs.example${path}`));
 
 describe("account", () => {
   it("asks the server who is signed in when the app starts", () => {
-    const names = (boardInit(urlAt("/")).commands ?? []).map(
+    const names = (boardInit(flags, urlAt("/")).commands ?? []).map(
       (command) => command.name
     );
 
@@ -144,7 +147,7 @@ describe("account", () => {
       Route.ConfirmSignIn({ token: "abc123" })
     );
     expect(
-      boardInit(urlAt("/account/confirm?token=abc123")).commands?.map(
+      boardInit(flags, urlAt("/account/confirm?token=abc123")).commands?.map(
         ({ name }) => name
       )
     ).not.toContain("RequestLink");

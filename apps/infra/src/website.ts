@@ -1,19 +1,32 @@
 import JobsBackend from "@rat-stack/api/worker";
 import { workerFirstPaths } from "@rat-stack/web/edge-routes";
+import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Effect from "effect/Effect";
 
-export const SITE_HOSTNAME = "jobs.rowlandekemezie.com";
+import { siteIndexing, siteRouting } from "./site-routing.js";
 
-export const SITE_ZONE = "rowlandekemezie.com";
+export class Website extends Cloudflare.Website.Foldkit<Website>()(
+  "Website",
+  Effect.gen(function* websiteProps() {
+    const stage = yield* Stage;
 
-export class Website extends Cloudflare.Website.Foldkit<Website>()("Website", {
-  assets: {
-    notFoundHandling: "single-page-application",
-    runWorkerFirst: workerFirstPaths,
-  },
-  domain: { name: SITE_HOSTNAME, zoneName: SITE_ZONE },
-  env: { BACKEND: JobsBackend },
-  main: "src/worker.ts",
-  rootDir: "../web",
-  workersDev: false,
-}) {}
+    return {
+      assets: {
+        notFoundHandling: "single-page-application" as const,
+        runWorkerFirst: [
+          ...workerFirstPaths,
+          "/jobs/*",
+          "/companies/*",
+          "/roles/*",
+          "/sitemap.xml",
+          "/robots.txt",
+        ],
+      },
+      ...siteRouting(stage),
+      env: { BACKEND: JobsBackend, SITE_INDEXING: siteIndexing(stage) },
+      main: "src/worker.ts",
+      rootDir: "../web",
+    };
+  })
+) {}
