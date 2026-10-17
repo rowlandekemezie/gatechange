@@ -139,13 +139,12 @@ Keep an existing tool when it already owns the state and the team knows its revi
 ## Read before changing
 
 1. Read `AGENTS.md` for pins, commands, boundaries, and the fence: checks and hooks that reject prohibited code and shortcuts.
-2. Read `VISION.md` for why the scaffold keeps infrastructure and application contracts explicit.
-3. Read `apps/infra/alchemy.run.ts` for the Stack and the cloud footprint.
-4. Read `apps/infra/package.json` for plan, deploy, dev, and destroy scripts.
-5. Read `apps/site/src/worker.ts` for Worker construction and binding consumers.
-6. Read `apps/site/src/rate-limits.ts` for native rate-limit types and limits.
-7. Read `apps/site/src/sandbox-worker-loader.ts` for the fresh-isolate sandbox boundary.
-8. Read `.brain/projects/ratstack-sh/deploy-ratstack-sh.svx` for real deployment history and failures.
-9. Read `.brain/projects/ratstack-sh/research-alchemy-effect-worker.svx` for the Worker shape and local-dev research.
+2. Read `apps/infra/alchemy.run.ts` for the Stack and the cloud footprint.
+3. Read `apps/infra/package.json` for plan, deploy, dev, and destroy scripts.
+4. Read `apps/site/src/worker.ts` for Worker construction and binding consumers.
+5. Read `apps/site/src/rate-limits.ts` for native rate-limit types and limits.
+6. Read `apps/site/src/sandbox-worker-loader.ts` for the fresh-isolate sandbox boundary.
+7. Read `.brain/projects/ratstack-sh/deploy-ratstack-sh.svx` for real deployment history and failures.
+8. Read `.brain/projects/ratstack-sh/research-alchemy-effect-worker.svx` for the Worker shape and local-dev research.
 
 Name the resource, request a plan, and check the diff.
