@@ -91,7 +91,7 @@ The owner, Rowland Ekemezie, signs off on these before the work lands:
 - `pnpm infra:destroy`, and any plan that replaces or deletes the D1 database.
 - Paid platform plans and accounts, such as Workers Paid for email or a Stripe account for billing.
 
-`AGENTS.md` owns the full approval rules for infrastructure and deploys. Every push to `main` deploys prod through CI, so the owner lands each PR.
+`AGENTS.md` also lists, under Boundaries and sign-off, which deploy and infrastructure steps are safe by default and which need sign-off. Every push to `main` deploys prod through CI, so the owner lands each PR.
 
 ## Amendment policy
 
