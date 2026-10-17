@@ -3,7 +3,7 @@ import { Runtime } from "foldkit";
 import { Message } from "./board/message.js";
 import { Model } from "./board/model.js";
 import { JobQueries } from "./board/queries.js";
-import { init, update } from "./board/update.js";
+import { init, routing, update } from "./board/update.js";
 import { view } from "./board/view.js";
 
 import "../styles.css";
@@ -14,6 +14,7 @@ const application = Runtime.makeApplication({
   devTools: import.meta.env.DEV ? { Message } : false,
   init,
   resources: JobQueries.layer,
+  routing,
   update,
   view,
 });

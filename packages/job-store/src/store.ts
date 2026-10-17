@@ -20,6 +20,7 @@ import {
   feedHealthStatement,
   feedStatesStatement,
   feedSucceededStatement,
+  findJobStatement,
   lastRunStatement,
   listJobsStatement,
   newTodayStatement,
@@ -129,6 +130,13 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
     feedStates: sql
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
+
+    find: (id) =>
+      sql
+        .all("findJob", findJobStatement(id), JobRow)
+        .pipe(
+          Effect.map((rows) => pipe(Array.head(rows), Option.map(jobOfRow)))
+        ),
 
     list: (query, now) =>
       Effect.all(

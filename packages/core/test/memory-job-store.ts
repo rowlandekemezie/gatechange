@@ -30,6 +30,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
   const store = JobStore.of({
     feedStates: Effect.sync(() => [...states.values()]),
+    find: (id) => Effect.sync(() => Option.fromNullishOr(jobs.get(id))),
     list: (query, now) =>
       Effect.sync(() => {
         const matching = pipe(
