@@ -6,6 +6,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html";
 import {
   accountTitle,
   accountView,
+  confirmSignInPage,
   sessionLink,
 } from "../../features/account/view.js";
 import {
@@ -119,16 +120,17 @@ export const view = (model: ModelValue, h: H): Document => ({
       ...(Schema.is(Route.Board)(model.route) ? [boardMasthead(model, h)] : []),
       tabs(model, h),
       Route.match<Html>(model.route, {
-        Account: ({ linkRefused }) =>
+        Account: ({ notice }) =>
           h.submodel({
             model: model.account,
             slotId: "account",
             toParentMessage: (message) =>
               Message.GotAccountMessage({ message }),
             view: accountView,
-            viewInputs: { linkRefused },
+            viewInputs: { notice },
           }),
         Board: () => boardPage(model, h),
+        ConfirmSignIn: ({ token }) => confirmSignInPage(token, h),
         Job: () => jobPage(model, h),
         NotFound: () => notFoundPage(model, h),
         Shortlist: () => shortlistPage(model, h),
@@ -139,6 +141,7 @@ export const view = (model: ModelValue, h: H): Document => ({
   title: Route.match<string>(model.route, {
     Account: () => accountTitle(model.account.session),
     Board: () => boardTitle(model),
+    ConfirmSignIn: () => "Finish signing in",
     Job: () => jobTitle(model),
     NotFound: () => "Page not found",
     Shortlist: () => `Your shortlist (${model.marks.length})`,

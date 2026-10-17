@@ -357,15 +357,9 @@ importers:
 
   packages/accounts:
     dependencies:
-      '@alchemy.run/better-auth':
-        specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(@better-auth/drizzle-adapter@1.7.10(@better-auth/core@1.7.10(@better-auth/utils@0.5.0)(@better-fetch/fetch@1.3.2)(better-call@1.4.2(zod@4.6.5))(jose@6.2.12)(kysely@0.29.6)(nanostores@1.5.5))(@better-auth/utils@0.5.0))(@cloudflare/workers-types@5.20260917.1)(@distilled.cloud/aws@1.0.0-rc.15(effect@4.0.0))(alchemy@2.0.0-beta.83(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@types/node@24.13.6)(effect@4.0.0)(hono@4.11.4)(typescript@7.0.2)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0))(better-auth@1.7.10(vitest@5.0.3(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(effect@4.0.0)(kysely@0.29.6)
       '@rat-stack/core':
         specifier: workspace:*
         version: link:../core
-      alchemy:
-        specifier: 2.0.0-beta.83
-        version: 2.0.0-beta.83(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.2.1))(@effect/vitest@4.0.0(effect@4.0.0)(vitest@5.0.3(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))))(@types/node@24.13.6)(effect@4.0.0)(hono@4.11.4)(typescript@7.0.2)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(ws@8.22.0)
       better-auth:
         specifier: 1.7.10
         version: 1.7.10(vitest@5.0.3(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))
@@ -373,9 +367,6 @@ importers:
         specifier: 4.0.0
         version: 4.0.0
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: 5.20260917.1
-        version: 5.20260917.1
       '@effect/vitest':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)(vitest@5.0.3(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)))

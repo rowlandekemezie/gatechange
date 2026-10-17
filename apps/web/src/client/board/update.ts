@@ -140,6 +140,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
             filters
           )
         : { model: routed },
+    ConfirmSignIn: () => ({ model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
     Shortlist: () => ({ model: routed }),

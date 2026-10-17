@@ -42,6 +42,7 @@ dev_pid() {
   stage_pid "$RUN_DIR" "$STAGE"
 }
 
+export AUTH_EXTRA_HOSTS="${AUTH_EXTRA_HOSTS:-localhost:*}"
 export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-verify-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')}"
 
 D1_DIR="$REPO/apps/infra/.alchemy/local/d1/cloudflare-runtime-D1DatabaseObject"

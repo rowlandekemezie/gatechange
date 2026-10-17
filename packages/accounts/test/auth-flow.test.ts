@@ -55,9 +55,14 @@ type Auth = ReturnType<typeof makeAuth>["auth"];
 interface Call {
   readonly body?: string;
   readonly cookie?: string;
+  readonly ip?: string;
 }
 
-const call = (auth: Auth, path: string, { body, cookie = "" }: Call = {}) =>
+const call = (
+  auth: Auth,
+  path: string,
+  { body, cookie = "", ip = "203.0.113.7" }: Call = {}
+) =>
   Effect.promise(
     // @effect-diagnostics-next-line asyncFunction:off -- better-auth's handler is Promise-based.
     async () =>
@@ -65,6 +70,7 @@ const call = (auth: Auth, path: string, { body, cookie = "" }: Call = {}) =>
         new Request(`${ORIGIN}${path}`, {
           body: body ?? null,
           headers: {
+            "cf-connecting-ip": ip,
             "content-type": "application/json",
             cookie,
             origin: ORIGIN,
@@ -86,9 +92,10 @@ const cookieOf = (response: Response) =>
     .map((line) => line.split(";")[0])
     .join("; ");
 
-const requestLink = (auth: Auth, email: string) =>
+const requestLink = (auth: Auth, email: string, ip = "203.0.113.7") =>
   call(auth, "/api/auth/sign-in/magic-link", {
     body: JSON.stringify({ callbackURL: "/account", email }),
+    ip,
   });
 
 const pathOf = (url: string) => {
@@ -136,6 +143,12 @@ describe("magic link sign-in", () => {
         expect(verified.status).toBe(302);
         expect(verified.headers.get("location")).toBe(`${ORIGIN}/account`);
 
+        const [sessionCookie] = verified.headers.getSetCookie();
+
+        expect(sessionCookie).toMatch(/^__Secure-better-auth\.session_token=/u);
+        expect(sessionCookie).toContain("Secure");
+        expect(sessionCookie).toContain("HttpOnly");
+
         const session = yield* sessionOf(auth, cookieOf(verified));
 
         expect(session?.user.email).toBe("ada@example.com");
@@ -144,6 +157,43 @@ describe("magic link sign-in", () => {
 
         expect(cookieOf(reused)).not.toContain("session_token=");
         expect(reused.headers.get("location")).toContain("error=");
+      })
+  );
+
+  it.effect(
+    "refuses a sixth link from one address within a minute, while another address still gets one",
+    () =>
+      Effect.gen(function* rateLimited() {
+        const { auth, sent } = makeAuth();
+        const statuses: number[] = [];
+
+        for (const email of [
+          "a@example.com",
+          "b@example.com",
+          "c@example.com",
+          "d@example.com",
+          "e@example.com",
+          "f@example.com",
+        ]) {
+          statuses.push((yield* requestLink(auth, email)).status);
+        }
+
+        const elsewhere = yield* requestLink(
+          auth,
+          "g@example.com",
+          "198.51.100.9"
+        );
+
+        expect(statuses).toStrictEqual([200, 200, 200, 200, 200, 429]);
+        expect(elsewhere.status).toBe(200);
+        expect(sent.map(({ email }) => email)).toStrictEqual([
+          "a@example.com",
+          "b@example.com",
+          "c@example.com",
+          "d@example.com",
+          "e@example.com",
+          "g@example.com",
+        ]);
       })
   );
 

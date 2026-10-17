@@ -44,6 +44,13 @@ CREATE TABLE "verification" (
   "updatedAt" DATE NOT NULL
 );
 
+CREATE TABLE "rateLimit" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "key" TEXT NOT NULL UNIQUE,
+  "count" INTEGER NOT NULL,
+  "lastRequest" BIGINT NOT NULL
+);
+
 CREATE INDEX "session_userId_idx" ON "session" ("userId");
 
 CREATE INDEX "account_userId_idx" ON "account" ("userId");

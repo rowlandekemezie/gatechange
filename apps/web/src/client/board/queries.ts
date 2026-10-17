@@ -15,7 +15,6 @@ const make = Effect.gen(function* makeJobQueries() {
   const client = yield* RpcClient.make(group).pipe(Effect.provide(protocol));
 
   return {
-    account: client.account({}),
     getJob: (id: string) => client.getJob({ id }),
     listJobs: (query: JobQueryValue) => client.listJobs(query),
     signInOptions: client.signInOptions({}),

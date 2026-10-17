@@ -61,7 +61,7 @@ Recording reads live public job boards, so do it by hand and commit the result. 
 
 ## Drive
 
-`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 20) and fails as soon as the board shows its error alert.
+`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, sends a random `cf-connecting-ip` so each run gets its own better-auth rate-limit bucket, and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 20) and fails as soon as the board shows its error alert.
 
 ```sh
 mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
@@ -74,7 +74,7 @@ Scenarios:
 - `filter` clicks the `day` age chip and requires the count line and the row count to drop.
 - `search` types the first row's company into the search box, submits, and requires every row to show that company.
 - `shortlist` presses `Save` on the first row, opens the `Your shortlist` tab, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
-- `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), and requires the header to show the email.
+- `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest `/account/confirm` link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), presses `Finish signing in`, and requires the header to show the email.
 - `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
 - `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
 - `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.

@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off asyncFunction:off globalDate:off globalFetch:off -- drive.ts is standalone Node tooling that drives Chrome over the DevTools protocol, outside any Effect runtime.
 import { spawn } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { once } from "node:events";
 import {
   existsSync,
@@ -351,7 +352,7 @@ const mailOutbox = new URL(
 const mailCount = () =>
   existsSync(mailOutbox) ? readdirSync(mailOutbox).length : 0;
 
-const MAGIC_LINK = /https?:\/\/\S+magic-link\/verify\S+/u;
+const MAGIC_LINK = /https?:\/\/\S+\/account\/confirm\?token=\S+/u;
 
 const latestLink = () => {
   const [newest] = readdirSync(mailOutbox)
@@ -403,6 +404,24 @@ const goTo = async (address: string) => {
   }
 };
 
+const finishSignIn = async (link: string) => {
+  await goTo(link);
+
+  await waitFor("the finish-signing-in button", async () =>
+    (await evaluate(
+      Schema.Boolean,
+      `(() => {
+      const button = [...document.querySelectorAll("form button")]
+        .find((node) => node.textContent.trim() === "Finish signing in");
+      if (button !== undefined) setTimeout(() => button.click(), 0);
+      return button !== undefined;
+    })()`
+    ))
+      ? true
+      : undefined
+  );
+};
+
 const submitEmail = async (email: string) => {
   if (!(await clickButton("nav.tabs a.account-tab", "Sign in"))) {
     throw new Error("no Sign in link in the header");
@@ -436,6 +455,12 @@ const Shortlist = Schema.Struct({
 const run = async () => {
   await send(Ignored, "Page.enable");
   await send(Ignored, "Runtime.enable");
+  await send(Ignored, "Network.enable");
+  await send(Ignored, "Network.setExtraHTTPHeaders", {
+    headers: {
+      "cf-connecting-ip": `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`,
+    },
+  });
   await send(Ignored, "Emulation.setDeviceMetricsOverride", viewport);
   await send(Ignored, "Emulation.setEmulatedMedia", {
     features: [
@@ -484,7 +509,7 @@ const run = async () => {
 
     const link = latestLink();
 
-    await goTo(link);
+    await finishSignIn(link);
 
     const signedIn = await waitForAccount(
       "the header to show the account",
@@ -560,7 +585,7 @@ const run = async () => {
       const link = await signIn();
 
       await signOut();
-      await goTo(link);
+      await finishSignIn(link);
 
       const refused = await waitForAccount(
         "the used link to be refused",

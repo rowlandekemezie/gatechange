@@ -126,10 +126,27 @@ describe("account", () => {
     expect(out.commands.map(({ name }) => name)).toContain("FetchSession");
   });
 
-  it("routes a refused magic link back to the sign-in page with a notice", () => {
+  it("tells a refused magic link apart from a failed social sign-in", () => {
     expect(routeOfUrl(urlAt("/account?error=INVALID_TOKEN"))).toStrictEqual(
-      Route.Account({ linkRefused: true })
+      Route.Account({ notice: "LinkRefused" })
     );
-    expect(accountRouter({ linkRefused: false })).toBe("/account");
+    expect(routeOfUrl(urlAt("/account?error=EXPIRED_TOKEN"))).toStrictEqual(
+      Route.Account({ notice: "LinkRefused" })
+    );
+    expect(routeOfUrl(urlAt("/account?error=access_denied"))).toStrictEqual(
+      Route.Account({ notice: "SignInFailed" })
+    );
+    expect(accountRouter({ notice: "None" })).toBe("/account");
+  });
+
+  it("opens the emailed confirm link as its own page that spends nothing on load", () => {
+    expect(routeOfUrl(urlAt("/account/confirm?token=abc123"))).toStrictEqual(
+      Route.ConfirmSignIn({ token: "abc123" })
+    );
+    expect(
+      boardInit(urlAt("/account/confirm?token=abc123")).commands?.map(
+        ({ name }) => name
+      )
+    ).not.toContain("RequestLink");
   });
 });

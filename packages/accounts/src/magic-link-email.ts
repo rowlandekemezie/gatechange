@@ -17,23 +17,38 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+export const CONFIRM_SIGN_IN_PATH = "/account/confirm";
+
+const confirmLink = (verifyUrl: string) => {
+  const verify = new URL(verifyUrl);
+  const confirm = new URL(CONFIRM_SIGN_IN_PATH, verify.origin);
+
+  confirm.searchParams.set("token", verify.searchParams.get("token") ?? "");
+
+  return confirm.href;
+};
+
 export const magicLinkEmail = (
   from: string,
-  { email, url }: MagicLinkRequest
-): MagicLinkEmail => ({
-  from,
-  html: [
-    "<p>Use this link to sign in to the engineering leadership job board:</p>",
-    `<p><a href="${escapeHtml(url)}">Sign in</a></p>`,
-    `<p>The link works once and expires in ${MAGIC_LINK_TTL_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
-  ].join(""),
-  subject: "Your sign-in link",
-  text: [
-    "Use this link to sign in to the engineering leadership job board:",
-    "",
-    url,
-    "",
-    `The link works once and expires in ${MAGIC_LINK_TTL_MINUTES} minutes. If you did not ask for it, ignore this email.`,
-  ].join("\n"),
-  to: email,
-});
+  request: MagicLinkRequest
+): MagicLinkEmail => {
+  const url = confirmLink(request.url);
+
+  return {
+    from,
+    html: [
+      "<p>Use this link to sign in to the engineering leadership job board:</p>",
+      `<p><a href="${escapeHtml(url)}">Sign in</a></p>`,
+      `<p>The link works once and expires in ${MAGIC_LINK_TTL_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
+    ].join(""),
+    subject: "Your sign-in link",
+    text: [
+      "Use this link to sign in to the engineering leadership job board:",
+      "",
+      url,
+      "",
+      `The link works once and expires in ${MAGIC_LINK_TTL_MINUTES} minutes. If you did not ask for it, ignore this email.`,
+    ].join("\n"),
+    to: request.email,
+  };
+};

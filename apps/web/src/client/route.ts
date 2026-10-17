@@ -35,9 +35,18 @@ import {
 } from "./board/filters.js";
 import type { FiltersValue } from "./board/filters.js";
 
+export const AccountNotice = Schema.Literals([
+  "None",
+  "LinkRefused",
+  "SignInFailed",
+]);
+
+export type AccountNoticeValue = typeof AccountNotice.Type;
+
 export const Route = defineRouteUnion({
-  Account: { linkRefused: Schema.Boolean },
+  Account: { notice: AccountNotice },
   Board: { filters: Filters },
+  ConfirmSignIn: { token: Schema.String },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
   Shortlist: {},
@@ -174,15 +183,34 @@ const JobIdSegment = Schema.String.pipe(
 
 export const boardRouter = pipe(root, query(BoardParams), mapTo(Route.Board));
 
+const refusedLinkErrors = new Set([
+  "INVALID_TOKEN",
+  "EXPIRED_TOKEN",
+  "ATTEMPTS_EXCEEDED",
+]);
+
+const noticeOfError = (error: string | undefined): AccountNoticeValue => {
+  if (error === undefined) {
+    return "None";
+  }
+
+  return refusedLinkErrors.has(error) ? "LinkRefused" : "SignInFailed";
+};
+
+const errorOfNotice = {
+  LinkRefused: { error: "INVALID_TOKEN" },
+  None: {},
+  SignInFailed: { error: "SIGN_IN_FAILED" },
+} as const;
+
 const AccountParams = Schema.Struct({
   error: Schema.optionalKey(Schema.String),
 }).pipe(
   Schema.decodeTo(
-    Schema.Struct({ linkRefused: Schema.Boolean }),
+    Schema.Struct({ notice: AccountNotice }),
     SchemaTransformation.transform({
-      decode: ({ error }) => ({ linkRefused: error !== undefined }),
-      encode: ({ linkRefused }) =>
-        linkRefused ? { error: "INVALID_TOKEN" } : {},
+      decode: ({ error }) => ({ notice: noticeOfError(error) }),
+      encode: ({ notice }) => errorOfNotice[notice],
     })
   )
 );
@@ -191,6 +219,13 @@ export const accountRouter = pipe(
   literal("account"),
   query(AccountParams),
   mapTo(Route.Account)
+);
+
+export const confirmSignInRouter = pipe(
+  literal("account"),
+  slash(literal("confirm")),
+  query(Schema.Struct({ token: Schema.String })),
+  mapTo(Route.ConfirmSignIn)
 );
 
 export const shortlistRouter = pipe(
@@ -205,7 +240,13 @@ export const jobRouter = pipe(
 );
 
 export const routeOfUrl = parseUrlWithFallback(
-  oneOf(jobRouter, shortlistRouter, accountRouter, boardRouter),
+  oneOf(
+    jobRouter,
+    shortlistRouter,
+    confirmSignInRouter,
+    accountRouter,
+    boardRouter
+  ),
   { make: () => Route.NotFound() }
 );
 

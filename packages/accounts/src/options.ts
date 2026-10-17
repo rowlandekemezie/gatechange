@@ -23,6 +23,11 @@ export interface AuthSettings {
 }
 
 export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
+  account: { encryptOAuthTokens: true },
+  advanced: {
+    ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+    useSecureCookies: true,
+  },
   basePath: AUTH_BASE_PATH,
   baseURL: {
     allowedHosts: [...settings.allowedHosts],
@@ -31,12 +36,11 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
   plugins: [
     magicLink({
       expiresIn: MAGIC_LINK_TTL_MINUTES * 60,
-      // @effect-diagnostics-next-line asyncFunction:off -- better-auth's magic link plugin awaits a Promise-returning sender.
-      sendMagicLink: async ({ email, url }) => {
-        await settings.sendMagicLink({ email, url });
-      },
+      sendMagicLink: settings.sendMagicLink,
+      storeToken: "hashed",
     }),
   ],
+  rateLimit: { enabled: true, storage: "database" },
   socialProviders: settings.social,
   telemetry: { enabled: false },
 });

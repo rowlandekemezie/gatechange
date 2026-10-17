@@ -16,6 +16,7 @@ import {
   SocialProvider,
   Viewer,
 } from "@rat-stack/core";
+import type { ViewerValue } from "@rat-stack/core";
 import { postingFeedsLayer } from "@rat-stack/job-sources";
 import { d1JobStoreLayer, JobsDatabase } from "@rat-stack/job-store/d1";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -44,7 +45,17 @@ export const MAGIC_LINK_SENDER = "sign-in@rowlandekemezie.com";
 
 export const SITE_ORIGIN = "https://jobs.rowlandekemezie.com";
 
-export const AUTH_HOSTS = ["jobs.rowlandekemezie.com", "localhost:*"];
+export const SITE_HOST = "jobs.rowlandekemezie.com";
+
+const extraAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
+  Config.withDefault(""),
+  Config.map((hosts) =>
+    hosts
+      .split(",")
+      .map((host) => host.trim())
+      .filter((host) => host !== "")
+  )
+);
 
 export const MIN_AUTH_SECRET_LENGTH = 32;
 
@@ -125,15 +136,19 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       google: yield* socialCredentials("GOOGLE"),
     });
 
+    const authHosts = [SITE_HOST, ...(yield* extraAuthHosts)];
+
     const mailer = yield* Cloudflare.Email.Send(
-      yield* Cloudflare.Email.SendEmail("MagicLinkEmail")
+      yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
+        allowedSenderAddresses: [MAGIC_LINK_SENDER],
+      })
     );
 
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
     const auth = yield* BetterAuth({
       ...authOptions({
-        allowedHosts: AUTH_HOSTS,
+        allowedHosts: authHosts,
         fallbackOrigin: SITE_ORIGIN,
         // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
         sendMagicLink: async (request) => {
@@ -151,8 +166,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
 
     const accountStore = makeAccountStore(
       (cookie) =>
-        auth
-          .getSession(new Headers({ cookie }))
+        auth.api
+          .getSession({
+            headers: new Headers({ cookie }),
+            query: { disableRefresh: true },
+          })
           .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
       {
         socialProviders: SocialProvider.literals.filter(
@@ -161,18 +179,25 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       }
     );
 
-    const rpc = RpcServer.toHttpEffect(rpcProjection.group).pipe(
-      Effect.provide(
-        Layer.mergeAll(rpcProjection.layer, RpcSerialization.layerJson).pipe(
-          Layer.provide(
+    const serveRpc = (viewer: ViewerValue) =>
+      Effect.flatten(
+        RpcServer.toHttpEffect(rpcProjection.group).pipe(
+          Effect.provide(
             Layer.mergeAll(
-              storeLayer,
-              Layer.succeed(AccountStore, accountStore)
+              rpcProjection.layer,
+              RpcSerialization.layerJson
+            ).pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  storeLayer,
+                  Layer.succeed(AccountStore, accountStore),
+                  Layer.succeed(CurrentViewer, viewer)
+                )
+              )
             )
           )
         )
-      )
-    );
+      );
 
     const viewerOf = (request: HttpServerRequest.HttpServerRequest) =>
       accountStore
@@ -192,11 +217,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         return yield* auth.fetch;
       }
 
-      const viewer = yield* viewerOf(request);
-
-      return yield* Effect.flatten(rpc).pipe(
-        Effect.provideService(CurrentViewer, viewer)
-      );
+      return yield* serveRpc(yield* viewerOf(request));
     });
 
     // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.

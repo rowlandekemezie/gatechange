@@ -8,13 +8,9 @@ import { AuthClient } from "./auth-client.js";
 import { Message } from "./message.js";
 
 export const FetchSession = Command.define("FetchSession", {
-  execute: JobQueries.use((queries) => queries.account).pipe(
-    Effect.match({
-      onFailure: () =>
-        Message.CompletedFetchSession({ account: Option.none() }),
-      onSuccess: (account) =>
-        Message.CompletedFetchSession({ account: Option.some(account) }),
-    })
+  execute: AuthClient.use((auth) => auth.currentAccount).pipe(
+    Effect.orElseSucceed(() => Option.none()),
+    Effect.map((account) => Message.CompletedFetchSession({ account }))
   ),
   messages: [Message.CompletedFetchSession],
 });

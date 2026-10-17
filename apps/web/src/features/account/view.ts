@@ -12,10 +12,19 @@ import type {
   SessionStateValue,
 } from "../../client/account/model.js";
 import { accountRouter } from "../../client/route.js";
+import type { AccountNoticeValue } from "../../client/route.js";
 
 interface AccountViewInputs {
-  readonly linkRefused: boolean;
+  readonly notice: AccountNoticeValue;
 }
+
+const AUTH_RETURN_PATH = "/account";
+
+const noticeText: Record<Exclude<AccountNoticeValue, "None">, string> = {
+  LinkRefused:
+    "That sign-in link has expired or was already used. Ask for a new one below.",
+  SignInFailed: "Sign-in did not finish. Try again below.",
+};
 
 const providerLabel: Record<SocialProviderValue, string> = {
   github: "Continue with GitHub",
@@ -32,7 +41,7 @@ export const sessionLink = <M>(
   h.a(
     [
       h.Class(isCurrent ? "tab tab-on account-tab" : "tab account-tab"),
-      h.Href(accountRouter({ linkRefused: false })),
+      h.Href(accountRouter({ notice: "None" })),
       ...(isCurrent ? [h.AriaCurrent("page")] : []),
     ],
     [
@@ -151,26 +160,57 @@ const signInPanel = (
     ],
   });
 
-const refusedNotice = (
+const noticeNote = (
   h: HtmlBuilder<MessageValue>,
-  linkRefused: boolean
+  model: ModelValue,
+  notice: AccountNoticeValue
 ): readonly Html[] =>
-  linkRefused
-    ? [
+  notice === "None" || !Schema.is(SignInState.Editing)(model.signIn)
+    ? []
+    : [
         h.p(
           [h.Class("sign-in-problem"), h.Role("alert")],
-          [
-            "That sign-in link has expired or was already used. Ask for a new one below.",
-          ]
+          [noticeText[notice]]
         ),
-      ]
-    : [];
+      ];
+
+export const confirmSignInPage = <M>(token: string, h: HtmlBuilder<M>): Html =>
+  h.div(
+    [h.Class("detail account")],
+    [
+      h.h1([h.Class("detail-title")], ["Finish signing in"]),
+      h.p(
+        [h.Class("account-lede")],
+        ["Press the button to sign in on this device. The link works once."]
+      ),
+      h.form(
+        [h.Action("/api/auth/magic-link/verify"), h.Method("get")],
+        [
+          h.input([h.Type("hidden"), h.Name("token"), h.Value(token)]),
+          h.input([
+            h.Type("hidden"),
+            h.Name("callbackURL"),
+            h.Value(AUTH_RETURN_PATH),
+          ]),
+          h.input([
+            h.Type("hidden"),
+            h.Name("errorCallbackURL"),
+            h.Value(AUTH_RETURN_PATH),
+          ]),
+          h.button(
+            [h.Type("submit"), h.Class("search-button")],
+            ["Finish signing in"]
+          ),
+        ]
+      ),
+    ]
+  );
 
 export const accountView = defineView<
   ModelValue,
   MessageValue,
   AccountViewInputs
->((model, { linkRefused }, h) =>
+>((model, { notice }, h) =>
   SessionState.match<Html>(model.session, {
     Checking: () =>
       h.div(
@@ -204,7 +244,7 @@ export const accountView = defineView<
               "We email you a link that signs you in. There is no password to remember.",
             ]
           ),
-          ...refusedNotice(h, linkRefused),
+          ...noticeNote(h, model, notice),
           ...signInPanel(model, h),
         ]
       ),

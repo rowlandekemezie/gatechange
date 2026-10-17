@@ -1,5 +1,6 @@
+import { Account } from "@rat-stack/core/contracts";
 import type { SocialProviderValue } from "@rat-stack/core/contracts";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Option, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
@@ -15,6 +16,8 @@ const RETURN_PATH = "/account";
 
 const SocialRedirect = Schema.Struct({ url: Schema.String });
 
+const CurrentSession = Schema.NullOr(Schema.Struct({ user: Account }));
+
 type AuthRequestBody = Readonly<Record<string, string>>;
 
 const make = Effect.gen(function* makeAuthClient() {
@@ -28,6 +31,13 @@ const make = Effect.gen(function* makeAuthClient() {
     );
 
   return {
+    currentAccount: http.get(`${AUTH_PATH}/get-session`).pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(CurrentSession)),
+      Effect.map((session) =>
+        Option.map(Option.fromNullishOr(session), ({ user }) => user)
+      )
+    ),
     requestLink: (email: string) =>
       post("/sign-in/magic-link", {
         callbackURL: RETURN_PATH,

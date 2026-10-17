@@ -33,6 +33,7 @@ export const makeAccountStore = <E>(
     viewerOf: (cookie) =>
       cookie.includes(SESSION_COOKIE)
         ? lookup(cookie).pipe(
+            Effect.catchDefect(Effect.fail),
             Effect.mapError((cause) =>
               unavailable(`session lookup failed: ${String(cause)}`)
             ),
