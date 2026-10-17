@@ -5,7 +5,6 @@ import {
   Option,
   pipe,
   Schema,
-  SchemaGetter,
   SchemaTransformation,
 } from "effect";
 import type { Types } from "effect";
@@ -142,12 +141,7 @@ const BoardParams = BoardQuery.pipe(
 const JobIdSegment = Schema.String.pipe(
   Schema.decodeTo(
     Schema.NonEmptyString,
-    new SchemaTransformation.Transformation(
-      SchemaTransformation.stringFromUriComponent.decode,
-      SchemaGetter.transform((id: string) =>
-        encodeURIComponent(id).replaceAll("%3A", ":")
-      )
-    )
+    SchemaTransformation.stringFromUriComponent
   )
 );
 

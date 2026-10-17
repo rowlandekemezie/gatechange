@@ -142,9 +142,15 @@ describe("job and shortlist routes", () => {
     expect(routeAt(jobRouter({ id }))).toStrictEqual(Route.Job({ id }));
   });
 
-  it("keeps colons readable in job URLs", () => {
+  it("builds job URLs in the percent-encoded form the asset server serves without a redirect", () => {
     expect(jobRouter({ id: "greenhouse:stripe:123" })).toBe(
-      "/jobs/greenhouse:stripe:123"
+      "/jobs/greenhouse%3Astripe%3A123"
+    );
+  });
+
+  it("still reads a job URL with raw colons", () => {
+    expect(routeAt("/jobs/greenhouse:stripe:123")).toStrictEqual(
+      Route.Job({ id: "greenhouse:stripe:123" })
     );
   });
 
