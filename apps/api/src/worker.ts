@@ -16,12 +16,19 @@ import {
   SocialProvider,
   Viewer,
 } from "@rat-stack/core";
-import type { SocialProviderValue } from "@rat-stack/core";
 import { postingFeedsLayer } from "@rat-stack/job-sources";
 import { d1JobStoreLayer, JobsDatabase } from "@rat-stack/job-store/d1";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import { Config, Effect, Layer, Option, Redacted, Schema } from "effect";
+import {
+  Config,
+  Effect,
+  Layer,
+  Option,
+  Record,
+  Redacted,
+  Schema,
+} from "effect";
 import { FetchHttpClient, HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
@@ -112,19 +119,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     );
 
     const secret = yield* authSecret;
-    const github = yield* socialCredentials("GITHUB");
-    const google = yield* socialCredentials("GOOGLE");
 
-    const social: Partial<Record<SocialProviderValue, SocialCredentials>> = {
-      ...Option.match(github, {
-        onNone: () => ({}),
-        onSome: (credentials) => ({ github: credentials }),
-      }),
-      ...Option.match(google, {
-        onNone: () => ({}),
-        onSome: (credentials) => ({ google: credentials }),
-      }),
-    };
+    const social = Record.getSomes({
+      github: yield* socialCredentials("GITHUB"),
+      google: yield* socialCredentials("GOOGLE"),
+    });
 
     const mailer = yield* Cloudflare.Email.Send(
       yield* Cloudflare.Email.SendEmail("MagicLinkEmail")
