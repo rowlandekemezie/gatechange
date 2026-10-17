@@ -15,6 +15,8 @@ import type { CompanyBoardValue } from "./boards.js";
 import { FeedSpec, feedKey, feedRefOf } from "./feed-spec.js";
 import type { FeedSpecValue } from "./feed-spec.js";
 import { hackerNewsPostings } from "./hacker-news.js";
+import { smartRecruitersPostings } from "./smartrecruiters.js";
+import { workablePostings } from "./workable.js";
 
 export const aggregatorFeeds: readonly FeedSpecValue[] = [
   FeedSpec.RemoteOK({ listing: "all" }),
@@ -40,6 +42,12 @@ export const boardFeed = (board: CompanyBoardValue): FeedSpecValue =>
     Match.when("lever", () =>
       FeedSpec.Lever({ company: board.name, slug: board.slug })
     ),
+    Match.when("smartrecruiters", () =>
+      FeedSpec.SmartRecruiters({ company: board.name, slug: board.slug })
+    ),
+    Match.when("workable", () =>
+      FeedSpec.Workable({ company: board.name, slug: board.slug })
+    ),
     Match.exhaustive
   );
 
@@ -62,6 +70,8 @@ const postingsOf = (spec: FeedSpecValue) => {
     Lever: ({ slug }) => leverPostings(key, slug),
     RemoteOK: () => remoteOkPostings(key),
     Remotive: ({ search }) => remotivePostings(key, search),
+    SmartRecruiters: ({ slug }) => smartRecruitersPostings(key, slug),
+    Workable: ({ slug }) => workablePostings(key, slug),
   });
 };
 

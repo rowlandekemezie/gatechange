@@ -22,6 +22,10 @@ export { hackerNewsPostings, postingOfComment } from "./hacker-news.js";
 
 export { USER_AGENT } from "./http.js";
 
+export { smartRecruitersPostings } from "./smartrecruiters.js";
+
+export { workablePostings } from "./workable.js";
+
 export {
   epochMillisOf,
   salaryRange,

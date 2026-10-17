@@ -128,4 +128,20 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       label: "Remotive",
       paidFeatures: remotiveSignups,
     },
+    SmartRecruiters: {
+      creditUrl: "https://www.smartrecruiters.com",
+      emailAlerts: unstated,
+      jobPostingMarkup: unstated,
+      kind: "CompanyBoard",
+      label: "SmartRecruiters",
+      paidFeatures: unstated,
+    },
+    Workable: {
+      creditUrl: "https://www.workable.com",
+      emailAlerts: unstated,
+      jobPostingMarkup: unstated,
+      kind: "CompanyBoard",
+      label: "Workable",
+      paidFeatures: unstated,
+    },
   };

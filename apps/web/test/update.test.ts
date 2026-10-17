@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { JobValue } from "@rat-stack/core/contracts";
+import type { ListedJobValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe } from "effect";
 import { UrlRequest } from "foldkit/navigation";
 import { fromString } from "foldkit/url";
@@ -58,9 +58,10 @@ const urlChange = (path: string) => Message.ChangedUrl({ url: urlAt(path) });
 
 const directorOnly: FiltersValue = { ...defaultFilters, roles: ["Director"] };
 
-const listed: JobValue = {
+const listed: ListedJobValue = {
   arrangement: "Remote",
   company: "Moniepoint",
+  daysOpen: 0,
   feed: "himalayas:engineering-manager",
   firstSeenAt: 1_760_000_000_000,
   id: "himalayas:https://himalayas.app/companies/moniepoint/jobs/engineering-manager-9245044553",
@@ -69,6 +70,7 @@ const listed: JobValue = {
   postedAt: 1_760_000_000_000,
   region: "RemoteCanada",
   relevance: 12,
+  reposts: 0,
   role: "EngineeringManager",
   salary: null,
   source: "Himalayas",

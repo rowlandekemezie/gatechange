@@ -58,6 +58,16 @@ describe("source terms", () => {
         jobPostingMarkup: "Forbidden",
         paidFeatures: "Forbidden",
       },
+      SmartRecruiters: {
+        emailAlerts: "Unstated",
+        jobPostingMarkup: "Unstated",
+        paidFeatures: "Unstated",
+      },
+      Workable: {
+        emailAlerts: "Unstated",
+        jobPostingMarkup: "Unstated",
+        paidFeatures: "Unstated",
+      },
     });
   });
 

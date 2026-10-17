@@ -3,7 +3,6 @@ export {
   feedFailedStatement,
   feedSucceededStatement,
   findJobStatement,
-  fingerprintOf,
   listJobsStatement,
   pruneJobsStatement,
   removeUnseenStatement,

@@ -39,6 +39,8 @@ export const SourceName = Schema.Literals([
   "Greenhouse",
   "Lever",
   "Ashby",
+  "Workable",
+  "SmartRecruiters",
   "RemoteOK",
   "Remotive",
   "Himalayas",
@@ -98,10 +100,20 @@ export const JobQuery = Schema.Struct({
 
 export type JobQueryValue = typeof JobQuery.Type;
 
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+export const ListedJob = Schema.Struct({
+  ...Job.fields,
+  daysOpen: Count,
+  reposts: Count,
+});
+
+export type ListedJobValue = typeof ListedJob.Type;
+
 export const JobPage = Schema.Struct({
   generatedAt: EpochMillis,
-  jobs: Schema.Array(Job),
-  total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  jobs: Schema.Array(ListedJob),
+  total: Count,
 });
 
 export type JobPageValue = typeof JobPage.Type;
