@@ -2,7 +2,8 @@ import { BoardStats, Job } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
-import { defaultFilters, Filters } from "./filters.js";
+import { Route } from "../route.js";
+import { Filters } from "./filters.js";
 
 export const JobsState = defineTaggedUnion({
   Failed: { message: Schema.String },
@@ -12,6 +13,15 @@ export const JobsState = defineTaggedUnion({
     total: Schema.Finite,
   },
   Loading: {},
+  NotAsked: {},
+});
+
+export const JobState = defineTaggedUnion({
+  Failed: { id: Schema.String, message: Schema.String },
+  Found: { job: Job },
+  Loading: { id: Schema.String },
+  Missing: { id: Schema.String },
+  NotAsked: {},
 });
 
 export const MoreState = defineTaggedUnion({
@@ -42,28 +52,16 @@ export type MarkedJobValue = typeof MarkedJob.Type;
 
 export const Shortlist = Schema.Array(MarkedJob);
 
-export const View = Schema.Literals(["Board", "Shortlist"]);
-
 export const Model = Schema.Struct({
   draftSearch: Schema.String,
   filters: Filters,
   generation: Schema.Finite,
+  job: JobState,
   jobs: JobsState,
   marks: Shortlist,
   more: MoreState,
+  route: Route,
   stats: StatsState,
-  view: View,
 });
 
 export type ModelValue = typeof Model.Type;
-
-export const initialModel: ModelValue = {
-  draftSearch: "",
-  filters: defaultFilters,
-  generation: 0,
-  jobs: JobsState.Loading(),
-  marks: [],
-  more: MoreState.Idle(),
-  stats: StatsState.Unavailable(),
-  view: "Board",
-};

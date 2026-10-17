@@ -1,5 +1,5 @@
 import { Context, Schema } from "effect";
-import type { Effect } from "effect";
+import type { Effect, Option } from "effect";
 
 import type { FeedStateValue } from "./feed.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
@@ -29,6 +29,9 @@ export class JobStore extends Context.Service<
       readonly FeedStateValue[],
       JobStoreUnavailable
     >;
+    readonly find: (
+      id: string
+    ) => Effect.Effect<Option.Option<JobValue>, JobStoreUnavailable>;
     readonly list: (
       query: JobQueryValue,
       now: number

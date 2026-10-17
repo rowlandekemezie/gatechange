@@ -1,6 +1,7 @@
 import { JobQuery } from "@rat-stack/core/contracts";
 import { Effect, Option, pipe, Predicate, Schema } from "effect";
 import { Command } from "foldkit";
+import { load, pushUrl } from "foldkit/navigation";
 
 import { Message } from "./message.js";
 import { Shortlist } from "./model.js";
@@ -27,6 +28,33 @@ export const FetchJobs = Command.define("FetchJobs", {
       })
     ),
   messages: [Message.SucceededFetchJobs, Message.FailedFetchJobs],
+});
+
+export const FetchJob = Command.define("FetchJob", {
+  args: { id: Schema.String },
+  execute: ({ id }) =>
+    JobQueries.use((queries) => queries.getJob(id)).pipe(
+      Effect.match({
+        onFailure: (failure) =>
+          Message.FailedFetchJob({ id, message: failureText(failure) }),
+        onSuccess: (job) => Message.SucceededFetchJob({ id, job }),
+      })
+    ),
+  messages: [Message.SucceededFetchJob, Message.FailedFetchJob],
+});
+
+export const PushUrl = Command.define("PushUrl", {
+  args: { url: Schema.String },
+  execute: ({ url }) =>
+    pushUrl(url).pipe(Effect.as(Message.CompletedNavigation())),
+  messages: [Message.CompletedNavigation],
+});
+
+export const LoadUrl = Command.define("LoadUrl", {
+  args: { href: Schema.String },
+  execute: ({ href }) =>
+    load(href).pipe(Effect.as(Message.CompletedNavigation())),
+  messages: [Message.CompletedNavigation],
 });
 
 export const FetchMoreJobs = Command.define("FetchMoreJobs", {

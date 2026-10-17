@@ -269,4 +269,28 @@ describe("D1 job store queries", () => {
         })
       )
   );
+
+  it.effect(
+    "finding a job by id returns it while listed and nothing once its feed drops it",
+    () =>
+      withStore(
+        Effect.gen(function* findJob() {
+          const store = yield* JobStore;
+          const listed = job({ feed: "a", id: "a:1", salary: "$200k" });
+
+          yield* store.replaceFeed("a", [listed], NOW);
+
+          const found = yield* store.find("a:1");
+          const unknown = yield* store.find("a:404");
+
+          yield* store.replaceFeed("a", [], NOW + 10);
+
+          const dropped = yield* store.find("a:1");
+
+          expect(found).toStrictEqual(Option.some(listed));
+          expect(unknown).toStrictEqual(Option.none());
+          expect(dropped).toStrictEqual(Option.none());
+        })
+      )
+  );
 });

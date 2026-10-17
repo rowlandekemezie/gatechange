@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
     "build": "vite build",
     "check": "pnpm run typecheck"
   },
