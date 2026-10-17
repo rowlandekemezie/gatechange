@@ -1,4 +1,35 @@
-export { boardStats, capabilities, getJob, listJobs } from "./capabilities.js";
+export {
+  Account,
+  AccountId,
+  CurrentViewer,
+  currentMember,
+  SignInOptions,
+  SocialProvider,
+  Viewer,
+} from "./account.js";
+
+export { AccountStore } from "./account-store.js";
+
+export { AccountStoreUnavailable } from "./account-store-unavailable.js";
+
+export { Unauthorized } from "./unauthorized.js";
+
+export type {
+  AccountIdValue,
+  AccountValue,
+  SignInOptionsValue,
+  SocialProviderValue,
+  ViewerValue,
+} from "./account.js";
+
+export {
+  account,
+  boardStats,
+  capabilities,
+  getJob,
+  listJobs,
+  signInOptions,
+} from "./capabilities.js";
 
 export {
   backoffMinutes,
@@ -46,6 +77,7 @@ export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
 export {
   Arrangement,
+  accountContract,
   BoardStats,
   boardStatsContract,
   DEFAULT_AGE_DAYS,
@@ -68,6 +100,7 @@ export {
   RoleCount,
   RoleLevel,
   roleLevels,
+  signInOptionsContract,
   SourceName,
 } from "./contracts.js";
 

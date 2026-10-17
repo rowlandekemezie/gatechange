@@ -7,6 +7,7 @@
         "name": "@effect/language-service",
         "allowedUnstableApis": [
           "effect/http/FetchHttpClient",
+          "effect/http/HttpServerRequest",
           "effect/rpc/RpcSerialization",
           "effect/rpc/RpcServer"
         ]
