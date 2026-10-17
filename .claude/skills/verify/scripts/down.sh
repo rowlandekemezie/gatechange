@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 source "$(dirname "$0")/lib.sh"
 
+pids=()
 if pid="$(dev_pid)"; then
-  pids=($(tree_pids "$pid"))
+  pids+=($(tree_pids "$pid"))
+fi
+if [[ -f "$RUN_DIR/procs" ]]; then
+  while read -r p command; do
+    if [[ "$(ps -o command= -p "$p" 2>/dev/null)" == "$command" ]]; then
+      pids+=($(tree_pids "$p"))
+    fi
+  done <"$RUN_DIR/procs"
+fi
+
+if ((${#pids[@]})); then
+  pids=($(printf '%s\n' "${pids[@]}" | awk '!seen[$0]++'))
   commands=()
   for p in "${pids[@]}"; do
     commands+=("$(ps -o command= -p "$p" 2>/dev/null || true)")
@@ -16,7 +28,7 @@ if pid="$(dev_pid)"; then
       if unchanged "$i"; then
         kill "-$1" "${pids[$i]}" 2>/dev/null || true
       elif [[ "$(ps -o stat= -p "${pids[$i]}" 2>/dev/null)" != Z* ]] &&
-        now="$(ps -o command= -p "${pids[$i]}" 2>/dev/null)"; then
+        now="$(ps -o command= -p "${pids[$i]}" 2>/dev/null)" && [[ "$now" != \(*\) ]]; then
         echo "pid ${pids[$i]} now runs '$now', not what it ran when listed; did not send it SIG$1"
       fi
     done
@@ -31,7 +43,7 @@ if pid="$(dev_pid)"; then
     sleep 0.5
   done
   signal KILL
-  echo "stopped alchemy dev for stage $STAGE (pids ${pids[*]})"
+  echo "stopped the alchemy processes of stage $STAGE (pids ${pids[*]})"
 elif [[ -f "$RUN_DIR/pid" ]]; then
   echo "pid $(cat "$RUN_DIR/pid") recorded for stage $STAGE is not its alchemy dev any more; signalled nothing"
 else
@@ -73,5 +85,5 @@ if [[ -f "$RUN_DIR/d1" ]]; then
   echo "removed the stage's local D1 file $(basename "$d1")"
 fi
 
-rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url" "$RUN_DIR/d1" "$RUN_DIR/repo"
+rm -f "$RUN_DIR/pid" "$RUN_DIR/procs" "$RUN_DIR/url" "$RUN_DIR/backend-url" "$RUN_DIR/d1" "$RUN_DIR/repo"
 echo "evidence kept in ${VERIFY_OUT:-$RUN_DIR/shots}"

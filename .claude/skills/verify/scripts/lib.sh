@@ -56,6 +56,16 @@ tree_pids() {
   done
 }
 
+record_tree() {
+  local p command checkout
+  checkout="$(cd "$REPO" && pwd -P)"
+  for p in $(tree_pids "$1"); do
+    command="$(ps -o command= -p "$p" 2>/dev/null)" || continue
+    [[ "$command" == *"$checkout/"* ]] || continue
+    grep -qxF "$p $command" "$RUN_DIR/procs" 2>/dev/null || echo "$p $command" >>"$RUN_DIR/procs"
+  done
+}
+
 answers() {
   [[ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$1")" == "200" ]]
 }

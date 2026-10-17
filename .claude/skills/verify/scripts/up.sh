@@ -22,9 +22,10 @@ fi
 
 rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url"
 echo "$REPO" >"$RUN_DIR/repo"
+mkdir -p "$RUN_DIR/docker-config"
 d1_before="$(d1_files)"
 set -m
-(cd "$REPO" && exec "${PNPM[@]}" alchemy dev --stage "$STAGE" --no-input) >"$RUN_DIR/dev.log" 2>&1 &
+(cd "$REPO" && export DOCKER_CONFIG="$RUN_DIR/docker-config" && exec "${PNPM[@]}" alchemy dev --stage "$STAGE" --no-input) >"$RUN_DIR/dev.log" 2>&1 &
 pid=$!
 set +m
 echo "$pid" >"$RUN_DIR/pid"
@@ -35,6 +36,7 @@ done
 
 deadline=$((SECONDS + ${VERIFY_BOOT_TIMEOUT:-150}))
 until url="$(grep -oE "websiteUrl: 'http://localhost:[0-9]+'" "$RUN_DIR/dev.log" | grep -oE 'http://localhost:[0-9]+')"; do
+  record_tree "$pid"
   if ! dev_pid >/dev/null; then
     echo "alchemy dev exited before the Website was ready. Last log lines:" >&2
     tail -n 20 "$RUN_DIR/dev.log" >&2
@@ -69,6 +71,7 @@ if [[ "$(echo "$d1" | wc -l | tr -d ' ')" != "1" ]]; then
   exit 1
 fi
 
+record_tree "$pid"
 echo "$url" >"$RUN_DIR/url"
 echo "$backend" >"$RUN_DIR/backend-url"
 echo "$d1" >"$RUN_DIR/d1"
