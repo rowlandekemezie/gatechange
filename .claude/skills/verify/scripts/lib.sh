@@ -56,9 +56,7 @@ tree_pids() {
   done
 }
 
-identity() {
-  ps -o lstart=,command= -p "$1" 2>/dev/null
-}
+identity() { TZ=UTC LC_ALL=C ps -o lstart=,command= -p "$1" 2>/dev/null; }
 
 record_tree() {
   local p seen checkout
