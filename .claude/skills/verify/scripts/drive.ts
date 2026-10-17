@@ -429,7 +429,7 @@ const run = async () => {
         throw new Error("no Save button on the first job");
       }
 
-      if (!(await clickButton("nav.tabs button.tab", "Your shortlist"))) {
+      if (!(await clickButton("nav.tabs a.tab", "Your shortlist"))) {
         throw new Error("no shortlist tab");
       }
 
