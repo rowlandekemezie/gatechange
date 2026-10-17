@@ -11,9 +11,13 @@ if pid="$(dev_pid)"; then
     [[ -n "${commands[$1]}" && "$(ps -o command= -p "${pids[$1]}" 2>/dev/null || true)" == "${commands[$1]}" ]]
   }
   signal() {
-    local i
+    local i now
     for i in "${!pids[@]}"; do
-      if unchanged "$i"; then kill "-$1" "${pids[$i]}" 2>/dev/null || true; fi
+      if unchanged "$i"; then
+        kill "-$1" "${pids[$i]}" 2>/dev/null || true
+      elif now="$(ps -o command= -p "${pids[$i]}" 2>/dev/null)"; then
+        echo "pid ${pids[$i]} now runs '$now', not what it ran when listed; did not send it SIG$1"
+      fi
     done
   }
   signal TERM

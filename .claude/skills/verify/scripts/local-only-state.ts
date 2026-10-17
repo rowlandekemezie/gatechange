@@ -3,26 +3,31 @@ import { readFileSync } from "node:fs";
 
 import { Schema } from "effect";
 
-interface StateRowValue {
-  readonly old?: StateRowValue | undefined;
-  readonly providerMode?: string | undefined;
-}
-
-const StateRow: Schema.Codec<StateRowValue> = Schema.Struct({
-  old: Schema.optional(Schema.suspend(() => StateRow)),
+const StateRow = Schema.Struct({
+  old: Schema.optional(Schema.Unknown),
   providerMode: Schema.optional(Schema.String),
+  status: Schema.Literals([
+    "creating",
+    "created",
+    "updating",
+    "updated",
+    "deleting",
+    "replacing",
+    "replaced",
+  ]),
 });
 
-const generations = (row: StateRowValue): readonly StateRowValue[] =>
-  row.old === undefined ? [row] : [row, ...generations(row.old)];
+const decodeRow = Schema.decodeUnknownSync(StateRow);
 
-const row = Schema.decodeUnknownSync(StateRow)(
-  JSON.parse(readFileSync(0, "utf-8"))
-);
+const generationModes = (row: typeof StateRow.Type): readonly string[] => {
+  const mode = row.providerMode ?? "unstamped";
 
-const modes = generations(row).map(
-  (generation) => generation.providerMode ?? "unstamped"
-);
+  return row.status === "replacing" || row.status === "replaced"
+    ? [mode, ...generationModes(decodeRow(row.old))]
+    : [mode];
+};
+
+const modes = generationModes(decodeRow(JSON.parse(readFileSync(0, "utf-8"))));
 
 if (modes.some((mode) => mode !== "local")) {
   process.stderr.write(
