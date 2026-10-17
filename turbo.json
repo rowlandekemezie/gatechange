@@ -18,6 +18,7 @@
       "outputs": []
     },
     "//#typecheck-scripts": {
+      "dependsOn": ["@rat-stack/job-sources#build"],
       "outputs": []
     },
     "//#lockfile:check": {
