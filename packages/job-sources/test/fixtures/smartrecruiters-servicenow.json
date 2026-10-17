@@ -1,0 +1,235 @@
+{
+  "offset": 0,
+  "limit": 100,
+  "totalFound": 3,
+  "content": [
+    {
+      "id": "744000156092859",
+      "name": "Sr Software Engineering Manager - Veza",
+      "uuid": "034c4a49-8107-4cc5-9a03-319f0839450d",
+      "jobAdId": "9fe8a23f-65ef-46ac-9285-d685de91775b",
+      "defaultJobAd": true,
+      "refNumber": "JB0076205",
+      "company": {
+        "identifier": "ServiceNow",
+        "name": "ServiceNow"
+      },
+      "releasedDate": "2026-10-16T23:13:22.307Z",
+      "location": {
+        "city": "Santa Clara",
+        "region": "CALIFORNIA",
+        "country": "us",
+        "address": "Building A,B,C 2225 Lawson Lane",
+        "postalCode": "95054",
+        "remote": false,
+        "hybrid": false,
+        "fullLocation": "Santa Clara, CALIFORNIA, United States"
+      },
+      "industry": {
+        "id": "it_and_services",
+        "label": "Information Technology And Services"
+      },
+      "department": {
+        "id": "2294038",
+        "label": "Engineering, Infrastructure and Operations"
+      },
+      "function": {
+        "id": "engineering",
+        "label": "Engineering"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "not_applicable",
+        "label": "Not Applicable"
+      },
+      "customField": [
+        {
+          "fieldId": "60345fa28b4ba8595bef1863",
+          "fieldLabel": "Recruiting Team",
+          "valueId": "professional",
+          "valueLabel": "Professional"
+        },
+        {
+          "fieldId": "60345d5c5165a31b17288279",
+          "fieldLabel": "Region",
+          "valueId": "722a833b93e4437798309f43c0d25990",
+          "valueLabel": "AMS - North America and Canada"
+        },
+        {
+          "fieldId": "6034601b43915a29a4b3389b",
+          "fieldLabel": "Job Location",
+          "valueId": "L_SJC005",
+          "valueLabel": "2225 Lawson Lane, Santa Clara, California, 95054, United States of America(L_SJC005)"
+        },
+        {
+          "fieldId": "60345e1a0b24a127cbdfa148",
+          "fieldLabel": "Employee Type",
+          "valueId": "0082f6cbe6154da19322cbab1f6aa5af",
+          "valueLabel": "Regular"
+        },
+        {
+          "fieldId": "5f63a78f1dae5c5c4e54ba2b",
+          "fieldLabel": "Department",
+          "valueId": "2294038",
+          "valueLabel": "Engineering, Infrastructure and Operations"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "us",
+          "valueLabel": "United States"
+        },
+        {
+          "fieldId": "5f63a78f1dae5c5c4e54ba2a",
+          "fieldLabel": "Brands",
+          "valueId": "default",
+          "valueLabel": "ServiceNow"
+        },
+        {
+          "fieldId": "603462175165a31b1728827d",
+          "fieldLabel": "Cost Center",
+          "valueId": "CC6019",
+          "valueLabel": "6019 Veza Engineering"
+        },
+        {
+          "fieldId": "618ed92b8f5e5f110e5bfb95",
+          "fieldLabel": "Work Persona",
+          "valueId": "bf7551c6-9b06-4e7c-8217-3baf43edd060",
+          "valueLabel": "Flexible"
+        },
+        {
+          "fieldId": "690cc0e8c682c3dbadaa7d73",
+          "fieldLabel": "Job Posting Type",
+          "valueId": "professional",
+          "valueLabel": "Professional"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/ServiceNow/postings/744000156092859",
+      "language": {
+        "code": "en",
+        "label": "English",
+        "labelNative": "English (US)"
+      }
+    },
+    {
+      "id": "744000156092899",
+      "name": "Sr Software Engineer - Veza",
+      "uuid": "f3e6cb0a-af66-4008-95d0-272bf34581c0",
+      "jobAdId": "76988de4-cd36-4246-a113-fad5956ebf76",
+      "defaultJobAd": true,
+      "refNumber": "JB0075316",
+      "company": {
+        "identifier": "ServiceNow",
+        "name": "ServiceNow"
+      },
+      "releasedDate": "2026-10-16T23:14:22.975Z",
+      "location": {
+        "city": "Radomlje",
+        "region": "SLOVENIA",
+        "country": "si",
+        "address": "Staretova ulica 7",
+        "postalCode": "1234",
+        "remote": true,
+        "hybrid": false,
+        "fullLocation": "Radomlje, SLOVENIA, Slovenia"
+      },
+      "industry": {
+        "id": "it_and_services",
+        "label": "Information Technology And Services"
+      },
+      "department": {
+        "id": "2294038",
+        "label": "Engineering, Infrastructure and Operations"
+      },
+      "function": {
+        "id": "engineering",
+        "label": "Engineering"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "not_applicable",
+        "label": "Not Applicable"
+      },
+      "customField": [
+        {
+          "fieldId": "60345fa28b4ba8595bef1863",
+          "fieldLabel": "Recruiting Team",
+          "valueId": "professional",
+          "valueLabel": "Professional"
+        },
+        {
+          "fieldId": "60345d5c5165a31b17288279",
+          "fieldLabel": "Region",
+          "valueId": "395ee3093de740ba9cb8b3d35cb67e2d",
+          "valueLabel": "EMEA - Europe, Middle East and Africa"
+        },
+        {
+          "fieldId": "6034601b43915a29a4b3389b",
+          "fieldLabel": "Job Location",
+          "valueId": "L_RT_SVN",
+          "valueLabel": "Remote, Slovenia(L_RT_SVN)"
+        },
+        {
+          "fieldId": "60345e1a0b24a127cbdfa148",
+          "fieldLabel": "Employee Type",
+          "valueId": "0082f6cbe6154da19322cbab1f6aa5af",
+          "valueLabel": "Regular"
+        },
+        {
+          "fieldId": "5f63a78f1dae5c5c4e54ba2b",
+          "fieldLabel": "Department",
+          "valueId": "2294038",
+          "valueLabel": "Engineering, Infrastructure and Operations"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "si",
+          "valueLabel": "Slovenia"
+        },
+        {
+          "fieldId": "5f63a78f1dae5c5c4e54ba2a",
+          "fieldLabel": "Brands",
+          "valueId": "default",
+          "valueLabel": "ServiceNow"
+        },
+        {
+          "fieldId": "603462175165a31b1728827d",
+          "fieldLabel": "Cost Center",
+          "valueId": "CC6019",
+          "valueLabel": "6019 Veza Engineering"
+        },
+        {
+          "fieldId": "618ed92b8f5e5f110e5bfb95",
+          "fieldLabel": "Work Persona",
+          "valueId": "5530c877-6b63-4bf5-bde8-215ef35bf172",
+          "valueLabel": "Flexible or Remote"
+        },
+        {
+          "fieldId": "690cc0e8c682c3dbadaa7d73",
+          "fieldLabel": "Job Posting Type",
+          "valueId": "professional",
+          "valueLabel": "Professional"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/ServiceNow/postings/744000156092899",
+      "language": {
+        "code": "en",
+        "label": "English",
+        "labelNative": "English (US)"
+      }
+    },
+    {
+      "id": "744000000000000",
+      "name": "Director of Engineering, missing its company"
+    }
+  ]
+}
