@@ -1,4 +1,5 @@
 import JobsBackend from "@rat-stack/api/worker";
+import { workerFirstPaths } from "@rat-stack/web/edge-routes";
 import * as Cloudflare from "alchemy/Cloudflare";
 
 export const SITE_HOSTNAME = "jobs.rowlandekemezie.com";
@@ -8,7 +9,7 @@ export const SITE_ZONE = "rowlandekemezie.com";
 export class Website extends Cloudflare.Website.Foldkit<Website>()("Website", {
   assets: {
     notFoundHandling: "single-page-application",
-    runWorkerFirst: ["/rpc", "/rpc/*", "/api/auth/*"],
+    runWorkerFirst: workerFirstPaths,
   },
   domain: { name: SITE_HOSTNAME, zoneName: SITE_ZONE },
   env: { BACKEND: JobsBackend },

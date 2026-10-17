@@ -32,7 +32,7 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `@rat-stack/job-store` | `packages/job-store` | `JobStore` adapter over a `SqlExecutor` port; `@rat-stack/job-store/d1` binds it to Cloudflare D1 and declares the `JobsDatabase` resource with `migrations/` |
 | `@rat-stack/accounts` | `packages/accounts` | better-auth options (magic link, GitHub, Google), the `AccountStore` adapter that turns a session cookie into a `Viewer`, and the magic link email. Auth tables live in `packages/job-store/migrations/0004_accounts.sql` |
 | `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc` and runs `runIngest` on a 20 minute cron |
-| `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` to `JobsBackend` and serves assets |
+| `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` and `/api/auth/*` to `JobsBackend` and serves assets |
 | `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com` |
 
 ## Commands
@@ -131,6 +131,7 @@ browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats / get
 - Relevance is `role weight + region weight + salary and remote bonuses - 2.5 per day of age`.
 - The shortlist (Saved, Applied) lives in the viewer's `localStorage` only.
 - `JobsBackend` serves better-auth under `/api/auth/*` and resolves each `/rpc` request's session into a `CurrentViewer` (`Anonymous` or `Member`) before the RPC server is built. A request with no session cookie skips the lookup. Member-only capabilities fail with `Unauthorized`.
+- The edge Worker classifies every path with `edgeRouteOf` before anything else runs. `backend` paths go to `JobsBackend`. `private` paths (`/account/*`) get the static shell and are never server-rendered. Only `public` paths may be rendered or cached. Any `private` response, and any response that sets a cookie, leaves with `cache-control: private, no-store`. `apps/web/test/edge-routing.test.ts` fails if a merge drops one of these rules.
 
 ## Web feature blueprint
 
