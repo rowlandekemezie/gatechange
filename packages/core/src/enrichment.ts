@@ -146,32 +146,32 @@ const salaryBandOf = (
   );
 };
 
+const decodeReportsTo = Schema.decodeUnknownOption(
+  ListingDetails.fields.reportsTo
+);
+
+const decodeTeamSize = Schema.decodeUnknownOption(
+  ListingDetails.fields.teamSize
+);
+
 export const detailsOfAnswer = (
   answer: ModelAnswerValue,
   text: string
-): ListingDetailsValue => {
-  const decoded = Schema.decodeUnknownOption(ListingDetails.fields.reportsTo);
-
-  const decodedTeam = Schema.decodeUnknownOption(
-    ListingDetails.fields.teamSize
-  );
-
-  return {
-    remotePolicy: answer.remotePolicy,
-    reportsTo: pipe(
-      decoded(answer.reportsTo?.replaceAll(/\s+/gu, " ").trim() ?? ""),
-      Option.getOrNull
+): ListingDetailsValue => ({
+  remotePolicy: answer.remotePolicy,
+  reportsTo: pipe(
+    decodeReportsTo(answer.reportsTo?.replaceAll(/\s+/gu, " ").trim() ?? ""),
+    Option.getOrNull
+  ),
+  salary: salaryBandOf(answer, text),
+  seniority: answer.seniority,
+  teamSize: pipe(
+    decodeTeamSize(
+      answer.teamSize === null ? null : Math.round(answer.teamSize)
     ),
-    salary: salaryBandOf(answer, text),
-    seniority: answer.seniority,
-    teamSize: pipe(
-      decodedTeam(
-        answer.teamSize === null ? null : Math.round(answer.teamSize)
-      ),
-      Option.getOrNull
-    ),
-  };
-};
+    Option.getOrNull
+  ),
+});
 
 export const enqueueNewListings = Effect.fn("enqueueNewListings")(
   function* enqueueNewListings(seenAt: number) {
