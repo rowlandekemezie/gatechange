@@ -3,6 +3,7 @@ import type {
   JobPageValue,
   JobQueryValue,
   JobValue,
+  ListedJobValue,
   SourceNameValue,
 } from "@rat-stack/core/contracts";
 import { Effect, Option, Schema } from "effect";
@@ -26,10 +27,11 @@ const routeAt = (path: string) =>
 const jobFrom = (
   source: SourceNameValue,
   id: string,
-  overrides: Partial<JobValue> = {}
-): JobValue => ({
+  overrides: Partial<ListedJobValue> = {}
+): ListedJobValue => ({
   arrangement: "Remote",
   company: "Acme <Robotics>",
+  daysOpen: 0,
   feed: `${source}:acme`,
   firstSeenAt: 1_760_000_000_000,
   id,
@@ -38,6 +40,7 @@ const jobFrom = (
   postedAt: 1_760_000_000_000,
   region: "RemoteCanada",
   relevance: 10,
+  reposts: 0,
   role: "Director",
   salary: "$200k",
   source,
@@ -277,7 +280,7 @@ describe("listing page render", () => {
 });
 
 const pageOf = (
-  jobs: readonly JobValue[],
+  jobs: readonly ListedJobValue[],
   query: JobQueryValue
 ): JobPageValue => ({
   generatedAt: 1_760_500_000_000,

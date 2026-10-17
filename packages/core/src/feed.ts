@@ -30,6 +30,10 @@ export const FeedOutcome = Schema.Struct({
 
 export type FeedOutcomeValue = typeof FeedOutcome.Type;
 
+export const INGEST_INTERVAL_MINUTES = 20;
+
+export const DEFAULT_FEEDS_PER_RUN = 20;
+
 export const MAX_BACKOFF_DOUBLINGS = 4;
 
 const MINUTE_MILLIS = 60_000;

@@ -60,7 +60,7 @@ Run `pnpm fix` only when you intend to rewrite files. Finish with `pnpm turbo ru
 - CI authenticates with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `apps/infra/stacks/github.ts` mints that scoped token and writes both secrets; run it with `pnpm infra:ci-credentials --profile admin` to create or rotate them.
 - Local deploys use an Alchemy profile: `pnpm alchemy profile edit --add Cloudflare`, then `ALCHEMY_PROFILE=<name> pnpm infra:plan --stage prod` and `pnpm infra:deploy --stage prod`.
 - The zone `rowlandekemezie.com` must already be on the Cloudflare account. Alchemy attaches `jobs.rowlandekemezie.com` as a Worker custom domain.
-- `INGEST_FEEDS_PER_RUN` and `INGEST_FEED_CONCURRENCY` (apps/api/.env.schema) tune the cron. Workers Free allows 50 subrequests and 10 ms CPU per invocation; keep feeds per run near 8 there.
+- `INGEST_FEEDS_PER_RUN` and `INGEST_FEED_CONCURRENCY` (apps/api/.env.schema) tune the cron. Workers Free allows 50 external subrequests (`fetch`, retries included) and 1,000 to Cloudflare services such as D1 per invocation, and 10 ms CPU; waiting on I/O is not CPU. A board feed costs one fetch, a SmartRecruiters board up to five pages. Each fetch can retry twice on a transient error, and every redirect hop counts as a subrequest. A SmartRecruiters board listing more than `SMARTRECRUITERS_MAX_POSTINGS` (500) postings fails closed: the cap check runs on the first page, before any further page is requested or retried, so an over-cap board costs one fetch plus its own transient retries and never replaces its feed with a partial list.
 
 ## Fence (cheating is uncomfortable)
 
@@ -107,6 +107,8 @@ Preserve existing work. Inspect status before editing, stage only files changed 
 - Core owns ports and domain rules. HTTP lives in `packages/job-sources`, SQL in `packages/job-store`.
 - The store is the system of record for listings. Each feed owns its rows: a successful fetch upserts what it listed and deletes that feed's rows it did not list. A failed fetch changes nothing and backs the feed off.
 - Rows older than 30 days are pruned on every run. Every run writes a receipt to `ingest_runs`.
+- Ingest runs never overlap. A run first claims the one-row `ingest_lease` for 15 minutes, the Cron Trigger wall-time limit, and releases it when done; a run that finds it held fails with `IngestInProgress` and writes nothing. `job_history.sightings` counts runs in start order, so it is only correct under this lease.
+- `job_history` keeps one row per role fingerprint and survives the 30-day prune, so days open and repost counts outlive the `jobs` row.
 - Parse every external payload with Effect Schema at the boundary. One malformed listing is skipped, never the whole feed.
 - Respect sources: identify the crawler with `USER_AGENT`, keep the per-source minimum intervals in `feed-spec.ts`, link every listing to its original posting, and credit aggregators in the footer.
 - No comments in code (`no-comments/no-comments`). Directives with a reason and `SAFETY:` lines survive.
@@ -118,7 +120,7 @@ Preserve existing work. Inspect status before editing, stage only files changed 
 cron (20 min) ─▶ JobsBackend.runIngest ─▶ PostingFeeds ─▶ public job APIs
                          │
                          ▼
-                      JobStore ─▶ D1 (jobs, feeds, ingest_runs)
+                      JobStore ─▶ D1 (jobs, feeds, ingest_runs, job_history)
                          ▲
 browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats / getJob
 ```

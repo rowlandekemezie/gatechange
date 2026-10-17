@@ -1,7 +1,9 @@
 import {
   DAY_MILLIS,
+  fingerprintOf,
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
+  REPOST_GAP,
 } from "@rat-stack/core";
 import type {
   IngestReceiptValue,
@@ -16,9 +18,6 @@ export const UPSERT_CHUNK = 40;
 
 export const FEED_STATE_LIMIT = 5000;
 
-export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
-  `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
-
 const placeholders = (count: number) =>
   Array.from({ length: count }, () => "?").join(", ");
 
@@ -27,10 +26,32 @@ const likePattern = (search: string) =>
 
 const sourcePriority = `CASE source
   WHEN 'Greenhouse' THEN 0 WHEN 'Lever' THEN 0 WHEN 'Ashby' THEN 0
+  WHEN 'Workable' THEN 0 WHEN 'SmartRecruiters' THEN 0
   WHEN 'HackerNews' THEN 1 ELSE 2 END`;
 
-const jobColumns =
-  "id, feed, source, title, company, location, region, arrangement, role, url, salary, relevance, posted_at, first_seen_at, last_seen_at";
+const jobColumnNames = [
+  "id",
+  "feed",
+  "source",
+  "title",
+  "company",
+  "location",
+  "region",
+  "arrangement",
+  "role",
+  "url",
+  "salary",
+  "relevance",
+  "posted_at",
+  "first_seen_at",
+  "last_seen_at",
+] as const;
+
+const jobColumns = jobColumnNames.join(", ");
+
+const rankedColumns = jobColumnNames
+  .map((column) => `ranked.${column}`)
+  .join(", ");
 
 const filteredJobs = (query: JobQueryValue, now: number) => {
   const conditions = ["posted_at >= ?"];
@@ -60,7 +81,7 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
   return {
     params,
     sql: `WITH ranked AS (
-  SELECT ${jobColumns},
+  SELECT ${jobColumns}, fingerprint,
     ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM jobs
   WHERE ${conditions.join(" AND ")}
@@ -81,7 +102,11 @@ export const listJobsStatement = (
 
   return statement(
     `${filtered.sql}
-SELECT ${jobColumns} FROM ranked WHERE duplicate_rank = 1
+SELECT ${rankedColumns},
+  COALESCE(history.first_seen_at, ranked.first_seen_at) AS opened_at,
+  COALESCE(history.reposts, 0) AS reposts
+FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
+WHERE duplicate_rank = 1
 ORDER BY ${order}
 LIMIT ? OFFSET ?`,
     [
@@ -124,7 +149,7 @@ ON CONFLICT (id) DO UPDATE SET
   salary = excluded.salary,
   relevance = excluded.relevance,
   posted_at = MIN(jobs.posted_at, excluded.posted_at),
-  last_seen_at = excluded.last_seen_at,
+  last_seen_at = MAX(jobs.last_seen_at, excluded.last_seen_at),
   fingerprint = excluded.fingerprint`,
     [
       job.id,
@@ -146,6 +171,51 @@ ON CONFLICT (id) DO UPDATE SET
     ]
   );
 
+export const sightingStatement = (
+  job: JobValue,
+  seenAt: number
+): SqlStatement =>
+  statement(
+    `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, last_seen_feed, sightings, reposts)
+VALUES (?, MIN(COALESCE((SELECT MIN(first_seen_at) FROM jobs WHERE fingerprint = ?), ?), ?), ?, ?, 1, 0)
+ON CONFLICT (fingerprint) DO UPDATE SET
+  first_seen_at = MIN(job_history.first_seen_at, excluded.first_seen_at),
+  last_seen_at = MAX(job_history.last_seen_at, excluded.last_seen_at),
+  last_seen_feed = CASE
+    WHEN job_history.last_seen_at < excluded.last_seen_at THEN excluded.last_seen_feed
+    WHEN job_history.last_seen_at = excluded.last_seen_at THEN MIN(job_history.last_seen_feed, excluded.last_seen_feed)
+    ELSE job_history.last_seen_feed
+  END,
+  sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
+  reposts = job_history.reposts + (
+    job_history.last_seen_at < excluded.last_seen_at - ?
+    AND job_history.last_seen_at < COALESCE((
+      SELECT CASE
+        WHEN last_success_at < ? THEN last_success_at
+        WHEN previous_success_at < ? THEN previous_success_at
+      END
+      FROM feeds WHERE key = job_history.last_seen_feed
+    ), 0)
+  )`,
+    [
+      fingerprintOf(job),
+      fingerprintOf(job),
+      seenAt,
+      seenAt,
+      seenAt,
+      job.feed,
+      REPOST_GAP,
+      seenAt,
+      seenAt,
+    ]
+  );
+
+export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
+  statement(
+    "SELECT first_seen_at, last_seen_at, sightings, reposts FROM job_history WHERE fingerprint = ?",
+    [fingerprintOf(job)]
+  );
+
 export const removeUnseenStatement = (
   feedKey: string,
   seenAt: number
@@ -163,8 +233,13 @@ export const feedSucceededStatement = (
     `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
 VALUES (?, ?, ?, NULL, 0)
 ON CONFLICT (key) DO UPDATE SET
-  last_attempt_at = excluded.last_attempt_at,
-  last_success_at = excluded.last_success_at,
+  last_attempt_at = MAX(COALESCE(feeds.last_attempt_at, 0), excluded.last_attempt_at),
+  last_success_at = MAX(COALESCE(feeds.last_success_at, 0), excluded.last_success_at),
+  previous_success_at = CASE
+    WHEN excluded.last_success_at > feeds.last_success_at THEN MAX(COALESCE(feeds.previous_success_at, 0), feeds.last_success_at)
+    WHEN excluded.last_success_at < feeds.last_success_at THEN MAX(COALESCE(feeds.previous_success_at, 0), excluded.last_success_at)
+    ELSE feeds.previous_success_at
+  END,
   last_error = NULL,
   consecutive_failures = 0`,
     [feedKey, seenAt, seenAt]
@@ -179,7 +254,7 @@ export const feedFailedStatement = (
     `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
 VALUES (?, ?, NULL, ?, 1)
 ON CONFLICT (key) DO UPDATE SET
-  last_attempt_at = excluded.last_attempt_at,
+  last_attempt_at = MAX(COALESCE(feeds.last_attempt_at, 0), excluded.last_attempt_at),
   last_error = excluded.last_error,
   consecutive_failures = feeds.consecutive_failures + 1`,
     [feedKey, attemptedAt, message]
@@ -189,6 +264,18 @@ export const feedStatesStatement = statement(
   `SELECT key, last_attempt_at, last_success_at, last_error, consecutive_failures
 FROM feeds ORDER BY key LIMIT ${FEED_STATE_LIMIT}`
 );
+
+export const claimIngestStatement = (startedAt: number, heldUntil: number) =>
+  statement(
+    "UPDATE ingest_lease SET started_at = ?, held_until = ? WHERE id = 1 AND held_until <= ?",
+    [startedAt, heldUntil, startedAt]
+  );
+
+export const releaseIngestStatement = (startedAt: number) =>
+  statement(
+    "UPDATE ingest_lease SET held_until = started_at WHERE id = 1 AND started_at = ?",
+    [startedAt]
+  );
 
 export const pruneJobsStatement = (cutoff: number) =>
   statement("DELETE FROM jobs WHERE posted_at < ?", [cutoff]);

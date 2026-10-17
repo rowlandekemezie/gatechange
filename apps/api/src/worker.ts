@@ -1,5 +1,10 @@
 import { toRpc } from "@rat-stack/capability/rpc";
-import { capabilities, runIngest } from "@rat-stack/core";
+import {
+  capabilities,
+  DEFAULT_FEEDS_PER_RUN,
+  INGEST_INTERVAL_MINUTES,
+  runIngest,
+} from "@rat-stack/core";
 import { postingFeedsLayer } from "@rat-stack/job-sources";
 import { d1JobStoreLayer, JobsDatabase } from "@rat-stack/job-store/d1";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -9,9 +14,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 export const rpcProjection = toRpc(capabilities);
 
-export const INGEST_SCHEDULE = "*/20 * * * *";
-
-export const DEFAULT_FEEDS_PER_RUN = 20;
+export const INGEST_SCHEDULE = `*/${INGEST_INTERVAL_MINUTES} * * * *`;
 
 export const DEFAULT_FEED_CONCURRENCY = 6;
 
@@ -48,6 +51,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
             failures: outcomes.filter((outcome) => outcome.error !== null),
             receipt,
           })
+        ),
+        Effect.catchTag("IngestInProgress", (busy) =>
+          Effect.logInfo("ingest skipped: another run holds the lease", busy)
         ),
         Effect.tapError((error) => Effect.logError("ingest failed", error)),
         Effect.annotateLogs({
