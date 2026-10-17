@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { FeedUnavailable } from "@rat-stack/core";
 import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -10,7 +11,7 @@ type RecordedBoard =
   | typeof smartRecruitersServiceNow
   | typeof workableHuggingface;
 
-const replay = (recorded: RecordedBoard) => {
+const serve = (respond: (url: URL) => object) => {
   const requested: string[] = [];
 
   const layer = Layer.succeed(
@@ -19,13 +20,35 @@ const replay = (recorded: RecordedBoard) => {
       requested.push(request.url);
 
       return Effect.succeed(
-        HttpClientResponse.fromWeb(request, Response.json(recorded))
+        HttpClientResponse.fromWeb(
+          request,
+          Response.json(respond(new URL(request.url)))
+        )
       );
     })
   );
 
   return { layer, requested };
 };
+
+const replay = (recorded: RecordedBoard) => serve(() => recorded);
+
+const listedBoard = (totalFound: number, listed: number) =>
+  serve((url) => {
+    const offset = Number(url.searchParams.get("offset"));
+
+    return {
+      content: Array.from(
+        { length: Math.max(0, Math.min(100, listed - offset)) },
+        (_, index) => ({
+          company: { identifier: "Acme" },
+          id: `${offset + index}`,
+          name: `Engineering Manager ${offset + index}`,
+        })
+      ),
+      totalFound,
+    };
+  });
 
 describe("recorded company boards", () => {
   it.effect(
@@ -80,7 +103,7 @@ describe("recorded company boards", () => {
         );
 
         expect(requested).toStrictEqual([
-          "https://api.smartrecruiters.com/v1/companies/ServiceNow/postings?limit=100",
+          "https://api.smartrecruiters.com/v1/companies/ServiceNow/postings?offset=0&limit=100",
         ]);
         expect(postings).toStrictEqual([
           {
@@ -104,6 +127,78 @@ describe("recorded company boards", () => {
             workplace: "Remote",
           },
         ]);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
+    "a SmartRecruiters board over one page is read in full, page by page",
+    () => {
+      const { layer, requested } = listedBoard(250, 250);
+
+      return Effect.gen(function* readEveryPage() {
+        const postings = yield* smartRecruitersPostings(
+          "smartrecruiters:Acme",
+          "Acme"
+        );
+
+        expect(requested).toStrictEqual(
+          [0, 100, 200].map(
+            (offset) =>
+              `https://api.smartrecruiters.com/v1/companies/Acme/postings?offset=${offset}&limit=100`
+          )
+        );
+        expect(postings.map((posting) => posting.externalId)).toStrictEqual(
+          Array.from({ length: 250 }, (_, index) => `${index}`)
+        );
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
+    "a SmartRecruiters board over the posting cap fails instead of replacing the feed with a partial list",
+    () => {
+      const { layer, requested } = listedBoard(941, 941);
+
+      return Effect.gen(function* refuseOverCap() {
+        const failure = yield* Effect.flip(
+          smartRecruitersPostings("smartrecruiters:Acme", "Acme")
+        );
+
+        expect(failure).toBeInstanceOf(FeedUnavailable);
+        expect(requested).toStrictEqual([
+          "https://api.smartrecruiters.com/v1/companies/Acme/postings?offset=0&limit=100",
+        ]);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
+    "a SmartRecruiters board that returns fewer postings than it counts fails",
+    () => {
+      const { layer } = listedBoard(250, 200);
+
+      return Effect.gen(function* refuseShortRead() {
+        const failure = yield* Effect.flip(
+          smartRecruitersPostings("smartrecruiters:Acme", "Acme")
+        );
+
+        expect(failure).toBeInstanceOf(FeedUnavailable);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
+    "an unknown SmartRecruiters company, listed as zero postings, is unavailable",
+    () => {
+      const { layer } = listedBoard(0, 0);
+
+      return Effect.gen(function* refuseEmptyCompany() {
+        const failure = yield* Effect.flip(
+          smartRecruitersPostings("smartrecruiters:Acme", "Acme")
+        );
+
+        expect(failure).toBeInstanceOf(FeedUnavailable);
       }).pipe(Effect.provide(layer));
     }
   );
