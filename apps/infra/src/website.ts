@@ -8,7 +8,13 @@ export const SITE_ZONE = "rowlandekemezie.com";
 export class Website extends Cloudflare.Website.Foldkit<Website>()("Website", {
   assets: {
     notFoundHandling: "single-page-application",
-    runWorkerFirst: ["/rpc", "/rpc/*"],
+    runWorkerFirst: [
+      "/rpc",
+      "/rpc/*",
+      "/jobs/*",
+      "/sitemap.xml",
+      "/robots.txt",
+    ],
   },
   domain: { name: SITE_HOSTNAME, zoneName: SITE_ZONE },
   env: { BACKEND: JobsBackend },
