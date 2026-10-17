@@ -16,7 +16,7 @@ diagram: |-
 
 # Work in rat-stack mode
 
-[AGENTS.md](/AGENTS.md) is law. [VISION.md](/VISION.md) sets the intent, reliability goals, scope, package-removal test, and shrinking debt. Use this skill to choose playbooks under those rules.
+[AGENTS.md](/AGENTS.md) is law. [VISION.md](/VISION.md) sets the product intent: the customer, the free and Pro tiers, the rules about listings and sources, the cartridge test, the rule that debt only shrinks, and what needs the owner's sign-off. Use this skill to choose playbooks under those rules.
 
 A capability is one named action with shared value definitions and a server-side implementation. A cartridge is a package for one job with its implementation and required infrastructure.
 

@@ -2,7 +2,7 @@ import { defineContract } from "@rat-stack/capability/contract";
 import { Schema } from "effect";
 
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
-import { BoardStats, JobPage, JobQuery } from "./job.js";
+import { BoardStats, Job, JobPage, JobQuery } from "./job.js";
 
 export {
   Arrangement,
@@ -65,7 +65,17 @@ export const boardStatsContract = defineContract("boardStats", {
   output: BoardStats,
 });
 
+export const getJobContract = defineContract("getJob", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "Fetch one listed role by its id, or nothing when its source removed it or it aged off the board",
+  failure: JobStoreUnavailable,
+  input: Schema.Struct({ id: Schema.NonEmptyString }),
+  output: Schema.OptionFromNullOr(Job),
+});
+
 export const jobBoardContracts = [
   listJobsContract,
   boardStatsContract,
+  getJobContract,
 ] as const;

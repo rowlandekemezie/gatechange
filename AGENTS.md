@@ -14,7 +14,7 @@ Workspace `package.json` files declare the pinned stack. [README.md](./README.md
 - XState `6.0.0-alpha.65` for finite lifecycles, retries, cancellation, and resumability
 - `@xstate/effect` `0.1.0-alpha.7` bridges the two: machines run as scoped Effects via `createEffectActor`, side effects are declared `fromEffect` actors. This pin was published to npm 2026-10-08; `vendor/README.md` keeps the rules for the next unpublished pin
 - Alchemy `2.0.0-beta.83` (Infrastructure as Effects) for every cloud resource; declared in `apps/infra/alchemy.run.ts`, authenticated through Alchemy profiles, never through env vars in this repo
-- TypeScript `7.0.2` in strict mode, patched by `@effect/tsgo` `0.51.1` in `prepare` so the Effect language service diagnostics in `tsconfig.base.json` fail `tsc`, not just the editor. Escape hatch for a real boundary: `// @effect-diagnostics-next-line <rule>:off` with a reason
+- TypeScript `7.0.2` in strict mode, patched by `@effect/tsgo` `0.51.1` in `prepare` so the Effect language service diagnostics in `tsconfig.base.json` fail `tsc`, not just the editor. Escape hatch for a real boundary: `// @effect-diagnostics-next-line <rule>:off` with a reason. Recorded debt, approved by the operator on 2026-10-16: the five verify scripts `drive.ts`, `local-d1.ts`, `local-only-state.ts`, `record-fixtures.ts` and `seed-local-d1.ts` in `.claude/skills/verify/scripts/` open with a file-level `// @effect-diagnostics <rules>:off -- <reason>`. Retire it by rewriting them as Effect programs; no new file gets a file-level directive
 - `@effect/vitest` `4.0.0` for every Effect test: `it.effect` and `it.layer(layer)`; `Effect.run*` and `ManagedRuntime.make` in test files are a lint error
 - `@oxlint/plugins` `1.88.0` for the two typed lint rules in `scripts/oxlint-plugin-*.ts` and the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) rules in `tools/oxlint/anti-slop/` (all generic rules plus the Effect group, at `error`). The copy is ours; `UPSTREAM.md` there says where it came from and how to take upstream fixes
 - Oxlint `1.88.0` with Ultracite `7.12.0`, Oxfmt `0.68.0`, and Turborepo `2.11.2`
@@ -27,7 +27,7 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | Package | Path | Role |
 | --- | --- | --- |
 | `@rat-stack/capability` | `packages/capability` | `defineContract`, `implement`, and the RPC, HTTP, MCP and CLI projections |
-| `@rat-stack/core` | `packages/core` | Job schemas, the `listJobs` and `boardStats` contracts and capabilities, role and placement classifiers, feed scheduling, the `JobStore` and `PostingFeeds` ports, and `runIngest` |
+| `@rat-stack/core` | `packages/core` | Job schemas, the `listJobs`, `boardStats` and `getJob` contracts and capabilities, role and placement classifiers, feed scheduling, the `JobStore` port (including `find` for one job by id) and the `PostingFeeds` port, and `runIngest` |
 | `@rat-stack/job-sources` | `packages/job-sources` | `PostingFeeds` adapter: Greenhouse, Lever and Ashby company boards, Remote OK, Remotive, Himalayas, Jobicy and the Hacker News hiring thread. `src/boards.ts` is the verified company registry |
 | `@rat-stack/job-store` | `packages/job-store` | `JobStore` adapter over a `SqlExecutor` port; `@rat-stack/job-store/d1` binds it to Cloudflare D1 and declares the `JobsDatabase` resource with `migrations/` |
 | `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc` and runs `runIngest` on a 20 minute cron |
@@ -103,7 +103,7 @@ Preserve existing work. Inspect status before editing, stage only files changed 
 
 ## Project law
 
-- One contract, every surface. `listJobs` and `boardStats` live in `packages/core/src/contracts.ts`; the browser and the Worker share them through `toRpcGroup` and `toRpc`.
+- One contract, every surface. `listJobs`, `boardStats` and `getJob` live in `packages/core/src/contracts.ts`; the browser and the Worker share them through `toRpcGroup` and `toRpc`.
 - Core owns ports and domain rules. HTTP lives in `packages/job-sources`, SQL in `packages/job-store`.
 - The store is the system of record for listings. Each feed owns its rows: a successful fetch upserts what it listed and deletes that feed's rows it did not list. A failed fetch changes nothing and backs the feed off.
 - Rows older than 30 days are pruned on every run. Every run writes a receipt to `ingest_runs`.
@@ -121,7 +121,7 @@ cron (20 min) ─▶ JobsBackend.runIngest ─▶ PostingFeeds ─▶ public job
                          ▼
                       JobStore ─▶ D1 (jobs, feeds, ingest_runs, job_history)
                          ▲
-browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats
+browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats / getJob
 ```
 
 - `selectDueFeeds` picks the feeds that are due, oldest attempt first, with exponential backoff after failures.

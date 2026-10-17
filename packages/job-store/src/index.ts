@@ -2,6 +2,7 @@ export {
   countJobsStatement,
   feedFailedStatement,
   feedSucceededStatement,
+  findJobStatement,
   listJobsStatement,
   pruneJobsStatement,
   removeUnseenStatement,

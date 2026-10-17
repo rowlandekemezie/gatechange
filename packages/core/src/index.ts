@@ -1,4 +1,4 @@
-export { boardStats, capabilities, listJobs } from "./capabilities.js";
+export { boardStats, capabilities, getJob, listJobs } from "./capabilities.js";
 
 export {
   backoffMinutes,
@@ -61,6 +61,7 @@ export {
   boardStatsContract,
   DEFAULT_AGE_DAYS,
   EpochMillis,
+  getJobContract,
   IngestOutcome,
   IngestReceipt,
   Job,

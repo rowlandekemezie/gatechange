@@ -10,6 +10,7 @@ import {
 import type {
   FeedStateValue,
   IngestReceiptValue,
+  JobValue,
   ListedJobValue,
   ListingHistory,
 } from "@rat-stack/core";
@@ -22,6 +23,7 @@ import {
   feedHealthStatement,
   feedStatesStatement,
   feedSucceededStatement,
+  findJobStatement,
   historyStatement,
   lastRunStatement,
   listJobsStatement,
@@ -48,16 +50,20 @@ const JobRow = Schema.Struct({
   id: Schema.String,
   last_seen_at: Count,
   location: Schema.String,
-  opened_at: Count,
   posted_at: Count,
   region: Region,
   relevance: Schema.Finite,
-  reposts: Count,
   role: RoleLevel,
   salary: Schema.NullOr(Schema.String),
   source: SourceName,
   title: Schema.String,
   url: Schema.String,
+});
+
+const ListedJobRow = Schema.Struct({
+  ...JobRow.fields,
+  opened_at: Count,
+  reposts: Count,
 });
 
 const TotalRow = Schema.Struct({ total: Count });
@@ -93,26 +99,30 @@ const RunRow = Schema.Struct({
   started_at: Count,
 });
 
-const jobOfRow =
+const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
+  arrangement: row.arrangement,
+  company: row.company,
+  feed: row.feed,
+  firstSeenAt: row.first_seen_at,
+  id: row.id,
+  lastSeenAt: row.last_seen_at,
+  location: row.location,
+  postedAt: row.posted_at,
+  region: row.region,
+  relevance: row.relevance,
+  role: row.role,
+  salary: row.salary,
+  source: row.source,
+  title: row.title,
+  url: row.url,
+});
+
+const listedJobOfRow =
   (now: number) =>
-  (row: typeof JobRow.Type): ListedJobValue => ({
-    arrangement: row.arrangement,
-    company: row.company,
+  (row: typeof ListedJobRow.Type): ListedJobValue => ({
+    ...jobOfRow(row),
     daysOpen: daysOpen(row.opened_at, now),
-    feed: row.feed,
-    firstSeenAt: row.first_seen_at,
-    id: row.id,
-    lastSeenAt: row.last_seen_at,
-    location: row.location,
-    postedAt: row.posted_at,
-    region: row.region,
-    relevance: row.relevance,
     reposts: row.reposts,
-    role: row.role,
-    salary: row.salary,
-    source: row.source,
-    title: row.title,
-    url: row.url,
   });
 
 const historyOfRow = (row: typeof HistoryRow.Type): ListingHistory => ({
@@ -154,21 +164,31 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
 
+    find: (id) =>
+      sql
+        .all("findJob", findJobStatement(id), JobRow)
+        .pipe(
+          Effect.map((rows) => pipe(Array.head(rows), Option.map(jobOfRow)))
+        ),
+
     historyOf: (job) =>
       sql
         .all("historyOf", historyStatement(job), HistoryRow)
         .pipe(Effect.map((rows) => Option.map(Array.head(rows), historyOfRow))),
-
     list: (query, now) =>
       Effect.all(
         {
-          rows: sql.all("listJobs", listJobsStatement(query, now), JobRow),
+          rows: sql.all(
+            "listJobs",
+            listJobsStatement(query, now),
+            ListedJobRow
+          ),
           total: sql.all("countJobs", countJobsStatement(query, now), TotalRow),
         },
         { concurrency: 2 }
       ).pipe(
         Effect.map(({ rows, total }) => ({
-          jobs: pipe(rows, Array.map(jobOfRow(now))),
+          jobs: pipe(rows, Array.map(listedJobOfRow(now))),
           total: totalOf(total),
         }))
       ),

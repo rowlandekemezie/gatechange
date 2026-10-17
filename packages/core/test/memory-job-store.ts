@@ -91,6 +91,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
   const store = JobStore.of({
     feedStates: Effect.sync(() => [...states.values()]),
+    find: (id) => Effect.sync(() => Option.fromNullishOr(jobs.get(id))),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
     list: (query, now) =>
