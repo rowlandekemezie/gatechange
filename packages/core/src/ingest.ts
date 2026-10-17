@@ -18,7 +18,7 @@ export const INGEST_LEASE_MILLIS = 15 * 60 * 1000;
 
 export class IngestInProgress extends Schema.TaggedError<IngestInProgress>()(
   "IngestInProgress",
-  { startedAt: Schema.Number }
+  { startedAt: Schema.Finite }
 ) {}
 
 export const retentionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
