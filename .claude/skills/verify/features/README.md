@@ -4,7 +4,7 @@ This directory is the maintained source for verifying what a person sees on the 
 
 ## Baseline preconditions
 
-- Boot a stage only this run uses with `scripts/up.sh <stage>` and seed it with `scripts/seed.sh <stage>`, or run both through `scripts/verify.sh`.
+- Boot a `verify-<name>` stage only this run uses with `scripts/up.sh <stage>` and seed it with `scripts/seed.sh <stage>`, or run both through `scripts/verify.sh`.
 - Run `scripts/doctor.sh <stage>` and require four `ok` lines.
 - The board holds the 100 fixture jobs. A stage that also ran live ingest holds more, so assert relative changes, not exact totals.
 - Never drive a stage this run did not start.

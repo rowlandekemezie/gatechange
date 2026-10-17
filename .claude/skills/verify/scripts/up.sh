@@ -6,10 +6,11 @@ if pid="$(dev_pid)" && [[ -f "$RUN_DIR/url" ]] && answers "$(cat "$RUN_DIR/url")
   exit 0
 fi
 
-for other in /tmp/verify-jobs/*/pid; do
-  [[ -f "$other" && "$other" != "$RUN_DIR/pid" ]] || continue
-  if kill -0 "$(cat "$other")" 2>/dev/null && [[ "$(cat "$(dirname "$other")/repo" 2>/dev/null)" == "$REPO" ]]; then
-    echo "stage $(basename "$(dirname "$other")") is already running in this checkout; run down.sh on it first" >&2
+for other in "$RUN_ROOT"/*/; do
+  other="${other%/}"
+  [[ "$other" != "$RUN_DIR" ]] || continue
+  if stage_pid "$other" "$(basename "$other")" >/dev/null && [[ "$(cat "$other/repo" 2>/dev/null)" == "$REPO" ]]; then
+    echo "stage $(basename "$other") is already running in this checkout; run down.sh on it first" >&2
     exit 1
   fi
 done
@@ -23,14 +24,18 @@ rm -f "$RUN_DIR/pid" "$RUN_DIR/url" "$RUN_DIR/backend-url"
 echo "$REPO" >"$RUN_DIR/repo"
 d1_before="$(d1_files)"
 set -m
-(cd "$REPO" && exec "${PNPM[@]}" dev --stage "$STAGE" --no-input) >"$RUN_DIR/dev.log" 2>&1 &
+(cd "$REPO" && exec "${PNPM[@]}" alchemy dev --stage "$STAGE" --no-input) >"$RUN_DIR/dev.log" 2>&1 &
 pid=$!
 set +m
 echo "$pid" >"$RUN_DIR/pid"
+for _ in $(seq 1 50); do
+  dev_pid >/dev/null && break
+  sleep 0.1
+done
 
 deadline=$((SECONDS + ${VERIFY_BOOT_TIMEOUT:-150}))
 until url="$(grep -oE "websiteUrl: 'http://localhost:[0-9]+'" "$RUN_DIR/dev.log" | grep -oE 'http://localhost:[0-9]+')"; do
-  if ! kill -0 "$pid" 2>/dev/null; then
+  if ! dev_pid >/dev/null; then
     echo "alchemy dev exited before the Website was ready. Last log lines:" >&2
     tail -n 20 "$RUN_DIR/dev.log" >&2
     exit 1
@@ -67,5 +72,5 @@ fi
 echo "$url" >"$RUN_DIR/url"
 echo "$backend" >"$RUN_DIR/backend-url"
 echo "$d1" >"$RUN_DIR/d1"
-grep -E 'Port [0-9]+ is in use' "$RUN_DIR/dev.log" | sed -E 's/^.*(Port [0-9]+ is in use[^;]*;[^.]*).*/note: \1/' || true
+sed -nE 's/^.*(Port [0-9]+ is in use[^;]*;[^.]*).*/note: \1/p' "$RUN_DIR/dev.log"
 echo "stage $STAGE ready: Website $url, JobsBackend $backend (pid $pid, log $RUN_DIR/dev.log)"
