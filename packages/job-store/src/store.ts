@@ -1,5 +1,6 @@
 import {
   Arrangement,
+  daysOpen,
   IngestOutcome,
   JobStore,
   Region,
@@ -9,7 +10,8 @@ import {
 import type {
   FeedStateValue,
   IngestReceiptValue,
-  JobValue,
+  ListedJobValue,
+  ListingHistory,
 } from "@rat-stack/core";
 import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
@@ -20,6 +22,7 @@ import {
   feedHealthStatement,
   feedStatesStatement,
   feedSucceededStatement,
+  historyStatement,
   lastRunStatement,
   listJobsStatement,
   newTodayStatement,
@@ -29,6 +32,7 @@ import {
   regionCountsStatement,
   removeUnseenStatement,
   roleCountsStatement,
+  sightingStatement,
   UPSERT_CHUNK,
   upsertJobStatement,
 } from "./queries.js";
@@ -44,9 +48,11 @@ const JobRow = Schema.Struct({
   id: Schema.String,
   last_seen_at: Count,
   location: Schema.String,
+  opened_at: Count,
   posted_at: Count,
   region: Region,
   relevance: Schema.Finite,
+  reposts: Count,
   role: RoleLevel,
   salary: Schema.NullOr(Schema.String),
   source: SourceName,
@@ -55,6 +61,13 @@ const JobRow = Schema.Struct({
 });
 
 const TotalRow = Schema.Struct({ total: Count });
+
+const HistoryRow = Schema.Struct({
+  first_seen_at: Count,
+  last_seen_at: Count,
+  reposts: Count,
+  sightings: Count,
+});
 
 const FeedStateRow = Schema.Struct({
   consecutive_failures: Count,
@@ -80,22 +93,33 @@ const RunRow = Schema.Struct({
   started_at: Count,
 });
 
-const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
-  arrangement: row.arrangement,
-  company: row.company,
-  feed: row.feed,
+const jobOfRow =
+  (now: number) =>
+  (row: typeof JobRow.Type): ListedJobValue => ({
+    arrangement: row.arrangement,
+    company: row.company,
+    daysOpen: daysOpen(row.opened_at, now),
+    feed: row.feed,
+    firstSeenAt: row.first_seen_at,
+    id: row.id,
+    lastSeenAt: row.last_seen_at,
+    location: row.location,
+    postedAt: row.posted_at,
+    region: row.region,
+    relevance: row.relevance,
+    reposts: row.reposts,
+    role: row.role,
+    salary: row.salary,
+    source: row.source,
+    title: row.title,
+    url: row.url,
+  });
+
+const historyOfRow = (row: typeof HistoryRow.Type): ListingHistory => ({
   firstSeenAt: row.first_seen_at,
-  id: row.id,
   lastSeenAt: row.last_seen_at,
-  location: row.location,
-  postedAt: row.posted_at,
-  region: row.region,
-  relevance: row.relevance,
-  role: row.role,
-  salary: row.salary,
-  source: row.source,
-  title: row.title,
-  url: row.url,
+  reposts: row.reposts,
+  sightings: row.sightings,
 });
 
 const feedStateOfRow = (row: typeof FeedStateRow.Type): FeedStateValue => ({
@@ -130,6 +154,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
 
+    historyOf: (job) =>
+      sql
+        .all("historyOf", historyStatement(job), HistoryRow)
+        .pipe(Effect.map((rows) => Option.map(Array.head(rows), historyOfRow))),
+
     list: (query, now) =>
       Effect.all(
         {
@@ -139,7 +168,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         { concurrency: 2 }
       ).pipe(
         Effect.map(({ rows, total }) => ({
-          jobs: pipe(rows, Array.map(jobOfRow)),
+          jobs: pipe(rows, Array.map(jobOfRow(now))),
           total: totalOf(total),
         }))
       ),
@@ -171,9 +200,14 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     replaceFeed: (feedKey, jobs, seenAt) =>
       Effect.gen(function* replaceFeed() {
-        const chunks = Array.chunksOf(
-          pipe(jobs, Array.map(upsertJobStatement)),
-          UPSERT_CHUNK
+        const chunks = pipe(
+          Array.chunksOf(jobs, UPSERT_CHUNK),
+          Array.map(
+            Array.flatMap((job) => [
+              sightingStatement(job, seenAt),
+              upsertJobStatement(job),
+            ])
+          )
         );
 
         yield* Effect.forEach(

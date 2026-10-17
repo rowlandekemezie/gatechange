@@ -1,5 +1,6 @@
 import {
   DAY_MILLIS,
+  fingerprintOf,
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
 } from "@rat-stack/core";
@@ -16,9 +17,6 @@ export const UPSERT_CHUNK = 40;
 
 export const FEED_STATE_LIMIT = 5000;
 
-export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
-  `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
-
 const placeholders = (count: number) =>
   Array.from({ length: count }, () => "?").join(", ");
 
@@ -29,8 +27,29 @@ const sourcePriority = `CASE source
   WHEN 'Greenhouse' THEN 0 WHEN 'Lever' THEN 0 WHEN 'Ashby' THEN 0
   WHEN 'HackerNews' THEN 1 ELSE 2 END`;
 
-const jobColumns =
-  "id, feed, source, title, company, location, region, arrangement, role, url, salary, relevance, posted_at, first_seen_at, last_seen_at";
+const jobColumnNames = [
+  "id",
+  "feed",
+  "source",
+  "title",
+  "company",
+  "location",
+  "region",
+  "arrangement",
+  "role",
+  "url",
+  "salary",
+  "relevance",
+  "posted_at",
+  "first_seen_at",
+  "last_seen_at",
+] as const;
+
+const jobColumns = jobColumnNames.join(", ");
+
+const rankedColumns = jobColumnNames
+  .map((column) => `ranked.${column}`)
+  .join(", ");
 
 const filteredJobs = (query: JobQueryValue, now: number) => {
   const conditions = ["posted_at >= ?"];
@@ -60,7 +79,7 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
   return {
     params,
     sql: `WITH ranked AS (
-  SELECT ${jobColumns},
+  SELECT ${jobColumns}, fingerprint,
     ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM jobs
   WHERE ${conditions.join(" AND ")}
@@ -81,7 +100,11 @@ export const listJobsStatement = (
 
   return statement(
     `${filtered.sql}
-SELECT ${jobColumns} FROM ranked WHERE duplicate_rank = 1
+SELECT ${rankedColumns},
+  COALESCE(history.first_seen_at, ranked.first_seen_at) AS opened_at,
+  COALESCE(history.reposts, 0) AS reposts
+FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
+WHERE duplicate_rank = 1
 ORDER BY ${order}
 LIMIT ? OFFSET ?`,
     [
@@ -141,6 +164,27 @@ ON CONFLICT (id) DO UPDATE SET
       job.lastSeenAt,
       fingerprintOf(job),
     ]
+  );
+
+export const sightingStatement = (
+  job: JobValue,
+  seenAt: number
+): SqlStatement =>
+  statement(
+    `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, sightings, reposts)
+VALUES (?, ?, ?, 1, 0)
+ON CONFLICT (fingerprint) DO UPDATE SET
+  first_seen_at = MIN(job_history.first_seen_at, excluded.first_seen_at),
+  last_seen_at = MAX(job_history.last_seen_at, excluded.last_seen_at),
+  sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
+  reposts = job_history.reposts + NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.fingerprint = excluded.fingerprint)`,
+    [fingerprintOf(job), seenAt, seenAt]
+  );
+
+export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
+  statement(
+    "SELECT first_seen_at, last_seen_at, sightings, reposts FROM job_history WHERE fingerprint = ?",
+    [fingerprintOf(job)]
   );
 
 export const removeUnseenStatement = (

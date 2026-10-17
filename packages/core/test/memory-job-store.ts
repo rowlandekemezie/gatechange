@@ -1,14 +1,16 @@
 import { Array, Effect, Layer, Option, pipe } from "effect";
 
-import { JobStore } from "../src/index.js";
+import { daysOpen, fingerprintOf, JobStore } from "../src/index.js";
 import type {
   FeedStateValue,
   IngestReceiptValue,
   JobValue,
+  ListingHistory,
 } from "../src/index.js";
 
 export interface MemoryJobStore {
   readonly feedStates: () => readonly FeedStateValue[];
+  readonly history: () => ReadonlyMap<string, ListingHistory>;
   readonly jobs: () => readonly JobValue[];
   readonly layer: Layer.Layer<JobStore>;
   readonly runs: () => readonly IngestReceiptValue[];
@@ -18,6 +20,35 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const jobs = new Map<string, JobValue>();
   const states = new Map<string, FeedStateValue>();
   const runs: IngestReceiptValue[] = [];
+  const history = new Map<string, ListingHistory>();
+
+  const sight = (job: JobValue, seenAt: number) => {
+    const fingerprint = fingerprintOf(job);
+    const previous = Option.fromNullishOr(history.get(fingerprint));
+
+    const listed = pipe(
+      [...jobs.values()],
+      Array.some((found) => fingerprintOf(found) === fingerprint)
+    );
+
+    history.set(
+      fingerprint,
+      Option.match(previous, {
+        onNone: () => ({
+          firstSeenAt: seenAt,
+          lastSeenAt: seenAt,
+          reposts: 0,
+          sightings: 1,
+        }),
+        onSome: (found) => ({
+          firstSeenAt: Math.min(found.firstSeenAt, seenAt),
+          lastSeenAt: Math.max(found.lastSeenAt, seenAt),
+          reposts: found.reposts + (listed ? 0 : 1),
+          sightings: found.sightings + (found.lastSeenAt < seenAt ? 1 : 0),
+        }),
+      })
+    );
+  };
 
   const stateOf = (key: string): FeedStateValue =>
     states.get(key) ?? {
@@ -30,6 +61,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
   const store = JobStore.of({
     feedStates: Effect.sync(() => [...states.values()]),
+    historyOf: (job) =>
+      Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
     list: (query, now) =>
       Effect.sync(() => {
         const matching = pipe(
@@ -40,7 +73,18 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         );
 
         return {
-          jobs: Array.take(matching, query.limit),
+          jobs: pipe(
+            Array.take(matching, query.limit),
+            Array.map((job) => {
+              const found = history.get(fingerprintOf(job));
+
+              return {
+                ...job,
+                daysOpen: daysOpen(found?.firstSeenAt ?? job.firstSeenAt, now),
+                reposts: found?.reposts ?? 0,
+              };
+            })
+          ),
           total: matching.length,
         };
       }),
@@ -86,11 +130,9 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           )
         );
 
-        for (const job of stale) {
-          jobs.delete(job.id);
-        }
-
         for (const job of incoming) {
+          sight(job, seenAt);
+
           const existing = Option.fromNullishOr(jobs.get(job.id));
 
           jobs.set(job.id, {
@@ -104,6 +146,10 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               onSome: (found) => Math.min(found.postedAt, job.postedAt),
             }),
           });
+        }
+
+        for (const job of stale) {
+          jobs.delete(job.id);
         }
 
         states.set(feedKey, {
@@ -133,6 +179,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
   return {
     feedStates: () => [...states.values()],
+    history: () => history,
     jobs: () => [...jobs.values()],
     layer: Layer.succeed(JobStore, store),
     runs: () => runs,
