@@ -60,7 +60,7 @@ Run `pnpm fix` only when you intend to rewrite files. Finish with `pnpm turbo ru
 - CI authenticates with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `apps/infra/stacks/github.ts` mints that scoped token and writes both secrets; run it with `pnpm infra:ci-credentials --profile admin` to create or rotate them.
 - Local deploys use an Alchemy profile: `pnpm alchemy profile edit --add Cloudflare`, then `ALCHEMY_PROFILE=<name> pnpm infra:plan --stage prod` and `pnpm infra:deploy --stage prod`.
 - The zone `rowlandekemezie.com` must already be on the Cloudflare account. Alchemy attaches `jobs.rowlandekemezie.com` as a Worker custom domain.
-- `INGEST_FEEDS_PER_RUN` and `INGEST_FEED_CONCURRENCY` (apps/api/.env.schema) tune the cron. Workers Free allows 50 subrequests and 10 ms CPU per invocation; keep feeds per run near 8 there.
+- `INGEST_FEEDS_PER_RUN` and `INGEST_FEED_CONCURRENCY` (apps/api/.env.schema) tune the cron. Workers Free allows 50 external subrequests (`fetch`, retries included) and 1,000 to Cloudflare services such as D1 per invocation, and 10 ms CPU; waiting on I/O is not CPU. A board feed costs one fetch, a SmartRecruiters board up to five.
 
 ## Fence (cheating is uncomfortable)
 
