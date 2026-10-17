@@ -17,6 +17,7 @@ import {
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { shortlistPage } from "../../features/shortlist/view.js";
 import { boardUrl, Route, shortlistRouter } from "../route.js";
+import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
@@ -47,7 +48,7 @@ const tabs = (model: ModelValue, h: H): Html =>
         h,
         shortlistRouter(),
         Schema.is(Route.Shortlist)(model.route),
-        `Your shortlist (${model.marks.length})`
+        `Your shortlist (${shortlistSize(model)})`
       ),
       sessionLink(
         model.account.session,
@@ -144,6 +145,6 @@ export const view = (model: ModelValue, h: H): Document => ({
     ConfirmSignIn: () => "Finish signing in",
     Job: () => jobTitle(model),
     NotFound: () => "Page not found",
-    Shortlist: () => `Your shortlist (${model.marks.length})`,
+    Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
   }),
 });

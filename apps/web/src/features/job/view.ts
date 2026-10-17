@@ -7,7 +7,7 @@ import {
   regionLabel,
   sourceLabel,
 } from "../../client/board/copy.js";
-import { markButtons, markOf } from "../../client/board/marks.js";
+import { entryOf, markButtons } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobState } from "../../client/board/model.js";
@@ -94,7 +94,7 @@ const missingView = (
         [],
         ["Its source took the posting down, or it is older than 30 days."]
       ),
-      ...Option.match(markOf(model, id), {
+      ...Option.match(entryOf(model, id), {
         onNone: () => [],
         onSome: (mark) => [
           h.p(

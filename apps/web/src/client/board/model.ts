@@ -1,4 +1,10 @@
-import { BoardStats, Job } from "@rat-stack/core/contracts";
+import {
+  BoardStats,
+  Job,
+  Stage,
+  TrackedJob,
+  TrackRequest,
+} from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
@@ -53,6 +59,36 @@ export type MarkedJobValue = typeof MarkedJob.Type;
 
 export const Shortlist = Schema.Array(MarkedJob);
 
+export const PendingTrack = Schema.Struct({
+  jobId: Schema.String,
+  stage: Stage,
+});
+
+export const TrackerState = defineTaggedUnion({
+  Local: {},
+  Remote: {
+    adding: Schema.Array(PendingTrack),
+    jobs: Schema.Array(TrackedJob),
+    loaded: Schema.Boolean,
+    problem: Schema.Option(Schema.String),
+  },
+});
+
+export type TrackerStateValue = typeof TrackerState.Type;
+
+export type RemoteTrackerValue = Extract<
+  TrackerStateValue,
+  { readonly _tag: "Remote" }
+>;
+
+export const TrackerChange = defineTaggedUnion({
+  Note: { jobId: Schema.String, notes: Schema.String },
+  Track: { job: TrackRequest },
+  Untrack: { jobId: Schema.String },
+});
+
+export type TrackerChangeValue = typeof TrackerChange.Type;
+
 export const Model = Schema.Struct({
   account: AccountModel,
   awaitingEcho: Schema.Array(Schema.String),
@@ -65,6 +101,8 @@ export const Model = Schema.Struct({
   more: MoreState,
   route: Route,
   stats: StatsState,
+  tracker: TrackerState,
+  trackerRevision: Schema.Finite,
 });
 
 export type ModelValue = typeof Model.Type;

@@ -7,6 +7,7 @@ import type { Url } from "foldkit/url";
 
 import type { AuthClient } from "../account/auth-client.js";
 import type { MessageValue as AccountMessageValue } from "../account/message.js";
+import { SessionState } from "../account/model.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
 import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
@@ -20,6 +21,8 @@ import {
   PushUrl,
   ReadShortlist,
   ReplaceUrl,
+  SendTrackerChange,
+  SyncTracker,
   WriteShortlist,
 } from "./command.js";
 import {
@@ -33,9 +36,23 @@ import {
 import type { FiltersValue } from "./filters.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { JobsState, JobState, MoreState, StatsState } from "./model.js";
-import type { MarkedJobValue, ModelValue } from "./model.js";
+import {
+  JobsState,
+  JobState,
+  MoreState,
+  StatsState,
+  TrackerChange,
+  TrackerState,
+} from "./model.js";
+import type {
+  MarkedJobValue,
+  MarkKindValue,
+  ModelValue,
+  RemoteTrackerValue,
+  TrackerChangeValue,
+} from "./model.js";
 import type { JobQueries } from "./queries.js";
+import { changedTracker, trackRequestOf, unloadedTracker } from "./tracker.js";
 
 type UpdateReturn = Update.Return<
   ModelValue,
@@ -196,6 +213,155 @@ const shortlistWith = (
   model: modifyFields(model, { marks: () => marks }),
 });
 
+const remoteOf = (model: ModelValue): Option.Option<RemoteTrackerValue> =>
+  Schema.is(TrackerState.Remote)(model.tracker)
+    ? Option.some(model.tracker)
+    : Option.none();
+
+const synced = (model: ModelValue): UpdateReturn => {
+  const revision = model.trackerRevision + 1;
+
+  return {
+    commands: [SyncTracker({ revision })],
+    model: modifyFields(model, { trackerRevision: () => revision }),
+  };
+};
+
+const sentChange = (
+  model: ModelValue,
+  tracker: RemoteTrackerValue,
+  change: TrackerChangeValue
+): UpdateReturn => {
+  const revision = model.trackerRevision + 1;
+
+  return {
+    commands: [SendTrackerChange({ change, revision })],
+    model: modifyFields(model, {
+      tracker: () =>
+        changedTracker(
+          TrackerState.Remote({ ...tracker, problem: Option.none() }),
+          change
+        ),
+      trackerRevision: () => revision,
+    }),
+  };
+};
+
+const marked = (
+  model: ModelValue,
+  job: MarkedJobValue,
+  kind: MarkKindValue
+): UpdateReturn =>
+  Option.match(remoteOf(model), {
+    onNone: () =>
+      shortlistWith(model, [
+        { ...job, kind },
+        ...pipe(
+          model.marks,
+          Array.filter((mark) => mark.id !== job.id)
+        ),
+      ]),
+    onSome: (tracker) =>
+      sentChange(
+        model,
+        tracker,
+        TrackerChange.Track({ job: trackRequestOf(job, kind) })
+      ),
+  });
+
+const unmarked = (model: ModelValue, id: string): UpdateReturn =>
+  Option.match(remoteOf(model), {
+    onNone: () =>
+      shortlistWith(
+        model,
+        pipe(
+          model.marks,
+          Array.filter((mark) => mark.id !== id)
+        )
+      ),
+    onSome: (tracker) =>
+      sentChange(model, tracker, TrackerChange.Untrack({ jobId: id })),
+  });
+
+const withTrackedJob = (
+  model: ModelValue,
+  jobId: string,
+  change: (
+    tracker: RemoteTrackerValue,
+    job: RemoteTrackerValue["jobs"][number]
+  ) => UpdateReturn
+): UpdateReturn =>
+  pipe(
+    remoteOf(model),
+    Option.flatMap((tracker) =>
+      pipe(
+        Array.findFirst(tracker.jobs, (job) => job.jobId === jobId),
+        Option.map((job) => change(tracker, job))
+      )
+    ),
+    Option.getOrElse(() => ({ model }))
+  );
+
+const isCurrentRevision = (model: ModelValue, revision: number) =>
+  revision === model.trackerRevision;
+
+const withServerTracker = (
+  model: ModelValue,
+  revision: number,
+  jobs: RemoteTrackerValue["jobs"]
+): UpdateReturn => ({
+  model: pipe(
+    remoteOf(model),
+    Option.filter(() => isCurrentRevision(model, revision)),
+    Option.match({
+      onNone: () => model,
+      onSome: (tracker) =>
+        modifyFields(model, {
+          tracker: () =>
+            TrackerState.Remote({ ...tracker, adding: [], jobs, loaded: true }),
+        }),
+    })
+  ),
+});
+
+const withTrackerProblem = (model: ModelValue, message: string): ModelValue =>
+  Option.match(remoteOf(model), {
+    onNone: () => model,
+    onSome: (tracker) =>
+      modifyFields(model, {
+        tracker: () =>
+          TrackerState.Remote({ ...tracker, problem: Option.some(message) }),
+      }),
+  });
+
+const followedSession = (step: UpdateReturn): UpdateReturn => {
+  const { account, tracker } = step.model;
+  const isLocal = Schema.is(TrackerState.Local)(tracker);
+
+  if (Schema.is(SessionState.SignedIn)(account.session) && isLocal) {
+    const sync = synced(
+      modifyFields(step.model, { tracker: () => unloadedTracker })
+    );
+
+    return {
+      commands: [...(step.commands ?? []), ...(sync.commands ?? [])],
+      model: sync.model,
+    };
+  }
+
+  if (Schema.is(SessionState.SignedOut)(account.session) && !isLocal) {
+    return {
+      commands: [...(step.commands ?? []), ReadShortlist()],
+      model: modifyFields(step.model, {
+        marks: () => [],
+        tracker: () => TrackerState.Local(),
+      }),
+    };
+  }
+
+  return step;
+};
+
 export const routing = {
   onUrlChange: (url: Url) => Message.ChangedUrl({ url }),
   onUrlRequest: (request: UrlRequest) => Message.ClickedLink({ request }),
@@ -217,6 +383,8 @@ export const init = (url: Url): UpdateReturn => {
       more: MoreState.Idle(),
       route: routeOfUrl(url),
       stats: StatsState.Unavailable(),
+      tracker: TrackerState.Local(),
+      trackerRevision: 0,
     },
     url
   );
@@ -239,16 +407,27 @@ export const update = (
   Message.match<UpdateReturn>(message, {
     ChangedAge: ({ maxAgeDays }) =>
       navigatedTo(model, { ...model.filters, maxAgeDays }),
-    ChangedSort: ({ sort }) => navigatedTo(model, { ...model.filters, sort }),
-    ChangedUrl: ({ url }) => echoed(model, url),
-    ClickedClearMark: ({ id }) =>
-      shortlistWith(
-        model,
-        pipe(
-          model.marks,
-          Array.filter((mark) => mark.id !== id)
-        )
+    ChangedNotes: ({ jobId, notes }) =>
+      withTrackedJob(model, jobId, (tracker, job) =>
+        job.notes === notes
+          ? { model }
+          : sentChange(model, tracker, TrackerChange.Note({ jobId, notes }))
       ),
+    ChangedSort: ({ sort }) => navigatedTo(model, { ...model.filters, sort }),
+    ChangedStage: ({ jobId, stage }) =>
+      withTrackedJob(model, jobId, (tracker, job) =>
+        job.stage === stage
+          ? { model }
+          : sentChange(
+              model,
+              tracker,
+              TrackerChange.Track({
+                job: { jobId, snapshot: job.snapshot, stage },
+              })
+            )
+      ),
+    ChangedUrl: ({ url }) => echoed(model, url),
+    ClickedClearMark: ({ id }) => unmarked(model, id),
     ClickedLink: ({ request }) =>
       UrlRequest.match(request, {
         External: ({ href }) => ({ commands: [LoadUrl({ href })], model }),
@@ -275,7 +454,8 @@ export const update = (
       };
     },
     ClickedMark: ({ job, kind }) =>
-      shortlistWith(model, [
+      marked(
+        model,
         {
           company: job.company,
           id: job.id,
@@ -284,11 +464,8 @@ export const update = (
           title: job.title,
           url: job.url,
         },
-        ...pipe(
-          model.marks,
-          Array.filter((mark) => mark.id !== job.id)
-        ),
-      ]),
+        kind
+      ),
     ClickedResetFilters: () =>
       navigatedTo(
         modifyFields(model, { draftSearch: () => "" }),
@@ -299,10 +476,27 @@ export const update = (
       Schema.is(Route.Job)(model.route)
         ? enteredJob(model, model.route.id)
         : { model },
+    ClickedRetryTracker: () =>
+      Option.match(remoteOf(model), {
+        onNone: () => ({ model }),
+        onSome: (tracker) =>
+          synced(
+            modifyFields(model, {
+              tracker: () =>
+                TrackerState.Remote({ ...tracker, problem: Option.none() }),
+            })
+          ),
+      }),
     CompletedNavigation: () => ({ model }),
     CompletedReadShortlist: ({ marks }) => ({
       model: modifyFields(model, { marks: () => marks }),
     }),
+    CompletedSyncTracker: ({ jobs, revision }) =>
+      withServerTracker(
+        modifyFields(model, { marks: () => [] }),
+        revision,
+        jobs
+      ),
     CompletedWriteShortlist: () => ({ model }),
     FailedFetchJob: ({ id, message: failure }) => ({
       model: isAwaitingJob(model, id)
@@ -326,8 +520,20 @@ export const update = (
           : model,
     }),
     FailedFetchStats: () => ({ model }),
+    FailedSyncTracker: ({ message: failure, revision }) => ({
+      model: isCurrentRevision(model, revision)
+        ? withTrackerProblem(model, failure)
+        : model,
+    }),
+    FailedTrackerChange: ({ message: failure, revision }) => {
+      const flagged = withTrackerProblem(model, failure);
+
+      return isCurrentRevision(model, revision)
+        ? synced(flagged)
+        : { model: flagged };
+    },
     GotAccountMessage: ({ message: accountMessage }) =>
-      foldAccount(model, accountMessage),
+      followedSession(foldAccount(model, accountMessage)),
     SubmittedSearch: () =>
       navigatedTo(model, { ...model.filters, search: model.draftSearch }),
     SucceededFetchJob: ({ id, job }) => ({
@@ -390,6 +596,8 @@ export const update = (
     SucceededFetchStats: ({ stats }) => ({
       model: modifyFields(model, { stats: () => StatsState.Loaded({ stats }) }),
     }),
+    SucceededTrackerChange: ({ jobs, revision }) =>
+      withServerTracker(model, revision, jobs),
     ToggledRegionGroup: ({ group }) =>
       navigatedTo(model, {
         ...model.filters,
