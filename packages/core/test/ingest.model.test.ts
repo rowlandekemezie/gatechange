@@ -4,6 +4,7 @@ import {
   Clock,
   Effect,
   Layer,
+  Logger,
   Option,
   Predicate,
   Schema,
@@ -409,6 +410,54 @@ describe("ingest", () => {
             Option.map((found) => found.reposts)
           )
         ).toStrictEqual(Option.some(0));
+      })
+  );
+
+  it.effect(
+    "skips a posting that links back to this site and logs how many it skipped",
+    () =>
+      Effect.gen(function* skipOwnLinks() {
+        const memory = yield* makeMemoryJobStore;
+        const warnings: unknown[] = [];
+
+        const feeds = PostingFeeds.of({
+          catalog: [onlyFeed],
+          fetch: () =>
+            Effect.succeed([
+              postingFor("a"),
+              {
+                ...postingFor("b"),
+                url: "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x",
+              },
+            ]),
+        });
+
+        yield* runIngest({ feedConcurrency: 1, feedsPerRun: 1 }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              memory.layer,
+              Layer.succeed(PostingFeeds, feeds),
+              Logger.layer([
+                Logger.make(({ logLevel, message }) =>
+                  logLevel === "Warn" ? warnings.push(message) : 0
+                ),
+              ])
+            )
+          )
+        );
+
+        expect(
+          pipe(
+            memory.jobs(),
+            Array.map((job) => job.url)
+          )
+        ).toStrictEqual(["https://jobs.example/a"]);
+        expect(warnings).toStrictEqual([
+          [
+            "skipped postings without an off-site web link",
+            { feed: onlyFeed.key, skipped: 1 },
+          ],
+        ]);
       })
   );
 

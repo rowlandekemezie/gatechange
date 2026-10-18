@@ -12,10 +12,14 @@ describe("auth routing", () => {
     expect(isAuthPath(url)).toBe(true);
   });
 
-  it.each(["/rpc", "/rpc?next=/api/auth/", "/api/authority", "/api/auth-x"])(
-    "keeps %s away from better-auth",
-    (url) => {
-      expect(isAuthPath(url)).toBe(false);
-    }
-  );
+  it.each([
+    "/rpc",
+    "/rpc?next=/api/auth/",
+    "/api/authority",
+    "/api/auth-x",
+    "//evil/api/auth/x",
+    String.raw`/\evil/api/auth/x`,
+  ])("keeps %s away from better-auth", (url) => {
+    expect(isAuthPath(url)).toBe(false);
+  });
 });

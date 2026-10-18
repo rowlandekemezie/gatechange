@@ -184,6 +184,7 @@ export type {
 } from "./contracts.js";
 
 export {
+  isOffSiteWebUrl,
   previewWorkerName,
   PROD_STAGE,
   SITE_HOSTNAME,
