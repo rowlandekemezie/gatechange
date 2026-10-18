@@ -5,9 +5,17 @@ import { magicLink } from "better-auth/plugins";
 import { Option } from "effect";
 
 import { sameSiteVerify } from "./cross-site.js";
-import { emailSendLimit } from "./email-send-limit.js";
+import { emailSendLimit, limitSends } from "./email-send-limit.js";
 
-export const AUTH_BASE_PATH = "/api/auth";
+const AUTH_BASE_PATH = "/api/auth";
+
+export const isAuthPath = (url: string) => {
+  const { pathname } = new URL(url, "http://backend.invalid");
+
+  return (
+    pathname === AUTH_BASE_PATH || pathname.startsWith(`${AUTH_BASE_PATH}/`)
+  );
+};
 
 export interface SocialCredentials {
   readonly clientId: string;
@@ -44,7 +52,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
   plugins: [
     magicLink({
       expiresIn: MAGIC_LINK_TTL_MINUTES * 60,
-      sendMagicLink: settings.sendMagicLink,
+      sendMagicLink: limitSends(settings.sendMagicLink),
       storeToken: "hashed",
     }),
     emailSendLimit(),

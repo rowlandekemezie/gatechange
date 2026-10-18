@@ -54,25 +54,28 @@ const migratedDatabase = () => migrate(new DatabaseSync(":memory:"));
 
 const settings = (
   sent: MagicLinkRequest[],
-  hosts: SiteHosts = LOCAL_HOSTS
+  hosts: SiteHosts = LOCAL_HOSTS,
+  mailerUp: () => boolean = () => true
 ): AuthSettings => ({
   hosts,
   // @effect-diagnostics-next-line asyncFunction:off -- better-auth calls the sender as a Promise-returning callback.
   sendMagicLink: async (request) => {
-    sent.push(request);
-    await Promise.resolve();
+    await (mailerUp()
+      ? Promise.resolve(sent.push(request))
+      : Promise.reject(new Error("mailer down")));
   },
   social: {},
 });
 
 const makeAuth = (
   hosts: SiteHosts = LOCAL_HOSTS,
-  database: DatabaseSync = migratedDatabase()
+  database: DatabaseSync = migratedDatabase(),
+  mailerUp: () => boolean = () => true
 ) => {
   const sent: MagicLinkRequest[] = [];
 
   const auth = betterAuth({
-    ...authOptions(settings(sent, hosts)),
+    ...authOptions(settings(sent, hosts, mailerUp)),
     database,
     secret: "test-secret-test-secret-test-secret-0",
   });
@@ -126,6 +129,8 @@ const call = (
       );
     }
   );
+
+const CONFIRM_FORM: Call = { fetchSite: "same-origin" };
 
 const sessionOf = (auth: Auth, cookie: string) =>
   Effect.promise(
@@ -210,7 +215,7 @@ describe("magic link sign-in", () => {
         expect(sent[0]?.email).toBe("ada@example.com");
 
         const link = pathOf(sent[0]?.url ?? "");
-        const verified = yield* call(auth, link);
+        const verified = yield* call(auth, link, CONFIRM_FORM);
 
         expect(verified.status).toBe(302);
         expect(verified.headers.get("location")).toBe(`${ORIGIN}/account`);
@@ -225,7 +230,7 @@ describe("magic link sign-in", () => {
 
         expect(session?.user.email).toBe("ada@example.com");
 
-        const reused = yield* call(auth, link);
+        const reused = yield* call(auth, link, CONFIRM_FORM);
 
         expect(cookieOf(reused)).not.toContain("session_token=");
         expect(reused.headers.get("location")).toContain("error=");
@@ -286,7 +291,12 @@ describe("magic link sign-in", () => {
 
       yield* requestLink(auth, "ada@example.com");
 
-      const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""));
+      const verified = yield* call(
+        auth,
+        pathOf(sent[0]?.url ?? ""),
+        CONFIRM_FORM
+      );
+
       const cookie = cookieOf(verified);
 
       const out = yield* call(auth, "/api/auth/sign-out", {
@@ -347,11 +357,19 @@ describe("magic link storage and lifetime", () => {
 
         travelTo(T0 + (MAGIC_LINK_TTL_MINUTES - 1) * MINUTE);
 
-        const early = yield* call(auth, pathOf(sent[0]?.url ?? ""));
+        const early = yield* call(
+          auth,
+          pathOf(sent[0]?.url ?? ""),
+          CONFIRM_FORM
+        );
 
         travelTo(T0 + MAGIC_LINK_TTL_MINUTES * MINUTE + 1000);
 
-        const late = yield* call(auth, pathOf(sent[1]?.url ?? ""));
+        const late = yield* call(
+          auth,
+          pathOf(sent[1]?.url ?? ""),
+          CONFIRM_FORM
+        );
 
         expect(cookieOf(early)).toContain("session_token=");
         expect(cookieOf(late)).not.toContain("session_token=");
@@ -372,6 +390,7 @@ describe("magic link storage and lifetime", () => {
 
       expect(keys).toStrictEqual([
         "203.0.113.7|/sign-in/magic-link",
+        "magic-link-attempt:ada@example.com",
         "magic-link-email:ada@example.com",
       ]);
     })
@@ -485,6 +504,126 @@ describe("per-email send limit", () => {
         expect(again.status).toBe(429);
       })
   );
+
+  it.effect(
+    "spends nothing from an inbox's budget on an address better-auth refuses",
+    () =>
+      Effect.gen(function* malformedSpellings() {
+        const { auth, sent } = makeAuth();
+        const refused: number[] = [];
+
+        for (const [index, email] of [
+          " victim@example.com",
+          "victim@example.com ",
+          "VICTIM@example.com\t",
+          "victim+(@example.com",
+        ].entries()) {
+          refused.push(
+            (yield* requestLink(auth, email, `2001:db8:${index}::1`)).status
+          );
+        }
+
+        const real = yield* requestLink(
+          auth,
+          "victim@example.com",
+          "2001:db8:9::1"
+        );
+
+        expect(refused).toStrictEqual([400, 400, 400, 400]);
+        expect(real.status).toBe(200);
+        expect(sent.map(({ email }) => email)).toStrictEqual([
+          "victim@example.com",
+        ]);
+      })
+  );
+
+  it.effect(
+    "refuses an address longer than any inbox can have, before it counts or sends",
+    () =>
+      Effect.gen(function* overlong() {
+        const { auth, database, sent } = makeAuth();
+        const email = `${"a".repeat(64)}@${["b", "c", "d"].map((label) => label.repeat(63)).join(".")}.com`;
+
+        const response = yield* requestLink(auth, email);
+
+        expect(response.status).toBe(400);
+        expect(sent).toHaveLength(0);
+        expect(
+          database
+            .prepare(
+              "SELECT key FROM \"rateLimit\" WHERE key LIKE 'magic-link-%'"
+            )
+            .all()
+        ).toStrictEqual([]);
+      })
+  );
+
+  it.effect("gives an inbox its send back when the mailer fails", () =>
+    Effect.gen(function* refund() {
+      let up = false;
+
+      const { auth, sent } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => up
+      );
+
+      const failed = yield* statusOf(
+        requestLink(auth, "victim@example.com", "2001:db8:0::1")
+      );
+
+      up = true;
+
+      const statuses: number[] = [];
+
+      for (const index of [1, 2, 3, 4]) {
+        statuses.push(
+          (yield* requestLink(
+            auth,
+            "victim@example.com",
+            `2001:db8:${index}::1`
+          )).status
+        );
+      }
+
+      expect(failed).toBe(500);
+      expect(statuses).toStrictEqual([200, 200, 200, 429]);
+      expect(sent).toHaveLength(EMAIL_SEND_LIMIT.max);
+    })
+  );
+
+  it.effect(
+    `stops calling a failing mailer after ${EMAIL_SEND_LIMIT.attempts} tries at one inbox`,
+    () =>
+      Effect.gen(function* failingMailer() {
+        let tries = 0;
+
+        const { auth } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () => {
+          tries += 1;
+
+          return false;
+        });
+
+        const statuses: number[] = [];
+
+        for (const index of Array.from(
+          { length: EMAIL_SEND_LIMIT.attempts + 1 },
+          (_, at) => at
+        )) {
+          statuses.push(
+            yield* statusOf(
+              requestLink(auth, "victim@example.com", `2001:db8:${index}::1`)
+            )
+          );
+        }
+
+        expect(statuses).toStrictEqual([
+          ...Array.from({ length: EMAIL_SEND_LIMIT.attempts }, () => 500),
+          429,
+        ]);
+        expect(tries).toBe(EMAIL_SEND_LIMIT.attempts);
+      })
+  );
 });
 
 describe("request origin", () => {
@@ -503,9 +642,14 @@ describe("request origin", () => {
 });
 
 describe("magic link verify", () => {
-  it.effect.each(["cross-site", "same-site", "none"])(
-    "refuses a %s verify without spending the link, so the viewer can still sign in",
-    (fetchSite) =>
+  it.effect.each([
+    ["a cross-site", "cross-site"],
+    ["a same-site", "same-site"],
+    ["a none", "none"],
+    ["an unlabelled", undefined],
+  ])(
+    "refuses %s verify without spending the link, so the viewer can still sign in",
+    ([, fetchSite]) =>
       Effect.gen(function* loginCsrf() {
         const { auth, sent } = makeAuth();
 
@@ -524,17 +668,14 @@ describe("magic link verify", () => {
       })
   );
 
-  it.effect.each([
-    ["the confirm page's same-origin form", "same-origin"],
-    ["a browser that sends no fetch metadata", undefined],
-  ])("signs in from %s", ([, fetchSite]) =>
+  it.effect("signs in from the confirm page's same-origin form", () =>
     Effect.gen(function* allowedVerify() {
       const { auth, sent } = makeAuth();
 
       yield* requestLink(auth, "ada@example.com");
 
       const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""), {
-        fetchSite,
+        fetchSite: "same-origin",
       });
 
       expect(verified.status).toBe(302);
@@ -592,6 +733,7 @@ describe("stage hosts", () => {
       yield* requestLink(auth, "ada@example.com", undefined, { at: PREVIEW });
 
       const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""), {
+        ...CONFIRM_FORM,
         at: PREVIEW,
       });
 
@@ -675,7 +817,11 @@ describe("per-request database cost", () => {
 
         yield* requestLink(auth, "ada@example.com");
 
-        const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""));
+        const verified = yield* call(
+          auth,
+          pathOf(sent[0]?.url ?? ""),
+          CONFIRM_FORM
+        );
 
         database.statements.length = 0;
 

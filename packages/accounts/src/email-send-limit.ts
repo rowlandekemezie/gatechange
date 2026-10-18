@@ -1,12 +1,20 @@
 import type { BetterAuthPlugin, DBAdapter, Where } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
-import { Option, Schema } from "effect";
+import { APIError } from "better-auth/api";
+import type { MagicLinkOptions } from "better-auth/plugins";
 
-export const EMAIL_SEND_LIMIT = { max: 3, windowSeconds: 15 * 60 } as const;
+import type { MagicLinkRequest } from "./options.js";
+
+export const EMAIL_SEND_LIMIT = {
+  attempts: 6,
+  max: 3,
+  windowSeconds: 15 * 60,
+} as const;
 
 const WINDOW_MILLIS = EMAIL_SEND_LIMIT.windowSeconds * 1000;
 
 const RACE_RETRIES = 3;
+
+const MAX_ADDRESS_LENGTH = 254;
 
 const MODEL = "rateLimit";
 
@@ -19,28 +27,22 @@ const GMAIL_DOMAINS: ReadonlySet<string> = new Set([
   "googlemail.com",
 ]);
 
-const SignInBody = Schema.Struct({ email: Schema.String });
-
-export const emailSendKey = (email: string) => {
-  const address = email.trim().toLowerCase();
+const inboxOf = (email: string) => {
+  const address = email.toLowerCase();
   const at = address.lastIndexOf("@");
-
-  if (at === -1) {
-    return `magic-link-email:${address}`;
-  }
-
   const [tagless = ""] = address.slice(0, at).split("+");
   const domain = address.slice(at + 1);
   const gmail = GMAIL_DOMAINS.has(domain);
   const mailbox = gmail ? tagless.replaceAll(".", "") : tagless;
 
-  return `magic-link-email:${mailbox}@${gmail ? "gmail.com" : domain}`;
+  return `${mailbox}@${gmail ? "gmail.com" : domain}`;
 };
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based, and this mirrors its own database rate limiter.
-const consumeSend = async (
+const consume = async (
   adapter: DBAdapter,
   key: string,
+  max: number,
   now: number,
   retries = RACE_RETRIES
 ): Promise<boolean> => {
@@ -59,7 +61,7 @@ const consumeSend = async (
       where: [
         keyIs,
         { field: "lastRequest", operator: "gt", value: now - WINDOW_MILLIS },
-        { field: "count", operator: "lt", value: EMAIL_SEND_LIMIT.max },
+        { field: "count", operator: "lt", value: max },
       ],
     });
 
@@ -90,7 +92,7 @@ const consumeSend = async (
 
   return claimed || retries === 0
     ? claimed
-    : await consumeSend(adapter, key, now, retries - 1);
+    : await consume(adapter, key, max, now, retries - 1);
 };
 
 const keepSendRowsForTheWindow = {
@@ -100,34 +102,58 @@ const keepSendRowsForTheWindow = {
 };
 
 export const emailSendLimit = (): BetterAuthPlugin => ({
-  hooks: {
-    before: [
-      {
-        // @effect-diagnostics-next-line asyncFunction:off -- better-auth hooks are Promise-returning middleware.
-        handler: createAuthMiddleware(async (ctx) => {
-          const body = Schema.decodeUnknownOption(SignInBody)(ctx.body);
-
-          if (Option.isNone(body)) {
-            return;
-          }
-
-          const allowed = await consumeSend(
-            ctx.context.adapter,
-            emailSendKey(body.value.email),
-            // @effect-diagnostics-next-line globalDate:off -- better-auth's limiter rows are stamped with the same wall clock.
-            Date.now()
-          );
-
-          if (!allowed) {
-            throw new APIError("TOO_MANY_REQUESTS", {
-              message: "Too many sign-in links were sent to this address.",
-            });
-          }
-        }),
-        matcher: (context) => context.path === "/sign-in/magic-link",
-      },
-    ],
-  },
   id: "email-send-limit",
   rateLimit: [keepSendRowsForTheWindow],
 });
+
+export const limitSends =
+  (
+    send: (request: MagicLinkRequest) => Promise<void>
+  ): MagicLinkOptions["sendMagicLink"] =>
+  // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
+  async ({ email, url }, ctx) => {
+    if (email.length > MAX_ADDRESS_LENGTH) {
+      throw new APIError("BAD_REQUEST", {
+        message: "That email address is too long.",
+      });
+    }
+
+    if (ctx === undefined) {
+      throw new APIError("INTERNAL_SERVER_ERROR");
+    }
+
+    const { adapter } = ctx.context;
+    const inbox = inboxOf(email);
+    const sendKey = `magic-link-email:${inbox}`;
+    // @effect-diagnostics-next-line globalDate:off -- better-auth's limiter rows are stamped with the same wall clock.
+    const now = Date.now();
+
+    const allowed =
+      (await consume(
+        adapter,
+        `magic-link-attempt:${inbox}`,
+        EMAIL_SEND_LIMIT.attempts,
+        now
+      )) && (await consume(adapter, sendKey, EMAIL_SEND_LIMIT.max, now));
+
+    if (!allowed) {
+      throw new APIError("TOO_MANY_REQUESTS", {
+        message: "Too many sign-in links were sent to this address.",
+      });
+    }
+
+    try {
+      await send({ email, url });
+    } catch (error) {
+      await adapter.incrementOne({
+        increment: { count: -1 },
+        model: MODEL,
+        where: [
+          { field: "key", value: sendKey },
+          { field: "count", operator: "gt", value: 0 },
+        ],
+      });
+
+      throw error;
+    }
+  };
