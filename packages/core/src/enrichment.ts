@@ -301,6 +301,8 @@ const quotedWord = (word: string) =>
     .replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`)
     .replaceAll(/[-–—]/gu, "[-–—]");
 
+const MIN_QUOTED_WORDS = 3;
+
 const quotedSentence = (
   text: string,
   quote: string | null,
@@ -308,16 +310,18 @@ const quotedSentence = (
 ): Option.Option<string> => {
   const words = (quote ?? "").split(/\s+/u).filter((word) => word !== "");
 
-  if (words.length === 0 || !claim.test(words.join(" "))) {
-    return Option.none();
-  }
-
   return pipe(
-    new RegExp(
-      `[^\\n.!?;]*${words.map(quotedWord).join(String.raw`\s+`)}[^\\n.!?;]*`,
-      "iu"
-    ).exec(text)?.[0],
-    Option.fromNullishOr,
+    Array.range(0, Math.max(0, words.length - MIN_QUOTED_WORDS)),
+    Array.map((start) => words.slice(start)),
+    Array.filter((kept) => kept.length > 0 && claim.test(kept.join(" "))),
+    Array.findFirst((kept) =>
+      Option.fromNullishOr(
+        new RegExp(
+          `[^\\n.!?;]*${kept.map(quotedWord).join(String.raw`\s+`)}[^\\n.!?;]*`,
+          "iu"
+        ).exec(text)?.[0]
+      )
+    ),
     Option.filter(
       (sentence) =>
         !pastExperience.test(sentence) && !negationOf(claim).test(sentence)

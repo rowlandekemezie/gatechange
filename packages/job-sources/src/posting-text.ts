@@ -27,6 +27,16 @@ const LeverDetail = Schema.Struct({
     )
   ),
   salaryDescriptionPlain: OptionalString,
+  salaryRange: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        currency: Schema.String,
+        interval: Schema.String,
+        max: Schema.Finite,
+        min: Schema.Finite,
+      })
+    )
+  ),
   workplaceType: OptionalString,
 });
 
@@ -84,6 +94,11 @@ const workplaceLine = (workplaceType: string | null | undefined) =>
 const locationLine = (location: string | null | undefined) =>
   location === null || location === undefined ? null : `Location: ${location}`;
 
+const leverSalaryLine = (range: typeof LeverDetail.Type.salaryRange) =>
+  range === null || range === undefined
+    ? null
+    : `Salary range: ${range.min.toLocaleString("en-US")} - ${range.max.toLocaleString("en-US")} ${range.currency} per ${range.interval.split("-")[1] ?? "year"}`;
+
 const AshbyBoard = Schema.Struct({ jobs: Schema.Array(Schema.Unknown) });
 
 const greenhouseText = ({ externalId, slug }: PostingKey) =>
@@ -113,6 +128,7 @@ const leverText = ({ externalId, slug }: PostingKey) =>
         ),
         posting.additionalPlain,
         posting.salaryDescriptionPlain,
+        leverSalaryLine(posting.salaryRange),
         workplaceLine(posting.workplaceType),
       ]).join("\n\n")
     )

@@ -748,6 +748,41 @@ describe("enrichListing", () => {
       })
   );
 
+  it.effect.each([
+    [
+      "a reworded opening",
+      "Hybrid",
+      "We offer hybrid NY-based positions (four days/week in-office).",
+    ],
+    [
+      "its only cue in the reworded opening",
+      null,
+      "Hybrid policy: NY-based positions (four days/week in-office).",
+    ],
+  ] as const)(
+    "a remote-policy quote with %s is saved as %s",
+    ([, saved, quote]) =>
+      Effect.gen(function* rewordedQuote() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: "Hybrid",
+              remotePolicyQuote: quote,
+            },
+          }),
+          text: "We're headquartered in NYC and offer hybrid NY-based positions (four days/week in-office).\nBase salary $180,000 - $220,000 per year.",
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
   it.effect.each(["", "  \n\t "])(
     "a posting with no text (%j) skips as EmptyPosting, asks no model, and is not retried",
     (text) =>

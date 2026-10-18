@@ -142,6 +142,41 @@ describe("posting texts", () => {
     }
   );
 
+  it.effect.each([
+    ["per-year-salary", "per year", "Year"],
+    ["per-hour-wage", "per hour", "Hour"],
+  ] as const)(
+    "a Lever posting whose salary is only in its %s salary range states that range",
+    ([interval, written, period]) => {
+      const server = serving(
+        JSON.stringify({
+          descriptionPlain: "Lead the fleet infrastructure team.",
+          salaryDescriptionPlain:
+            "The listed range applies only to the base salary.",
+          salaryRange: {
+            currency: "USD",
+            interval,
+            max: 200_000,
+            min: 167_000,
+          },
+        })
+      );
+
+      return Effect.gen(function* readLeverRange() {
+        const text = yield* fetchText(
+          "lever:zoox:48a7c3a9-3d0a-4b15-8a18-5ed786298316"
+        );
+
+        expect(text).toContain(
+          `Salary range: 167,000 - 200,000 USD ${written}`
+        );
+        expect(moneyRangesIn(text)).toStrictEqual([
+          { amounts: [167_000, 200_000], currency: "USD", period },
+        ]);
+      }).pipe(Effect.provide(server.layer));
+    }
+  );
+
   it.effect(
     "an Ashby posting is picked from its board with the compensation summary, location and workplace type",
     () => {
