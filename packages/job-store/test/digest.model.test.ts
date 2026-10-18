@@ -187,6 +187,22 @@ describe("weekly saved-search digests", () => {
           });
           yield* listJobs([job({ feed: "greenhouse:acme", id: "gh:1" })]);
 
+          const base = yield* AlertStore;
+
+          const racing = AlertStore.of({
+            ...base,
+            dueRecipients: (periodStart, now) =>
+              base
+                .dueRecipients(periodStart, now)
+                .pipe(Effect.tap(() => Effect.yieldNow)),
+          });
+
+          const racingRunAt = (at: number) =>
+            runDigests(PLAN, at).pipe(
+              Effect.provide(outbox.layer),
+              Effect.provideService(AlertStore, racing)
+            );
+
           const modes: readonly MailerMode[] = [
             "Down",
             "Up",
@@ -205,8 +221,8 @@ describe("weekly saved-search digests", () => {
                 Effect.andThen(
                   Effect.all(
                     [
-                      runAt(NOW + step * HOUR, outbox.layer),
-                      runAt(NOW + step * HOUR, outbox.layer),
+                      racingRunAt(NOW + step * HOUR),
+                      racingRunAt(NOW + step * HOUR),
                     ],
                     { concurrency: 2 }
                   )
@@ -318,6 +334,33 @@ describe("weekly saved-search digests", () => {
           expect(
             outbox.sent.map((digest) => digest.jobs.map((listed) => listed.id))
           ).toEqual([["gh:1"], ["gh:2"]]);
+        })
+      )
+  );
+
+  it.effect(
+    "a member's first digest lists only roles first seen in the last seven days",
+    () =>
+      withStores(
+        Effect.gen(function* firstWindow() {
+          const outbox = makeOutbox();
+
+          yield* addMember(ada);
+          yield* saveSearch(ada);
+          yield* listJobs([
+            job({ feed: "greenhouse:acme", id: "gh:recent" }),
+            job({
+              feed: "greenhouse:acme",
+              firstSeenAt: NOW - 8 * DAY_MILLIS,
+              id: "gh:old",
+              title: "Director of Engineering",
+            }),
+          ]);
+          yield* runAt(NOW, outbox.layer);
+
+          expect(
+            outbox.sent.map((digest) => digest.jobs.map((listed) => listed.id))
+          ).toEqual([["gh:recent"]]);
         })
       )
   );

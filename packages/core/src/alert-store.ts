@@ -24,7 +24,8 @@ export class AlertStore extends Context.Service<
       id: SavedSearchIdValue
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly dueRecipients: (
-      periodStart: number
+      periodStart: number,
+      now: number
     ) => Effect.Effect<readonly DigestRecipient[], JobStoreUnavailable>;
     readonly jobsSeenSince: (
       since: number

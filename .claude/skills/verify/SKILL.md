@@ -79,6 +79,15 @@ Scenarios:
 - `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
 - `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.
 
+Saved-search digest scenarios take `--backend "$(cat /tmp/verify-jobs/<stage>/backend-url)"` and `--log /tmp/verify-jobs/<stage>/dev.log`. They sign in as `--email` first, so give each run its own address: a member gets at most one digest a week, and a second run with the same address sends nothing. The digest cron is fired through the backend's `/cdn-cgi/handler/scheduled?cron=7+*+*+*+*&time=<ms>` route, and a digest counts when `dev.log` shows `alchemy dev` handing one to `--email`.
+
+- `save-search` presses `Email me new matches weekly` under the board search (after typing `--search` when given), waits for the saved notice, and requires the search on `/account`.
+- `digest` saves, fires the cron, requires `--expect-digests` (default 1) new digests, and when one arrived opens its HTML and requires no sideways scroll. Add `--mobile` for the phone check.
+- `no-double-send` saves, fires the cron twice for the same moment and once three hours later, and requires exactly one digest.
+- `unsubscribe` opens the emailed unsubscribe link on the stage, presses `Unsubscribe`, requires `You are unsubscribed`, and requires no digest a week later.
+- `digest-links` opens every job link in the digest on the stage and requires each job page to load.
+- `delete-search` deletes the saved search on `/account` and requires no digest from the next run.
+
 Flags:
 
 - `--mobile` emulates a 390 by 844 phone at 3x, so the PNG is 1170 pixels wide.

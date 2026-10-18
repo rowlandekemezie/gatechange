@@ -33,11 +33,10 @@ export const entered = (model: ModelValue): UpdateReturn => ({
     : modifyFields(model, { searches: () => SearchesState.Loading() }),
 });
 
-export const filtersChanged = (model: ModelValue): UpdateReturn => ({
-  model: Schema.is(SaveState.Saving)(model.save)
+export const filtersChanged = (model: ModelValue): ModelValue =>
+  Schema.is(SaveState.Saving)(model.save)
     ? model
-    : modifyFields(model, { save: () => SaveState.Idle() }),
-});
+    : modifyFields(model, { save: () => SaveState.Idle() });
 
 export const update = (
   model: ModelValue,

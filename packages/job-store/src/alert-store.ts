@@ -62,7 +62,7 @@ const canonical = (filters: SearchFiltersValue) => ({
 
 const recipientsOf = (
   rows: readonly (typeof RecipientRow.Type)[],
-  periodStart: number
+  now: number
 ): readonly DigestRecipient[] =>
   pipe(
     Array.isReadonlyArrayNonEmpty(rows)
@@ -75,7 +75,7 @@ const recipientsOf = (
       account: first.account_id,
       email: first.email,
       searches: [first, ...rest].map(searchOfRow),
-      since: first.last_sent_at ?? periodStart - WEEK_MILLIS,
+      since: first.last_sent_at ?? now - WEEK_MILLIS,
     }))
   );
 
@@ -125,7 +125,7 @@ ON CONFLICT (account_id, period_start) DO NOTHING`,
         ])
         .pipe(Effect.asVoid),
 
-    dueRecipients: (periodStart) =>
+    dueRecipients: (periodStart, now) =>
       sql
         .all(
           "dueRecipients",
@@ -141,7 +141,7 @@ ORDER BY s.account_id, s.created_at`,
           ),
           RecipientRow
         )
-        .pipe(Effect.map((rows) => recipientsOf(rows, periodStart))),
+        .pipe(Effect.map((rows) => recipientsOf(rows, now))),
 
     jobsSeenSince: (since) =>
       sql

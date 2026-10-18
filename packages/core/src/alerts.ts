@@ -210,7 +210,7 @@ export const runDigests = Effect.fn("runDigests")(function* runDigests(
     Math.min(plan.sendsPerRun, plan.dailySendLimit - sentToday)
   );
 
-  const recipients = yield* store.dueRecipients(periodStart);
+  const recipients = yield* store.dueRecipients(periodStart, now);
 
   const jobs = Array.isReadonlyArrayNonEmpty(recipients)
     ? yield* store.jobsSeenSince(

@@ -121,7 +121,7 @@ const withFilters = (
     filters: () => filters,
     generation: () => generation,
     more: () => MoreState.Idle(),
-    savedSearches: (child) => SavedSearches.filtersChanged(child).model,
+    savedSearches: SavedSearches.filtersChanged,
   });
 
   if (hasNoSelection(filters)) {
