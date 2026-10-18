@@ -109,6 +109,34 @@ describe("digest email", () => {
       })
   );
 
+  it.effect(
+    "never links a listing's own apply URL, whatever the feed sent",
+    () =>
+      Effect.gen(function* applyUrls() {
+        const { mailer, sent } = capture(Effect.void);
+
+        yield* mailer.send(
+          digest([
+            job("a", { url: `${ORIGIN}/api/auth/magic-link/verify?token=x` }),
+            job("b", { url: "/jobs/relative" }),
+            job("c", { url: "https://boards.greenhouse.io/acme/3" }),
+          ])
+        );
+
+        const links = Array.fromIterable(
+          sent[0]?.html.matchAll(/href="(?<href>[^"]+)"/gu) ?? []
+        ).map((match) => match.groups?.href ?? "");
+
+        expect(links.filter((href) => !href.startsWith(`${ORIGIN}/`))).toEqual(
+          []
+        );
+        expect(sent[0]?.html).not.toContain("magic-link/verify");
+        expect(sent[0]?.html).not.toContain("boards.greenhouse.io");
+        expect(sent[0]?.text).not.toContain("magic-link/verify");
+        expect(sent[0]?.text).not.toContain("boards.greenhouse.io");
+      })
+  );
+
   it.effect("escapes listing text that came from a feed", () =>
     Effect.gen(function* escaped() {
       const { mailer, sent } = capture(Effect.void);
