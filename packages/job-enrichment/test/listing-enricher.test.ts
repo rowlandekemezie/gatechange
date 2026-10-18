@@ -22,6 +22,7 @@ const posting = {
 
 const answer = {
   remotePolicy: "Remote",
+  remotePolicyQuote: null,
   reportsTo: "VP Engineering",
   salaryCurrency: "USD",
   salaryMax: 240_000,

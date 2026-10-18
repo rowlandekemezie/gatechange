@@ -22,6 +22,7 @@ import {
 import type {
   EnrichmentValue,
   ListingDetailsValue,
+  RemotePolicyValue,
   SalaryBandValue,
   SourceNameValue,
 } from "./job.js";
@@ -37,6 +38,7 @@ export type SalaryPeriodValue = typeof SalaryPeriod.Type;
 
 export const ModelAnswer = Schema.Struct({
   remotePolicy: Schema.NullOr(RemotePolicy),
+  remotePolicyQuote: Schema.NullOr(Schema.String),
   reportsTo: Schema.NullOr(Schema.String),
   salaryCurrency: Schema.NullOr(Schema.String),
   salaryMax: Schema.NullOr(Schema.Finite),
@@ -163,27 +165,72 @@ const pastExperience =
 const collapsed = (text: string) =>
   text.replaceAll(/\s+/gu, " ").trim().toLowerCase();
 
-const sentencesOf = (text: string) =>
-  Array.map(text.split(/\n|(?<=[.!?;])\s/u), collapsed);
+const escapedWord = (word: string) =>
+  word.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+
+const postingQuotes = (
+  text: string,
+  quote: string | null,
+  claim: (quoted: string) => boolean
+) => {
+  const words = (quote ?? "").split(/\s+/u).filter((word) => word !== "");
+
+  const sentence =
+    words.length === 0
+      ? undefined
+      : new RegExp(
+          `[^\\n.!?;]*${words.map(escapedWord).join(String.raw`\s+`)}[^\\n.!?;]*`,
+          "iu"
+        ).exec(text)?.[0];
+
+  return (
+    sentence !== undefined &&
+    !pastExperience.test(sentence) &&
+    claim(collapsed(words.join(" ")))
+  );
+};
+
+const peopleCount = (size: number) =>
+  new RegExp(
+    String.raw`(?:\b${size}\+?\s+(?:[a-z-]+\s+){0,2}(?:people|persons?|engineers|developers|scientists|analysts|designers|managers|leads|members|reports|individuals|employees|staff|sdets|ics)\b|\bteam of (?:about |approximately |around |roughly |~)?${size}\b|\bdirect reports?:?\s*${size}\b)`,
+    "u"
+  );
 
 const teamSizeOf = (answer: ModelAnswerValue, text: string) => {
-  const quote = collapsed(answer.teamSizeQuote ?? "");
-
-  if (answer.teamSize === null || quote === "") {
+  if (answer.teamSize === null) {
     return null;
   }
 
   const size = Math.round(answer.teamSize);
 
-  const describesHiredTeam = sentencesOf(text).some(
-    (sentence) =>
-      sentence.includes(quote) &&
-      amountsIn(sentence).has(size) &&
-      !pastExperience.test(sentence)
-  );
-
-  return describesHiredTeam
+  return postingQuotes(text, answer.teamSizeQuote, (sentence) =>
+    peopleCount(size).test(sentence)
+  )
     ? pipe(decodeTeamSize(size), Option.getOrNull)
+    : null;
+};
+
+const remoteWork = /\bremote\b|\bwork from (?:home|anywhere)\b/u;
+
+const officeDays =
+  /\bhybrid\b|\bdays? (?:a|per|each) week\b|\b(?:mon|tues|wednes|thurs|fri)days?\b|\bin[- ](?:the )?office\b|\d+% of the time\b/u;
+
+const remotePolicyCues: Record<RemotePolicyValue, RegExp> = {
+  Hybrid: officeDays,
+  Onsite:
+    /\bon-?site\b|\bin[- ](?:the )?office\b|\bin[- ]person\b|\b5 days (?:a|per) week\b/u,
+  Remote: remoteWork,
+  RemoteInRegion: remoteWork,
+};
+
+const remotePolicyOf = (answer: ModelAnswerValue, text: string) => {
+  const policy = answer.remotePolicy;
+
+  return policy !== null &&
+    postingQuotes(text, answer.remotePolicyQuote, (sentence) =>
+      remotePolicyCues[policy].test(sentence)
+    )
+    ? policy
     : null;
 };
 
@@ -191,7 +238,7 @@ export const detailsOfAnswer = (
   answer: ModelAnswerValue,
   posting: PostingRequest
 ): ListingDetailsValue => ({
-  remotePolicy: answer.remotePolicy,
+  remotePolicy: remotePolicyOf(answer, posting.text),
   reportsTo: pipe(
     decodeReportsTo(answer.reportsTo?.replaceAll(/\s+/gu, " ").trim() ?? ""),
     Option.getOrNull

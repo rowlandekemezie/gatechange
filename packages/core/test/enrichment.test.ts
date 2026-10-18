@@ -75,6 +75,7 @@ const statedPosting =
 
 const validAnswer: ModelAnswerValue = {
   remotePolicy: "RemoteInRegion",
+  remotePolicyQuote: "remote in Canada",
   reportsTo: "  VP   of Engineering ",
   salaryCurrency: "usd",
   salaryMax: 220_000,
@@ -422,6 +423,20 @@ describe("enrichListing", () => {
       12,
     ],
     [
+      "a count of teams",
+      null,
+      "You'll lead the quality engineers and SDETs behind it — 10 scrum teams, with engineers in Canada, the US, and India.",
+      "10 scrum teams",
+      10,
+    ],
+    [
+      "a number of people",
+      20,
+      "You will lead a team of approximately 20 people organized across four functional areas.",
+      "a team of approximately 20 people",
+      20,
+    ],
+    [
       "the team being hired into",
       8,
       "Reports to: Engineering Director\nDirect Reports: 8-12\nLead and develop a SharedCX engineering team.",
@@ -447,6 +462,57 @@ describe("enrichListing", () => {
           pipe(
             result.after,
             Option.map((found) => found.enrichment?.teamSize)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each([
+    [
+      "a country",
+      null,
+      "Onsite",
+      "You will be based in the UAE and should be willing to relocate there.",
+    ],
+    ["travel", null, "Hybrid", "Ability to travel up to 25-50% as required."],
+    [
+      "experience with remote teams",
+      null,
+      "Remote",
+      "Experience leading and scaling distributed or remote teams.",
+    ],
+    [
+      "office days",
+      "Onsite",
+      "Onsite",
+      "This role is based in our Menlo Park, CA office, with in-person attendance expected 5 days per week.",
+    ],
+    ["a hybrid tag", "Hybrid", "Hybrid", "#LI-Hybrid"],
+    [
+      "a quote that spans two sentences",
+      "Hybrid",
+      "Hybrid",
+      "Location-based hybrid policy. We expect all staff in one of our offices at least 25% of the time.",
+    ],
+  ] as const)(
+    "a remote policy quoted from %s is saved as %s",
+    ([, saved, answered, quote]) =>
+      Effect.gen(function* remotePolicyFromPosting() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: answered,
+              remotePolicyQuote: quote,
+            },
+          }),
+          text: `${quote}\nBase salary $180,000 - $220,000 per year.`,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
           )
         ).toStrictEqual(Option.some(saved));
       })
