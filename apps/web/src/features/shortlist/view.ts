@@ -20,14 +20,11 @@ import type {
 } from "../../client/board/model.js";
 import { accountRouter, jobRouter } from "../../client/route.js";
 
-const originalPosting = (
-  h: HtmlBuilder<MessageValue>,
-  url: string | undefined
-): Html =>
+const originalPosting = (h: HtmlBuilder<MessageValue>, url: string): Html =>
   h.a(
     [
       h.Class("job-source"),
-      ...(url === undefined ? [] : [h.Href(url)]),
+      ...(isOffSiteWebUrl(url) ? [h.Href(url)] : []),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],
@@ -51,10 +48,7 @@ const markRow = (h: HtmlBuilder<MessageValue>, mark: MarkedJobValue): Html =>
             [h.Class("job-meta")],
             [
               h.span([h.Class("job-where")], [mark.location]),
-              originalPosting(
-                h,
-                isOffSiteWebUrl(mark.url) ? mark.url : undefined
-              ),
+              originalPosting(h, mark.url),
             ]
           ),
         ]
