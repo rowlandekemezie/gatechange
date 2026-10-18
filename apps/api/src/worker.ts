@@ -1,9 +1,9 @@
 import { BetterAuth } from "@alchemy.run/better-auth";
 import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
-  AUTH_BASE_PATH,
   authOptions,
   authSecret,
+  isAuthPath,
   magicLinkEmail,
   makeAccountStore,
   respondAsViewer,
@@ -77,9 +77,6 @@ const socialCredentials = (prefix: string) =>
           })
     )
   );
-
-const isAuthPath = (url: string) =>
-  url === AUTH_BASE_PATH || url.startsWith(`${AUTH_BASE_PATH}/`);
 
 export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBackend>()(
   "JobsBackend",

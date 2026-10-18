@@ -203,6 +203,12 @@ export const confirmSignInPage = <M>(token: string, h: HtmlBuilder<M>): Html =>
           ),
         ]
       ),
+      h.p(
+        [h.Class("account-lede")],
+        [
+          "Signing in needs an up-to-date browser: Safari 16.4 or later, Firefox 90 or later, or a current Chrome or Edge. On an older browser, open the link from your email in one of these.",
+        ]
+      ),
     ]
   );
 
