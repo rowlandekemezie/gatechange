@@ -82,11 +82,31 @@ describe("posting texts", () => {
         expect(server.requested).toStrictEqual([
           "https://boards-api.greenhouse.io/v1/boards/vercel/jobs/6136160004",
         ]);
-        expect(text.startsWith("About Vercel: Vercel is the agentic")).toBe(
+        expect(text.startsWith("About Vercel:\nVercel is the agentic")).toBe(
           true
         );
         expect(text).toContain("we've helped builders");
         expect(text).not.toMatch(/[<>]|&[a-z#0-9]+;/u);
+      }).pipe(Effect.provide(server.layer));
+    }
+  );
+
+  it.effect(
+    "a Greenhouse posting keeps each paragraph and list item on its own line",
+    () => {
+      const server = serving(
+        JSON.stringify({
+          content:
+            "&lt;p&gt;Location: Southeast US&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Reports to: Senior Director, Deployment &amp;amp; Mission Engineering&lt;/li&gt;&lt;li&gt;10+ years leading &lt;strong&gt;field&lt;/strong&gt; teams&lt;br&gt;in public safety&lt;/li&gt;&lt;/ul&gt;",
+        })
+      );
+
+      return Effect.gen(function* readGreenhouseLines() {
+        const text = yield* fetchText("greenhouse:axon:8010142003");
+
+        expect(text).toBe(
+          "Location: Southeast US\nReports to: Senior Director, Deployment & Mission Engineering\n10+ years leading field teams\nin public safety"
+        );
       }).pipe(Effect.provide(server.layer));
     }
   );
@@ -159,7 +179,7 @@ describe("posting texts", () => {
         const text = yield* fetchText("greenhouse:axon:1");
 
         expect(text).toBe(
-          "Base Pay Range $130,650 — $209,040 USD Gross €60,000 – €75,000 per year $90,000 — $110,000 &#99999999;"
+          "Base Pay Range $130,650 — $209,040 USD\nGross €60,000 – €75,000 per year\n$90,000 — $110,000\n&#99999999;"
         );
         expect(moneyRangesIn(text)).toStrictEqual([
           { amounts: [130_650, 209_040], currency: "USD", period: "Year" },

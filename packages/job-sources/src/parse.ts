@@ -110,8 +110,13 @@ const entities: readonly (readonly [RegExp, string])[] = [
 const characterOf = (entity: string, code: number) =>
   code <= 0x10_ff_ff ? String.fromCodePoint(code) : entity;
 
-export const textOfHtml = (html: string): string => {
+const blockTag =
+  /<\/?(?:p|div|li|ul|ol|br|h[1-6]|tr|table|section|article|blockquote|hr)\b[^>]*>/giu;
+
+export const linesOfHtml = (html: string): string => {
   let text = html
+    .replaceAll(/\s+/gu, " ")
+    .replaceAll(blockTag, "\n")
     .replaceAll(/<[^>]*>/gu, " ")
     .replaceAll(/&#x(?<hex>[\da-f]+);/giu, (entity, hex: string) =>
       characterOf(entity, Number.parseInt(hex, 16))
@@ -124,8 +129,15 @@ export const textOfHtml = (html: string): string => {
     text = text.replaceAll(pattern, replacement);
   }
 
-  return text.replaceAll(/\s+/gu, " ").trim();
+  return text
+    .split("\n")
+    .map((line) => line.replaceAll(/\s+/gu, " ").trim())
+    .filter((line) => line !== "")
+    .join("\n");
 };
+
+export const textOfHtml = (html: string): string =>
+  linesOfHtml(html).replaceAll(/\s+/gu, " ").trim();
 
 export const nonEmpty = (
   values: readonly (string | null | undefined)[]

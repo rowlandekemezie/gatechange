@@ -5,7 +5,7 @@ import { HttpClient } from "effect/http";
 
 import { CompanyAts } from "./boards.js";
 import { getJson } from "./http.js";
-import { nonEmpty, textOfHtml } from "./parse.js";
+import { linesOfHtml, nonEmpty, textOfHtml } from "./parse.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
@@ -93,7 +93,7 @@ const greenhouseText = ({ externalId, slug }: PostingKey) =>
   ).pipe(
     Effect.map(({ content, location }) =>
       nonEmpty([
-        textOfHtml(textOfHtml(content)),
+        linesOfHtml(textOfHtml(content)),
         locationLine(location?.name),
       ]).join("\n\n")
     )
@@ -109,7 +109,7 @@ const leverText = ({ externalId, slug }: PostingKey) =>
         posting.descriptionPlain,
         ...pipe(
           posting.lists ?? [],
-          Array.flatMap((list) => [list.text, textOfHtml(list.content ?? "")])
+          Array.flatMap((list) => [list.text, linesOfHtml(list.content ?? "")])
         ),
         posting.additionalPlain,
         posting.salaryDescriptionPlain,
@@ -195,7 +195,7 @@ const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
           ],
           Array.flatMap((section) => [
             section?.title,
-            textOfHtml(section?.text ?? ""),
+            linesOfHtml(section?.text ?? ""),
           ])
         )
       ).join("\n\n")
@@ -210,7 +210,7 @@ const workableText = ({ externalId, slug }: PostingKey) =>
     Effect.map((job) =>
       nonEmpty(
         Array.map([job.description, job.requirements, job.benefits], (html) =>
-          textOfHtml(html ?? "")
+          linesOfHtml(html ?? "")
         )
       ).join("\n\n")
     )
