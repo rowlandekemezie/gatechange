@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { amountsIn, PostingTexts, PostingUnavailable } from "@rat-stack/core";
+import { moneyRangesIn, PostingGone, PostingTexts } from "@rat-stack/core";
 import type { JobValue } from "@rat-stack/core";
 import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -92,7 +92,7 @@ describe("posting texts", () => {
   );
 
   it.effect(
-    "a Lever posting joins its description, lists, additional text and salary",
+    "a Lever posting joins its description, lists, additional text, salary and workplace type",
     () => {
       const server = serving(leverPosting);
 
@@ -111,15 +111,19 @@ describe("posting texts", () => {
         );
         expect(text).toContain("Why You’ll Love It Here");
         expect(text).toContain("$70,000-$110,000 USD");
+        expect(text.endsWith("Workplace type: remote")).toBe(true);
         expect(text).not.toContain("<li>");
-        expect(amountsIn(text).has(70_000)).toBe(true);
-        expect(amountsIn(text).has(110_000)).toBe(true);
+        expect(moneyRangesIn(text)).toContainEqual({
+          amounts: [70_000, 110_000],
+          currency: "USD",
+          period: "Year",
+        });
       }).pipe(Effect.provide(server.layer));
     }
   );
 
   it.effect(
-    "an Ashby posting is picked from its board with the compensation summary",
+    "an Ashby posting is picked from its board with the compensation summary, location and workplace type",
     () => {
       const server = serving(ashbyBoard);
 
@@ -135,9 +139,15 @@ describe("posting texts", () => {
         expect(text).toContain("Come join the Hierarchy Squad");
         expect(text).toContain("please contact us at AskPeople@ClickUp.com.");
         expect(
-          text.endsWith("Compensation: $200K – $250K USD per 1 YEAR")
+          text.endsWith(
+            "Compensation: $200K – $250K USD per 1 YEAR\n\nLocation: United States\n\nWorkplace type: Remote"
+          )
         ).toBe(true);
-        expect(amountsIn(text).has(200_000)).toBe(true);
+        expect(moneyRangesIn(text)).toContainEqual({
+          amounts: [200_000, 250_000],
+          currency: "USD",
+          period: "Year",
+        });
       }).pipe(Effect.provide(server.layer));
     }
   );
@@ -159,8 +169,11 @@ describe("posting texts", () => {
         expect(text).toContain("Sr Software Engineering Manager");
         expect(text).toContain("Qualifications");
         expect(text).not.toMatch(/[<>]|&[a-z#0-9]+;/u);
-        expect(amountsIn(text).has(190_900)).toBe(true);
-        expect(amountsIn(text).has(334_100)).toBe(true);
+        expect(moneyRangesIn(text)).toContainEqual({
+          amounts: [190_900, 334_100],
+          currency: "USD",
+          period: "Year",
+        });
       }).pipe(Effect.provide(server.layer));
     }
   );
@@ -185,12 +198,12 @@ describe("posting texts", () => {
     }
   );
 
-  it.effect("an Ashby posting missing from its board is unavailable", () =>
+  it.effect("an Ashby posting missing from its board is gone", () =>
     Effect.gen(function* readMissingAshby() {
       const failure = yield* Effect.flip(fetchText("ashby:clickup:gone"));
 
       expect(failure).toStrictEqual(
-        new PostingUnavailable({
+        new PostingGone({
           id: "ashby:clickup:gone",
           message: "the posting is no longer on the Ashby board",
         })
@@ -198,13 +211,26 @@ describe("posting texts", () => {
     }).pipe(Effect.provide(serving(ashbyBoard).layer))
   );
 
-  it.effect("a board that answers with an error status is unavailable", () =>
-    Effect.gen(function* readMissingPosting() {
-      const failure = yield* Effect.flip(fetchText("greenhouse:vercel:1"));
+  it.effect.each([404, 410])(
+    "a board that answers %i for the posting reports it gone",
+    (status) =>
+      Effect.gen(function* readRemovedPosting() {
+        const failure = yield* Effect.flip(fetchText("greenhouse:vercel:1"));
 
-      expect(failure._tag).toBe("PostingUnavailable");
-      expect(failure.id).toBe("greenhouse:vercel:1");
-    }).pipe(Effect.provide(serving("{}", 404).layer))
+        expect(failure._tag).toBe("PostingGone");
+        expect(failure.id).toBe("greenhouse:vercel:1");
+      }).pipe(Effect.provide(serving("{}", status).layer))
+  );
+
+  it.effect(
+    "a board that refuses the request is unavailable, to retry later",
+    () =>
+      Effect.gen(function* readFailingBoard() {
+        const failure = yield* Effect.flip(fetchText("greenhouse:vercel:1"));
+
+        expect(failure._tag).toBe("PostingUnavailable");
+        expect(failure.id).toBe("greenhouse:vercel:1");
+      }).pipe(Effect.provide(serving("{}", 403).layer))
   );
 
   it.effect("a payload missing the posting text is unavailable", () =>
@@ -226,7 +252,7 @@ describe("posting texts", () => {
   );
 
   it.effect(
-    "an aggregator id or an unparseable id is unavailable without a request",
+    "an aggregator id or an unparseable id is gone without a request",
     () => {
       const server = serving(greenhouseJob);
 
@@ -234,8 +260,8 @@ describe("posting texts", () => {
         const aggregator = yield* Effect.flip(fetchText("remoteok:all:123"));
         const nonsense = yield* Effect.flip(fetchText("greenhouse-only"));
 
-        expect(aggregator._tag).toBe("PostingUnavailable");
-        expect(nonsense._tag).toBe("PostingUnavailable");
+        expect(aggregator._tag).toBe("PostingGone");
+        expect(nonsense._tag).toBe("PostingGone");
         expect(server.requested).toStrictEqual([]);
       }).pipe(Effect.provide(server.layer));
     }

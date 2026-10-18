@@ -6,11 +6,12 @@ import {
   REPOST_GAP,
 } from "@rat-stack/core";
 import type {
+  EnrichmentSkip,
   EnrichmentValue,
   IngestReceiptValue,
   JobQueryValue,
   JobValue,
-  SourceNameValue,
+  UnenrichedSweep,
 } from "@rat-stack/core";
 
 import { statement } from "./sql-executor.js";
@@ -153,16 +154,31 @@ export const findJobStatement = (id: string): SqlStatement =>
     [id]
   );
 
-export const newListingsStatement = (
-  seenAt: number,
-  sources: readonly SourceNameValue[]
+export const unenrichedListingsStatement = (
+  sweep: UnenrichedSweep
 ): SqlStatement =>
   statement(
-    `SELECT id FROM jobs
-WHERE first_seen_at = ? AND source IN (${placeholders(sources.length)})
+    `SELECT jobs.id FROM jobs
+LEFT JOIN job_enrichment_skip AS skip ON skip.job_id = jobs.id
+WHERE jobs.first_seen_at >= ? AND jobs.source IN (${placeholders(sweep.sources.length)})
   AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id)
-ORDER BY id`,
-    [seenAt, ...sources]
+  AND (skip.reason IS NULL OR skip.reason NOT IN (${placeholders(sweep.finalSkips.length)}))
+ORDER BY skip.reason IS NOT NULL, jobs.first_seen_at DESC, jobs.id
+LIMIT ?`,
+    [sweep.since, ...sweep.sources, ...sweep.finalSkips, sweep.limit]
+  );
+
+export const recordSkipStatement = (
+  id: string,
+  skip: EnrichmentSkip
+): SqlStatement =>
+  statement(
+    `INSERT INTO job_enrichment_skip (job_id, reason, skipped_at)
+VALUES (?, ?, ?)
+ON CONFLICT (job_id) DO UPDATE SET
+  reason = excluded.reason,
+  skipped_at = excluded.skipped_at`,
+    [id, skip.reason, skip.skippedAt]
   );
 
 export const saveEnrichmentStatement = (
@@ -357,6 +373,10 @@ export const pruneJobsStatement = (cutoff: number) =>
 
 export const pruneOrphanEnrichmentStatement = statement(
   "DELETE FROM job_enrichment WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_enrichment.job_id)"
+);
+
+export const pruneOrphanSkipStatement = statement(
+  "DELETE FROM job_enrichment_skip WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_enrichment_skip.job_id)"
 );
 
 export const pruneRunsStatement = (cutoff: number) =>

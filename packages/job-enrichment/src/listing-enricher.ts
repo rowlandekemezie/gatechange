@@ -23,12 +23,12 @@ export const SYSTEM_PROMPT = [
   "You read one job posting and extract facts about the role as JSON.",
   "Extract only what the posting states. Use null for anything it does not state.",
   "Never estimate, infer or convert a salary.",
-  "Give salary amounts exactly as written in the posting, with their period (Year, Month or Hour) and their ISO 4217 currency code.",
+  "Give base salary amounts exactly as written in the posting, as numbers. Equity, bonus, stipends, budgets and retirement plans such as a 401k are not salary.",
   "When the posting lists several salary ranges, for example by location, zone or level, give the first range it states.",
   "If the posting states a salary amount, salaryMin and salaryMax must be numbers. For a single amount, give it as both.",
   "seniority is the level of the role itself.",
   "remotePolicy says where the person in this role works. Remote: fully remote from anywhere. RemoteInRegion: fully remote but only from named countries or regions. Hybrid: some days a week in an office; occasional office visits or meetups do not make a role Hybrid. Onsite: in an office every working day. Use null when the posting does not say. A city, country or office location alone is not a remote policy, travel is not one, and experience with remote teams is not one either. remotePolicyQuote is the exact words of the posting that state the policy.",
-  "reportsTo is the title of the person this role reports to, only when the posting says the role reports to them. Working or partnering with someone is not reporting to them.",
+  "reportsTo is the title of the person this role reports to, only when the posting says the role reports to them. Working or partnering with someone is not reporting to them. reportsToQuote is the exact words of the posting that say whom the role reports to.",
   "teamSize is the number of people this role will manage once hired, only when the posting states it. A count of teams, projects or customers is not a number of people. teamSizeQuote is the exact words of the posting that state it. A requirement on the candidate, such as how many people they must have led before, is never the team size: use null for both.",
 ].join("\n");
 

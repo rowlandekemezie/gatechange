@@ -69,11 +69,16 @@ const seniorityPatterns: readonly (readonly [SeniorityValue, RegExp])[] = [
   ["Manager", /\bmanagers?\b/iu],
 ];
 
+const someoneElse = /\b(?:to|of|for)\s+the\s+[^,|()–—-]*/giu;
+
 export const seniorityOfTitle = (
   title: string
-): Option.Option<SeniorityValue> =>
-  pipe(
+): Option.Option<SeniorityValue> => {
+  const ownTitle = title.replaceAll(someoneElse, " ");
+
+  return pipe(
     seniorityPatterns,
-    Array.findFirst(([, pattern]) => pattern.test(title)),
+    Array.findFirst(([, pattern]) => pattern.test(ownTitle)),
     Option.map(([level]) => level)
   );
+};

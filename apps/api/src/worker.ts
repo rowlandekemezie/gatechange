@@ -2,12 +2,12 @@ import { toRpc } from "@rat-stack/capability/rpc";
 import {
   capabilities,
   DEFAULT_FEEDS_PER_RUN,
-  enqueueNewListings,
+  enqueueUnenriched,
   enrichListing,
   EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
-  retryableSkips,
   runIngest,
+  skipHandling,
 } from "@rat-stack/core";
 import {
   enrichmentModel,
@@ -18,7 +18,7 @@ import { postingFeedsLayer, postingTextsLayer } from "@rat-stack/job-sources";
 import { d1JobStoreLayer, JobsDatabase } from "@rat-stack/job-store/d1";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import { Array, Config, Effect, Layer, Option, Schema, Stream } from "effect";
+import { Config, Effect, Layer, Option, Schema, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
@@ -32,51 +32,38 @@ export const ENRICHMENT_BATCH_SIZE = 10;
 
 export const ENRICHMENT_MAX_RETRIES = 3;
 
-export const ENRICHMENT_RETRY_DELAY_SECONDS = 300;
+export const DEFAULT_ENRICHMENT_SWEEP_LIMIT = 10;
+
+export const DEFAULT_ENRICHMENT_SWEEP_HOURS = 24;
 
 export const EnrichmentQueue = Cloudflare.Queues.Queue("EnrichmentQueue");
 
 const EnrichmentMessage = Schema.Struct({ id: Schema.NonEmptyString });
 
-const acknowledge = (message: Cloudflare.Queues.Message) =>
-  Effect.sync(() => {
-    message.ack();
-  });
-
-const retryLater = (message: Cloudflare.Queues.Message) =>
-  Effect.sync(() => {
-    message.retry({ delaySeconds: ENRICHMENT_RETRY_DELAY_SECONDS });
-  });
-
 const enrichMessage = (message: Cloudflare.Queues.Message) =>
   Option.match(Schema.decodeUnknownOption(EnrichmentMessage)(message.body), {
     onNone: () =>
-      Effect.logWarning("enrichment message dropped: no listing id", {
-        body: message.body,
-      }).pipe(Effect.andThen(acknowledge(message))),
+      Effect.logWarning(
+        `enrichment message dropped: no listing id, body=${JSON.stringify(message.body)}`
+      ),
     onSome: ({ id }) =>
       enrichListing(id).pipe(
         Effect.flatMap(
           EnrichmentOutcome.$match({
-            Enriched: (enriched) =>
-              Effect.logInfo("listing enriched", enriched).pipe(
-                Effect.andThen(acknowledge(message))
+            Enriched: ({ enrichment }) =>
+              Effect.logInfo(
+                `listing enriched id=${id} model=${enrichment.model}`
               ),
-            Skipped: (skipped) =>
-              Array.contains(retryableSkips, skipped.reason)
-                ? Effect.logWarning("enrichment will retry", skipped).pipe(
-                    Effect.andThen(retryLater(message))
-                  )
-                : Effect.logInfo("enrichment skipped", skipped).pipe(
-                    Effect.andThen(acknowledge(message))
-                  ),
+            Skipped: ({ detail, reason }) =>
+              Effect.logInfo(
+                `enrichment skipped id=${id} reason=${reason} handling=${skipHandling[reason]} detail=${JSON.stringify(detail)}`
+              ),
           })
         ),
         Effect.catchTag("JobStoreUnavailable", (unavailable) =>
-          Effect.logError("enrichment will retry: store unavailable", {
-            id,
-            unavailable,
-          }).pipe(Effect.andThen(retryLater(message)))
+          Effect.logError(
+            `enrichment left for the next sweep: store unavailable id=${id} detail=${JSON.stringify(unavailable.message)}`
+          )
         )
       ),
   });
@@ -100,6 +87,14 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
 
     const feedConcurrency = yield* Config.Int("INGEST_FEED_CONCURRENCY").pipe(
       Config.withDefault(DEFAULT_FEED_CONCURRENCY)
+    );
+
+    const sweepLimit = yield* Config.Int("ENRICHMENT_SWEEP_LIMIT").pipe(
+      Config.withDefault(DEFAULT_ENRICHMENT_SWEEP_LIMIT)
+    );
+
+    const sweepHours = yield* Config.Int("ENRICHMENT_SWEEP_HOURS").pipe(
+      Config.withDefault(DEFAULT_ENRICHMENT_SWEEP_HOURS)
     );
 
     const queue = yield* EnrichmentQueue;
@@ -142,12 +137,18 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           })
         ),
         Effect.tap(({ receipt }) =>
-          enqueueNewListings(receipt.startedAt).pipe(
+          enqueueUnenriched({
+            limit: sweepLimit,
+            now: receipt.startedAt,
+            windowHours: sweepHours,
+          }).pipe(
             Effect.tap((queued) =>
-              Effect.logInfo("new listings queued for enrichment", { queued })
+              Effect.logInfo(`listings queued for enrichment queued=${queued}`)
             ),
             Effect.catch((error) =>
-              Effect.logError("enrichment enqueue failed", error)
+              Effect.logError(
+                `enrichment enqueue failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+              )
             )
           )
         ),

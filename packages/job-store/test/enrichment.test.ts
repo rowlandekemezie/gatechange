@@ -2,7 +2,13 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "@effect/vitest";
-import { DAY_MILLIS, JobStore, SalaryBand, SalaryFloor } from "@rat-stack/core";
+import {
+  DAY_MILLIS,
+  finalSkips,
+  JobStore,
+  SalaryBand,
+  SalaryFloor,
+} from "@rat-stack/core";
 import type {
   EnrichmentValue,
   JobQueryValue,
@@ -327,71 +333,129 @@ describe("enrichment filters", () => {
 
 describe("enrichment storage", () => {
   it.effect(
-    "newListings returns unenriched ids first seen at that run from the given sources, sorted",
+    "unenrichedListings returns board ids seen since the cutoff with no enrichment or final skip, retried ones last, newest first, up to the limit",
     () =>
       withStore(
-        Effect.gen(function* newListings() {
+        Effect.gen(function* unenrichedListings() {
           const store = yield* JobStore;
-          const seenAt = NOW + DAY_MILLIS;
+          const since = NOW + DAY_MILLIS;
+
+          const seen = (at: number) => ({
+            firstSeenAt: at,
+            lastSeenAt: since + 5,
+          });
 
           yield* store.replaceFeed(
             "greenhouse:acme",
-            [job("g:old", { firstSeenAt: NOW })],
-            NOW
-          );
-          yield* store.replaceFeed(
-            "greenhouse:acme",
             [
-              job("g:zeta", { firstSeenAt: seenAt, lastSeenAt: seenAt }),
-              job("g:old", { firstSeenAt: seenAt, lastSeenAt: seenAt }),
-              job("g:alpha", { firstSeenAt: seenAt, lastSeenAt: seenAt }),
-              job("g:done", { firstSeenAt: seenAt, lastSeenAt: seenAt }),
+              job("g:old", seen(since - 1)),
+              job("g:zeta", seen(since)),
+              job("g:alpha", seen(since)),
+              job("g:done", seen(since)),
+              job("g:skipped", seen(since)),
+              job("g:retried", seen(since + 6)),
+              job("g:newest", seen(since + 5)),
             ],
-            seenAt
+            since + 5
           );
           yield* store.replaceFeed(
             "lever:acme",
             [
               job("l:mid", {
+                ...seen(since + 2),
                 feed: "lever:acme",
-                firstSeenAt: seenAt,
-                lastSeenAt: seenAt,
                 source: "Lever",
               }),
             ],
-            seenAt
+            since + 5
           );
           yield* store.replaceFeed(
             "remoteok:all",
             [
               job("r:agg", {
+                ...seen(since + 3),
                 feed: "remoteok:all",
-                firstSeenAt: seenAt,
-                lastSeenAt: seenAt,
                 source: "RemoteOK",
               }),
             ],
-            seenAt
-          );
-          yield* store.replaceFeed(
-            "greenhouse:globex",
-            [
-              job("g:later", {
-                feed: "greenhouse:globex",
-                firstSeenAt: seenAt + 1,
-                lastSeenAt: seenAt + 1,
-              }),
-            ],
-            seenAt + 1
+            since + 5
           );
           yield* store.saveEnrichment("g:done", enrichment());
+          yield* store.recordSkip("g:skipped", {
+            reason: "Malformed",
+            skippedAt: since,
+          });
+          yield* store.recordSkip("g:retried", {
+            reason: "ModelUnavailable",
+            skippedAt: since,
+          });
 
-          const fresh = yield* store.newListings(seenAt, [
-            "Greenhouse",
-            "Lever",
+          const sweep = (limit: number) =>
+            store.unenrichedListings({
+              finalSkips,
+              limit,
+              since,
+              sources: ["Greenhouse", "Lever"],
+            });
+
+          expect(yield* sweep(10)).toStrictEqual([
+            "g:newest",
+            "l:mid",
+            "g:alpha",
+            "g:zeta",
+            "g:retried",
           ]);
+          expect(yield* sweep(2)).toStrictEqual(["g:newest", "l:mid"]);
+        })
+      )
+  );
 
-          expect(fresh).toStrictEqual(["g:alpha", "g:zeta", "l:mid"]);
+  it.effect(
+    "recording a skip twice keeps one row, and pruning drops skips whose job is gone",
+    () =>
+      withStore(
+        Effect.gen(function* skips() {
+          const store = yield* JobStore;
+          const sql = yield* SqlExecutor;
+
+          const SkipRow = Schema.Struct({
+            job_id: Schema.String,
+            reason: Schema.String,
+          });
+
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [job("kept"), job("delisted")],
+            NOW
+          );
+          yield* store.recordSkip("kept", { reason: "Gone", skippedAt: NOW });
+          yield* store.recordSkip("kept", {
+            reason: "EmptyPosting",
+            skippedAt: NOW + 1,
+          });
+          yield* store.recordSkip("delisted", {
+            reason: "Malformed",
+            skippedAt: NOW,
+          });
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [job("kept", { lastSeenAt: NOW + 1 })],
+            NOW + 1
+          );
+          yield* store.pruneOlderThan(NOW - DAY_MILLIS);
+
+          const rows = yield* sql.all(
+            "skips",
+            statement(
+              "SELECT job_id, reason FROM job_enrichment_skip ORDER BY job_id",
+              []
+            ),
+            SkipRow
+          );
+
+          expect(rows).toStrictEqual([
+            { job_id: "kept", reason: "EmptyPosting" },
+          ]);
         })
       )
   );

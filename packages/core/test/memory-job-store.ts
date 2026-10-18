@@ -2,6 +2,7 @@ import { Array, Effect, Layer, Option, pipe } from "effect";
 
 import { daysOpen, fingerprintOf, isRepost, JobStore } from "../src/index.js";
 import type {
+  EnrichmentSkip,
   EnrichmentValue,
   FeedStateValue,
   IngestReceiptValue,
@@ -17,6 +18,7 @@ export interface MemoryJobStore {
   readonly jobs: () => readonly JobValue[];
   readonly layer: Layer.Layer<JobStore>;
   readonly runs: () => readonly IngestReceiptValue[];
+  readonly skips: () => ReadonlyMap<string, EnrichmentSkip>;
 }
 
 export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
@@ -25,6 +27,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const runs: IngestReceiptValue[] = [];
   const history = new Map<string, ListingHistory>();
   const enrichments = new Map<string, EnrichmentValue>();
+  const skips = new Map<string, EnrichmentSkip>();
 
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
@@ -162,20 +165,6 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           total: matching.length,
         };
       }),
-    newListings: (seenAt, sources) =>
-      Effect.sync(() =>
-        pipe(
-          [...jobs.values()],
-          Array.filter(
-            (job) =>
-              job.firstSeenAt === seenAt &&
-              sources.includes(job.source) &&
-              !enrichments.has(job.id)
-          ),
-          Array.map((job) => job.id),
-          (ids) => ids.toSorted()
-        )
-      ),
     pruneOlderThan: (cutoff) =>
       Effect.sync(() => {
         const expired = pipe(
@@ -187,9 +176,11 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           jobs.delete(job.id);
         }
 
-        for (const id of enrichments.keys()) {
-          if (!jobs.has(id)) {
-            enrichments.delete(id);
+        for (const kept of [enrichments, skips]) {
+          for (const id of kept.keys()) {
+            if (!jobs.has(id)) {
+              kept.delete(id);
+            }
           }
         }
 
@@ -209,6 +200,10 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     recordRun: (receipt) =>
       Effect.sync(() => {
         runs.push(receipt);
+      }),
+    recordSkip: (id, skip) =>
+      Effect.sync(() => {
+        skips.set(id, skip);
       }),
     releaseIngest: (startedAt) =>
       Effect.sync(() => {
@@ -294,6 +289,31 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         regions: [],
         roles: [],
       })),
+    unenrichedListings: ({ finalSkips, limit, since, sources }) =>
+      Effect.sync(() =>
+        pipe(
+          [...jobs.values()],
+          Array.filter((job) => {
+            const skip = skips.get(job.id);
+
+            return (
+              job.firstSeenAt >= since &&
+              sources.includes(job.source) &&
+              !enrichments.has(job.id) &&
+              (skip === undefined || !finalSkips.includes(skip.reason))
+            );
+          }),
+          (found) =>
+            found.toSorted(
+              (left, right) =>
+                Number(skips.has(left.id)) - Number(skips.has(right.id)) ||
+                right.firstSeenAt - left.firstSeenAt ||
+                left.id.localeCompare(right.id)
+            ),
+          Array.take(limit),
+          Array.map((job) => job.id)
+        )
+      ),
   });
 
   return {
@@ -303,5 +323,6 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     jobs: () => [...jobs.values()],
     layer: Layer.succeed(JobStore, store),
     runs: () => runs,
+    skips: () => skips,
   };
 });

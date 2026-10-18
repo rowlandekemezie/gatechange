@@ -31,7 +31,7 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `@rat-stack/job-sources` | `packages/job-sources` | `PostingFeeds` adapter: Greenhouse, Lever and Ashby company boards, Remote OK, Remotive, Himalayas, Jobicy and the Hacker News hiring thread. `src/boards.ts` is the verified company registry |
 | `@rat-stack/job-store` | `packages/job-store` | `JobStore` adapter over a `SqlExecutor` port; `@rat-stack/job-store/d1` binds it to Cloudflare D1 and declares the `JobsDatabase` resource with `migrations/` |
 | `@rat-stack/job-enrichment` | `packages/job-enrichment` | Workers AI `ListingEnricher` (JSON mode, model from `ENRICHMENT_MODEL`) and the Cloudflare Queue `EnrichmentQueue` adapter |
-| `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc`, runs `runIngest` on a 20 minute cron, queues new company-board listings, and consumes `EnrichmentQueue` to enrich them |
+| `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc`, runs `runIngest` on a 20 minute cron, sweeps unenriched company-board listings into `EnrichmentQueue`, and consumes it to enrich them |
 | `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` to `JobsBackend` and serves assets |
 | `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com`. Only the `prod` stage attaches that domain (`src/site-routing.ts`); every other deployed stage serves on its `workers.dev` URL |
 
@@ -62,6 +62,7 @@ Run `pnpm fix` only when you intend to rewrite files. Finish with `pnpm turbo ru
 - Local deploys use an Alchemy profile: `pnpm alchemy profile edit --add Cloudflare`, then `ALCHEMY_PROFILE=<name> pnpm infra:plan --stage prod` and `pnpm infra:deploy --stage prod`.
 - The zone `rowlandekemezie.com` must already be on the Cloudflare account. Alchemy attaches `jobs.rowlandekemezie.com` as a Worker custom domain.
 - `INGEST_FEEDS_PER_RUN` and `INGEST_FEED_CONCURRENCY` (apps/api/.env.schema) tune the cron. Workers Free allows 50 external subrequests (`fetch`, retries included) and 1,000 to Cloudflare services such as D1 per invocation, and 10 ms CPU; waiting on I/O is not CPU. A board feed costs one fetch, a SmartRecruiters board up to five pages. Each fetch can retry twice on a transient error, and every redirect hop counts as a subrequest. A SmartRecruiters board listing more than `SMARTRECRUITERS_MAX_POSTINGS` (500) postings fails closed: the cap check runs on the first page, before any further page is requested or retried, so an over-cap board costs one fetch plus its own transient retries and never replaces its feed with a partial list.
+- After each ingest run the cron queues up to `ENRICHMENT_SWEEP_LIMIT` (default 10) company-board listings first seen in the last `ENRICHMENT_SWEEP_HOURS` (default 24) that have no enrichment and no final skip. The limit caps Workers AI spend at 720 model calls a day. A listing skipped as `ModelUnavailable` or `PostingUnavailable` keeps its skip row and is swept again after fresh listings; `Gone`, `Malformed` and `EmptyPosting` are final.
 
 ## Fence (cheating is uncomfortable)
 

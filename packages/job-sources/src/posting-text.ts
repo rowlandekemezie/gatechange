@@ -1,10 +1,10 @@
-import { PostingTexts, PostingUnavailable } from "@rat-stack/core";
-import type { FeedUnavailable, JobValue } from "@rat-stack/core";
-import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
+import { PostingGone, PostingTexts, PostingUnavailable } from "@rat-stack/core";
+import type { JobValue } from "@rat-stack/core";
+import { Array, Effect, Layer, Option, pipe, Predicate, Schema } from "effect";
 import { HttpClient } from "effect/http";
 
 import { CompanyAts } from "./boards.js";
-import { fetchJson } from "./http.js";
+import { getJson } from "./http.js";
 import { nonEmpty, textOfHtml } from "./parse.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
@@ -22,6 +22,7 @@ const LeverDetail = Schema.Struct({
     )
   ),
   salaryDescriptionPlain: OptionalString,
+  workplaceType: OptionalString,
 });
 
 const AshbyDetail = Schema.Struct({
@@ -45,6 +46,9 @@ const AshbyDetail = Schema.Struct({
   ),
   descriptionPlain: OptionalString,
   id: Schema.String,
+  isRemote: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  location: OptionalString,
+  workplaceType: OptionalString,
 });
 
 const SmartRecruitersSection = Schema.optional(
@@ -68,18 +72,21 @@ const WorkableDetail = Schema.Struct({
   requirements: OptionalString,
 });
 
+const workplaceLine = (workplaceType: string | null | undefined) =>
+  workplaceType === null || workplaceType === undefined
+    ? null
+    : `Workplace type: ${workplaceType}`;
+
 const AshbyBoard = Schema.Struct({ jobs: Schema.Array(Schema.Unknown) });
 
-const greenhouseText = (id: string, slug: string, externalId: string) =>
-  fetchJson(
-    id,
+const greenhouseText = ({ externalId, slug }: PostingKey) =>
+  getJson(
     `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
     GreenhouseDetail
   ).pipe(Effect.map(({ content }) => textOfHtml(textOfHtml(content))));
 
-const leverText = (id: string, slug: string, externalId: string) =>
-  fetchJson(
-    id,
+const leverText = ({ externalId, slug }: PostingKey) =>
+  getJson(
     `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}/${encodeURIComponent(externalId)}`,
     LeverDetail
   ).pipe(
@@ -92,6 +99,7 @@ const leverText = (id: string, slug: string, externalId: string) =>
         ),
         posting.additionalPlain,
         posting.salaryDescriptionPlain,
+        workplaceLine(posting.workplaceType),
       ]).join("\n\n")
     )
   );
@@ -122,9 +130,8 @@ const ashbyCompensation = (
   );
 };
 
-const ashbyText = (id: string, slug: string, externalId: string) =>
-  fetchJson(
-    id,
+const ashbyText = ({ externalId, id, slug }: PostingKey) =>
+  getJson(
     `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}?includeCompensation=true`,
     AshbyBoard
   ).pipe(
@@ -140,7 +147,7 @@ const ashbyText = (id: string, slug: string, externalId: string) =>
       Option.match({
         onNone: () =>
           Effect.fail(
-            new PostingUnavailable({
+            new PostingGone({
               id,
               message: "the posting is no longer on the Ashby board",
             })
@@ -150,15 +157,20 @@ const ashbyText = (id: string, slug: string, externalId: string) =>
             nonEmpty([
               job.descriptionPlain,
               ashbyCompensation(job.compensation),
+              job.location === null || job.location === undefined
+                ? null
+                : `Location: ${job.location}`,
+              workplaceLine(
+                job.isRemote === true ? "Remote" : job.workplaceType
+              ),
             ]).join("\n\n")
           ),
       })
     )
   );
 
-const smartRecruitersText = (id: string, slug: string, externalId: string) =>
-  fetchJson(
-    id,
+const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
+  getJson(
     `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings/${encodeURIComponent(externalId)}`,
     SmartRecruitersDetail
   ).pipe(
@@ -180,9 +192,8 @@ const smartRecruitersText = (id: string, slug: string, externalId: string) =>
     )
   );
 
-const workableText = (id: string, slug: string, externalId: string) =>
-  fetchJson(
-    id,
+const workableText = ({ externalId, slug }: PostingKey) =>
+  getJson(
     `https://apply.workable.com/api/v2/accounts/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
     WorkableDetail
   ).pipe(
@@ -195,17 +206,13 @@ const workableText = (id: string, slug: string, externalId: string) =>
     )
   );
 
+type ReadFailure = Effect.Error<ReturnType<typeof getJson>>;
+
 const textOfAts: Record<
   typeof CompanyAts.Type,
   (
-    id: string,
-    slug: string,
-    externalId: string
-  ) => Effect.Effect<
-    string,
-    FeedUnavailable | PostingUnavailable,
-    HttpClient.HttpClient
-  >
+    key: PostingKey
+  ) => Effect.Effect<string, PostingGone | ReadFailure, HttpClient.HttpClient>
 > = {
   ashby: ashbyText,
   greenhouse: greenhouseText,
@@ -220,26 +227,44 @@ const JobKey = Schema.Struct({
   slug: Schema.NonEmptyString,
 });
 
+type PostingKey = typeof JobKey.Type & { readonly id: string };
+
 const jobKeyPattern = /^(?<ats>[^:]+):(?<slug>[^:]+):(?<externalId>.+)$/u;
 
-const postingText = Effect.fnUntraced(function* postingText(job: JobValue) {
-  const unavailable = (message: string) =>
-    new PostingUnavailable({ id: job.id, message: message.slice(0, 500) });
+const goneStatuses: ReadonlySet<number> = new Set([404, 410]);
 
+const postingText = Effect.fnUntraced(function* postingText(job: JobValue) {
   const key = Schema.decodeUnknownOption(JobKey)(
     jobKeyPattern.exec(job.id)?.groups
   );
 
   if (Option.isNone(key)) {
-    return yield* unavailable("the id does not name a company board posting");
+    return yield* new PostingGone({
+      id: job.id,
+      message: "the id does not name a company board posting",
+    });
   }
 
-  const { ats, externalId, slug } = key.value;
+  return yield* textOfAts[key.value.ats]({ ...key.value, id: job.id }).pipe(
+    Effect.mapError((failure) => {
+      if (Predicate.isTagged(failure, "PostingGone")) {
+        return failure;
+      }
 
-  return yield* textOfAts[ats](job.id, slug, externalId).pipe(
-    Effect.catchTag("FeedUnavailable", (failure) =>
-      Effect.fail(unavailable(failure.message))
-    )
+      const status = Predicate.isTagged(failure, "HttpClientError")
+        ? failure.response?.status
+        : null;
+
+      return status !== null && status !== undefined && goneStatuses.has(status)
+        ? new PostingGone({
+            id: job.id,
+            message: `the board answered ${status} for the posting`,
+          })
+        : new PostingUnavailable({
+            id: job.id,
+            message: failure.message.slice(0, 500),
+          });
+    })
   );
 });
 

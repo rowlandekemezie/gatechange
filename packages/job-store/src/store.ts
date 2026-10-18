@@ -32,18 +32,20 @@ import {
   historyStatement,
   lastRunStatement,
   listJobsStatement,
-  newListingsStatement,
   newTodayStatement,
   pruneJobsStatement,
   pruneOrphanEnrichmentStatement,
+  pruneOrphanSkipStatement,
   pruneRunsStatement,
   recordRunStatement,
+  recordSkipStatement,
   regionCountsStatement,
   releaseIngestStatement,
   removeUnseenStatement,
   roleCountsStatement,
   saveEnrichmentStatement,
   sightingStatement,
+  unenrichedListingsStatement,
   UPSERT_CHUNK,
   upsertJobStatement,
 } from "./queries.js";
@@ -277,17 +279,13 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         )
       ),
 
-    newListings: (seenAt, sources) =>
-      sql
-        .all("newListings", newListingsStatement(seenAt, sources), IdRow)
-        .pipe(Effect.map(Array.map((row) => row.id))),
-
     pruneOlderThan: (cutoff) =>
       sql
         .batch("pruneOlderThan", [
           pruneJobsStatement(cutoff),
           pruneRunsStatement(cutoff),
           pruneOrphanEnrichmentStatement,
+          pruneOrphanSkipStatement,
         ])
         .pipe(
           Effect.map((results) =>
@@ -307,6 +305,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     recordRun: (receipt) =>
       sql.batch("recordRun", [recordRunStatement(receipt)]).pipe(Effect.asVoid),
+
+    recordSkip: (id, skip) =>
+      sql
+        .batch("recordSkip", [recordSkipStatement(id, skip)])
+        .pipe(Effect.asVoid),
 
     releaseIngest: (startedAt) =>
       sql
@@ -386,6 +389,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           };
         })
       ),
+
+    unenrichedListings: (sweep) =>
+      sql
+        .all("unenrichedListings", unenrichedListingsStatement(sweep), IdRow)
+        .pipe(Effect.map(Array.map((row) => row.id))),
   });
 });
 

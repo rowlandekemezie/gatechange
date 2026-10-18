@@ -35,6 +35,10 @@ const titleSeniorities: readonly (readonly [string, SeniorityValue])[] = [
   ["Chief Technology Officer", "Executive"],
   ["Senior Engineering Manager, Payments", "SeniorManager"],
   ["Manager, Starlink Engineering (Starlink PCBA SMT)", "Manager"],
+  ["Engineering Manager, Office of the CTO", "Manager"],
+  ["Senior Director of Engineering, reporting to the CEO", "SeniorDirector"],
+  ["Director, Office of the VP of Engineering", "Director"],
+  ["CTO", "Executive"],
   ["Manager II, Engineering", "Manager"],
 ];
 
@@ -75,12 +79,16 @@ describe("seniority from a title", () => {
     expect(seniorityOfTitle(title)).toStrictEqual(Option.some(seniority));
   });
 
-  it.each(["Head of Platform Engineering", "Chief of Staff", "Staff Engineer"])(
-    "%s states no level, so the model fills it",
-    (title) => {
-      expect(seniorityOfTitle(title)).toStrictEqual(Option.none());
-    }
-  );
+  it.each([
+    "Head of Platform Engineering",
+    "Head of Engineering",
+    "Head of Engineering, Office of the CTO",
+    "Chief of Staff",
+    "Chief of Staff to the CTO",
+    "Staff Engineer",
+  ])("%s states no level, so the model fills it", (title) => {
+    expect(seniorityOfTitle(title)).toStrictEqual(Option.none());
+  });
 });
 
 describe("role classification", () => {

@@ -19,3 +19,9 @@ CREATE TABLE job_enrichment (
 CREATE INDEX job_enrichment_salary ON job_enrichment (salary_currency, salary_max);
 
 CREATE INDEX job_enrichment_seniority ON job_enrichment (seniority);
+
+CREATE TABLE job_enrichment_skip (
+  job_id TEXT PRIMARY KEY NOT NULL,
+  reason TEXT NOT NULL,
+  skipped_at INTEGER NOT NULL
+);

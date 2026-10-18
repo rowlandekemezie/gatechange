@@ -13,29 +13,32 @@ import * as Arbitrary from "effect/Arbitrary";
 import { TestClock } from "effect/testing";
 
 import {
-  amountsIn,
   AnnualAmount,
-  Currency,
   EnricherUnavailable,
   EnrichmentOutcome,
   EnrichmentQueue,
-  enqueueNewListings,
+  EnrichmentQueueUnavailable,
+  enqueueUnenriched,
   enrichableSources,
   enrichListing,
   JobStore,
   ListingEnricher,
   listJobs,
   ModelAnswer,
+  moneyRangesIn,
   PostingFeeds,
+  PostingGone,
   PostingTexts,
-  retryableSkips,
+  PostingUnavailable,
   runIngest,
+  skipHandling,
 } from "../src/index.js";
 import type {
   EnrichmentOutcomeValue,
   EnrichmentValue,
   FeedRef,
   JobQueryValue,
+  JobStoreUnavailable,
   JobValue,
   ModelAnswerValue,
   PostingValue,
@@ -71,16 +74,15 @@ const aggregatorJob: JobValue = {
 };
 
 const statedPosting =
-  "You will lead a team of 24 engineers. Base salary $180,000 - $220,000 per year, remote in Canada.";
+  "You will lead a team of 24 engineers and report to the VP of Engineering. Base salary $180,000 - $220,000 per year, remote in Canada.";
 
 const validAnswer: ModelAnswerValue = {
   remotePolicy: "RemoteInRegion",
   remotePolicyQuote: "remote in Canada",
   reportsTo: "  VP   of Engineering ",
-  salaryCurrency: "usd",
+  reportsToQuote: "report to the VP of Engineering",
   salaryMax: 220_000,
   salaryMin: 180_000,
-  salaryPeriod: "Year",
   seniority: "Director",
   teamSize: 24,
   teamSizeQuote: "lead a team of 24 engineers",
@@ -108,6 +110,7 @@ const Answer = Data.taggedEnum<AnswerValue>();
 interface Scenario {
   readonly answer: AnswerValue;
   readonly enrichedBefore?: EnrichmentValue;
+  readonly fetched?: Effect.Effect<string, PostingGone | PostingUnavailable>;
   readonly id?: string;
   readonly jobs?: readonly JobValue[];
   readonly text?: string;
@@ -116,6 +119,7 @@ interface Scenario {
 const enrich = ({
   answer,
   enrichedBefore,
+  fetched,
   id = boardJob.id,
   jobs = [boardJob],
   text = statedPosting,
@@ -125,7 +129,7 @@ const enrich = ({
     const requests: string[] = [];
 
     const texts = PostingTexts.of({
-      fetch: () => Effect.succeed(text),
+      fetch: () => fetched ?? Effect.succeed(text),
     });
 
     const enricher = ListingEnricher.of({
@@ -164,6 +168,10 @@ const enrich = ({
         enrichments: memory.enrichments().size,
         outcome,
         requests,
+        skipped: pipe(
+          [...memory.skips().values()],
+          Array.map((recorded) => recorded.reason)
+        ),
       };
     }).pipe(
       Effect.provide(
@@ -202,16 +210,13 @@ const malformedAnswers = Arbitrary.map(
 const bandedAnswers = Arbitrary.map(
   Arbitrary.all([
     Arbitrary.schema(ModelAnswer),
-    Arbitrary.schema(Currency),
     Arbitrary.schema(AnnualAmount),
     Arbitrary.schema(AnnualAmount),
   ]),
-  ([answer, currency, low, high]): ModelAnswerValue => ({
+  ([answer, low, high]): ModelAnswerValue => ({
     ...answer,
-    salaryCurrency: currency,
     salaryMax: Math.max(low, high),
     salaryMin: Math.min(low, high),
-    salaryPeriod: "Year",
   })
 );
 
@@ -236,21 +241,24 @@ describe("enrichListing", () => {
         );
         expect(result.after).toStrictEqual(result.before);
         expect(result.enrichments).toBe(0);
+        expect(result.skipped).toStrictEqual(["Malformed"]);
       })
   );
 
   it.effect(
-    "an unavailable model skips as ModelUnavailable and writes nothing",
+    "an unavailable model skips as ModelUnavailable, leaves the listing unenriched, and records the skip for the sweep to retry",
     () =>
       Effect.gen(function* modelDown() {
         const result = yield* enrich({ answer: Answer.Unavailable() });
 
         expect(reasonOf(result.outcome)).toBe("ModelUnavailable");
+        expect(skipHandling.ModelUnavailable).toBe("Retry");
         expect(result.requests).toStrictEqual([boardJob.title]);
         expect(result.after).toStrictEqual(
           Option.some({ ...boardJob, enrichment: null })
         );
         expect(result.enrichments).toBe(0);
+        expect(result.skipped).toStrictEqual(["ModelUnavailable"]);
       })
   );
 
@@ -328,7 +336,7 @@ describe("enrichListing", () => {
         const text = `Compensation follows our bands: ${pipe(
           amounts,
           Array.filter((amount) => !stated.has(amount)),
-          Array.map(String),
+          Array.map((amount) => `$${amount}`),
           Array.join("; ")
         )}`;
 
@@ -352,9 +360,7 @@ describe("enrichListing", () => {
     () =>
       Effect.gen(function* statedSalary() {
         const result = yield* enrich({
-          answer: Answer.Answers({
-            answer: { ...validAnswer, salaryCurrency: "CAD" },
-          }),
+          answer: Answer.Answers({ answer: validAnswer }),
           text: "Pay range 180k to 220k CAD",
         });
 
@@ -366,6 +372,165 @@ describe("enrichListing", () => {
         ).toStrictEqual(
           Option.some({ currency: "CAD", max: 220_000, min: 180_000 })
         );
+      })
+  );
+
+  it.effect.each([
+    [
+      "half a band",
+      "Base salary $150,000 per year, plus equity.",
+      150_000,
+      900_000,
+      null,
+    ],
+    [
+      "two amounts from different sentences",
+      "Base salary $150,000. Equity grant worth $900,000 over four years.",
+      150_000,
+      900_000,
+      null,
+    ],
+    [
+      "a yearly band",
+      "Base salary $150,000 - $200,000 per year.",
+      150_000,
+      200_000,
+      { currency: "USD", max: 200_000, min: 150_000 },
+    ],
+    [
+      "a band in pounds",
+      "Base salary £80,000 - £90,000.",
+      80_000,
+      90_000,
+      { currency: "GBP", max: 90_000, min: 80_000 },
+    ],
+    [
+      "a dollar band with a CAD code",
+      "Pay range $142,800—$184,800 CAD",
+      142_800,
+      184_800,
+      { currency: "CAD", max: 184_800, min: 142_800 },
+    ],
+    [
+      "an hourly band",
+      "Pay is $75 - $95 per hour.",
+      75,
+      95,
+      { currency: "USD", max: 197_600, min: 156_000 },
+    ],
+    [
+      "a monthly band in euros",
+      "Gross pay €8,000 - €10,000 per month.",
+      8000,
+      10_000,
+      { currency: "EUR", max: 120_000, min: 96_000 },
+    ],
+    ["small amounts with no period", "Pay is $75 - $95.", 75, 95, null],
+    [
+      "a 401k match",
+      "We match your 401k contributions.",
+      401_000,
+      401_000,
+      null,
+    ],
+    [
+      "an unsupported currency",
+      "₹9,424,000—₹9,424,500 INR",
+      9_424_000,
+      9_424_500,
+      null,
+    ],
+    [
+      "a single amount",
+      "Salary: $180,000 per year.",
+      180_000,
+      180_000,
+      { currency: "USD", max: 180_000, min: 180_000 },
+    ],
+  ] as const)(
+    "a salary of %s is read from the posting's own currency and period",
+    ([, text, low, high, saved]) =>
+      Effect.gen(function* salaryFromPosting() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: { ...validAnswer, salaryMax: high, salaryMin: low },
+          }),
+          text,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.salary)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each([
+    [
+      "a reporting line the posting states",
+      "VP of Engineering",
+      "You will report to the VP of Engineering.",
+      "report to the VP of Engineering",
+      "VP of Engineering",
+    ],
+    [
+      "a reports-to line",
+      "Engineering Director",
+      "Reports to: Engineering Director\nDirect Reports: 8-12",
+      "Reports to: Engineering Director",
+      "Engineering Director",
+    ],
+    [
+      "a missing quote",
+      null,
+      "You will report to the VP of Engineering.",
+      null,
+      "VP of Engineering",
+    ],
+    [
+      "a quote the posting never says",
+      null,
+      "You will lead the platform group.",
+      "report to the CTO",
+      "CTO",
+    ],
+    [
+      "a quote naming someone else",
+      null,
+      "You will report to the CTO and partner with the VP of Engineering.",
+      "report to the CTO",
+      "VP of Engineering",
+    ],
+    [
+      "a partnership",
+      null,
+      "You will partner closely with the VP of Engineering.",
+      "partner closely with the VP of Engineering",
+      "VP of Engineering",
+    ],
+  ] as const)(
+    "a reports-to quoted from %s is saved as %s",
+    ([, saved, text, quote, answered]) =>
+      Effect.gen(function* reportsToFromPosting() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              reportsTo: answered,
+              reportsToQuote: quote,
+            },
+          }),
+          text,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.reportsTo)
+          )
+        ).toStrictEqual(Option.some(saved));
       })
   );
 
@@ -430,6 +595,20 @@ describe("enrichListing", () => {
       10,
     ],
     [
+      "a team the role joins",
+      null,
+      "You will join a team of 40 engineers.",
+      "join a team of 40 engineers",
+      40,
+    ],
+    [
+      "a team the role joins and leads",
+      40,
+      "You will join us and lead a team of 40 engineers.",
+      "lead a team of 40 engineers",
+      40,
+    ],
+    [
       "a number of people",
       20,
       "You will lead a team of approximately 20 people organized across four functional areas.",
@@ -487,12 +666,32 @@ describe("enrichListing", () => {
       "Onsite",
       "This role is based in our Menlo Park, CA office, with in-person attendance expected 5 days per week.",
     ],
+    ["a negated policy", null, "Remote", "This is not a remote role."],
     ["a hybrid tag", "Hybrid", "Hybrid", "#LI-Hybrid"],
     [
       "a quote that spans two sentences",
       "Hybrid",
       "Hybrid",
       "Location-based hybrid policy. We expect all staff in one of our offices at least 25% of the time.",
+    ],
+    [
+      "monthly office visits",
+      null,
+      "Hybrid",
+      "You will be expected to work in the office 1-2 times/month and therefore can be situated anywhere in the country.",
+    ],
+    [
+      "monthly office visits read as onsite",
+      null,
+      "Onsite",
+      "You will be expected to work in the office 1-2 times/month and therefore can be situated anywhere in the country.",
+    ],
+    ["a board's workplace type", "Hybrid", "Hybrid", "Workplace type: Hybrid"],
+    [
+      "an office share the model left out",
+      "Hybrid",
+      null,
+      "Location-based hybrid policy: Currently, we expect all staff to be in one of our offices at least 25% of the time.",
     ],
   ] as const)(
     "a remote policy quoted from %s is saved as %s",
@@ -528,11 +727,45 @@ describe("enrichListing", () => {
         });
 
         expect(reasonOf(result.outcome)).toBe("EmptyPosting");
-        expect(Array.contains(retryableSkips, reasonOf(result.outcome))).toBe(
-          false
-        );
         expect(result.requests).toStrictEqual([]);
         expect(result.enrichments).toBe(0);
+        expect(result.skipped).toStrictEqual(["EmptyPosting"]);
+      })
+  );
+
+  it.effect(
+    "a posting its board no longer serves skips as Gone, asks no model, and is recorded so no sweep retries it",
+    () =>
+      Effect.gen(function* postingGone() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          fetched: Effect.fail(
+            new PostingGone({ id: boardJob.id, message: "404" })
+          ),
+        });
+
+        expect(reasonOf(result.outcome)).toBe("Gone");
+        expect(result.requests).toStrictEqual([]);
+        expect(result.enrichments).toBe(0);
+        expect(result.skipped).toStrictEqual(["Gone"]);
+      })
+  );
+
+  it.effect(
+    "a posting that fails to load skips as PostingUnavailable, asks no model, and records the skip for the sweep to retry",
+    () =>
+      Effect.gen(function* postingUnavailable() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          fetched: Effect.fail(
+            new PostingUnavailable({ id: boardJob.id, message: "503" })
+          ),
+        });
+
+        expect(reasonOf(result.outcome)).toBe("PostingUnavailable");
+        expect(skipHandling.PostingUnavailable).toBe("Retry");
+        expect(result.requests).toStrictEqual([]);
+        expect(result.skipped).toStrictEqual(["PostingUnavailable"]);
       })
   );
 
@@ -625,6 +858,10 @@ const listingRuns = Arbitrary.array(Arbitrary.schema(ListingRun), {
   minLength: 1,
 });
 
+const sweepLimits = Arbitrary.schema(
+  Schema.Int.check(Schema.isBetween({ maximum: 4, minimum: 1 }))
+);
+
 const postingFor =
   (company: string) =>
   (id: string): PostingValue => ({
@@ -638,19 +875,40 @@ const postingFor =
     workplace: "Unspecified",
   });
 
-const ingestAndEnqueue = (runs: readonly ListingRunValue[]) =>
+const RUN_GAP_HOURS = 2;
+
+const WINDOW_HOURS = 3;
+
+interface SweepOptions {
+  readonly afterRun?: (
+    run: number
+  ) => Effect.Effect<void, JobStoreUnavailable, JobStore>;
+  readonly limit?: number;
+  readonly queueDownOnRun?: number;
+}
+
+const ingestAndSweep = (
+  runs: readonly ListingRunValue[],
+  {
+    afterRun = () => Effect.void,
+    limit = 100,
+    queueDownOnRun,
+  }: SweepOptions = {}
+) =>
   Effect.gen(function* replayRuns() {
     const memory = yield* makeMemoryJobStore;
     const queued: (readonly string[])[] = [];
 
-    const queue = EnrichmentQueue.of({
-      enqueue: (ids) =>
-        Effect.sync(() => {
-          queued.push(ids);
-        }),
-    });
+    for (const [index, run] of runs.entries()) {
+      const queue = EnrichmentQueue.of({
+        enqueue: (ids) =>
+          index === queueDownOnRun
+            ? Effect.fail(new EnrichmentQueueUnavailable({ message: "down" }))
+            : Effect.sync(() => {
+                queued.push(ids);
+              }),
+      });
 
-    for (const run of runs) {
       const feeds = PostingFeeds.of({
         catalog: [boardFeed, aggregatorFeed],
         fetch: (feed) =>
@@ -661,13 +919,21 @@ const ingestAndEnqueue = (runs: readonly ListingRunValue[]) =>
           ),
       });
 
-      yield* Effect.gen(function* ingestThenEnqueue() {
+      yield* Effect.gen(function* ingestThenSweep() {
         const { receipt } = yield* runIngest({
           feedConcurrency: 2,
           feedsPerRun: 2,
         });
 
-        yield* enqueueNewListings(receipt.startedAt);
+        yield* enqueueUnenriched({
+          limit,
+          now: receipt.startedAt,
+          windowHours: WINDOW_HOURS,
+        }).pipe(
+          Effect.catchTag("EnrichmentQueueUnavailable", () => Effect.void)
+        );
+
+        yield* afterRun(index);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -678,7 +944,7 @@ const ingestAndEnqueue = (runs: readonly ListingRunValue[]) =>
         )
       );
 
-      yield* TestClock.adjust("2 hours");
+      yield* TestClock.adjust(`${RUN_GAP_HOURS} hours`);
     }
 
     return queued;
@@ -686,24 +952,45 @@ const ingestAndEnqueue = (runs: readonly ListingRunValue[]) =>
 
 const boardId = (id: string) => `${boardFeed.key}:${id}`;
 
-describe("enqueueNewListings", () => {
+const run = (board: readonly string[], aggregator: readonly string[] = []) =>
+  Schema.decodeUnknownSync(ListingRun)({ aggregator, board });
+
+describe("enqueueUnenriched", () => {
   it.effect.prop(
-    "each run queues exactly the company-board ids that run listed for the first time",
-    { runs: listingRuns },
-    ({ runs }) =>
-      Effect.gen(function* firstSightings() {
-        const queued = yield* ingestAndEnqueue(runs);
+    "each run queues the newest company-board listings first seen within the window, up to the cap",
+    { limit: sweepLimits, runs: listingRuns },
+    ({ limit, runs }) =>
+      Effect.gen(function* sweptListings() {
+        const queued = yield* ingestAndSweep(runs, { limit });
+
+        const firstSeen = new Map<string, number>();
 
         const expected = pipe(
           runs,
-          Array.map((run, index) => {
+          Array.map((current, index) => {
             const previous = new Set(runs[index - 1]?.board);
 
+            for (const id of Array.dedupe(current.board)) {
+              if (!previous.has(id)) {
+                firstSeen.set(id, index);
+              }
+            }
+
             return pipe(
-              Array.dedupe(run.board),
-              Array.filter((id) => !previous.has(id)),
-              Array.map(boardId),
-              (ids) => ids.toSorted()
+              Array.dedupe(current.board),
+              Array.filter(
+                (id) =>
+                  (index - (firstSeen.get(id) ?? index)) * RUN_GAP_HOURS <=
+                  WINDOW_HOURS
+              ),
+              (ids) =>
+                ids.toSorted(
+                  (left, right) =>
+                    (firstSeen.get(right) ?? 0) - (firstSeen.get(left) ?? 0) ||
+                    left.localeCompare(right)
+                ),
+              Array.take(limit),
+              Array.map(boardId)
             );
           })
         );
@@ -712,18 +999,54 @@ describe("enqueueNewListings", () => {
       })
   );
 
+  it.effect("a listing whose enqueue failed is queued by the next run", () =>
+    Effect.gen(function* missedEnqueue() {
+      const queued = yield* ingestAndSweep([run(["a"]), run(["a"])], {
+        queueDownOnRun: 0,
+      });
+
+      expect(queued).toStrictEqual([[boardId("a")]]);
+    })
+  );
+
   it.effect(
-    "a second run listing the same roles queues nothing, and aggregator roles are never queued",
+    "enriched and finally skipped listings are never queued again, retried ones are, and aggregator listings never are",
     () =>
-      Effect.gen(function* repeatRun() {
-        const run: ListingRunValue = {
-          aggregator: ["a", "c"],
-          board: ["b", "a"],
-        };
+      Effect.gen(function* settledListings() {
+        const queued = yield* ingestAndSweep(
+          [run(["a", "b", "c"], ["a", "d"]), run(["a", "b", "c"], ["a", "d"])],
+          {
+            afterRun: (index) =>
+              index === 0
+                ? Effect.gen(function* settle() {
+                    const store = yield* JobStore;
 
-        const queued = yield* ingestAndEnqueue([run, run]);
+                    yield* store.saveEnrichment(boardId("a"), {
+                      enrichedAt: 0,
+                      model: MODEL,
+                      remotePolicy: null,
+                      reportsTo: null,
+                      salary: null,
+                      seniority: null,
+                      teamSize: null,
+                    });
+                    yield* store.recordSkip(boardId("b"), {
+                      reason: "Malformed",
+                      skippedAt: 0,
+                    });
+                    yield* store.recordSkip(boardId("c"), {
+                      reason: "ModelUnavailable",
+                      skippedAt: 0,
+                    });
+                  })
+                : Effect.void,
+          }
+        );
 
-        expect(queued).toStrictEqual([[boardId("a"), boardId("b")], []]);
+        expect(queued).toStrictEqual([
+          [boardId("a"), boardId("b"), boardId("c")],
+          [boardId("c")],
+        ]);
       })
   );
 });
@@ -740,12 +1063,17 @@ describe("enrichableSources", () => {
   });
 });
 
-describe("amountsIn", () => {
-  it("reads decimal thousands shorthand as the exact whole amount", () => {
-    const quoted = amountsIn("CA$196.8K to CA$270.6K, or $142,800 to $184,800");
-
-    expect([...quoted].toSorted((left, right) => left - right)).toStrictEqual([
-      142_800, 184_800, 196_800, 270_600,
+describe("moneyRangesIn", () => {
+  it("reads each marked range with its currency and period, and skips numbers that are not money", () => {
+    expect(
+      moneyRangesIn(
+        "CA$196.8K to CA$270.6K, or $142,800 to $184,800 USD per year.\nCAD $196,800 - $270,600\n401k match, 2025 start, team of 12, 5+ years.\nHourly: $40-$55"
+      )
+    ).toStrictEqual([
+      { amounts: [196_800, 270_600], currency: "CAD", period: "Year" },
+      { amounts: [142_800, 184_800], currency: "USD", period: "Year" },
+      { amounts: [196_800, 270_600], currency: "CAD", period: "Year" },
+      { amounts: [40, 55], currency: "USD", period: "Hour" },
     ]);
   });
 });

@@ -33,9 +33,11 @@ export {
 } from "./job-store.js";
 
 export type {
+  EnrichmentSkip,
   FeedReplacementValue,
   JobListing,
   ListingHistory,
+  UnenrichedSweep,
 } from "./job-store.js";
 
 export { classifyPlacement, regionWeight } from "./location.js";
@@ -125,17 +127,18 @@ export type {
 } from "./contracts.js";
 
 export {
-  amountsIn,
   detailsOfAnswer,
-  enqueueNewListings,
+  enqueueUnenriched,
   enrichableSources,
+  finalSkips,
   enrichListing,
   EnrichmentOutcome,
   ListingEnricher,
   MAX_POSTING_CHARS,
   ModelAnswer,
-  retryableSkips,
+  moneyRangesIn,
   SalaryPeriod,
+  skipHandling,
   SkipReason,
 } from "./enrichment.js";
 
@@ -147,12 +150,16 @@ export { EnrichmentQueueUnavailable } from "./enrichment-queue-unavailable.js";
 
 export { PostingTexts } from "./posting-texts.js";
 
+export { PostingGone } from "./posting-gone.js";
+
 export { PostingUnavailable } from "./posting-unavailable.js";
 
 export type {
   EnrichmentOutcomeValue,
   ModelAnswerValue,
+  MoneyRange,
   PostingRequest,
   SalaryPeriodValue,
+  SkipHandlingValue,
   SkipReasonValue,
 } from "./enrichment.js";
