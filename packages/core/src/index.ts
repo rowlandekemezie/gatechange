@@ -23,6 +23,7 @@ export {
   alertsAllowed,
   DigestFrequency,
   digestFor,
+  digestSourceLabels,
   matchesFilters,
   MAX_DIGEST_JOBS,
   MAX_SAVED_SEARCHES,

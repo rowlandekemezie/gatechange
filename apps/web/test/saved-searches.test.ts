@@ -19,7 +19,10 @@ import {
 } from "../src/client/saved-searches/model.js";
 import { init, update } from "../src/client/saved-searches/update.js";
 import { edgeRouteOf } from "../src/edge-routes.js";
-import { searchLabel } from "../src/features/saved-searches/view.js";
+import {
+  coverageNote,
+  searchLabel,
+} from "../src/features/saved-searches/view.js";
 
 const saved = Schema.decodeSync(SavedSearch)({
   createdAt: 0,
@@ -71,6 +74,11 @@ describe("saved searches", () => {
     expect(searchLabel(saved)).toBe(
       'director, remote in Canada matching "payments"'
     );
+  });
+
+  it("names the covered sources without exposing term names", () => {
+    expect(coverageNote()).toContain("only list roles from Jobicy");
+    expect(coverageNote()).not.toMatch(/allowed|unstated|forbidden/iu);
   });
 
   it("sends one save request even when the button is pressed twice", () => {

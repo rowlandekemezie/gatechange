@@ -57,6 +57,7 @@ export { Unauthorized } from "./unauthorized.js";
 
 export {
   DigestFrequency,
+  digestSourceLabels,
   MAX_SAVED_SEARCHES,
   SavedSearch,
   SavedSearchId,

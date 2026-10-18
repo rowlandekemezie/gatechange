@@ -5,10 +5,11 @@ import type { AccountIdValue } from "./account.js";
 import { AlertStore } from "./alert-store.js";
 import { DigestMailer } from "./digest-mailer.js";
 import { fingerprintOf } from "./job-store.js";
-import { EpochMillis, Region, RoleLevel } from "./job.js";
+import { EpochMillis, Region, RoleLevel, SourceName } from "./job.js";
 import type { JobValue, SourceNameValue } from "./job.js";
 import { DAY_MILLIS } from "./posting.js";
 import { SourceTerms } from "./source-terms.js";
+import type { SourceTermsValue } from "./source-terms.js";
 
 export const WEEK_MILLIS = 7 * DAY_MILLIS;
 
@@ -68,15 +69,17 @@ export const periodStartOf = (now: number) =>
   Math.floor((now - FIRST_MONDAY_MILLIS) / WEEK_MILLIS) * WEEK_MILLIS +
   FIRST_MONDAY_MILLIS;
 
-export const alertsAllowed = (source: SourceNameValue) => {
-  const terms = SourceTerms[source];
+export const alertsAllowed = (
+  source: SourceNameValue,
+  terms: Readonly<Record<SourceNameValue, SourceTermsValue>> = SourceTerms
+) => Predicate.isTagged(terms[source].emailAlerts, "Allowed");
 
-  return (
-    Predicate.isTagged(terms.emailAlerts, "Allowed") ||
-    (terms.kind === "CompanyBoard" &&
-      Predicate.isTagged(terms.emailAlerts, "Unstated"))
-  );
-};
+export const digestSourceLabels = (
+  terms: Readonly<Record<SourceNameValue, SourceTermsValue>> = SourceTerms
+) =>
+  SourceName.literals
+    .filter((source) => alertsAllowed(source, terms))
+    .map((source) => terms[source].label);
 
 export const matchesFilters = (
   filters: SearchFiltersValue,
@@ -109,14 +112,15 @@ const preferredCopy = Order.combine(
 export const digestFor = (
   recipient: DigestRecipient,
   periodStart: number,
-  jobs: readonly JobValue[]
+  jobs: readonly JobValue[],
+  terms: Readonly<Record<SourceNameValue, SourceTermsValue>> = SourceTerms
 ): Digest => {
   const matched = pipe(
     jobs
       .filter(
         (job) =>
           job.firstSeenAt >= recipient.since &&
-          alertsAllowed(job.source) &&
+          alertsAllowed(job.source, terms) &&
           recipient.searches.some((search) =>
             matchesFilters(search.filters, job)
           )

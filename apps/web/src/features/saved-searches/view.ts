@@ -1,3 +1,4 @@
+import { digestSourceLabels } from "@rat-stack/core/contracts";
 import type { SavedSearchValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -24,6 +25,13 @@ interface SaveControlInputs {
 }
 
 const accountHref = accountRouter({ notice: "None" });
+
+export const coverageNote = (
+  labels: readonly string[] = digestSourceLabels()
+) =>
+  Array.isReadonlyArrayEmpty(labels)
+    ? "Weekly emails cover no job sources yet."
+    : `Weekly emails only list roles from ${labels.join(" and ")}. Roles from company career pages and other job sites are not included, so some weeks have no email.`;
 
 export const searchLabel = (search: SavedSearchValue) => {
   const filters = boardFiltersOf(search);
@@ -73,7 +81,7 @@ const signedInControl = (
       h.span(
         [h.Class("save-search-note"), h.Role("status")],
         [
-          "Saved. New matches arrive by email each week. ",
+          "Saved. We email new matches when there are any. ",
           h.a([h.Href(accountHref)], ["Manage saved searches"]),
         ]
       ),
@@ -91,7 +99,10 @@ export const saveSearchControl = defineView<
     : h.div(
         [h.Class("save-search-row")],
         Schema.is(SessionState.SignedIn)(session)
-          ? signedInControl(model, filters, h)
+          ? [
+              ...signedInControl(model, filters, h),
+              h.span([h.Class("save-search-note")], [coverageNote()]),
+            ]
           : [
               h.a(
                 [h.Class("save-search-note"), h.Href(accountHref)],
@@ -152,7 +163,7 @@ export const savedSearchesPanel = defineView<ModelValue, MessageValue>(
                   h.p(
                     [h.Class("account-lede")],
                     [
-                      "No saved searches yet. Pick roles and places on the board, then choose “Email me new matches weekly”.",
+                      `No saved searches yet. Pick roles and places on the board, then choose “Email me new matches weekly”. ${coverageNote()}`,
                     ]
                   ),
                 ]
@@ -160,7 +171,7 @@ export const savedSearchesPanel = defineView<ModelValue, MessageValue>(
                   h.p(
                     [h.Class("account-lede")],
                     [
-                      "Once a week we email you roles that are new since your last digest. Every email has an unsubscribe link.",
+                      `Once a week we email you roles that are new since your last digest, but only if there are any. ${coverageNote()} Every email has an unsubscribe link.`,
                     ]
                   ),
                   h.ul(

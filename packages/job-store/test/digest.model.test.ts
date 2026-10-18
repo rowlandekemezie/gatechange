@@ -9,6 +9,8 @@ import {
   MAX_SAVED_SEARCHES,
   periodStartOf,
   runDigests,
+  SourceName,
+  SourceTerms,
   WEEK_MILLIS,
 } from "@rat-stack/core";
 import type {
@@ -17,9 +19,8 @@ import type {
   DigestPlan,
   JobValue,
   SearchFiltersValue,
-  SourceNameValue,
 } from "@rat-stack/core";
-import { Array, Effect, Layer, Option, pipe } from "effect";
+import { Array, Effect, Layer, Option, pipe, Predicate, Schema } from "effect";
 
 import { alertStoreLayer, SqlExecutor, statement } from "../src/index.js";
 import { sqlJsJobStore } from "./sqljs-executor.js";
@@ -59,7 +60,7 @@ const job = (
   relevance: 50,
   role: "EngineeringManager",
   salary: null,
-  source: "Greenhouse",
+  source: "Jobicy",
   title: "Engineering Manager",
   url: "https://jobs.example/1",
   ...overrides,
@@ -236,64 +237,127 @@ describe("weekly saved-search digests", () => {
       )
   );
 
-  it.effect("Remotive and Himalayas jobs never appear in a digest", () =>
-    withStores(
-      Effect.gen(function* terms() {
-        const outbox = makeOutbox();
+  it.effect(
+    "only sources whose email alert terms are Allowed appear in a digest",
+    () =>
+      withStores(
+        Effect.gen(function* terms() {
+          const outbox = makeOutbox();
 
-        const sources: readonly SourceNameValue[] = [
-          "Remotive",
-          "Himalayas",
-          "HackerNews",
-          "RemoteOK",
-          "Jobicy",
-          "Lever",
-        ];
+          yield* addMember(ada);
+          yield* saveSearch(ada);
+          yield* listJobs(
+            SourceName.literals.map((source, index) =>
+              job({
+                company: `Company ${index}`,
+                feed: `${source.toLowerCase()}:all`,
+                id: `${source}:1`,
+                source,
+              })
+            )
+          );
+          yield* runAt(NOW, outbox.layer);
+
+          expect(
+            pipe(
+              outbox.sent,
+              Array.flatMap((digest) => digest.jobs),
+              Array.map((listed) => listed.source)
+            ).toSorted()
+          ).toEqual(
+            SourceName.literals
+              .filter((source) =>
+                Predicate.isTagged(SourceTerms[source].emailAlerts, "Allowed")
+              )
+              .toSorted()
+          );
+        })
+      )
+  );
+
+  it.effect("a company board role with Unstated terms never appears", () =>
+    withStores(
+      Effect.gen(function* board() {
+        const outbox = makeOutbox();
 
         yield* addMember(ada);
         yield* saveSearch(ada);
-        yield* listJobs(
-          sources.map((source, index) =>
-            job({
-              company: `Company ${index}`,
-              feed: `${source.toLowerCase()}:all`,
-              id: `${source}:1`,
-              source,
-            })
-          )
-        );
+        yield* listJobs([
+          job({ feed: "greenhouse:acme", id: "gh:1", source: "Greenhouse" }),
+          job({ feed: "lever:acme", id: "lever:1", source: "Lever" }),
+          job({ feed: "ashby:acme", id: "ashby:1", source: "Ashby" }),
+        ]);
+
+        const receipt = yield* runAt(NOW, outbox.layer);
+
+        expect(outbox.sent).toEqual([]);
+        expect(receipt.empty).toBe(1);
+      })
+    )
+  );
+
+  it.effect("an Allowed source's role appears", () =>
+    withStores(
+      Effect.gen(function* allowed() {
+        const outbox = makeOutbox();
+
+        yield* addMember(ada);
+        yield* saveSearch(ada);
+        yield* listJobs([
+          job({ feed: "jobicy:all", id: "jobicy:1", source: "Jobicy" }),
+        ]);
         yield* runAt(NOW, outbox.layer);
 
-        expect(
-          pipe(
-            outbox.sent,
-            Array.flatMap((digest) => digest.jobs),
-            Array.map((listed) => listed.source)
-          ).toSorted()
-        ).toEqual(["Jobicy", "Lever"]);
+        expect(outbox.sent[0]?.jobs.map((listed) => listed.id)).toEqual([
+          "jobicy:1",
+        ]);
       })
     )
   );
 
   it.effect(
-    "a role listed by Remotive and its company board appears once, from the company board",
+    "an empty week sends and claims nothing, so a later week can send",
     () =>
       withStores(
-        Effect.gen(function* duplicate() {
+        Effect.gen(function* emptyWeek() {
           const outbox = makeOutbox();
 
           yield* addMember(ada);
           yield* saveSearch(ada);
           yield* listJobs([
-            job({ feed: "remotive:all", id: "remotive:1", source: "Remotive" }),
-            job({ feed: "jobicy:all", id: "jobicy:1", source: "Jobicy" }),
-            job({ feed: "greenhouse:acme", id: "gh:1" }),
+            job({ feed: "greenhouse:acme", id: "gh:1", source: "Greenhouse" }),
           ]);
-          yield* runAt(NOW, outbox.layer);
 
-          expect(outbox.sent[0]?.jobs.map((listed) => listed.id)).toEqual([
-            "gh:1",
-          ]);
+          const empty = yield* runAt(NOW, outbox.layer);
+
+          const claims = yield* SqlExecutor.use((sql) =>
+            sql.all(
+              "claims",
+              statement(`SELECT account_id FROM alert_sends`),
+              Schema.Struct({ account_id: Schema.String })
+            )
+          );
+
+          yield* JobStore.use((store) =>
+            store.replaceFeed(
+              "jobicy:all",
+              [
+                job({
+                  feed: "jobicy:all",
+                  firstSeenAt: NOW + DAY_MILLIS,
+                  id: "jobicy:1",
+                  lastSeenAt: NOW + DAY_MILLIS,
+                }),
+              ],
+              NOW + DAY_MILLIS
+            )
+          );
+
+          const later = yield* runAt(NOW + 2 * DAY_MILLIS, outbox.layer);
+
+          expect([empty.sent, empty.empty, claims.length]).toEqual([0, 1, 0]);
+          expect(later.sent).toBe(1);
+          expect(outbox.sent.map((digest) => digest.account)).toEqual([ada]);
         })
       )
   );
