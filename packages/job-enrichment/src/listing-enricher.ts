@@ -24,8 +24,10 @@ export const SYSTEM_PROMPT = [
   "Extract only what the posting states. Use null for anything it does not state.",
   "Never estimate, infer or convert a salary.",
   "Give salary amounts exactly as written in the posting, with their period (Year, Month or Hour) and their ISO 4217 currency code.",
-  "seniority is the level of the role itself. remotePolicy is RemoteInRegion when remote work is limited to named countries or regions.",
-  "reportsTo is the title the role reports to. teamSize is the number of people the role manages.",
+  "seniority is the level of the role itself.",
+  "remotePolicy says where the person in this role works. Remote: fully remote from anywhere. RemoteInRegion: fully remote but only from named countries or regions. Hybrid: some days a week in an office. Onsite: in an office every working day. Use null when the posting does not say. A city or office location alone is not a remote policy, and experience with remote teams is not one either.",
+  "reportsTo is the title of the person this role reports to, only when the posting says the role reports to them. Working or partnering with someone is not reporting to them.",
+  "teamSize is the number of people this role will manage, only when the posting states it. A required number of people managed in past jobs is not the team size.",
 ].join("\n");
 
 export interface ChatMessage {
