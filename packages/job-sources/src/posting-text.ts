@@ -236,17 +236,11 @@ const postingText = Effect.fnUntraced(function* postingText(job: JobValue) {
 
   const { ats, externalId, slug } = key.value;
 
-  const text = yield* textOfAts[ats](job.id, slug, externalId).pipe(
+  return yield* textOfAts[ats](job.id, slug, externalId).pipe(
     Effect.catchTag("FeedUnavailable", (failure) =>
       Effect.fail(unavailable(failure.message))
     )
   );
-
-  if (text.length === 0) {
-    return yield* unavailable("the posting has no text");
-  }
-
-  return text;
 });
 
 export const postingTextsLayer = Layer.effect(

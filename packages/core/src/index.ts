@@ -57,7 +57,7 @@ export { FeedUnavailable } from "./feed-unavailable.js";
 
 export { PostingFeeds } from "./posting-feeds.js";
 
-export { classifyRole, roleWeight } from "./role.js";
+export { classifyRole, roleWeight, seniorityOfTitle } from "./role.js";
 
 export { Permission, SourceTerms } from "./source-terms.js";
 

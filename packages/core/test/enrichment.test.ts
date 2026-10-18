@@ -28,6 +28,7 @@ import {
   ModelAnswer,
   PostingFeeds,
   PostingTexts,
+  retryableSkips,
   runIngest,
 } from "../src/index.js";
 import type {
@@ -70,7 +71,7 @@ const aggregatorJob: JobValue = {
 };
 
 const statedPosting =
-  "Lead three teams. Base salary $180,000 - $220,000 per year, remote in Canada.";
+  "You will lead a team of 24 engineers. Base salary $180,000 - $220,000 per year, remote in Canada.";
 
 const validAnswer: ModelAnswerValue = {
   remotePolicy: "RemoteInRegion",
@@ -81,6 +82,7 @@ const validAnswer: ModelAnswerValue = {
   salaryPeriod: "Year",
   seniority: "Director",
   teamSize: 24,
+  teamSizeQuote: "lead a team of 24 engineers",
 };
 
 const listAll: JobQueryValue = {
@@ -363,6 +365,108 @@ describe("enrichListing", () => {
         ).toStrictEqual(
           Option.some({ currency: "CAD", max: 220_000, min: 180_000 })
         );
+      })
+  );
+
+  it.effect.each([
+    [
+      "Global Financial Operations Platform Director",
+      "SeniorDirector",
+      "Director",
+    ],
+    ["Senior Director, Security Architecture", "Director", "SeniorDirector"],
+    ["Manager, Starlink Engineering", "Director", "Manager"],
+    ["Head of Platform Engineering", "VicePresident", "VicePresident"],
+  ] as const)(
+    "%s with a model answer of %s is saved as %s, so seniority agrees with the title",
+    ([title, answered, saved]) =>
+      Effect.gen(function* seniorityFromTitle() {
+        const job: JobValue = { ...boardJob, title };
+
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: { ...validAnswer, seniority: answered },
+          }),
+          jobs: [job],
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.seniority)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each([
+    [
+      "a past-experience requirement",
+      null,
+      "2+ years of experience leading a team of 10+ individuals as direct reports",
+      "leading a team of 10+ individuals as direct reports",
+      10,
+    ],
+    [
+      "a quote the posting never says",
+      null,
+      "You will lead the platform group.",
+      "lead a team of 12",
+      12,
+    ],
+    [
+      "a missing quote",
+      null,
+      "You will lead a team of 12 engineers.",
+      null,
+      12,
+    ],
+    [
+      "the team being hired into",
+      8,
+      "Reports to: Engineering Director\nDirect Reports: 8-12\nLead and develop a SharedCX engineering team.",
+      "Direct Reports: 8-12",
+      8,
+    ],
+  ] as const)(
+    "a team size quoted from %s is saved as %s",
+    ([, saved, text, quote, answered]) =>
+      Effect.gen(function* teamSizeFromPosting() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              teamSize: answered,
+              teamSizeQuote: quote,
+            },
+          }),
+          text: `${text} Base salary $180,000 - $220,000 per year.`,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.teamSize)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each(["", "  \n\t "])(
+    "a posting with no text (%j) skips as EmptyPosting, asks no model, and is not retried",
+    (text) =>
+      Effect.gen(function* emptyPosting() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          text,
+        });
+
+        expect(reasonOf(result.outcome)).toBe("EmptyPosting");
+        expect(Array.contains(retryableSkips, reasonOf(result.outcome))).toBe(
+          false
+        );
+        expect(result.requests).toStrictEqual([]);
+        expect(result.enrichments).toBe(0);
       })
   );
 

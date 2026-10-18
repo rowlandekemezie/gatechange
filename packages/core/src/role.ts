@@ -1,6 +1,6 @@
-import { Match, Option } from "effect";
+import { Array, Match, Option, pipe } from "effect";
 
-import type { RoleLevelValue } from "./job.js";
+import type { RoleLevelValue, SeniorityValue } from "./job.js";
 
 const engineeringScope =
   "(?:engineering|software|platform|infrastructure|development|technology|technical|data (?:engineering|platform|infrastructure)|machine learning|ml|ai|security|devops|sre|site reliability|backend|frontend|mobile|cloud)";
@@ -56,3 +56,24 @@ export const roleWeight = Match.type<RoleLevelValue>().pipe(
   Match.when("EngineeringManager", () => 30),
   Match.exhaustive
 );
+
+const seniorityPatterns: readonly (readonly [SeniorityValue, RegExp])[] = [
+  ["VicePresident", /\b(?:[sea]?vp|vice[\s-]+president)\b/iu],
+  [
+    "Executive",
+    /\b(?:chief(?!\s+of\s+staff)|president|ceo|cto|coo|cio|ciso|cfo)\b/iu,
+  ],
+  ["SeniorDirector", /\b(?:senior|sr\.?)\s+(?:[a-z]+\s+){0,2}directors?\b/iu],
+  ["Director", /\bdirectors?\b/iu],
+  ["SeniorManager", /\b(?:senior|sr\.?)\s+(?:[a-z]+\s+){0,2}managers?\b/iu],
+  ["Manager", /\bmanagers?\b/iu],
+];
+
+export const seniorityOfTitle = (
+  title: string
+): Option.Option<SeniorityValue> =>
+  pipe(
+    seniorityPatterns,
+    Array.findFirst(([, pattern]) => pattern.test(title)),
+    Option.map(([level]) => level)
+  );

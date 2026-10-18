@@ -26,6 +26,7 @@ import type {
   SourceNameValue,
 } from "./job.js";
 import { PostingTexts } from "./posting-texts.js";
+import { seniorityOfTitle } from "./role.js";
 import { SourceTerms } from "./source-terms.js";
 
 export const MAX_POSTING_CHARS = 12_000;
@@ -43,6 +44,7 @@ export const ModelAnswer = Schema.Struct({
   salaryPeriod: Schema.NullOr(SalaryPeriod),
   seniority: Schema.NullOr(Seniority),
   teamSize: Schema.NullOr(Schema.Finite),
+  teamSizeQuote: Schema.NullOr(Schema.String),
 });
 
 export type ModelAnswerValue = typeof ModelAnswer.Type;
@@ -68,6 +70,7 @@ export const SkipReason = Schema.Literals([
   "AlreadyEnriched",
   "Unsupported",
   "PostingUnavailable",
+  "EmptyPosting",
   "ModelUnavailable",
   "Malformed",
 ]);
@@ -154,23 +157,51 @@ const decodeTeamSize = Schema.decodeUnknownOption(
   ListingDetails.fields.teamSize
 );
 
+const pastExperience =
+  /\b(?:\d+\+?\s*(?:years?|yrs)|experience\s+(?:leading|managing|building|running|with|of)|track record|proven|previously|have (?:led|managed))\b/iu;
+
+const collapsed = (text: string) =>
+  text.replaceAll(/\s+/gu, " ").trim().toLowerCase();
+
+const sentencesOf = (text: string) =>
+  Array.map(text.split(/\n|(?<=[.!?;])\s/u), collapsed);
+
+const teamSizeOf = (answer: ModelAnswerValue, text: string) => {
+  const quote = collapsed(answer.teamSizeQuote ?? "");
+
+  if (answer.teamSize === null || quote === "") {
+    return null;
+  }
+
+  const size = Math.round(answer.teamSize);
+
+  const describesHiredTeam = sentencesOf(text).some(
+    (sentence) =>
+      sentence.includes(quote) &&
+      amountsIn(sentence).has(size) &&
+      !pastExperience.test(sentence)
+  );
+
+  return describesHiredTeam
+    ? pipe(decodeTeamSize(size), Option.getOrNull)
+    : null;
+};
+
 export const detailsOfAnswer = (
   answer: ModelAnswerValue,
-  text: string
+  posting: PostingRequest
 ): ListingDetailsValue => ({
   remotePolicy: answer.remotePolicy,
   reportsTo: pipe(
     decodeReportsTo(answer.reportsTo?.replaceAll(/\s+/gu, " ").trim() ?? ""),
     Option.getOrNull
   ),
-  salary: salaryBandOf(answer, text),
-  seniority: answer.seniority,
-  teamSize: pipe(
-    decodeTeamSize(
-      answer.teamSize === null ? null : Math.round(answer.teamSize)
-    ),
-    Option.getOrNull
+  salary: salaryBandOf(answer, posting.text),
+  seniority: pipe(
+    seniorityOfTitle(posting.title),
+    Option.getOrElse(() => answer.seniority)
   ),
+  teamSize: teamSizeOf(answer, posting.text),
 });
 
 export const enqueueNewListings = Effect.fn("enqueueNewListings")(
@@ -213,16 +244,21 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
 
   const details = texts.fetch(job).pipe(
     Effect.mapError((failure) => skip("PostingUnavailable", failure.message)),
-    Effect.map((text) => text.slice(0, MAX_POSTING_CHARS)),
-    Effect.flatMap((text) =>
-      enricher.extract({ company: job.company, text, title: job.title }).pipe(
+    Effect.map((text) => text.trim().slice(0, MAX_POSTING_CHARS)),
+    Effect.filterOrFail(
+      (text) => text.length > 0,
+      () => skip("EmptyPosting", "the posting has no text")
+    ),
+    Effect.map((text) => ({ company: job.company, text, title: job.title })),
+    Effect.flatMap((posting) =>
+      enricher.extract(posting).pipe(
         Effect.mapError((failure) => skip("ModelUnavailable", failure.message)),
         Effect.flatMap((answer) =>
           Schema.decodeUnknownEffect(ModelAnswer)(answer).pipe(
             Effect.mapError((failure) => skip("Malformed", failure.message))
           )
         ),
-        Effect.map((answer) => detailsOfAnswer(answer, text))
+        Effect.map((answer) => detailsOfAnswer(answer, posting))
       )
     )
   );

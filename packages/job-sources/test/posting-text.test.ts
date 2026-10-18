@@ -216,6 +216,16 @@ describe("posting texts", () => {
   );
 
   it.effect(
+    "a posting with empty content is read as empty text for core to skip, not as unavailable",
+    () =>
+      Effect.gen(function* readBlankPosting() {
+        const text = yield* fetchText("greenhouse:vercel:1");
+
+        expect(text).toBe("");
+      }).pipe(Effect.provide(serving(JSON.stringify({ content: "" })).layer))
+  );
+
+  it.effect(
     "an aggregator id or an unparseable id is unavailable without a request",
     () => {
       const server = serving(greenhouseJob);

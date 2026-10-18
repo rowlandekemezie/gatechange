@@ -29,6 +29,7 @@ const answer = {
   salaryPeriod: "Year",
   seniority: "Manager",
   teamSize: 8,
+  teamSizeQuote: "Lead a team of 8.",
 };
 
 const ObjectSchema = Schema.Struct({

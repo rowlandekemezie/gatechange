@@ -29,7 +29,7 @@ export const SYSTEM_PROMPT = [
   "seniority is the level of the role itself.",
   "remotePolicy says where the person in this role works. Remote: fully remote from anywhere. RemoteInRegion: fully remote but only from named countries or regions. Hybrid: some days a week in an office; occasional office visits or meetups do not make a role Hybrid. Onsite: in an office every working day. Use null when the posting does not say. A city or office location alone is not a remote policy, and experience with remote teams is not one either.",
   "reportsTo is the title of the person this role reports to, only when the posting says the role reports to them. Working or partnering with someone is not reporting to them.",
-  "teamSize is the number of people this role will manage, only when the posting states it. A required number of people managed in past jobs is not the team size.",
+  "teamSize is the size of the team this role will manage once hired, only when the posting states it. teamSizeQuote is the exact words of the posting that state it. A requirement on the candidate, such as how many people they must have led before, is never the team size: use null for both.",
 ].join("\n");
 
 export interface ChatMessage {

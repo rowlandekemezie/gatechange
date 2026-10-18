@@ -1,11 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Option, Schema } from "effect";
 
-import { classifyPlacement, classifyRole } from "../src/index.js";
+import {
+  classifyPlacement,
+  classifyRole,
+  seniorityOfTitle,
+} from "../src/index.js";
 import type {
   ArrangementValue,
   RegionValue,
   RoleLevelValue,
+  SeniorityValue,
 } from "../src/index.js";
 
 const leadershipTitles: readonly (readonly [string, RoleLevelValue])[] = [
@@ -18,6 +23,19 @@ const leadershipTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["Manager II, Engineering", "EngineeringManager"],
   ["Software Development Manager", "EngineeringManager"],
   ["Manager, Site Reliability Engineering", "EngineeringManager"],
+];
+
+const titleSeniorities: readonly (readonly [string, SeniorityValue])[] = [
+  ["Global Financial Operations Platform Director", "Director"],
+  ["Senior Director, Security Architecture", "SeniorDirector"],
+  ["Sr. Engineering Director", "SeniorDirector"],
+  ["Director, Senior Software Engineering", "Director"],
+  ["SVP, Software Development", "VicePresident"],
+  ["Vice President of Engineering", "VicePresident"],
+  ["Chief Technology Officer", "Executive"],
+  ["Senior Engineering Manager, Payments", "SeniorManager"],
+  ["Manager, Starlink Engineering (Starlink PCBA SMT)", "Manager"],
+  ["Manager II, Engineering", "Manager"],
 ];
 
 const otherTitles = [
@@ -51,6 +69,19 @@ const placements: readonly (readonly [
   ["Remote (EMEA)", "Unspecified", "Remote", "Elsewhere"],
   ["Remote", "Unspecified", "Remote", "RemoteGlobal"],
 ];
+
+describe("seniority from a title", () => {
+  it.each(titleSeniorities)("%s is %s", (title, seniority) => {
+    expect(seniorityOfTitle(title)).toStrictEqual(Option.some(seniority));
+  });
+
+  it.each(["Head of Platform Engineering", "Chief of Staff", "Staff Engineer"])(
+    "%s states no level, so the model fills it",
+    (title) => {
+      expect(seniorityOfTitle(title)).toStrictEqual(Option.none());
+    }
+  );
+});
 
 describe("role classification", () => {
   it.each(leadershipTitles)("%s is %s", (title, role) => {
