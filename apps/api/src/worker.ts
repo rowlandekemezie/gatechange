@@ -131,10 +131,13 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     yield* Cloudflare.Workers.cron(INGEST_SCHEDULE, (controller) =>
       runIngest({ feedConcurrency, feedsPerRun }).pipe(
         Effect.tap(({ outcomes, receipt }) =>
-          Effect.logInfo("ingest finished", {
-            failures: outcomes.filter((outcome) => outcome.error !== null),
-            receipt,
-          })
+          Effect.logInfo(
+            `ingest finished outcome=${receipt.outcome} feeds=${receipt.feedsAttempted} failed=${receipt.feedsFailed} upserted=${receipt.jobsUpserted} pruned=${receipt.jobsPruned} failures=${JSON.stringify(
+              outcomes.flatMap(({ error, key }) =>
+                error === null ? [] : [`${key}: ${error}`]
+              )
+            )}`
+          )
         ),
         Effect.tap(({ receipt }) =>
           enqueueUnenriched({
@@ -153,9 +156,15 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           )
         ),
         Effect.catchTag("IngestInProgress", (busy) =>
-          Effect.logInfo("ingest skipped: another run holds the lease", busy)
+          Effect.logInfo(
+            `ingest skipped: another run holds the lease startedAt=${busy.startedAt}`
+          )
         ),
-        Effect.tapError((error) => Effect.logError("ingest failed", error)),
+        Effect.tapError((error) =>
+          Effect.logError(
+            `ingest failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+          )
+        ),
         Effect.annotateLogs({
           cron: controller.cron,
           scheduledTime: controller.scheduledTime,
