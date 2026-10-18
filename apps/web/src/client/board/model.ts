@@ -5,6 +5,7 @@ import { defineTaggedUnion } from "foldkit/schema";
 import { Model as AccountModel } from "../account/model.js";
 import { ListingRoute } from "../listing.js";
 import { Route } from "../route.js";
+import { Model as SavedSearchesModel } from "../saved-searches/model.js";
 import { Filters } from "./filters.js";
 
 export const JobsState = defineTaggedUnion({
@@ -96,6 +97,7 @@ export const Model = Schema.Struct({
   more: MoreState,
   origin: Schema.String,
   route: Route,
+  savedSearches: SavedSearchesModel,
   stats: StatsState,
 });
 

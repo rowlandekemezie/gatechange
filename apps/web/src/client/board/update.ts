@@ -12,6 +12,9 @@ import * as Account from "../account/update.js";
 import type { ListingRouteValue } from "../listing.js";
 import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
 import type { RouteValue } from "../route.js";
+import type { MessageValue as SavedSearchesMessageValue } from "../saved-searches/message.js";
+import type { ModelValue as SavedSearchesModelValue } from "../saved-searches/model.js";
+import * as SavedSearches from "../saved-searches/update.js";
 import {
   FetchJob,
   FetchJobs,
@@ -76,6 +79,34 @@ const foldAccountEntered = Update.foldChildStep({
   update: Account.entered,
 });
 
+const savedSearchesChild = {
+  read: (model: ModelValue) => Option.some(model.savedSearches),
+  toParentMessage: (message: SavedSearchesMessageValue) =>
+    Message.GotSavedSearchesMessage({ message }),
+  write: (model: ModelValue, savedSearches: SavedSearchesModelValue) =>
+    modifyFields(model, { savedSearches: () => savedSearches }),
+};
+
+const foldSavedSearches = Update.foldChild({
+  ...savedSearchesChild,
+  update: SavedSearches.update,
+});
+
+const foldSavedSearchesEntered = Update.foldChildStep({
+  ...savedSearchesChild,
+  update: SavedSearches.entered,
+});
+
+const enteredAccount = (model: ModelValue): UpdateReturn => {
+  const account = foldAccountEntered(model);
+  const searches = foldSavedSearchesEntered(account.model);
+
+  return {
+    commands: [...(account.commands ?? []), ...(searches.commands ?? [])],
+    model: searches.model,
+  };
+};
+
 const sameFilters = Schema.toEquivalence(Filters);
 
 const sameRoute = Schema.toEquivalence(Route);
@@ -90,6 +121,7 @@ const withFilters = (
     filters: () => filters,
     generation: () => generation,
     more: () => MoreState.Idle(),
+    savedSearches: (child) => SavedSearches.filtersChanged(child).model,
   });
 
   if (hasNoSelection(filters)) {
@@ -180,7 +212,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   const routed = modifyFields(model, { route: () => route });
 
   return Route.match<UpdateReturn>(route, {
-    Account: () => foldAccountEntered(routed),
+    Account: () => enteredAccount(routed),
     Board: ({ filters }) =>
       Schema.is(JobsState.NotAsked)(model.jobs) ||
       !sameFilters(filters, model.filters)
@@ -277,6 +309,7 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
 
 export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   const account = Account.init();
+  const savedSearches = SavedSearches.init();
 
   const routed = arrivedAt(
     preloaded(
@@ -293,6 +326,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         more: MoreState.Idle(),
         origin: flags.origin,
         route: routeOfUrl(url),
+        savedSearches: savedSearches.model,
         stats: StatsState.Unavailable(),
       },
       flags.preload
@@ -420,6 +454,8 @@ export const update = (
     FailedFetchStats: () => ({ model }),
     GotAccountMessage: ({ message: accountMessage }) =>
       foldAccount(model, accountMessage),
+    GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>
+      foldSavedSearches(model, savedSearchesMessage),
     SubmittedSearch: () =>
       navigatedTo(model, { ...model.filters, search: model.draftSearch }),
     SucceededFetchJob: ({ id, job }) => ({
