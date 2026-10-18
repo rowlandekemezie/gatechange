@@ -4,7 +4,11 @@ import {
   AccountStoreUnavailable,
   Viewer,
 } from "@rat-stack/core";
-import type { SignInOptionsValue, ViewerValue } from "@rat-stack/core";
+import type {
+  RequestHeaders,
+  SignInOptionsValue,
+  ViewerValue,
+} from "@rat-stack/core";
 import { Effect, Schema } from "effect";
 
 export const SESSION_COOKIE = "better-auth.session_token";
@@ -16,7 +20,7 @@ export interface SessionUser {
 }
 
 export type SessionLookup<E> = (
-  cookie: string
+  headers: Headers
 ) => Effect.Effect<{ readonly user: SessionUser } | null, E>;
 
 const unavailable = (message: string) =>
@@ -24,15 +28,30 @@ const unavailable = (message: string) =>
 
 const decodeAccount = Schema.decodeUnknownEffect(Account);
 
+export const hasSessionCookie = (headers: RequestHeaders) =>
+  headers.cookie?.includes(SESSION_COOKIE) === true;
+
+const webHeadersOf = (headers: RequestHeaders) => {
+  const web = new Headers();
+
+  for (const [name, value] of Object.entries(headers)) {
+    if (value !== undefined) {
+      web.set(name, value);
+    }
+  }
+
+  return web;
+};
+
 export const makeAccountStore = <E>(
   lookup: SessionLookup<E>,
   signInOptions: SignInOptionsValue
 ) =>
   AccountStore.of({
     signInOptions,
-    viewerOf: (cookie) =>
-      cookie.includes(SESSION_COOKIE)
-        ? lookup(cookie).pipe(
+    viewerOf: (headers) =>
+      hasSessionCookie(headers)
+        ? lookup(webHeadersOf(headers)).pipe(
             Effect.catchDefect(Effect.fail),
             Effect.mapError((cause) =>
               unavailable(`session lookup failed: ${String(cause)}`)

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Account, Viewer } from "@rat-stack/core";
+import type { RequestHeaders } from "@rat-stack/core";
 import { ConfigProvider, Effect, Redacted, Schema } from "effect";
 
 import {
   authSecret,
+  CrossSiteRequest,
   makeAccountStore,
   SESSION_COOKIE,
-  viewerOfCookie,
+  viewerOfRequest,
 } from "../src/index.js";
 import type { SessionUser } from "../src/index.js";
 
@@ -16,10 +18,12 @@ const adaAccount = Schema.decodeSync(Account)(ada);
 
 const LIVE = `__Secure-${SESSION_COOKIE}=live`;
 
+const SITE = "jobs.rowlandekemezie.com";
+
 const storeWith = (lookup: (cookie: string) => Effect.Effect<unknown>) =>
   makeAccountStore(
-    (cookie) =>
-      lookup(cookie).pipe(
+    (headers) =>
+      lookup(headers.get("cookie") ?? "").pipe(
         Effect.map((found) => (found === null ? null : { user: ada }))
       ),
     { socialProviders: [] }
@@ -29,23 +33,28 @@ const sessions = storeWith((cookie) =>
   Effect.succeed(cookie === LIVE ? ada : null)
 );
 
-describe("viewerOfCookie", () => {
+const member = Viewer.Member({ account: adaAccount });
+
+describe("viewerOfRequest", () => {
   it.effect("makes a live session cookie a member", () =>
-    Effect.gen(function* member() {
-      expect(yield* viewerOfCookie(sessions, LIVE)).toStrictEqual(
-        Viewer.Member({ account: adaAccount })
+    Effect.gen(function* liveMember() {
+      expect(yield* viewerOfRequest(sessions, { cookie: LIVE })).toStrictEqual(
+        member
       );
     })
   );
 
-  it.effect.each([
-    ["no cookie header", undefined],
-    ["an empty cookie header", ""],
-    ["unrelated cookies", "theme=dark"],
-    ["a revoked session cookie", `__Secure-${SESSION_COOKIE}=revoked`],
-  ])("makes %s anonymous", ([, cookie]) =>
+  it.effect.each<readonly [string, RequestHeaders]>([
+    ["no cookie header", {}],
+    ["an empty cookie header", { cookie: "" }],
+    ["unrelated cookies", { cookie: "theme=dark" }],
+    [
+      "a revoked session cookie",
+      { cookie: `__Secure-${SESSION_COOKIE}=revoked` },
+    ],
+  ])("makes %s anonymous", ([, headers]) =>
     Effect.gen(function* anonymous() {
-      expect(yield* viewerOfCookie(sessions, cookie)).toStrictEqual(
+      expect(yield* viewerOfRequest(sessions, headers)).toStrictEqual(
         Viewer.Anonymous()
       );
     })
@@ -55,10 +64,66 @@ describe("viewerOfCookie", () => {
     Effect.gen(function* storeDown() {
       const down = storeWith(() => Effect.die("D1 timed out"));
 
-      expect(yield* viewerOfCookie(down, LIVE)).toStrictEqual(
+      expect(yield* viewerOfRequest(down, { cookie: LIVE })).toStrictEqual(
         Viewer.Anonymous()
       );
     })
+  );
+});
+
+const refusedRequests: readonly (readonly [string, RequestHeaders])[] = [
+  ["a cross-site fetch", { "sec-fetch-site": "cross-site" }],
+  ["a same-site sibling fetch", { "sec-fetch-site": "same-site" }],
+  [
+    "another origin, from a browser without fetch metadata",
+    { host: SITE, origin: "https://evil.example" },
+  ],
+  ["an opaque origin", { host: SITE, origin: "null" }],
+];
+
+const allowedRequests: readonly (readonly [string, RequestHeaders])[] = [
+  [
+    "a same-origin fetch",
+    { host: SITE, origin: `https://${SITE}`, "sec-fetch-site": "same-origin" },
+  ],
+  ["a request with no browser headers", {}],
+  [
+    "the site's own origin, without fetch metadata",
+    { host: SITE, origin: `https://${SITE}` },
+  ],
+];
+
+describe("cross-site /rpc requests", () => {
+  it.effect.each(refusedRequests)(
+    "refuses %s that carries the session cookie",
+    ([, headers]) =>
+      Effect.gen(function* refused() {
+        const failure = yield* Effect.flip(
+          viewerOfRequest(sessions, { ...headers, cookie: LIVE })
+        );
+
+        expect(failure).toBeInstanceOf(CrossSiteRequest);
+      })
+  );
+
+  it.effect.each(refusedRequests)(
+    "serves %s without a session cookie as anonymous",
+    ([, headers]) =>
+      Effect.gen(function* anonymousCrossSite() {
+        expect(yield* viewerOfRequest(sessions, headers)).toStrictEqual(
+          Viewer.Anonymous()
+        );
+      })
+  );
+
+  it.effect.each(allowedRequests)(
+    "serves %s with the session as a member",
+    ([, headers]) =>
+      Effect.gen(function* allowed() {
+        expect(
+          yield* viewerOfRequest(sessions, { ...headers, cookie: LIVE })
+        ).toStrictEqual(member);
+      })
   );
 });
 

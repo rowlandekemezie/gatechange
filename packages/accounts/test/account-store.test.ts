@@ -12,10 +12,10 @@ const ada: SessionUser = { email: "ada@example.com", id: "user_ada", name: "" };
 const adaAccount = Schema.decodeSync(Account)(ada);
 
 const counting = (result: { readonly user: SessionUser } | null) => {
-  const seen: string[] = [];
+  const seen: (string | null)[] = [];
 
-  const store = makeAccountStore((cookie) => {
-    seen.push(cookie);
+  const store = makeAccountStore((headers) => {
+    seen.push(headers.get("cookie"));
 
     return Effect.succeed(result);
   }, options);
@@ -30,8 +30,8 @@ describe("makeAccountStore", () => {
       Effect.gen(function* noCookie() {
         const { seen, store } = counting({ user: ada });
 
-        expect(yield* store.viewerOf("")).toStrictEqual(Viewer.Anonymous());
-        expect(yield* store.viewerOf("theme=dark")).toStrictEqual(
+        expect(yield* store.viewerOf({})).toStrictEqual(Viewer.Anonymous());
+        expect(yield* store.viewerOf({ cookie: "theme=dark" })).toStrictEqual(
           Viewer.Anonymous()
         );
         expect(seen).toStrictEqual([]);
@@ -43,9 +43,32 @@ describe("makeAccountStore", () => {
       const { seen, store } = counting(null);
       const cookie = `${SESSION_COOKIE}=stale`;
 
-      expect(yield* store.viewerOf(cookie)).toStrictEqual(Viewer.Anonymous());
+      expect(yield* store.viewerOf({ cookie })).toStrictEqual(
+        Viewer.Anonymous()
+      );
       expect(seen).toStrictEqual([cookie]);
     })
+  );
+
+  it.effect(
+    "hands the lookup the request's host, so auth can resolve a preview stage's address",
+    () =>
+      Effect.gen(function* forwardsHost() {
+        const hosts: (string | null)[] = [];
+
+        const store = makeAccountStore((headers) => {
+          hosts.push(headers.get("host"));
+
+          return Effect.succeed({ user: ada });
+        }, options);
+
+        yield* store.viewerOf({
+          cookie: `${SESSION_COOKIE}=abc`,
+          host: "jobs-verify-x.acct.workers.dev",
+        });
+
+        expect(hosts).toStrictEqual(["jobs-verify-x.acct.workers.dev"]);
+      })
   );
 
   it.effect("turns a live session into a member with that account", () =>
@@ -53,7 +76,7 @@ describe("makeAccountStore", () => {
       const { store } = counting({ user: ada });
 
       expect(
-        yield* store.viewerOf(`__Secure-${SESSION_COOKIE}=abc`)
+        yield* store.viewerOf({ cookie: `__Secure-${SESSION_COOKIE}=abc` })
       ).toStrictEqual(Viewer.Member({ account: adaAccount }));
     })
   );
@@ -66,7 +89,7 @@ describe("makeAccountStore", () => {
       );
 
       const failure = yield* Effect.flip(
-        store.viewerOf(`${SESSION_COOKIE}=abc`)
+        store.viewerOf({ cookie: `${SESSION_COOKIE}=abc` })
       );
 
       expect(failure).toBeInstanceOf(AccountStoreUnavailable);

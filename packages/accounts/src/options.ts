@@ -4,6 +4,7 @@ import type { BetterAuthOptions } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 import { Option } from "effect";
 
+import { sameSiteVerify } from "./cross-site.js";
 import { emailSendLimit } from "./email-send-limit.js";
 
 export const AUTH_BASE_PATH = "/api/auth";
@@ -46,6 +47,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
       storeToken: "hashed",
     }),
     emailSendLimit(),
+    sameSiteVerify(),
   ],
   rateLimit: { enabled: true, storage: "database" },
   socialProviders: settings.social,

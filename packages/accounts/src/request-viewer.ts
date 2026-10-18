@@ -1,6 +1,13 @@
 import { Viewer } from "@rat-stack/core";
-import type { AccountStore, ViewerValue } from "@rat-stack/core";
-import { Config, Effect, Schema } from "effect";
+import type {
+  AccountStore,
+  RequestHeaders,
+  ViewerValue,
+} from "@rat-stack/core";
+import { Config, Data, Effect, Schema } from "effect";
+
+import { hasSessionCookie } from "./account-store.js";
+import { isCrossSite } from "./cross-site.js";
 
 export const MIN_AUTH_SECRET_LENGTH = 32;
 
@@ -11,16 +18,20 @@ export const authSecret = Config.schema(
   "BETTER_AUTH_SECRET"
 );
 
-export const viewerOfCookie = (
+export class CrossSiteRequest extends Data.TaggedError("CrossSiteRequest") {}
+
+export const viewerOfRequest = (
   store: AccountStore["Service"],
-  cookie: string | undefined
-): Effect.Effect<ViewerValue> =>
-  store
-    .viewerOf(cookie ?? "")
-    .pipe(
-      Effect.catchTag("AccountStoreUnavailable", (failure) =>
-        Effect.logWarning("session lookup failed", failure).pipe(
-          Effect.as(Viewer.Anonymous())
-        )
-      )
-    );
+  headers: RequestHeaders
+): Effect.Effect<ViewerValue, CrossSiteRequest> =>
+  hasSessionCookie(headers) && isCrossSite(headers)
+    ? Effect.fail(new CrossSiteRequest())
+    : store
+        .viewerOf(headers)
+        .pipe(
+          Effect.catchTag("AccountStoreUnavailable", (failure) =>
+            Effect.logWarning("session lookup failed", failure).pipe(
+              Effect.as(Viewer.Anonymous())
+            )
+          )
+        );
