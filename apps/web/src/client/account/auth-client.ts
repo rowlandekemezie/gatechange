@@ -20,6 +20,18 @@ const CurrentSession = Schema.NullOr(Schema.Struct({ user: Account }));
 
 type AuthRequestBody = Readonly<Record<string, string>>;
 
+const linkOutcomeOf = (status: number): LinkOutcomeValue => {
+  if (status === 200) {
+    return "Sent";
+  }
+
+  if (status === 400) {
+    return "Invalid";
+  }
+
+  return status === 429 ? "Limited" : "Failed";
+};
+
 const make = Effect.gen(function* makeAuthClient() {
   const http = yield* HttpClient.HttpClient;
 
@@ -44,13 +56,7 @@ const make = Effect.gen(function* makeAuthClient() {
         email,
         errorCallbackURL: RETURN_PATH,
       }).pipe(
-        Effect.map((response): LinkOutcomeValue => {
-          if (response.status === 400) {
-            return "Invalid";
-          }
-
-          return response.status === 200 ? "Sent" : "Failed";
-        }),
+        Effect.map(({ status }) => linkOutcomeOf(status)),
         Effect.orElseSucceed((): LinkOutcomeValue => "Failed")
       ),
     signOut: post("/sign-out", {}).pipe(Effect.asVoid),

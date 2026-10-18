@@ -18,7 +18,12 @@ export const SignInState = defineTaggedUnion({
 
 export type SignInStateValue = typeof SignInState.Type;
 
-export const LinkOutcome = Schema.Literals(["Sent", "Invalid", "Failed"]);
+export const LinkOutcome = Schema.Literals([
+  "Sent",
+  "Invalid",
+  "Limited",
+  "Failed",
+]);
 
 export type LinkOutcomeValue = typeof LinkOutcome.Type;
 

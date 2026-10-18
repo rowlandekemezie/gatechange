@@ -9,13 +9,16 @@ import type { AuthClient } from "../account/auth-client.js";
 import type { MessageValue as AccountMessageValue } from "../account/message.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
+import type { ListingRouteValue } from "../listing.js";
 import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
 import type { RouteValue } from "../route.js";
 import {
   FetchJob,
   FetchJobs,
+  FetchListing,
   FetchMoreJobs,
   FetchStats,
+  ForgetSignInToken,
   LoadUrl,
   PushUrl,
   ReadShortlist,
@@ -33,8 +36,20 @@ import {
 import type { FiltersValue } from "./filters.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { JobsState, JobState, MoreState, StatsState } from "./model.js";
-import type { MarkedJobValue, ModelValue } from "./model.js";
+import {
+  JobsState,
+  JobState,
+  ListingState,
+  MoreState,
+  Preload,
+  StatsState,
+} from "./model.js";
+import type {
+  FlagsValue,
+  MarkedJobValue,
+  ModelValue,
+  PreloadValue,
+} from "./model.js";
 import type { JobQueries } from "./queries.js";
 
 type UpdateReturn = Update.Return<
@@ -116,16 +131,50 @@ const listedJob = (model: ModelValue, id: string) =>
     ? Array.findFirst(model.jobs.jobs, (job) => job.id === id)
     : Option.none();
 
-const enteredJob = (model: ModelValue, id: string): UpdateReturn =>
-  Option.match(listedJob(model, id), {
-    onNone: () => ({
-      commands: [FetchJob({ id })],
-      model: modifyFields(model, { job: () => JobState.Loading({ id }) }),
-    }),
-    onSome: (job) => ({
-      model: modifyFields(model, { job: () => JobState.Found({ job }) }),
-    }),
+const settledJobId = (model: ModelValue) =>
+  JobState.match<Option.Option<string>>(model.job, {
+    Failed: () => Option.none(),
+    Found: ({ job }) => Option.some(job.id),
+    Loading: () => Option.none(),
+    Missing: ({ id }) => Option.some(id),
+    NotAsked: () => Option.none(),
   });
+
+const enteredJob = (model: ModelValue, id: string): UpdateReturn =>
+  Option.contains(settledJobId(model), id)
+    ? { model }
+    : Option.match(listedJob(model, id), {
+        onNone: () => ({
+          commands: [FetchJob({ id })],
+          model: modifyFields(model, { job: () => JobState.Loading({ id }) }),
+        }),
+        onSome: (job) => ({
+          model: modifyFields(model, { job: () => JobState.Found({ job }) }),
+        }),
+      });
+
+const listingRouteOf = (model: ModelValue) =>
+  Schema.is(ListingState.NotAsked)(model.listing)
+    ? Option.none()
+    : Option.some(model.listing.route);
+
+const enteredListing = (
+  model: ModelValue,
+  route: ListingRouteValue
+): UpdateReturn =>
+  Schema.is(ListingState.Loaded)(model.listing) &&
+  sameRoute(model.listing.route, route)
+    ? { model }
+    : {
+        commands: [FetchListing({ route })],
+        model: modifyFields(model, {
+          listing: () => ListingState.Loading({ route }),
+        }),
+      };
+
+const isAwaitingListing = (model: ModelValue, route: ListingRouteValue) =>
+  Schema.is(ListingState.Loading)(model.listing) &&
+  Option.exists(listingRouteOf(model), (pending) => sameRoute(pending, route));
 
 const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   const routed = modifyFields(model, { route: () => route });
@@ -140,9 +189,11 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
             filters
           )
         : { model: routed },
-    ConfirmSignIn: () => ({ model: routed }),
+    Company: (company) => enteredListing(routed, company),
+    ConfirmSignIn: () => ({ commands: [ForgetSignInToken()], model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
+    Role: (role) => enteredListing(routed, role),
     Shortlist: () => ({ model: routed }),
   });
 };
@@ -201,23 +252,51 @@ export const routing = {
   onUrlRequest: (request: UrlRequest) => Message.ClickedLink({ request }),
 };
 
-export const init = (url: Url): UpdateReturn => {
+const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
+  const { route } = model;
+
+  return Preload.match<ModelValue>(preload, {
+    Job: ({ job }) =>
+      Schema.is(Route.Job)(route) && route.id === job.id
+        ? modifyFields(model, { job: () => JobState.Found({ job }) })
+        : model,
+    JobMissing: () =>
+      Schema.is(Route.Job)(route)
+        ? modifyFields(model, { job: () => JobState.Missing({ id: route.id }) })
+        : model,
+    Listing: ({ generatedAt, jobs, total }) =>
+      Schema.is(Route.Company)(route) || Schema.is(Route.Role)(route)
+        ? modifyFields(model, {
+            listing: () =>
+              ListingState.Loaded({ generatedAt, jobs, route, total }),
+          })
+        : model,
+    Nothing: () => model,
+  });
+};
+
+export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   const account = Account.init();
 
   const routed = arrivedAt(
-    {
-      account: account.model,
-      awaitingEcho: [],
-      draftSearch: "",
-      filters: defaultFilters,
-      generation: 0,
-      job: JobState.NotAsked(),
-      jobs: JobsState.NotAsked(),
-      marks: [],
-      more: MoreState.Idle(),
-      route: routeOfUrl(url),
-      stats: StatsState.Unavailable(),
-    },
+    preloaded(
+      {
+        account: account.model,
+        awaitingEcho: [],
+        draftSearch: "",
+        filters: defaultFilters,
+        generation: 0,
+        job: JobState.NotAsked(),
+        jobs: JobsState.NotAsked(),
+        listing: ListingState.NotAsked(),
+        marks: [],
+        more: MoreState.Idle(),
+        origin: flags.origin,
+        route: routeOfUrl(url),
+        stats: StatsState.Unavailable(),
+      },
+      flags.preload
+    ),
     url
   );
 
@@ -299,6 +378,12 @@ export const update = (
       Schema.is(Route.Job)(model.route)
         ? enteredJob(model, model.route.id)
         : { model },
+    ClickedRetryListing: () =>
+      Schema.is(Route.Company)(model.route) ||
+      Schema.is(Route.Role)(model.route)
+        ? enteredListing(model, model.route)
+        : { model },
+    CompletedForgetSignInToken: () => ({ model }),
     CompletedNavigation: () => ({ model }),
     CompletedReadShortlist: ({ marks }) => ({
       model: modifyFields(model, { marks: () => marks }),
@@ -318,6 +403,13 @@ export const update = (
               jobs: () => JobsState.Failed({ message: failure }),
             })
           : model,
+    }),
+    FailedFetchListing: ({ message: failure, route }) => ({
+      model: isAwaitingListing(model, route)
+        ? modifyFields(model, {
+            listing: () => ListingState.Failed({ message: failure, route }),
+          })
+        : model,
     }),
     FailedFetchMoreJobs: ({ generation }) => ({
       model:
@@ -353,6 +445,13 @@ export const update = (
                 }),
             })
           : model,
+    }),
+    SucceededFetchListing: ({ listing, route }) => ({
+      model: isAwaitingListing(model, route)
+        ? modifyFields(model, {
+            listing: () => ListingState.Loaded({ ...listing, route }),
+          })
+        : model,
     }),
     SucceededFetchMoreJobs: ({ generation, page }) => {
       if (

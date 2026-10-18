@@ -195,7 +195,7 @@ export const boardMasthead = (
     [sentenceView(model, h), searchView(model, h), statusLine(model, h)]
   );
 
-const jobRow = (
+export const jobRow = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
   job: JobValue,

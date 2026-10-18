@@ -14,7 +14,7 @@ import {
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import { editing, SessionState, SignInState } from "./model.js";
-import type { ModelValue } from "./model.js";
+import type { LinkOutcomeValue, ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<
   ModelValue,
@@ -25,6 +25,13 @@ type UpdateReturn = Update.Return<
 const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
 const providerName = { github: "GitHub", google: "Google" } as const;
+
+const linkProblems: Record<Exclude<LinkOutcomeValue, "Sent">, string> = {
+  Failed: "We could not send the link. Try again in a minute.",
+  Invalid: "That email address does not look right. Check it and try again.",
+  Limited:
+    "Too many sign-in links went to this address. Use the newest one, or wait 15 minutes and ask again.",
+};
 
 const typedEmail = (model: ModelValue) =>
   SignInState.match<string>(model.signIn, {
@@ -103,12 +110,7 @@ export const update = (
             return SignInState.Sent({ email });
           }
 
-          return editing(
-            email,
-            outcome === "Invalid"
-              ? "That email address does not look right. Check it and try again."
-              : "We could not send the link. Try again in a minute."
-          );
+          return editing(email, linkProblems[outcome]);
         },
       }),
     }),

@@ -3,8 +3,10 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
   AUTH_BASE_PATH,
   authOptions,
+  authSecret,
   magicLinkEmail,
   makeAccountStore,
+  viewerOfCookie,
 } from "@rat-stack/accounts";
 import type { SocialCredentials } from "@rat-stack/accounts";
 import { toRpc } from "@rat-stack/capability/rpc";
@@ -18,8 +20,9 @@ import {
   INGEST_INTERVAL_MINUTES,
   runDigests,
   runIngest,
+  siteHostsOf,
+  SITE_ORIGIN,
   SocialProvider,
-  Viewer,
 } from "@rat-stack/core";
 import type { ViewerValue } from "@rat-stack/core";
 import {
@@ -34,18 +37,10 @@ import {
   d1JobStoreLayer,
   JobsDatabase,
 } from "@rat-stack/job-store/d1";
+import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import {
-  Clock,
-  Config,
-  Effect,
-  Layer,
-  Option,
-  Record,
-  Redacted,
-  Schema,
-} from "effect";
+import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
 import {
   FetchHttpClient,
   HttpServerRequest,
@@ -69,11 +64,15 @@ export const DEFAULT_DIGEST_SENDS_PER_RUN = 25;
 
 export const DEFAULT_DIGEST_DAILY_SEND_LIMIT = 50;
 
-export const SITE_ORIGIN = "https://jobs.rowlandekemezie.com";
+const currentStage = Effect.gen(function* currentStage() {
+  const planned = yield* Effect.serviceOption(Stage);
 
-export const SITE_HOST = "jobs.rowlandekemezie.com";
+  return Option.isSome(planned)
+    ? planned.value
+    : yield* Config.String("ALCHEMY_STAGE");
+});
 
-const extraAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
+const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
   Config.withDefault(""),
   Config.map((hosts) =>
     hosts
@@ -81,15 +80,6 @@ const extraAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
       .map((host) => host.trim())
       .filter((host) => host !== "")
   )
-);
-
-export const MIN_AUTH_SECRET_LENGTH = 32;
-
-const authSecret = Config.schema(
-  Schema.Redacted(
-    Schema.String.check(Schema.isMinLength(MIN_AUTH_SECRET_LENGTH))
-  ),
-  "BETTER_AUTH_SECRET"
 );
 
 const socialCredentials = (prefix: string) =>
@@ -168,7 +158,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       google: yield* socialCredentials("GOOGLE"),
     });
 
-    const authHosts = [SITE_HOST, ...(yield* extraAuthHosts)];
+    const hosts = siteHostsOf(yield* currentStage, yield* localAuthHosts);
 
     const mailer = yield* Cloudflare.Email.Send(
       yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
@@ -217,8 +207,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
 
     const auth = yield* BetterAuth({
       ...authOptions({
-        allowedHosts: authHosts,
-        fallbackOrigin: SITE_ORIGIN,
+        hosts,
         // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
         sendMagicLink: async (request) => {
           await runPromise(
@@ -268,17 +257,6 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           )
         )
       );
-
-    const viewerOf = (request: HttpServerRequest.HttpServerRequest) =>
-      accountStore
-        .viewerOf(request.headers.cookie ?? "")
-        .pipe(
-          Effect.catchTag("AccountStoreUnavailable", (failure) =>
-            Effect.logWarning("session lookup failed", failure).pipe(
-              Effect.as(Viewer.Anonymous())
-            )
-          )
-        );
 
     const unsubscribe = (request: HttpServerRequest.HttpServerRequest) =>
       Effect.gen(function* unsubscribeHandler() {
@@ -334,7 +312,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         return yield* unsubscribe(request);
       }
 
-      return yield* serveRpc(yield* viewerOf(request));
+      return yield* serveRpc(
+        yield* viewerOfCookie(accountStore, request.headers.cookie)
+      );
     });
 
     // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.

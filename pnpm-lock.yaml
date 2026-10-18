@@ -301,6 +301,9 @@ importers:
       '@rat-stack/api':
         specifier: workspace:*
         version: link:../api
+      '@rat-stack/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@rat-stack/web':
         specifier: workspace:*
         version: link:../web
