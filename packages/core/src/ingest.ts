@@ -1,4 +1,4 @@
-import { Array, Clock, Effect, pipe, Schema } from "effect";
+import { Array, Clock, Effect, Option, pipe, Schema } from "effect";
 
 import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
@@ -8,7 +8,7 @@ import type { IngestReceiptValue, JobValue } from "./job.js";
 import { PostingFeeds } from "./posting-feeds.js";
 import { DAY_MILLIS, normalizePosting } from "./posting.js";
 import type { PostingValue } from "./posting.js";
-import { isOffSiteWebUrl } from "./site.js";
+import { offSiteHref } from "./site.js";
 
 export interface IngestPlan {
   readonly feedConcurrency: number;
@@ -41,7 +41,9 @@ const warnOfUnlinkablePostings = (
   feed: FeedRef,
   postings: readonly PostingValue[]
 ) => {
-  const skipped = postings.filter(({ url }) => !isOffSiteWebUrl(url)).length;
+  const skipped = postings.filter(({ url }) =>
+    Option.isNone(offSiteHref(url))
+  ).length;
 
   return skipped === 0
     ? Effect.void

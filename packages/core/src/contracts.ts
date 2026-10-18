@@ -58,7 +58,7 @@ export {
   SocialProvider,
 } from "./account.js";
 
-export { isOffSiteWebUrl } from "./site.js";
+export { offSiteHref } from "./site.js";
 
 export { Unauthorized } from "./unauthorized.js";
 

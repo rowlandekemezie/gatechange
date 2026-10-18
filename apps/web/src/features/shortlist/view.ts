@@ -1,6 +1,6 @@
 import {
-  isOffSiteWebUrl,
   MAX_NOTES_LENGTH,
+  offSiteHref,
   Stage,
   stages,
 } from "@rat-stack/core/contracts";
@@ -24,7 +24,7 @@ const originalPosting = (h: HtmlBuilder<MessageValue>, url: string): Html =>
   h.a(
     [
       h.Class("job-source"),
-      ...(isOffSiteWebUrl(url) ? [h.Href(url)] : []),
+      ...Option.toArray(Option.map(offSiteHref(url), (href) => h.Href(href))),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],

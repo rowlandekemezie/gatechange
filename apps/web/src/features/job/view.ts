@@ -1,4 +1,4 @@
-import { isOffSiteWebUrl } from "@rat-stack/core/contracts";
+import { offSiteHref } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
 import { DateTime, Option } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -78,7 +78,9 @@ const foundView = (
           h.a(
             [
               h.Class("apply"),
-              ...(isOffSiteWebUrl(job.url) ? [h.Href(job.url)] : []),
+              ...Option.toArray(
+                Option.map(offSiteHref(job.url), (href) => h.Href(href))
+              ),
               h.Target("_blank"),
               h.Rel("noopener noreferrer"),
             ],
@@ -113,7 +115,9 @@ const missingView = (
               `You tracked ${mark.title} at ${mark.company}. `,
               h.a(
                 [
-                  ...(isOffSiteWebUrl(mark.url) ? [h.Href(mark.url)] : []),
+                  ...Option.toArray(
+                    Option.map(offSiteHref(mark.url), (href) => h.Href(href))
+                  ),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],
