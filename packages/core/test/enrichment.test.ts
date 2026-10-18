@@ -844,7 +844,7 @@ const aggregatorFeed: FeedRef = {
   source: "RemoteOK",
 };
 
-const ExternalId = Schema.Literals(["a", "b", "c", "d"]);
+const ExternalId = Schema.Literals(["a", "b", "c", "d", "e"]);
 
 const ListingRun = Schema.Struct({
   aggregator: Schema.Array(ExternalId),
@@ -1014,7 +1014,10 @@ describe("enqueueUnenriched", () => {
     () =>
       Effect.gen(function* settledListings() {
         const queued = yield* ingestAndSweep(
-          [run(["a", "b", "c"], ["a", "d"]), run(["a", "b", "c"], ["a", "d"])],
+          [
+            run(["a", "b", "c", "d", "e"], ["a", "d"]),
+            run(["a", "b", "c", "d", "e"], ["a", "d"]),
+          ],
           {
             afterRun: (index) =>
               index === 0
@@ -1038,13 +1041,27 @@ describe("enqueueUnenriched", () => {
                       reason: "ModelUnavailable",
                       skippedAt: 0,
                     });
+                    yield* store.recordSkip(boardId("d"), {
+                      reason: "Gone",
+                      skippedAt: 0,
+                    });
+                    yield* store.recordSkip(boardId("e"), {
+                      reason: "EmptyPosting",
+                      skippedAt: 0,
+                    });
                   })
                 : Effect.void,
           }
         );
 
         expect(queued).toStrictEqual([
-          [boardId("a"), boardId("b"), boardId("c")],
+          [
+            boardId("a"),
+            boardId("b"),
+            boardId("c"),
+            boardId("d"),
+            boardId("e"),
+          ],
           [boardId("c")],
         ]);
       })
