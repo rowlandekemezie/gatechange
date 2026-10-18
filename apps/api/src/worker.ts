@@ -38,6 +38,14 @@ export const DEFAULT_FEED_CONCURRENCY = 6;
 
 export const MAGIC_LINK_SENDER = "sign-in@rowlandekemezie.com";
 
+const currentStage = Effect.gen(function* currentStage() {
+  const planned = yield* Effect.serviceOption(Stage);
+
+  return Option.isSome(planned)
+    ? planned.value
+    : yield* Config.String("ALCHEMY_STAGE");
+});
+
 const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
   Config.withDefault(""),
   Config.map((hosts) =>
@@ -121,7 +129,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       google: yield* socialCredentials("GOOGLE"),
     });
 
-    const hosts = siteHostsOf(yield* Stage, yield* localAuthHosts);
+    const hosts = siteHostsOf(yield* currentStage, yield* localAuthHosts);
 
     const mailer = yield* Cloudflare.Email.Send(
       yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
