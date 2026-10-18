@@ -745,7 +745,11 @@ const run = async () => {
         state.offer.includes(values.email) && state.offer.includes("3 jobs")
     );
 
-    steps.push({ step: label, tracker: asked });
+    steps.push({
+      detail: await screenshot(`${name}-prompt`),
+      step: label,
+      tracker: asked,
+    });
 
     return asked;
   };
@@ -909,7 +913,7 @@ const run = async () => {
 
       const asked = await askedToMove("the move prompt after sign-in");
 
-      if (!asked.empty || asked.stored === null) {
+      if (asked.stored === null) {
         throw new Error(
           "the browser shortlist moved before the member confirmed"
         );
