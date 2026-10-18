@@ -11,7 +11,12 @@ import { getMigrations } from "better-auth/db/migration";
 import { DateTime, Effect, Option } from "effect";
 import { vi } from "vitest";
 
-import { authOptions, EMAIL_SEND_LIMIT } from "../src/index.js";
+import {
+  authOptions,
+  EMAIL_SEND_LIMIT,
+  makeAccountStore,
+  viewerOfRequest,
+} from "../src/index.js";
 import type { AuthSettings, MagicLinkRequest } from "../src/index.js";
 
 const ORIGIN = "http://localhost:1337";
@@ -68,6 +73,7 @@ interface Call {
   readonly at?: string;
   readonly body?: string;
   readonly cookie?: string;
+  readonly fetchSite?: string | undefined;
   readonly from?: string;
   readonly ip?: string;
 }
@@ -75,23 +81,37 @@ interface Call {
 const call = (
   auth: Auth,
   path: string,
-  { at = ORIGIN, body, cookie = "", from = at, ip = "203.0.113.7" }: Call = {}
+  {
+    at = ORIGIN,
+    body,
+    cookie = "",
+    fetchSite,
+    from = at,
+    ip = "203.0.113.7",
+  }: Call = {}
 ) =>
   Effect.promise(
     // @effect-diagnostics-next-line asyncFunction:off -- better-auth's handler is Promise-based.
-    async () =>
-      await auth.handler(
+    async () => {
+      const headers = new Headers({
+        "cf-connecting-ip": ip,
+        "content-type": "application/json",
+        cookie,
+        origin: from,
+      });
+
+      if (fetchSite !== undefined) {
+        headers.set("sec-fetch-site", fetchSite);
+      }
+
+      return await auth.handler(
         new Request(`${at}${path}`, {
           body: body ?? null,
-          headers: {
-            "cf-connecting-ip": ip,
-            "content-type": "application/json",
-            cookie,
-            origin: from,
-          },
+          headers,
           method: body === undefined ? "GET" : "POST",
         })
-      )
+      );
+    }
   );
 
 const sessionOf = (auth: Auth, cookie: string) =>
@@ -389,6 +409,44 @@ describe("per-email send limit", () => {
   );
 
   it.effect(
+    "counts every Gmail spelling of one inbox together, and only Gmail's",
+    () =>
+      Effect.gen(function* gmailAliases() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth();
+        const statuses: number[] = [];
+
+        for (const [index, email] of [
+          "victim.name@gmail.com",
+          "VictimName@googlemail.com",
+          "v.i.c.t.i.m.n.a.m.e+x@GoogleMail.com",
+          "victimname@gmail.com",
+        ].entries()) {
+          statuses.push(
+            (yield* requestLink(auth, email, `2001:db8:${index}::1`)).status
+          );
+        }
+
+        const dotted = yield* requestLink(
+          auth,
+          "victim.name@example.com",
+          "2001:db8:9::1"
+        );
+
+        const undotted = yield* requestLink(
+          auth,
+          "victimname@example.com",
+          "2001:db8:a::1"
+        );
+
+        expect(statuses).toStrictEqual([200, 200, 200, 429]);
+        expect([dotted.status, undotted.status]).toStrictEqual([200, 200]);
+        expect(sent).toHaveLength(5);
+      })
+  );
+
+  it.effect(
     "keeps counting an inbox when the per-client limiter prunes its own rows",
     () =>
       Effect.gen(function* survivesPruning() {
@@ -430,14 +488,61 @@ describe("request origin", () => {
   );
 });
 
+describe("magic link verify", () => {
+  it.effect.each(["cross-site", "same-site"])(
+    "refuses a %s verify without spending the link, so the viewer can still sign in",
+    (fetchSite) =>
+      Effect.gen(function* loginCsrf() {
+        const { auth, sent } = makeAuth();
+
+        yield* requestLink(auth, "attacker@example.com");
+
+        const link = pathOf(sent[0]?.url ?? "");
+        const forged = yield* call(auth, link, { fetchSite });
+
+        expect(forged.status).toBe(403);
+        expect(cookieOf(forged)).not.toContain("session_token=");
+
+        const own = yield* call(auth, link, { fetchSite: "same-origin" });
+
+        expect(own.status).toBe(302);
+        expect(cookieOf(own)).toContain("session_token=");
+      })
+  );
+
+  it.effect.each([
+    ["the confirm page's same-origin form", "same-origin"],
+    ["a link pasted into the address bar", "none"],
+    ["a browser that sends no fetch metadata", undefined],
+  ])("signs in from %s", ([, fetchSite]) =>
+    Effect.gen(function* allowedVerify() {
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""), {
+        fetchSite,
+      });
+
+      expect(verified.status).toBe(302);
+      expect(cookieOf(verified)).toContain("session_token=");
+    })
+  );
+});
+
 describe("stage hosts", () => {
   const PREVIEW = "https://jobs-verify-x.acct.workers.dev";
+
+  const previewHosts = siteHostsOf("verify-x", {
+    localHosts: [],
+    workersSubdomain: Option.some("acct"),
+  });
 
   const PROD = "https://jobs.rowlandekemezie.com";
 
   it.effect("emails a preview stage's own workers.dev link", () =>
     Effect.gen(function* previewLink() {
-      const { auth, sent } = makeAuth(siteHostsOf("verify-x", []));
+      const { auth, sent } = makeAuth(previewHosts);
 
       const response = yield* requestLink(auth, "ada@example.com", undefined, {
         at: PREVIEW,
@@ -450,9 +555,56 @@ describe("stage hosts", () => {
     })
   );
 
+  it.effect(
+    "refuses the same Worker name on another account's workers.dev",
+    () =>
+      Effect.gen(function* otherAccount() {
+        const { auth, sent } = makeAuth(previewHosts);
+
+        const status = yield* statusOf(
+          requestLink(auth, "ada@example.com", undefined, {
+            at: "https://jobs-verify-x.attacker.workers.dev",
+          })
+        );
+
+        expect(status).not.toBe(200);
+        expect(sent).toHaveLength(0);
+      })
+  );
+
+  it.effect("resolves a preview stage's session for an /rpc request", () =>
+    Effect.gen(function* previewSession() {
+      const { auth, sent } = makeAuth(previewHosts);
+
+      yield* requestLink(auth, "ada@example.com", undefined, { at: PREVIEW });
+
+      const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""), {
+        at: PREVIEW,
+      });
+
+      const store = makeAccountStore(
+        (headers) =>
+          Effect.promise(
+            // @effect-diagnostics-next-line asyncFunction:off -- better-auth's api is Promise-based.
+            async () => await auth.api.getSession({ headers })
+          ),
+        { socialProviders: [] }
+      );
+
+      const viewer = yield* viewerOfRequest(store, {
+        cookie: cookieOf(verified),
+        host: new URL(PREVIEW).host,
+        origin: PREVIEW,
+        "sec-fetch-site": "same-origin",
+      });
+
+      expect(viewer._tag).toBe("Member");
+    })
+  );
+
   it.effect("never trusts the prod site from a preview stage", () =>
     Effect.gen(function* previewDistrustsProd() {
-      const { auth, sent } = makeAuth(siteHostsOf("verify-x", []));
+      const { auth, sent } = makeAuth(previewHosts);
 
       const fromProd = yield* requestLink(auth, "ada@example.com", undefined, {
         at: PREVIEW,
@@ -473,7 +625,12 @@ describe("stage hosts", () => {
     "keeps prod on its own domain even when local hosts are configured",
     () =>
       Effect.gen(function* prodOnly() {
-        const { auth, sent } = makeAuth(siteHostsOf("prod", ["localhost:*"]));
+        const { auth, sent } = makeAuth(
+          siteHostsOf("prod", {
+            localHosts: ["localhost:*"],
+            workersSubdomain: Option.some("acct"),
+          })
+        );
 
         const local = yield* requestLink(auth, "ada@example.com", undefined, {
           at: ORIGIN,
