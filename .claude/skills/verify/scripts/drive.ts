@@ -192,28 +192,7 @@ const isPausedRequest = Schema.is(PausedRequest);
 const clientIp = `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`;
 
 socket.addEventListener("message", (event) => {
-  const message: unknown = JSON.parse(String(event.data));
-
-  if (isPausedRequest(message)) {
-    socket.send(
-      JSON.stringify({
-        method: "Fetch.continueRequest",
-        params: {
-          headers: [
-            ...Object.entries(message.params.request.headers).map(
-              ([header, value]) => ({ name: header, value })
-            ),
-            { name: "cf-connecting-ip", value: clientIp },
-          ],
-          requestId: message.params.requestId,
-        },
-      })
-    );
-
-    return;
-  }
-
-  const reply = Schema.decodeUnknownSync(Reply)(message);
+  const reply = Schema.decodeUnknownSync(Reply)(JSON.parse(String(event.data)));
 
   if (reply.id !== undefined) {
     received.set(String(reply.id), reply);
@@ -263,6 +242,27 @@ const send = async <S extends Schema.Decoder<unknown>>(
 };
 
 const Ignored = Schema.Unknown;
+
+const continueWithClientIp = async ({ params }: typeof PausedRequest.Type) => {
+  await send(Ignored, "Fetch.continueRequest", {
+    headers: [
+      ...Object.entries(params.request.headers).map(([header, value]) => ({
+        name: header,
+        value,
+      })),
+      { name: "cf-connecting-ip", value: clientIp },
+    ],
+    requestId: params.requestId,
+  });
+};
+
+socket.addEventListener("message", (event) => {
+  const message: unknown = JSON.parse(String(event.data));
+
+  if (isPausedRequest(message)) {
+    void continueWithClientIp(message);
+  }
+});
 
 const Evaluation = Schema.Struct({
   exceptionDetails: Schema.optional(Schema.Struct({ text: Schema.String })),
