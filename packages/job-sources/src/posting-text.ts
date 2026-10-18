@@ -46,7 +46,6 @@ const AshbyDetail = Schema.Struct({
   ),
   descriptionPlain: OptionalString,
   id: Schema.String,
-  isRemote: Schema.optional(Schema.NullOr(Schema.Boolean)),
   location: OptionalString,
   workplaceType: OptionalString,
 });
@@ -160,9 +159,7 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
               job.location === null || job.location === undefined
                 ? null
                 : `Location: ${job.location}`,
-              workplaceLine(
-                job.isRemote === true ? "Remote" : job.workplaceType
-              ),
+              workplaceLine(job.workplaceType),
             ]).join("\n\n")
           ),
       })

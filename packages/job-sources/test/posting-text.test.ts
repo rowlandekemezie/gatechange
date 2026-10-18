@@ -153,6 +153,57 @@ describe("posting texts", () => {
   );
 
   it.effect(
+    "a Greenhouse pay range written with dash, currency and numeric entities reads as one band",
+    () =>
+      Effect.gen(function* readEscapedRange() {
+        const text = yield* fetchText("greenhouse:axon:1");
+
+        expect(text).toBe(
+          "Base Pay Range $130,650 — $209,040 USD Gross €60,000 – €75,000 per year $90,000 — $110,000 &#99999999;"
+        );
+        expect(moneyRangesIn(text)).toStrictEqual([
+          { amounts: [130_650, 209_040], currency: "USD", period: "Year" },
+          { amounts: [60_000, 75_000], currency: "EUR", period: "Year" },
+          { amounts: [90_000, 110_000], currency: "USD", period: "Year" },
+        ]);
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              content:
+                "&lt;p&gt;Base Pay Range $130,650 &amp;mdash; $209,040 USD&lt;/p&gt;&lt;p&gt;Gross &amp;euro;60,000 &amp;ndash; &amp;euro;75,000 per year&lt;/p&gt;&lt;p&gt;&amp;#36;90,000 &amp;#x2014; &amp;#36;110,000&lt;/p&gt;&lt;p&gt;&amp;#99999999;&lt;/p&gt;",
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect(
+    "an Ashby hybrid posting flagged isRemote keeps its Hybrid workplace type",
+    () =>
+      Effect.gen(function* readAshbyHybrid() {
+        const text = yield* fetchText("ashby:baseten:hybrid");
+
+        expect(text).toBe("Inference team.\n\nWorkplace type: Hybrid");
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              jobs: [
+                {
+                  descriptionPlain: "Inference team.",
+                  id: "hybrid",
+                  isRemote: true,
+                  workplaceType: "Hybrid",
+                },
+              ],
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect(
     "a SmartRecruiters posting joins its job ad sections as plain text",
     () => {
       const server = serving(smartRecruitersPosting);

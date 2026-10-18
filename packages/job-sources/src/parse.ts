@@ -88,19 +88,37 @@ export const periodOf = (value: string | null | undefined): string | null =>
   );
 
 const entities: readonly (readonly [RegExp, string])[] = [
-  [/&#x2F;/gu, "/"],
-  [/&#x27;/gu, "'"],
-  [/&#39;/gu, "'"],
   [/&quot;/gu, '"'],
   [/&gt;/gu, ">"],
   [/&lt;/gu, "<"],
   [/&nbsp;/gu, " "],
-  [/&#xa0;/giu, " "],
+  [/&mdash;/gu, "—"],
+  [/&ndash;/gu, "–"],
+  [/&minus;/gu, "-"],
+  [/&euro;/gu, "€"],
+  [/&pound;/gu, "£"],
+  [/&yen;/gu, "¥"],
+  [/&rsquo;/gu, "’"],
+  [/&lsquo;/gu, "‘"],
+  [/&rdquo;/gu, "”"],
+  [/&ldquo;/gu, "“"],
+  [/&hellip;/gu, "…"],
+  [/&bull;/gu, "•"],
   [/&amp;/gu, "&"],
 ];
 
+const characterOf = (entity: string, code: number) =>
+  code <= 0x10_ff_ff ? String.fromCodePoint(code) : entity;
+
 export const textOfHtml = (html: string): string => {
-  let text = html.replaceAll(/<[^>]*>/gu, " ");
+  let text = html
+    .replaceAll(/<[^>]*>/gu, " ")
+    .replaceAll(/&#x(?<hex>[\da-f]+);/giu, (entity, hex: string) =>
+      characterOf(entity, Number.parseInt(hex, 16))
+    )
+    .replaceAll(/&#(?<decimal>\d+);/gu, (entity, decimal: string) =>
+      characterOf(entity, Number(decimal))
+    );
 
   for (const [pattern, replacement] of entities) {
     text = text.replaceAll(pattern, replacement);
