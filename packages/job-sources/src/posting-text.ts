@@ -9,7 +9,12 @@ import { nonEmpty, textOfHtml } from "./parse.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
-const GreenhouseDetail = Schema.Struct({ content: Schema.String });
+const GreenhouseDetail = Schema.Struct({
+  content: Schema.String,
+  location: Schema.optional(
+    Schema.NullOr(Schema.Struct({ name: OptionalString }))
+  ),
+});
 
 const LeverDetail = Schema.Struct({
   additionalPlain: OptionalString,
@@ -76,13 +81,23 @@ const workplaceLine = (workplaceType: string | null | undefined) =>
     ? null
     : `Workplace type: ${workplaceType}`;
 
+const locationLine = (location: string | null | undefined) =>
+  location === null || location === undefined ? null : `Location: ${location}`;
+
 const AshbyBoard = Schema.Struct({ jobs: Schema.Array(Schema.Unknown) });
 
 const greenhouseText = ({ externalId, slug }: PostingKey) =>
   getJson(
     `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
     GreenhouseDetail
-  ).pipe(Effect.map(({ content }) => textOfHtml(textOfHtml(content))));
+  ).pipe(
+    Effect.map(({ content, location }) =>
+      nonEmpty([
+        textOfHtml(textOfHtml(content)),
+        locationLine(location?.name),
+      ]).join("\n\n")
+    )
+  );
 
 const leverText = ({ externalId, slug }: PostingKey) =>
   getJson(
@@ -156,9 +171,7 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
             nonEmpty([
               job.descriptionPlain,
               ashbyCompensation(job.compensation),
-              job.location === null || job.location === undefined
-                ? null
-                : `Location: ${job.location}`,
+              locationLine(job.location),
               workplaceLine(job.workplaceType),
             ]).join("\n\n")
           ),

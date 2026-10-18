@@ -157,7 +157,7 @@ const amountNamed = (name: string) =>
   String.raw`(?<${name}>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?<${name}K>\s?[kK](?![a-zA-Z]))?`;
 
 const moneyPattern = new RegExp(
-  String.raw`(?<before>${markerRun})${amountNamed("low")}(?:\s*(?<middle>${markerRun})(?:-|–|—|\bto\b|\band\b)\s*(?<between>${markerRun})${amountNamed("high")})?(?<after>(?:\s*${currencyMarker})?)`,
+  String.raw`(?<floor>\b(?:from|at least|minimum(?: of)?|starting at)\s+)?(?<before>${markerRun})${amountNamed("low")}(?:\s*(?<middle>${markerRun})(?:-|–|—|\bto\b|\band\b)\s*(?<between>${markerRun})${amountNamed("high")})?(?<after>(?:\s*${currencyMarker})?)`,
   "gu"
 );
 
@@ -232,7 +232,10 @@ export const moneyRangesIn = (text: string): readonly MoneyRange[] =>
       [groups.before, groups.middle, groups.between, groups.after].join(" ")
     );
 
-    if (currency === null) {
+    if (
+      currency === null ||
+      (groups.floor !== undefined && groups.high === undefined)
+    ) {
       return Result.failVoid;
     }
 

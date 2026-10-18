@@ -179,6 +179,29 @@ describe("posting texts", () => {
   );
 
   it.effect(
+    "a Greenhouse posting ends with its board location, so a remote region there reaches the model",
+    () =>
+      Effect.gen(function* readGreenhouseLocation() {
+        const text = yield* fetchText("greenhouse:mercury:1");
+
+        expect(text).toBe(
+          "Lead a team of 7+ engineers.\n\nLocation: San Francisco, CA, or Remote within Canada or United States"
+        );
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              content: "&lt;p&gt;Lead a team of 7+ engineers.&lt;/p&gt;",
+              location: {
+                name: "San Francisco, CA, or Remote within Canada or United States",
+              },
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect(
     "an Ashby hybrid posting flagged isRemote keeps its Hybrid workplace type",
     () =>
       Effect.gen(function* readAshbyHybrid() {

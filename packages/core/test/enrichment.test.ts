@@ -447,6 +447,20 @@ describe("enrichListing", () => {
       180_000,
       { currency: "USD", max: 180_000, min: 180_000 },
     ],
+    [
+      "a salary floor",
+      "Salary starting from 5000 EUR/month.",
+      5000,
+      5000,
+      null,
+    ],
+    [
+      "a band that starts from its low end",
+      "Pay from €60,000 to €75,000 per year.",
+      60_000,
+      75_000,
+      { currency: "EUR", max: 75_000, min: 60_000 },
+    ],
   ] as const)(
     "a salary of %s is read from the posting's own currency and period",
     ([, text, low, high, saved]) =>
