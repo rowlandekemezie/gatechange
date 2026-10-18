@@ -20,3 +20,5 @@ export const workerFirstPaths = routePrefixes.flatMap(([prefix]) => [
 ]);
 
 export const PRIVATE_CACHE_CONTROL = "private, no-store";
+
+export const PRIVATE_REFERRER_POLICY = "no-referrer";

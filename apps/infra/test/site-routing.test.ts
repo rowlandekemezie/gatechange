@@ -14,9 +14,12 @@ describe("siteRouting", () => {
   });
 
   it.each(["verify-j4-perf", "dev", "production", "Prod"])(
-    "leaves %s off the custom domain and serves it on workers.dev",
+    "leaves %s off the custom domain and serves it on its own workers.dev name",
     (stage) => {
-      expect(siteRouting(stage)).toStrictEqual({ workersDev: true });
+      expect(siteRouting(stage)).toStrictEqual({
+        name: `jobs-${stage.toLowerCase()}`,
+        workersDev: true,
+      });
     }
   );
 });

@@ -19,6 +19,7 @@ import {
   FetchListing,
   FetchMoreJobs,
   FetchStats,
+  ForgetSignInToken,
   LoadUrl,
   PushUrl,
   ReadShortlist,
@@ -198,7 +199,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
           )
         : { model: routed },
     Company: (company) => enteredListing(routed, company),
-    ConfirmSignIn: () => ({ model: routed }),
+    ConfirmSignIn: () => ({ commands: [ForgetSignInToken()], model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
     Role: (role) => enteredListing(routed, role),
@@ -562,6 +563,7 @@ export const update = (
             })
           ),
       }),
+    CompletedForgetSignInToken: () => ({ model }),
     CompletedNavigation: () => ({ model }),
     CompletedReadShortlist: ({ marks }) => ({
       model: modifyFields(model, { marks: () => marks }),

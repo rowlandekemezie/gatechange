@@ -1,8 +1,9 @@
-export const SITE_HOSTNAME = "jobs.rowlandekemezie.com";
-
-export const SITE_ZONE = "rowlandekemezie.com";
-
-export const PROD_STAGE = "prod";
+import {
+  previewWorkerName,
+  PROD_STAGE,
+  SITE_HOSTNAME,
+  SITE_ZONE,
+} from "@rat-stack/core";
 
 export const siteRouting = (stage: string) =>
   stage === PROD_STAGE
@@ -10,7 +11,7 @@ export const siteRouting = (stage: string) =>
         domain: { name: SITE_HOSTNAME, zoneName: SITE_ZONE },
         workersDev: false,
       }
-    : { workersDev: true };
+    : { name: previewWorkerName(stage), workersDev: true };
 
 export const siteIndexing = (stage: string) =>
   stage === PROD_STAGE ? "index" : "noindex";

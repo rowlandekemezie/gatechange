@@ -31,6 +31,7 @@ export const Message = defineMessageUnion({
   ClickedRetryJob: {},
   ClickedRetryListing: {},
   ClickedRetryTracker: {},
+  CompletedForgetSignInToken: {},
   CompletedNavigation: {},
   CompletedReadShortlist: { marks: Shortlist },
   CompletedSyncTracker: { jobs: TrackedJobs, revision: Schema.Finite },
