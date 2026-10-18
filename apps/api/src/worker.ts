@@ -170,7 +170,12 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         maxRetries: ENRICHMENT_MAX_RETRIES,
       },
       (messages) =>
-        Stream.runForEach(messages, enrichMessage).pipe(
+        messages.pipe(
+          Stream.mapEffect(enrichMessage, {
+            concurrency: ENRICHMENT_BATCH_SIZE,
+            unordered: true,
+          }),
+          Stream.runDrain,
           Effect.provide(enrichmentLayer)
         )
     );
