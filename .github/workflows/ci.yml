@@ -111,5 +111,10 @@ jobs:
 
       - name: Smoke test auth
         run: |
-          status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/api/auth/ok)
-          [ "$status" = "200" ] || { echo "/api/auth/ok answered $status"; exit 1; }
+          for attempt in 1 2 3 4 5 6; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/api/auth/ok) && [ "$status" = "200" ] && exit 0
+            echo "/api/auth/ok answered $status, retrying in 10 seconds"
+            sleep 10
+          done
+          echo "/api/auth/ok did not answer 200 after deploy"
+          exit 1

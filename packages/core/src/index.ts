@@ -47,6 +47,8 @@ export type {
   SearchFiltersValue,
 } from "./alerts.js";
 
+export type { RequestHeaders } from "./account-store.js";
+
 export { AccountStoreUnavailable } from "./account-store-unavailable.js";
 
 export { Unauthorized } from "./unauthorized.js";
@@ -188,6 +190,7 @@ export {
   SITE_ORIGIN,
   SITE_ZONE,
   siteHostsOf,
+  WorkersSubdomain,
 } from "./site.js";
 
-export type { SiteHosts } from "./site.js";
+export type { SiteHosts, StageHosts } from "./site.js";

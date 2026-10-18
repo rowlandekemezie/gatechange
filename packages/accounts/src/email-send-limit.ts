@@ -14,6 +14,11 @@ interface RateLimitRow {
   readonly lastRequest: number | bigint;
 }
 
+const GMAIL_DOMAINS: ReadonlySet<string> = new Set([
+  "gmail.com",
+  "googlemail.com",
+]);
+
 const SignInBody = Schema.Struct({ email: Schema.String });
 
 export const emailSendKey = (email: string) => {
@@ -24,9 +29,12 @@ export const emailSendKey = (email: string) => {
     return `magic-link-email:${address}`;
   }
 
-  const [mailbox = ""] = address.slice(0, at).split("+");
+  const [tagless = ""] = address.slice(0, at).split("+");
+  const domain = address.slice(at + 1);
+  const gmail = GMAIL_DOMAINS.has(domain);
+  const mailbox = gmail ? tagless.replaceAll(".", "") : tagless;
 
-  return `magic-link-email:${mailbox}${address.slice(at)}`;
+  return `magic-link-email:${mailbox}@${gmail ? "gmail.com" : domain}`;
 };
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based, and this mirrors its own database rate limiter.

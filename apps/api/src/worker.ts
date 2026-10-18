@@ -6,7 +6,7 @@ import {
   authSecret,
   magicLinkEmail,
   makeAccountStore,
-  viewerOfCookie,
+  viewerOfRequest,
 } from "@rat-stack/accounts";
 import type { SocialCredentials } from "@rat-stack/accounts";
 import { toRpc } from "@rat-stack/capability/rpc";
@@ -23,6 +23,7 @@ import {
   siteHostsOf,
   SITE_ORIGIN,
   SocialProvider,
+  WorkersSubdomain,
 } from "@rat-stack/core";
 import type { ViewerValue } from "@rat-stack/core";
 import {
@@ -80,6 +81,10 @@ const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
       .map((host) => host.trim())
       .filter((host) => host !== "")
   )
+);
+
+const workersSubdomain = Config.option(
+  Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
 );
 
 const socialCredentials = (prefix: string) =>
@@ -158,7 +163,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       google: yield* socialCredentials("GOOGLE"),
     });
 
-    const hosts = siteHostsOf(yield* currentStage, yield* localAuthHosts);
+    const hosts = siteHostsOf(yield* currentStage, {
+      localHosts: yield* localAuthHosts,
+      workersSubdomain: yield* workersSubdomain,
+    });
 
     const mailer = yield* Cloudflare.Email.Send(
       yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
@@ -223,12 +231,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     });
 
     const accountStore = makeAccountStore(
-      (cookie) =>
+      (headers) =>
         auth.api
-          .getSession({
-            headers: new Headers({ cookie }),
-            query: { disableRefresh: true },
-          })
+          .getSession({ headers, query: { disableRefresh: true } })
           .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
       {
         socialProviders: SocialProvider.literals.filter(
@@ -312,8 +317,16 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         return yield* unsubscribe(request);
       }
 
-      return yield* serveRpc(
-        yield* viewerOfCookie(accountStore, request.headers.cookie)
+      return yield* viewerOfRequest(accountStore, request.headers).pipe(
+        Effect.matchEffect({
+          onFailure: () =>
+            Effect.succeed(
+              HttpServerResponse.text("Cross-site request refused.", {
+                status: 403,
+              })
+            ),
+          onSuccess: serveRpc,
+        })
       );
     });
 

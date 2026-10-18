@@ -12,8 +12,9 @@ export { AUTH_BASE_PATH, authOptions } from "./options.js";
 
 export {
   authSecret,
+  CrossSiteRequest,
   MIN_AUTH_SECRET_LENGTH,
-  viewerOfCookie,
+  viewerOfRequest,
 } from "./request-viewer.js";
 
 export type {
