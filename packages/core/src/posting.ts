@@ -5,7 +5,7 @@ import { Arrangement, EpochMillis } from "./job.js";
 import type { JobValue } from "./job.js";
 import { classifyPlacement, regionWeight } from "./location.js";
 import { classifyRole, roleWeight } from "./role.js";
-import { isOffSiteWebUrl } from "./site.js";
+import { offSiteHref } from "./site.js";
 
 export const Posting = Schema.Struct({
   company: Schema.String,
@@ -44,11 +44,9 @@ export const normalizePosting = (
       : Option.getOrElse(feed.company, () => "")
   );
 
-  if (
-    title.length === 0 ||
-    company.length === 0 ||
-    !isOffSiteWebUrl(posting.url)
-  ) {
+  const url = offSiteHref(posting.url);
+
+  if (title.length === 0 || company.length === 0 || Option.isNone(url)) {
     return Option.none();
   }
 
@@ -86,7 +84,7 @@ export const normalizePosting = (
         salary: hasSalary ? salary : null,
         source: feed.source,
         title,
-        url: posting.url,
+        url: url.value,
       };
     })
   );

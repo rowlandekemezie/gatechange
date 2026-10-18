@@ -1,4 +1,4 @@
-import { isOffSiteWebUrl, roleLevels } from "@rat-stack/core/contracts";
+import { offSiteHref, roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -245,7 +245,9 @@ export const jobRow = (
               h.a(
                 [
                   h.Class("job-source"),
-                  ...(isOffSiteWebUrl(job.url) ? [h.Href(job.url)] : []),
+                  ...Option.toArray(
+                    Option.map(offSiteHref(job.url), (href) => h.Href(href))
+                  ),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],
