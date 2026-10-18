@@ -28,8 +28,17 @@ const LOCAL_HOSTS: SiteHosts = {
 
 const MINUTE = 60_000;
 
-const migratedDatabase = () => {
-  const database = new DatabaseSync(":memory:");
+class RecordingDatabase extends DatabaseSync {
+  readonly statements: string[] = [];
+
+  override prepare(...args: Parameters<DatabaseSync["prepare"]>) {
+    this.statements.push(args[0]);
+
+    return super.prepare(...args);
+  }
+}
+
+const migrate = <D extends DatabaseSync>(database: D) => {
   const directory = jobStoreMigrationDirectory();
 
   for (const file of readdirSync(directory)
@@ -40,6 +49,8 @@ const migratedDatabase = () => {
 
   return database;
 };
+
+const migratedDatabase = () => migrate(new DatabaseSync(":memory:"));
 
 const settings = (
   sent: MagicLinkRequest[],
@@ -54,9 +65,11 @@ const settings = (
   social: {},
 });
 
-const makeAuth = (hosts: SiteHosts = LOCAL_HOSTS) => {
+const makeAuth = (
+  hosts: SiteHosts = LOCAL_HOSTS,
+  database: DatabaseSync = migratedDatabase()
+) => {
   const sent: MagicLinkRequest[] = [];
-  const database = migratedDatabase();
 
   const auth = betterAuth({
     ...authOptions(settings(sent, hosts)),
@@ -428,21 +441,22 @@ describe("per-email send limit", () => {
           );
         }
 
-        const dotted = yield* requestLink(
-          auth,
-          "victim.name@example.com",
-          "2001:db8:9::1"
-        );
+        const elsewhere: number[] = [];
 
-        const undotted = yield* requestLink(
-          auth,
+        for (const [index, email] of [
+          "victim.name@example.com",
           "victimname@example.com",
-          "2001:db8:a::1"
-        );
+          "vic.tim.name@example.com",
+          "v.i.c.t.i.m.n.a.m.e@example.com",
+        ].entries()) {
+          elsewhere.push(
+            (yield* requestLink(auth, email, `2001:db8:a${index}::1`)).status
+          );
+        }
 
         expect(statuses).toStrictEqual([200, 200, 200, 429]);
-        expect([dotted.status, undotted.status]).toStrictEqual([200, 200]);
-        expect(sent).toHaveLength(5);
+        expect(elsewhere).toStrictEqual([200, 200, 200, 200]);
+        expect(sent).toHaveLength(7);
       })
   );
 
@@ -489,7 +503,7 @@ describe("request origin", () => {
 });
 
 describe("magic link verify", () => {
-  it.effect.each(["cross-site", "same-site"])(
+  it.effect.each(["cross-site", "same-site", "none"])(
     "refuses a %s verify without spending the link, so the viewer can still sign in",
     (fetchSite) =>
       Effect.gen(function* loginCsrf() {
@@ -512,7 +526,6 @@ describe("magic link verify", () => {
 
   it.effect.each([
     ["the confirm page's same-origin form", "same-origin"],
-    ["a link pasted into the address bar", "none"],
     ["a browser that sends no fetch metadata", undefined],
   ])("signs in from %s", ([, fetchSite]) =>
     Effect.gen(function* allowedVerify() {
@@ -649,5 +662,54 @@ describe("stage hosts", () => {
           PROD,
         ]);
       })
+  );
+});
+
+describe("per-request database cost", () => {
+  it.effect(
+    "resolves a signed-in session from a fresh auth instance in one query, without reading the schema",
+    () =>
+      Effect.gen(function* oneQuery() {
+        const database = migrate(new RecordingDatabase(":memory:"));
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, database);
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""));
+
+        database.statements.length = 0;
+
+        const perRequest = makeAuth(LOCAL_HOSTS, database).auth;
+
+        const session = yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- better-auth's api is Promise-based.
+          async () =>
+            await perRequest.api.getSession({
+              headers: new Headers({ cookie: cookieOf(verified) }),
+              query: { disableRefresh: true },
+            })
+        );
+
+        expect(session?.user.email).toBe("ada@example.com");
+        expect(database.statements).toHaveLength(1);
+      })
+  );
+
+  it.effect("answers get-session without a cookie from no query at all", () =>
+    Effect.gen(function* noQuery() {
+      const database = migrate(new RecordingDatabase(":memory:"));
+      const { auth } = makeAuth(LOCAL_HOSTS, database);
+
+      const response = yield* call(auth, "/api/auth/get-session");
+
+      const body = yield* Effect.promise(
+        // @effect-diagnostics-next-line asyncFunction:off -- Response.json is Promise-based.
+        async () => await response.json()
+      );
+
+      expect(response.status).toBe(200);
+      expect(body).toBeNull();
+      expect(database.statements).toStrictEqual([]);
+    })
   );
 });
