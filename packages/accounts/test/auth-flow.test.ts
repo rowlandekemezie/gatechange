@@ -875,7 +875,11 @@ describe("tracker writes over /rpc", () => {
 
         yield* requestLink(auth, "ada@example.com");
 
-        const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""));
+        const verified = yield* call(
+          auth,
+          pathOf(sent[0]?.url ?? ""),
+          CONFIRM_FORM
+        );
 
         const store = makeAccountStore(
           (headers) =>
