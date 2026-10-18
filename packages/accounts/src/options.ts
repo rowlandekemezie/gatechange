@@ -1,7 +1,10 @@
 import { MAGIC_LINK_TTL_MINUTES } from "@rat-stack/core";
-import type { SocialProviderValue } from "@rat-stack/core";
+import type { SiteHosts, SocialProviderValue } from "@rat-stack/core";
 import type { BetterAuthOptions } from "better-auth";
 import { magicLink } from "better-auth/plugins";
+import { Option } from "effect";
+
+import { emailSendLimit } from "./email-send-limit.js";
 
 export const AUTH_BASE_PATH = "/api/auth";
 
@@ -16,8 +19,7 @@ export interface MagicLinkRequest {
 }
 
 export interface AuthSettings {
-  readonly allowedHosts: readonly string[];
-  readonly fallbackOrigin: string;
+  readonly hosts: SiteHosts;
   readonly sendMagicLink: (request: MagicLinkRequest) => Promise<void>;
   readonly social: Partial<Record<SocialProviderValue, SocialCredentials>>;
 }
@@ -25,13 +27,17 @@ export interface AuthSettings {
 export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
   account: { encryptOAuthTokens: true },
   advanced: {
+    disableOriginCheck: false,
     ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
     useSecureCookies: true,
   },
   basePath: AUTH_BASE_PATH,
   baseURL: {
-    allowedHosts: [...settings.allowedHosts],
-    fallback: settings.fallbackOrigin,
+    allowedHosts: [...settings.hosts.allowedHosts],
+    ...Option.match(settings.hosts.fallbackOrigin, {
+      onNone: () => ({}),
+      onSome: (fallback) => ({ fallback }),
+    }),
   },
   plugins: [
     magicLink({
@@ -39,6 +45,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
       sendMagicLink: settings.sendMagicLink,
       storeToken: "hashed",
     }),
+    emailSendLimit(),
   ],
   rateLimit: { enabled: true, storage: "database" },
   socialProviders: settings.social,

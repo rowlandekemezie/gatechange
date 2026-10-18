@@ -5,7 +5,11 @@ import { Preload } from "./client/board/model.js";
 import { collectListing, isListingRoute } from "./client/listing.js";
 import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
-import { edgeRouteOf, PRIVATE_CACHE_CONTROL } from "./edge-routes.js";
+import {
+  edgeRouteOf,
+  PRIVATE_CACHE_CONTROL,
+  PRIVATE_REFERRER_POLICY,
+} from "./edge-routes.js";
 import type { EdgeRoute } from "./edge-routes.js";
 import { clientOf, listedJobs, shellOf } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
@@ -28,6 +32,10 @@ const withoutSharedCache = (route: EdgeRoute, response: Response) => {
   const guarded = new Response(response.body, response);
 
   guarded.headers.set("cache-control", PRIVATE_CACHE_CONTROL);
+
+  if (route === "private") {
+    guarded.headers.set("referrer-policy", PRIVATE_REFERRER_POLICY);
+  }
 
   return guarded;
 };

@@ -21,6 +21,7 @@ export const Message = defineMessageUnion({
   ClickedRetry: {},
   ClickedRetryJob: {},
   ClickedRetryListing: {},
+  CompletedForgetSignInToken: {},
   CompletedNavigation: {},
   CompletedReadShortlist: { marks: Shortlist },
   CompletedWriteShortlist: {},

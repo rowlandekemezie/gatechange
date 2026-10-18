@@ -1,13 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Account } from "@rat-stack/core/contracts";
-import { Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
+import { vi } from "vitest";
 
 import { Message } from "../src/client/account/message.js";
 import type { MessageValue } from "../src/client/account/message.js";
 import { SessionState, SignInState } from "../src/client/account/model.js";
 import type { ModelValue } from "../src/client/account/model.js";
 import { init, update } from "../src/client/account/update.js";
+import { ForgetSignInToken } from "../src/client/board/command.js";
 import { Preload } from "../src/client/board/model.js";
 import { init as boardInit } from "../src/client/board/update.js";
 import { accountRouter, Route, routeOfUrl } from "../src/client/route.js";
@@ -106,6 +108,22 @@ describe("account", () => {
     ).toBe(true);
   });
 
+  it("asks the viewer to wait when the address has had too many links", () => {
+    const step = sent(
+      signedOut,
+      Message.CompletedRequestLink({ email: "a@b.c", outcome: "Limited" })
+    );
+
+    expect(step.model.signIn).toStrictEqual(
+      SignInState.Editing({
+        email: "a@b.c",
+        problem: Option.some(
+          "Too many sign-in links went to this address. Use the newest one, or wait 15 minutes and ask again."
+        ),
+      })
+    );
+  });
+
   it("holds the member's account once the session resolves", () => {
     const step = sent(
       { commands: [], model: init().model },
@@ -152,4 +170,39 @@ describe("account", () => {
       )
     ).not.toContain("RequestLink");
   });
+
+  it.effect(
+    "drops the token from the address bar once the page has read it",
+    () =>
+      Effect.gen(function* forgetToken() {
+        const replaced: unknown[][] = [];
+
+        vi.stubGlobal("window", {
+          history: {
+            replaceState: (...args: unknown[]) => {
+              replaced.push(args);
+            },
+            state: null,
+          },
+        });
+
+        const { commands = [], model } = boardInit(
+          flags,
+          urlAt("/account/confirm?token=abc123")
+        );
+
+        expect(commands.map(({ name }) => name)).toContain(
+          ForgetSignInToken.name
+        );
+
+        yield* ForgetSignInToken().effect;
+
+        vi.unstubAllGlobals();
+
+        expect(replaced).toStrictEqual([[null, "", "/account/confirm"]]);
+        expect(model.route).toStrictEqual(
+          Route.ConfirmSignIn({ token: "abc123" })
+        );
+      })
+  );
 });

@@ -142,6 +142,39 @@ describe("edge routing", () => {
       })
   );
 
+  it.effect.each(["/rpc", "/api/auth/get-session"])(
+    "keeps %s private even when the backend sets no cookie",
+    (path) =>
+      Effect.gen(function* backendWithoutCookie() {
+        const { get } = edge({ "cache-control": PUBLIC_CACHE_CONTROL });
+        const response = yield* get(path);
+
+        expect(response.headers.get("cache-control")).toBe(
+          PRIVATE_CACHE_CONTROL
+        );
+      })
+  );
+
+  it.effect.each(["/account", "/account/confirm?token=abc"])(
+    "sends no referrer from %s",
+    (path) =>
+      Effect.gen(function* noReferrer() {
+        const { get } = edge();
+        const response = yield* get(path);
+
+        expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+      })
+  );
+
+  it.effect("leaves referrers alone on public pages", () =>
+    Effect.gen(function* publicReferrer() {
+      const { get } = edge();
+      const response = yield* get("/accounting-jobs");
+
+      expect(response.headers.get("referrer-policy")).toBeNull();
+    })
+  );
+
   it("runs the Worker first for every backend and private path", () => {
     expect(workerFirstPaths).toStrictEqual(
       expect.arrayContaining([
