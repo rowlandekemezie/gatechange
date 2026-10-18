@@ -1,4 +1,4 @@
-import { roleLevels } from "@rat-stack/core/contracts";
+import { RoleLevel, roleLevels } from "@rat-stack/core/contracts";
 import {
   Array,
   Effect,
@@ -30,15 +30,22 @@ import {
   defaultFilters,
   Filters,
   inOrderOf,
+  RegionGroup,
   regionGroups,
   Sort,
 } from "./board/filters.js";
 import type { FiltersValue } from "./board/filters.js";
 
+export const CompanySlug = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
+);
+
 export const Route = defineRouteUnion({
   Board: { filters: Filters },
+  Company: { slug: CompanySlug },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
+  Role: { place: RegionGroup, role: RoleLevel },
   Shortlist: {},
 });
 
@@ -83,6 +90,35 @@ const oneParam = <A extends string | number>(
   raw === undefined
     ? fallback
     : Option.getOrElse(fromSlug(values)(raw), () => fallback);
+
+const slugSegment = <A extends string>(
+  values: readonly A[],
+  expected: string
+) =>
+  Schema.String.pipe(
+    Schema.decodeTo(
+      Schema.Literals(values),
+      SchemaTransformation.transformEffect({
+        decode: (segment, options) =>
+          Effect.fromOption(fromSlug(values)(segment)).pipe(
+            Effect.mapError(
+              () => new SchemaIssue.InvalidValue({ expected }, segment, options)
+            )
+          ),
+        encode: (value) => Effect.succeed(slugOf(value)),
+      })
+    )
+  );
+
+export const companySlugOf = (company: string): Option.Option<string> =>
+  Option.liftPredicate(
+    company
+      .toLowerCase()
+      .split(/[^a-z0-9]+/u)
+      .filter((word) => word.length > 0)
+      .join("-"),
+    (slug) => slug.length > 0
+  );
 
 const BoardQuery = Schema.Struct({
   age: Schema.optionalKey(Schema.String),
@@ -184,12 +220,35 @@ export const jobRouter = pipe(
   mapTo(Route.Job)
 );
 
+export const companyRouter = pipe(
+  literal("companies"),
+  slash(schemaSegment("slug", CompanySlug)),
+  mapTo(Route.Company)
+);
+
+export const roleRouter = pipe(
+  literal("roles"),
+  slash(schemaSegment("role", slugSegment(roleLevels, "a role level slug"))),
+  slash(schemaSegment("place", slugSegment(regionGroups, "a place slug"))),
+  mapTo(Route.Role)
+);
+
 export const routeOfUrl = parseUrlWithFallback(
-  oneOf(jobRouter, shortlistRouter, boardRouter),
+  oneOf(jobRouter, companyRouter, roleRouter, shortlistRouter, boardRouter),
   { make: () => Route.NotFound() }
 );
 
 export const boardUrl = (filters: FiltersValue) => boardRouter({ filters });
+
+export const canonicalPathOf = (route: RouteValue) =>
+  Route.match<Option.Option<string>>(route, {
+    Board: ({ filters }) => Option.some(boardUrl(filters)),
+    Company: ({ slug }) => Option.some(companyRouter({ slug })),
+    Job: ({ id }) => Option.some(jobRouter({ id })),
+    NotFound: () => Option.none(),
+    Role: ({ place, role }) => Option.some(roleRouter({ place, role })),
+    Shortlist: () => Option.none(),
+  });
 
 export const addressOf = (url: Url) =>
   Option.match(url.search, {
