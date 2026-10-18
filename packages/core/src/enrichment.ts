@@ -162,9 +162,6 @@ const decodeTeamSize = Schema.decodeUnknownOption(
 const pastExperience =
   /\b(?:\d+\+?\s*(?:years?|yrs)|experience\s+(?:leading|managing|building|running|with|of)|track record|proven|previously|have (?:led|managed))\b/iu;
 
-const collapsed = (text: string) =>
-  text.replaceAll(/\s+/gu, " ").trim().toLowerCase();
-
 const escapedWord = (word: string) =>
   word.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 
@@ -186,7 +183,7 @@ const postingQuotes = (
   return (
     sentence !== undefined &&
     !pastExperience.test(sentence) &&
-    claim(collapsed(words.join(" ")))
+    claim(words.join(" ").toLowerCase())
   );
 };
 
@@ -203,8 +200,8 @@ const teamSizeOf = (answer: ModelAnswerValue, text: string) => {
 
   const size = Math.round(answer.teamSize);
 
-  return postingQuotes(text, answer.teamSizeQuote, (sentence) =>
-    peopleCount(size).test(sentence)
+  return postingQuotes(text, answer.teamSizeQuote, (quoted) =>
+    peopleCount(size).test(quoted)
   )
     ? pipe(decodeTeamSize(size), Option.getOrNull)
     : null;
@@ -212,11 +209,9 @@ const teamSizeOf = (answer: ModelAnswerValue, text: string) => {
 
 const remoteWork = /\bremote\b|\bwork from (?:home|anywhere)\b/u;
 
-const officeDays =
-  /\bhybrid\b|\bdays? (?:a|per|each) week\b|\b(?:mon|tues|wednes|thurs|fri)days?\b|\bin[- ](?:the )?office\b|\d+% of the time\b/u;
-
 const remotePolicyCues: Record<RemotePolicyValue, RegExp> = {
-  Hybrid: officeDays,
+  Hybrid:
+    /\bhybrid\b|\bdays? (?:a|per|each) week\b|\b(?:mon|tues|wednes|thurs|fri)days?\b|\bin[- ](?:the )?office\b|\d+% of the time\b/u,
   Onsite:
     /\bon-?site\b|\bin[- ](?:the )?office\b|\bin[- ]person\b|\b5 days (?:a|per) week\b/u,
   Remote: remoteWork,
@@ -227,8 +222,8 @@ const remotePolicyOf = (answer: ModelAnswerValue, text: string) => {
   const policy = answer.remotePolicy;
 
   return policy !== null &&
-    postingQuotes(text, answer.remotePolicyQuote, (sentence) =>
-      remotePolicyCues[policy].test(sentence)
+    postingQuotes(text, answer.remotePolicyQuote, (quoted) =>
+      remotePolicyCues[policy].test(quoted)
     )
     ? policy
     : null;
