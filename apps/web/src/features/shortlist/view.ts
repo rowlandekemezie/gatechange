@@ -3,9 +3,10 @@ import type { StageValue, TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
+import { SessionState } from "../../client/account/model.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
-import { TrackerState } from "../../client/board/model.js";
+import { ImportOffer, TrackerState } from "../../client/board/model.js";
 import type {
   MarkedJobValue,
   MarkKindValue,
@@ -287,30 +288,6 @@ const stageSection = (
       );
 };
 
-const problemBanner = (
-  h: HtmlBuilder<MessageValue>,
-  tracker: RemoteTrackerValue
-): readonly Html[] =>
-  Option.match(tracker.problem, {
-    onNone: () => [],
-    onSome: (problem) => [
-      h.div(
-        [h.Class("sign-in-problem"), h.Role("alert")],
-        [
-          h.p([], [problem]),
-          h.button(
-            [
-              h.Type("button"),
-              h.Class("more"),
-              h.OnClick(Message.ClickedRetryTracker()),
-            ],
-            ["Try again"]
-          ),
-        ]
-      ),
-    ],
-  });
-
 const remoteView = (
   h: HtmlBuilder<MessageValue>,
   tracker: RemoteTrackerValue
@@ -318,12 +295,9 @@ const remoteView = (
   if (!tracker.loaded) {
     return h.div(
       [h.Class("empty")],
-      [
-        ...problemBanner(h, tracker),
-        ...(Option.isNone(tracker.problem)
-          ? [h.p([h.Role("status")], ["Loading your tracker…"])]
-          : []),
-      ]
+      Option.isNone(tracker.problem)
+        ? [h.p([h.Role("status")], ["Loading your tracker…"])]
+        : []
     );
   }
 
@@ -331,7 +305,6 @@ const remoteView = (
     return h.div(
       [h.Class("empty")],
       [
-        ...problemBanner(h, tracker),
         h.p([], ["Your tracker is empty."]),
         h.p(
           [],
@@ -346,7 +319,6 @@ const remoteView = (
   return h.div(
     [],
     [
-      ...problemBanner(h, tracker),
       pipelineSummary(h, tracker),
       ...stages.map((stage) => stageSection(h, tracker, stage)),
     ]
@@ -367,3 +339,98 @@ export const shortlistPage = (
       }),
     ]
   );
+
+const jobCount = (count: number) => `${count} ${count === 1 ? "job" : "jobs"}`;
+
+const problemBanner = (h: HtmlBuilder<MessageValue>, problem: string): Html =>
+  h.div(
+    [h.Class("sign-in-problem"), h.Role("alert")],
+    [
+      h.p([], [problem]),
+      h.button(
+        [
+          h.Type("button"),
+          h.Class("more"),
+          h.OnClick(Message.ClickedRetryTracker()),
+        ],
+        ["Try again"]
+      ),
+    ]
+  );
+
+const importPrompt = (
+  h: HtmlBuilder<MessageValue>,
+  email: string,
+  count: number,
+  isMoving: boolean
+): Html =>
+  h.section(
+    [h.Class("import-offer"), h.AriaLabel("Saved jobs in this browser")],
+    [
+      h.p(
+        [],
+        [
+          "You are signed in as ",
+          h.strong([], [email]),
+          `. Move the ${jobCount(count)} saved in this browser into this account?`,
+        ]
+      ),
+      h.p(
+        [h.Class("import-offer-note")],
+        [
+          "If this is not your account, keep them here. They stay in this browser either way until you choose.",
+        ]
+      ),
+      h.div(
+        [h.Class("import-offer-actions")],
+        [
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("search-button"),
+              h.Disabled(isMoving),
+              h.OnClick(Message.ClickedMoveShortlist()),
+            ],
+            [isMoving ? "Moving…" : `Move them to ${email}`]
+          ),
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("more"),
+              h.Disabled(isMoving),
+              h.OnClick(Message.ClickedKeepShortlist()),
+            ],
+            ["Keep them in this browser"]
+          ),
+        ]
+      ),
+    ]
+  );
+
+export const trackerNotices = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>
+): readonly Html[] => {
+  if (
+    !Schema.is(TrackerState.Remote)(model.tracker) ||
+    !Schema.is(SessionState.SignedIn)(model.account.session)
+  ) {
+    return [];
+  }
+
+  const { email } = model.account.session.account;
+  const { offer, problem } = model.tracker;
+
+  return [
+    ...Option.match(problem, {
+      onNone: () => [],
+      onSome: (message) => [problemBanner(h, message)],
+    }),
+    ...ImportOffer.match<readonly Html[]>(offer, {
+      Asking: ({ count }) => [importPrompt(h, email, count, false)],
+      Declined: () => [],
+      Moving: ({ count }) => [importPrompt(h, email, count, true)],
+      None: () => [],
+    }),
+  ];
+};

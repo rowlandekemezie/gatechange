@@ -1,15 +1,27 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Account } from "@rat-stack/core/contracts";
+import { afterEach, describe, expect, it } from "@effect/vitest";
+import { Account, TrackerFull } from "@rat-stack/core/contracts";
 import type { JobValue, TrackedJobValue } from "@rat-stack/core/contracts";
-import { Array, Option, pipe, Schema } from "effect";
+import { Array, Effect, Option, pipe, Schema } from "effect";
 import { fromString } from "foldkit/url";
+import { vi } from "vitest";
 
 import { Message as AccountMessage } from "../src/client/account/message.js";
+import {
+  ImportStoredShortlist,
+  SendTrackerChange,
+  SyncTracker,
+} from "../src/client/board/command.js";
 import { shortlistSize, stageOf } from "../src/client/board/marks.js";
 import { Message } from "../src/client/board/message.js";
 import type { MessageValue } from "../src/client/board/message.js";
-import { Preload } from "../src/client/board/model.js";
+import {
+  ImportOffer,
+  Preload,
+  TrackerChange,
+  TrackerState,
+} from "../src/client/board/model.js";
 import type { ModelValue } from "../src/client/board/model.js";
+import { JobQueries } from "../src/client/board/queries.js";
 import { init, update } from "../src/client/board/update.js";
 
 interface Step {
@@ -146,6 +158,7 @@ describe("tracker sync", () => {
       Message.CompletedSyncTracker({
         jobs: [trackedAs("Interviewing")],
         revision: revisionOf(local),
+        waiting: 0,
       }),
     ]);
 
@@ -159,7 +172,11 @@ describe("tracker sync", () => {
     const ready = sentAll(started(), [signedIn]);
 
     const loaded = sentAll(ready, [
-      Message.CompletedSyncTracker({ jobs: [], revision: revisionOf(ready) }),
+      Message.CompletedSyncTracker({
+        jobs: [],
+        revision: revisionOf(ready),
+        waiting: 0,
+      }),
       Message.ClickedMark({ job, kind: "Saved" }),
     ]);
 
@@ -202,6 +219,7 @@ describe("tracker sync", () => {
       Message.CompletedSyncTracker({
         jobs: [trackedAs("Saved")],
         revision: revisionOf(ready),
+        waiting: 0,
       }),
       Message.ChangedStage({ jobId: job.id, stage: "Offer" }),
     ]);
@@ -226,6 +244,7 @@ describe("tracker sync", () => {
       Message.CompletedSyncTracker({
         jobs: [trackedAs("Offer")],
         revision: revisionOf(ready),
+        waiting: 0,
       }),
       signedOut,
     ]);
@@ -234,4 +253,225 @@ describe("tracker sync", () => {
     expect(named(out, "ReadShortlist")).toHaveLength(1);
     expect(stageOf(out.model, job.id)).toStrictEqual(Option.none());
   });
+});
+
+const SHORTLIST_KEY = "jobs.shortlist.v1";
+
+const storedMarks = JSON.stringify([
+  {
+    company: job.company,
+    id: job.id,
+    kind: "Applied",
+    location: job.location,
+    title: job.title,
+    url: job.url,
+  },
+]);
+
+const browserWith = (stored: string | null) => {
+  const storage = new Map<string, string>();
+
+  if (stored !== null) {
+    storage.set(SHORTLIST_KEY, stored);
+  }
+
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+    },
+  });
+
+  return storage;
+};
+
+const serverWith = (imports: unknown[]) =>
+  JobQueries.of({
+    getJob: () => Effect.die("unused"),
+    importShortlist: (jobs) => {
+      imports.push(jobs);
+
+      return Effect.succeed([trackedAs("Applied")]);
+    },
+    listJobs: () => Effect.die("unused"),
+    noteTrackedJob: () => Effect.die("unused"),
+    signInOptions: Effect.die("unused"),
+    stats: Effect.die("unused"),
+    trackJob: () => Effect.die("unused"),
+    trackedJobs: Effect.succeed([]),
+    untrackJob: () => Effect.die("unused"),
+  });
+
+const withLocalList = () => {
+  const ready = sentAll(started(), [signedIn]);
+
+  return sentAll(ready, [
+    Message.CompletedSyncTracker({
+      jobs: [],
+      revision: revisionOf(ready),
+      waiting: 3,
+    }),
+  ]);
+};
+
+const offerOf = (step: Step) =>
+  Schema.is(TrackerState.Remote)(step.model.tracker)
+    ? Option.some(step.model.tracker.offer)
+    : Option.none();
+
+describe("first sign-in import", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.effect(
+    "a sign-in sync never moves or clears the browser shortlist on its own",
+    () =>
+      Effect.gen(function* silentSync() {
+        const storage = browserWith(storedMarks);
+        const imports: unknown[] = [];
+
+        const reply = yield* SyncTracker({ revision: 1 }).effect.pipe(
+          Effect.provideService(JobQueries, serverWith(imports))
+        );
+
+        expect(imports).toStrictEqual([]);
+        expect(storage.get(SHORTLIST_KEY)).toBe(storedMarks);
+        expect(reply).toStrictEqual(
+          Message.CompletedSyncTracker({ jobs: [], revision: 1, waiting: 1 })
+        );
+      })
+  );
+
+  it.effect(
+    "confirming the move imports the browser shortlist once and clears it",
+    () =>
+      Effect.gen(function* confirmedImport() {
+        const storage = browserWith(storedMarks);
+        const imports: unknown[] = [];
+
+        const reply = yield* ImportStoredShortlist({ revision: 2 }).effect.pipe(
+          Effect.provideService(JobQueries, serverWith(imports))
+        );
+
+        expect(imports).toHaveLength(1);
+        expect(storage.has(SHORTLIST_KEY)).toBe(false);
+        expect(reply).toStrictEqual(
+          Message.CompletedSyncTracker({
+            jobs: [trackedAs("Applied")],
+            revision: 2,
+            waiting: 0,
+          })
+        );
+      })
+  );
+
+  it("signing in with a browser shortlist asks first and imports nothing", () => {
+    const asked = withLocalList();
+
+    expect(named(asked, "ImportStoredShortlist")).toHaveLength(0);
+    expect(offerOf(asked)).toStrictEqual(
+      Option.some(ImportOffer.Asking({ count: 3 }))
+    );
+  });
+
+  it("confirming starts exactly one import and settles once it lands", () => {
+    const asked = withLocalList();
+    const moving = sentAll(asked, [Message.ClickedMoveShortlist()]);
+
+    expect(named(moving, "ImportStoredShortlist")).toHaveLength(1);
+    expect(offerOf(moving)).toStrictEqual(
+      Option.some(ImportOffer.Moving({ count: 3 }))
+    );
+
+    const twice = sentAll(moving, [Message.ClickedMoveShortlist()]);
+
+    expect(named(twice, "ImportStoredShortlist")).toHaveLength(0);
+
+    const landed = sentAll(moving, [
+      Message.CompletedSyncTracker({
+        jobs: [trackedAs("Applied")],
+        revision: revisionOf(moving),
+        waiting: 0,
+      }),
+    ]);
+
+    expect(offerOf(landed)).toStrictEqual(Option.some(ImportOffer.None()));
+    expect(stageOf(landed.model, job.id)).toStrictEqual(Option.some("Applied"));
+  });
+
+  it("a failed import asks again and keeps the browser list", () => {
+    const moving = sentAll(withLocalList(), [Message.ClickedMoveShortlist()]);
+
+    const failed = sentAll(moving, [
+      Message.FailedSyncTracker({
+        message: "Your tracker holds 500 jobs.",
+        revision: revisionOf(moving),
+      }),
+    ]);
+
+    expect(offerOf(failed)).toStrictEqual(
+      Option.some(ImportOffer.Asking({ count: 3 }))
+    );
+    expect(failed.model.tracker).toMatchObject({
+      problem: Option.some("Your tracker holds 500 jobs."),
+    });
+  });
+
+  it("declining keeps the browser list and does not ask again on a later sync", () => {
+    const declined = sentAll(withLocalList(), [Message.ClickedKeepShortlist()]);
+
+    expect(declined.commands).toStrictEqual([]);
+    expect(offerOf(declined)).toStrictEqual(
+      Option.some(ImportOffer.Declined())
+    );
+
+    const resynced = sentAll(declined, [
+      Message.ClickedRetryTracker(),
+      Message.CompletedSyncTracker({
+        jobs: [],
+        revision: revisionOf(declined) + 1,
+        waiting: 3,
+      }),
+    ]);
+
+    expect(offerOf(resynced)).toStrictEqual(
+      Option.some(ImportOffer.Declined())
+    );
+  });
+});
+
+describe("tracker cap", () => {
+  it.effect("a refused add at the cap tells the member how to make room", () =>
+    Effect.gen(function* fullTracker() {
+      const reply = yield* SendTrackerChange({
+        change: TrackerChange.Track({
+          job: {
+            jobId: job.id,
+            snapshot: trackedAs("Saved").snapshot,
+            stage: "Saved",
+          },
+        }),
+        revision: 4,
+      }).effect.pipe(
+        Effect.provideService(
+          JobQueries,
+          JobQueries.of({
+            ...serverWith([]),
+            trackJob: () => Effect.fail(new TrackerFull({ limit: 500 })),
+          })
+        )
+      );
+
+      expect(reply).toStrictEqual(
+        Message.FailedTrackerChange({
+          message:
+            "Your tracker holds 500 jobs, the most it can. Remove a job you no longer need, then add this one.",
+          revision: 4,
+        })
+      );
+    })
+  );
 });

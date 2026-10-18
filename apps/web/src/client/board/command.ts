@@ -1,4 +1,9 @@
-import { JobQuery, MAX_IMPORTED_JOBS } from "@rat-stack/core/contracts";
+import {
+  JobQuery,
+  MAX_IMPORTED_JOBS,
+  TRACKER_LIMIT,
+} from "@rat-stack/core/contracts";
+import type { TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Effect, Option, pipe, Predicate, Schema } from "effect";
 import { Command } from "foldkit";
 import { load, pushUrl, replaceUrl } from "foldkit/navigation";
@@ -162,20 +167,59 @@ const trackerFailureText = (failure: { readonly _tag: string }) => {
     return "Your session ended. Sign in again to keep tracking.";
   }
 
+  if (Predicate.isTagged(failure, "TrackerFull")) {
+    return `Your tracker holds ${TRACKER_LIMIT} jobs, the most it can. Remove a job you no longer need, then add this one.`;
+  }
+
   return Predicate.isTagged(failure, "JobStoreUnavailable")
     ? "Your tracker is unavailable right now. Try again in a minute."
     : "Could not reach your tracker. Check your connection, then try again.";
 };
 
+const syncReply =
+  (revision: number) =>
+  <E extends { readonly _tag: string }, R>(
+    sync: Effect.Effect<
+      { readonly jobs: readonly TrackedJobValue[]; readonly waiting: number },
+      E,
+      R
+    >
+  ) =>
+    sync.pipe(
+      Effect.match({
+        onFailure: (failure) =>
+          Message.FailedSyncTracker({
+            message: trackerFailureText(failure),
+            revision,
+          }),
+        onSuccess: ({ jobs, waiting }) =>
+          Message.CompletedSyncTracker({ jobs, revision, waiting }),
+      })
+    );
+
 export const SyncTracker = Command.define("SyncTracker", {
   args: { revision: Schema.Finite },
   execute: ({ revision }) =>
     JobQueries.use((queries) =>
-      Effect.gen(function* syncTracker() {
+      queries.trackedJobs.pipe(
+        Effect.map((jobs) => ({
+          jobs,
+          waiting: importRequestsOf(storedShortlist()).length,
+        }))
+      )
+    ).pipe(syncReply(revision)),
+  messages: [Message.CompletedSyncTracker, Message.FailedSyncTracker],
+});
+
+export const ImportStoredShortlist = Command.define("ImportStoredShortlist", {
+  args: { revision: Schema.Finite },
+  execute: ({ revision }) =>
+    JobQueries.use((queries) =>
+      Effect.gen(function* importStoredShortlist() {
         const requests = importRequestsOf(storedShortlist());
 
         if (!Array.isReadonlyArrayNonEmpty(requests)) {
-          return yield* queries.trackedJobs;
+          return { jobs: yield* queries.trackedJobs, waiting: 0 };
         }
 
         const imported = yield* Effect.forEach(
@@ -185,18 +229,9 @@ export const SyncTracker = Command.define("SyncTracker", {
 
         yield* forgetStoredShortlist;
 
-        return Array.lastNonEmpty(imported);
+        return { jobs: Array.lastNonEmpty(imported), waiting: 0 };
       })
-    ).pipe(
-      Effect.match({
-        onFailure: (failure) =>
-          Message.FailedSyncTracker({
-            message: trackerFailureText(failure),
-            revision,
-          }),
-        onSuccess: (jobs) => Message.CompletedSyncTracker({ jobs, revision }),
-      })
-    ),
+    ).pipe(syncReply(revision)),
   messages: [Message.CompletedSyncTracker, Message.FailedSyncTracker],
 });
 

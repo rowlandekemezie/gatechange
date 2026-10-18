@@ -95,12 +95,22 @@ export const PendingTrack = Schema.Struct({
   stage: Stage,
 });
 
+export const ImportOffer = defineTaggedUnion({
+  Asking: { count: Schema.Finite },
+  Declined: {},
+  Moving: { count: Schema.Finite },
+  None: {},
+});
+
+export type ImportOfferValue = typeof ImportOffer.Type;
+
 export const TrackerState = defineTaggedUnion({
   Local: {},
   Remote: {
     adding: Schema.Array(PendingTrack),
     jobs: Schema.Array(TrackedJob),
     loaded: Schema.Boolean,
+    offer: ImportOffer,
     problem: Schema.Option(Schema.String),
   },
 });

@@ -16,7 +16,10 @@ import {
 } from "../../features/board/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
-import { shortlistPage } from "../../features/shortlist/view.js";
+import {
+  shortlistPage,
+  trackerNotices,
+} from "../../features/shortlist/view.js";
 import { boardUrl, canonicalPathOf, Route, shortlistRouter } from "../route.js";
 import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
@@ -130,6 +133,7 @@ export const view = (model: ModelValue, h: H): Document =>
           ? [boardMasthead(model, h)]
           : []),
         tabs(model, h),
+        ...trackerNotices(model, h),
         Route.match<Html>(model.route, {
           Account: ({ notice }) =>
             h.submodel({

@@ -45,6 +45,7 @@ const scenarios = [
   "signout",
   "link-reuse",
   "tracker-import",
+  "tracker-import-decline",
   "tracker-list",
   "tracker-stages",
   "tracker-note",
@@ -462,6 +463,7 @@ const TrackerState = Schema.Struct({
   empty: Schema.Boolean,
   loading: Schema.Boolean,
   notes: Schema.Array(Schema.String),
+  offer: Schema.String,
   overflow: Schema.Finite,
   pipeline: Schema.String,
   problem: Schema.String,
@@ -485,6 +487,7 @@ const trackerState = async () =>
     empty: [...document.querySelectorAll(".empty p")].some((node) => node.textContent === "Your tracker is empty."),
     loading: document.querySelector(".empty [role=status]") !== null,
     notes: [...document.querySelectorAll("li.tracked textarea")].map((node) => node.value),
+    offer: document.querySelector(".import-offer")?.textContent ?? "",
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     pipeline: document.querySelector("ol.pipeline")?.textContent ?? "",
     problem: document.querySelector(".sign-in-problem[role=alert]")?.textContent ?? "",
@@ -540,6 +543,40 @@ const rpcCall = async (
       method: "POST",
     }).then((response) => response.text())`
   );
+
+const Cookies = Schema.Struct({
+  cookies: Schema.Array(
+    Schema.Struct({ name: Schema.String, value: Schema.String })
+  ),
+});
+
+type RpcPayload = Readonly<
+  Record<string, string | Readonly<Record<string, string>>>
+>;
+
+const rpcFromElsewhere = async (
+  tag: string,
+  payload: RpcPayload,
+  site: Readonly<Record<string, string>>
+) => {
+  const { cookies } = await send(Cookies, "Network.getCookies", {
+    urls: [url],
+  });
+
+  const response = await fetch(new URL("/rpc", url), {
+    body: `{"_tag":"Request","headers":[],"id":"1","payload":${JSON.stringify(payload)},"tag":${JSON.stringify(tag)}}`,
+    headers: {
+      "content-type": "application/json",
+      cookie: cookies
+        .map((cookie) => `${cookie.name}=${cookie.value}`)
+        .join("; "),
+      ...site,
+    },
+    method: "POST",
+  });
+
+  return { body: await response.text(), status: response.status };
+};
 
 const Shortlist = Schema.Struct({
   heading: Schema.String,
@@ -678,6 +715,39 @@ const run = async () => {
     await openTracker("opened the tracker after saving a job");
 
     return saved;
+  };
+
+  const savedThreeSignedOut = async () => {
+    const titles = await evaluate(
+      Schema.Array(Schema.String),
+      '[...document.querySelectorAll("li.job .job-title")].slice(0, 3).map((node) => node.textContent)'
+    );
+
+    await evaluate(
+      Ignored,
+      `[...document.querySelectorAll("li.job")].slice(0, 3).forEach((row, index) =>
+        [...row.querySelectorAll("button.mark")]
+          .find((button) => button.textContent.trim() === (index === 2 ? "Applied" : "Save"))
+          ?.click())`
+    );
+
+    steps.push({ step: "saved two and applied one while signed out", titles });
+
+    return titles;
+  };
+
+  const askedToMove = async (label: string) => {
+    await goTo(shortlistUrl);
+
+    const asked = await waitForTracker(
+      label,
+      (state) =>
+        state.offer.includes(values.email) && state.offer.includes("3 jobs")
+    );
+
+    steps.push({ step: label, tracker: asked });
+
+    return asked;
   };
 
   const actions: Partial<Record<Scenario, () => Promise<void>>> = {
@@ -833,27 +903,28 @@ const run = async () => {
       }
     },
     "tracker-import": async () => {
-      const titles = await evaluate(
-        Schema.Array(Schema.String),
-        '[...document.querySelectorAll("li.job .job-title")].slice(0, 3).map((node) => node.textContent)'
-      );
-
-      await evaluate(
-        Ignored,
-        `[...document.querySelectorAll("li.job")].slice(0, 3).forEach((row, index) =>
-          [...row.querySelectorAll("button.mark")]
-            .find((button) => button.textContent.trim() === (index === 2 ? "Applied" : "Save"))
-            ?.click())`
-      );
-
-      steps.push({
-        step: "saved two and applied one while signed out",
-        titles,
-      });
+      const titles = await savedThreeSignedOut();
 
       await signIn();
 
-      const imported = await openTracker("opened the tracker after sign-in");
+      const asked = await askedToMove("the move prompt after sign-in");
+
+      if (!asked.empty || asked.stored === null) {
+        throw new Error(
+          "the browser shortlist moved before the member confirmed"
+        );
+      }
+
+      if (!(await clickButton(".import-offer button", "Move them"))) {
+        throw new Error("no Move button in the prompt");
+      }
+
+      const imported = await waitForTracker(
+        "the moved jobs in the tracker",
+        (state) => state.offer === "" && state.titles.length >= titles.length
+      );
+
+      steps.push({ step: "pressed Move them", tracker: imported });
 
       const missing = titles.filter(
         (title) => !imported.titles.includes(title)
@@ -871,6 +942,36 @@ const run = async () => {
 
       if (imported.stored !== null) {
         throw new Error("the browser shortlist was not cleared after import");
+      }
+    },
+    "tracker-import-decline": async () => {
+      const titles = await savedThreeSignedOut();
+
+      await signIn();
+      await askedToMove("the move prompt after sign-in");
+
+      if (!(await clickButton(".import-offer button", "Keep them"))) {
+        throw new Error("no Keep button in the prompt");
+      }
+
+      const kept = await waitForTracker(
+        "the prompt to close",
+        (state) => state.offer === ""
+      );
+
+      steps.push({ step: "pressed Keep them in this browser", tracker: kept });
+
+      const stored = kept.stored ?? "";
+      const lost = titles.filter((title) => !stored.includes(title));
+
+      if (!kept.empty) {
+        throw new Error("declining still moved jobs into the account");
+      }
+
+      if (lost.length > 0) {
+        throw new Error(
+          `declining dropped ${lost.join(", ")} from this browser`
+        );
       }
     },
     "tracker-isolation": async () => {
@@ -902,6 +1003,57 @@ const run = async () => {
 
       if (replies.some((reply) => reply.includes(victim))) {
         throw new Error("another member's tracked job came back");
+      }
+
+      const probe = {
+        jobId: "cross-site-probe",
+        snapshot: {
+          company: "Probe",
+          location: "Remote",
+          title: "Cross-site probe",
+          url: "https://evil.example/probe",
+        },
+        stage: "Saved",
+      };
+
+      const crossSite = await rpcFromElsewhere("trackJob", probe, {
+        origin: "https://evil.example",
+        "sec-fetch-site": "cross-site",
+      });
+
+      const sameOrigin = await rpcFromElsewhere(
+        "trackedJobs",
+        {},
+        {
+          origin: new URL(url).origin,
+          "sec-fetch-site": "same-origin",
+        }
+      );
+
+      steps.push({
+        detail: `cross-site trackJob ${crossSite.status} ${crossSite.body}\nsame-origin trackedJobs ${sameOrigin.status}`,
+        step: "replayed the session cookie from another site",
+      });
+
+      if (crossSite.status !== 403) {
+        throw new Error(
+          `a cross-site tracker write answered ${crossSite.status}`
+        );
+      }
+
+      if (
+        sameOrigin.status !== 200 ||
+        sameOrigin.body.includes("Unauthorized")
+      ) {
+        throw new Error(
+          "the same cookie from this site was not a member, so the refusal proves nothing"
+        );
+      }
+
+      const after = await rpcCall("trackedJobs", {});
+
+      if (after.includes("cross-site-probe")) {
+        throw new Error("the cross-site write reached the tracker");
       }
     },
     "tracker-list": async () => {

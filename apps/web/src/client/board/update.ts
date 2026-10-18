@@ -19,6 +19,7 @@ import {
   FetchListing,
   FetchMoreJobs,
   FetchStats,
+  ImportStoredShortlist,
   ForgetSignInToken,
   LoadUrl,
   PushUrl,
@@ -40,6 +41,7 @@ import type { FiltersValue } from "./filters.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import {
+  ImportOffer,
   JobsState,
   JobState,
   ListingState,
@@ -51,6 +53,7 @@ import {
 } from "./model.js";
 import type {
   FlagsValue,
+  ImportOfferValue,
   MarkedJobValue,
   MarkKindValue,
   ModelValue,
@@ -59,7 +62,13 @@ import type {
   TrackerChangeValue,
 } from "./model.js";
 import type { JobQueries } from "./queries.js";
-import { changedTracker, trackRequestOf, unloadedTracker } from "./tracker.js";
+import {
+  changedTracker,
+  offerAfterFailure,
+  offerAfterSync,
+  trackRequestOf,
+  unloadedTracker,
+} from "./tracker.js";
 
 type UpdateReturn = Update.Return<
   ModelValue,
@@ -377,6 +386,40 @@ const withTrackerProblem = (model: ModelValue, message: string): ModelValue =>
       }),
   });
 
+const withOffer = (
+  model: ModelValue,
+  next: (offer: ImportOfferValue) => ImportOfferValue
+): ModelValue =>
+  Option.match(remoteOf(model), {
+    onNone: () => model,
+    onSome: (tracker) =>
+      modifyFields(model, {
+        tracker: () =>
+          TrackerState.Remote({ ...tracker, offer: next(tracker.offer) }),
+      }),
+  });
+
+const movedShortlist = (model: ModelValue): UpdateReturn =>
+  pipe(
+    remoteOf(model),
+    Option.map(({ offer }) => offer),
+    Option.filter(Schema.is(ImportOffer.Asking)),
+    Option.match({
+      onNone: () => ({ model }),
+      onSome: ({ count }) => {
+        const revision = model.trackerRevision + 1;
+
+        return {
+          commands: [ImportStoredShortlist({ revision })],
+          model: modifyFields(
+            withOffer(model, () => ImportOffer.Moving({ count })),
+            { trackerRevision: () => revision }
+          ),
+        };
+      },
+    })
+  );
+
 const followedSession = (step: UpdateReturn): UpdateReturn => {
   const { account, tracker } = step.model;
   const isLocal = Schema.is(TrackerState.Local)(tracker);
@@ -499,6 +542,11 @@ export const update = (
       ),
     ChangedUrl: ({ url }) => echoed(model, url),
     ClickedClearMark: ({ id }) => unmarked(model, id),
+    ClickedKeepShortlist: () => ({
+      model: withOffer(model, (offer) =>
+        Schema.is(ImportOffer.Asking)(offer) ? ImportOffer.Declined() : offer
+      ),
+    }),
     ClickedLink: ({ request }) =>
       UrlRequest.match(request, {
         External: ({ href }) => ({ commands: [LoadUrl({ href })], model }),
@@ -537,6 +585,7 @@ export const update = (
         },
         kind
       ),
+    ClickedMoveShortlist: () => movedShortlist(model),
     ClickedResetFilters: () =>
       navigatedTo(
         modifyFields(model, { draftSearch: () => "" }),
@@ -568,12 +617,17 @@ export const update = (
     CompletedReadShortlist: ({ marks }) => ({
       model: modifyFields(model, { marks: () => marks }),
     }),
-    CompletedSyncTracker: ({ jobs, revision }) =>
-      withServerTracker(
-        modifyFields(model, { marks: () => [] }),
+    CompletedSyncTracker: ({ jobs, revision, waiting }) => {
+      const cleared = modifyFields(model, { marks: () => [] });
+
+      return withServerTracker(
+        isCurrentRevision(model, revision)
+          ? withOffer(cleared, (offer) => offerAfterSync(offer, waiting))
+          : cleared,
         revision,
         jobs
-      ),
+      );
+    },
     CompletedWriteShortlist: () => ({ model }),
     FailedFetchJob: ({ id, message: failure }) => ({
       model: isAwaitingJob(model, id)
@@ -606,7 +660,7 @@ export const update = (
     FailedFetchStats: () => ({ model }),
     FailedSyncTracker: ({ message: failure, revision }) => ({
       model: isCurrentRevision(model, revision)
-        ? withTrackerProblem(model, failure)
+        ? withOffer(withTrackerProblem(model, failure), offerAfterFailure)
         : model,
     }),
     FailedTrackerChange: ({ message: failure, revision }) => {

@@ -1,8 +1,9 @@
 import type { StageValue, TrackRequestValue } from "@rat-stack/core/contracts";
-import { Array, Option, pipe } from "effect";
+import { Array, Option, pipe, Schema } from "effect";
 
-import { TrackerChange, TrackerState } from "./model.js";
+import { ImportOffer, TrackerChange, TrackerState } from "./model.js";
 import type {
+  ImportOfferValue,
   MarkedJobValue,
   RemoteTrackerValue,
   TrackerChangeValue,
@@ -47,6 +48,7 @@ export const unloadedTracker = TrackerState.Remote({
   adding: [],
   jobs: [],
   loaded: false,
+  offer: ImportOffer.None(),
   problem: Option.none(),
 });
 
@@ -110,3 +112,21 @@ export const changedTracker = (
     Track: ({ job: { jobId, stage } }) => tracked(tracker, jobId, stage),
     Untrack: ({ jobId }) => withoutJob(tracker, jobId),
   });
+
+export const offerAfterSync = (
+  offer: ImportOfferValue,
+  waiting: number
+): ImportOfferValue => {
+  if (Schema.is(ImportOffer.Declined)(offer)) {
+    return offer;
+  }
+
+  return waiting === 0
+    ? ImportOffer.None()
+    : ImportOffer.Asking({ count: waiting });
+};
+
+export const offerAfterFailure = (offer: ImportOfferValue): ImportOfferValue =>
+  Schema.is(ImportOffer.Moving)(offer)
+    ? ImportOffer.Asking({ count: offer.count })
+    : offer;

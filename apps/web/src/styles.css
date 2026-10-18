@@ -496,6 +496,38 @@ a {
   margin: 0 0 0.75rem;
 }
 
+.import-offer {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--ink);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.import-offer p {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.import-offer-note {
+  color: var(--ink-soft);
+}
+
+.import-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.import-offer-actions .more {
+  margin-top: 0;
+}
+
+.import-offer button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 .tracker-invite {
   margin-top: 1.5rem;
   color: var(--ink-soft);
