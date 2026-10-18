@@ -82,3 +82,17 @@ export const seniorityOfTitle = (
     Option.map(([level]) => level)
   );
 };
+
+const headOf = /\bhead\s+of\b/iu;
+
+export const seniorityOf = (
+  title: string,
+  answered: SeniorityValue | null
+): SeniorityValue | null =>
+  Option.getOrElse(seniorityOfTitle(title), () =>
+    headOf.test(title.replaceAll(someoneElse, " ")) &&
+    answered !== "Director" &&
+    answered !== "VicePresident"
+      ? "Director"
+      : answered
+  );

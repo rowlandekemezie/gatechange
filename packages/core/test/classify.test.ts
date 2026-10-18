@@ -86,7 +86,7 @@ describe("seniority from a title", () => {
     "Chief of Staff",
     "Chief of Staff to the CTO",
     "Staff Engineer",
-  ])("%s states no level, so the model fills it", (title) => {
+  ])("%s states no level in its own words", (title) => {
     expect(seniorityOfTitle(title)).toStrictEqual(Option.none());
   });
 });

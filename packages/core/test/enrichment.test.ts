@@ -557,6 +557,14 @@ describe("enrichListing", () => {
     ["Senior Director, Security Architecture", "Director", "SeniorDirector"],
     ["Manager, Starlink Engineering", "Director", "Manager"],
     ["Head of Platform Engineering", "VicePresident", "VicePresident"],
+    ["Head of Engineering", "Director", "Director"],
+    ["Head of Engineering", "Executive", "Director"],
+    [
+      "Head of Engineering - Financial Data Experience",
+      "SeniorManager",
+      "Director",
+    ],
+    ["Head of Engineering, Office of the CTO", null, "Director"],
   ] as const)(
     "%s with a model answer of %s is saved as %s, so seniority agrees with the title",
     ([title, answered, saved]) =>
@@ -682,6 +690,15 @@ describe("enrichListing", () => {
     ],
     ["a negated policy", null, "Remote", "This is not a remote role."],
     ["a hybrid tag", "Hybrid", "Hybrid", "#LI-Hybrid"],
+    ["an onsite tag the model left out", "Onsite", null, "#LI-ONSITE"],
+    ["a remote tag the model left out", "Remote", null, "#LI-Remote"],
+    ["a hybrid tag the model left out", "Hybrid", null, "#LI-Hybrid"],
+    [
+      "a stated policy over a conflicting tag",
+      "Hybrid",
+      "Hybrid",
+      "Hybrid, three days a week in the office. #LI-Onsite",
+    ],
     [
       "a quote that spans two sentences",
       "Hybrid",

@@ -29,7 +29,7 @@ import type {
   SourceNameValue,
 } from "./job.js";
 import { PostingTexts } from "./posting-texts.js";
-import { seniorityOfTitle } from "./role.js";
+import { seniorityOf } from "./role.js";
 import { SourceTerms } from "./source-terms.js";
 
 export const MAX_POSTING_CHARS = 12_000;
@@ -370,6 +370,12 @@ const occasionalVisits =
 const officeShare =
   /\bhybrid (?:work(?:ing)? )?policy\b|\boffices?\b[^.\n]{0,40}\b\d{1,2}% of the time\b/iu;
 
+const workplaceTags: readonly (readonly [RemotePolicyValue, RegExp])[] = [
+  ["Remote", /#LI-Remote\b/iu],
+  ["Hybrid", /#LI-Hybrid\b/iu],
+  ["Onsite", /#LI-On-?site\b/iu],
+];
+
 const remotePolicyOf = (
   answer: ModelAnswerValue,
   text: string
@@ -395,6 +401,13 @@ const remotePolicyOf = (
     ),
     Option.orElse(() =>
       officeShare.test(text) ? Option.some("Hybrid" as const) : Option.none()
+    ),
+    Option.orElse(() =>
+      pipe(
+        workplaceTags,
+        Array.findFirst(([, tag]) => tag.test(text)),
+        Option.map(([tagged]) => tagged)
+      )
     ),
     Option.getOrNull
   );
@@ -433,10 +446,7 @@ export const detailsOfAnswer = (
   remotePolicy: remotePolicyOf(answer, posting.text),
   reportsTo: reportsToOf(answer, posting.text),
   salary: salaryBandOf(answer, posting.text),
-  seniority: pipe(
-    seniorityOfTitle(posting.title),
-    Option.getOrElse(() => answer.seniority)
-  ),
+  seniority: seniorityOf(posting.title, answer.seniority),
   teamSize: teamSizeOf(answer, posting.text),
 });
 
