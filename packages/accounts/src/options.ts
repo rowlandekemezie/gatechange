@@ -28,6 +28,7 @@ export interface AuthSettings {
 export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
   account: { encryptOAuthTokens: true },
   advanced: {
+    database: { joins: true, validateSchema: false },
     disableOriginCheck: false,
     ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
     useSecureCookies: true,
@@ -49,7 +50,11 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
     emailSendLimit(),
     sameSiteVerify(),
   ],
-  rateLimit: { enabled: true, storage: "database" },
+  rateLimit: {
+    customRules: { "/get-session": false },
+    enabled: true,
+    storage: "database",
+  },
   socialProviders: settings.social,
   telemetry: { enabled: false },
 });

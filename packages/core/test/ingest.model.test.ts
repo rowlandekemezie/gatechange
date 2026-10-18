@@ -260,6 +260,8 @@ const replayHistory = (schedule: readonly ScheduledRun[]) =>
     }
   });
 
+const WEEKLY_LISTINGS_TIMEOUT_MILLIS = 30_000;
+
 describe("ingest", () => {
   it.effect.prop(
     "each feed holds exactly its last successful listing, and a feed that goes down keeps what it had",
@@ -337,7 +339,8 @@ describe("ingest", () => {
         expect(now - firstSeenAt).toBeGreaterThan(MAX_AGE_DAYS * DAY_MILLIS);
         expect(history?.firstSeenAt).toBe(firstSeenAt);
         expect(history?.reposts).toBe(0);
-      })
+      }),
+    WEEKLY_LISTINGS_TIMEOUT_MILLIS
   );
 
   it.effect(

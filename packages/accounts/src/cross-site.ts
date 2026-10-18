@@ -21,13 +21,21 @@ export const isCrossSite = (headers: RequestHeaders) => {
   );
 };
 
+const isForeignVerify = (headers: RequestHeaders) => {
+  const fetchSite = headers["sec-fetch-site"];
+
+  return fetchSite === undefined
+    ? isCrossSite(headers)
+    : fetchSite !== "same-origin";
+};
+
 export const sameSiteVerify = (): BetterAuthPlugin => ({
   hooks: {
     before: [
       {
         // @effect-diagnostics-next-line asyncFunction:off -- better-auth hooks are Promise-returning middleware.
         handler: createAuthMiddleware(async (ctx) => {
-          await (isCrossSite(Object.fromEntries(ctx.headers ?? []))
+          await (isForeignVerify(Object.fromEntries(ctx.headers ?? []))
             ? Promise.reject(
                 new APIError("FORBIDDEN", {
                   message: "Open the sign-in link from your email.",

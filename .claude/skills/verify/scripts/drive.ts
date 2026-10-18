@@ -186,6 +186,20 @@ const arrivals = new EventTarget();
 
 const closed = settlesAs(once(socket, "close"), false);
 
+const PausedRequest = Schema.Struct({
+  method: Schema.Literal("Fetch.requestPaused"),
+  params: Schema.Struct({
+    request: Schema.Struct({
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    requestId: Schema.String,
+  }),
+});
+
+const isPausedRequest = Schema.is(PausedRequest);
+
+const clientIp = `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`;
+
 socket.addEventListener("message", (event) => {
   const reply = Schema.decodeUnknownSync(Reply)(JSON.parse(String(event.data)));
 
@@ -237,6 +251,27 @@ const send = async <S extends Schema.Decoder<unknown>>(
 };
 
 const Ignored = Schema.Unknown;
+
+const continueWithClientIp = async ({ params }: typeof PausedRequest.Type) => {
+  await send(Ignored, "Fetch.continueRequest", {
+    headers: [
+      ...Object.entries(params.request.headers).map(([header, value]) => ({
+        name: header,
+        value,
+      })),
+      { name: "cf-connecting-ip", value: clientIp },
+    ],
+    requestId: params.requestId,
+  });
+};
+
+socket.addEventListener("message", (event) => {
+  const message: unknown = JSON.parse(String(event.data));
+
+  if (isPausedRequest(message)) {
+    void continueWithClientIp(message);
+  }
+});
 
 const Evaluation = Schema.Struct({
   exceptionDetails: Schema.optional(Schema.Struct({ text: Schema.String })),
@@ -585,10 +620,10 @@ const run = async () => {
   await send(Ignored, "Page.enable");
   await send(Ignored, "Runtime.enable");
   await send(Ignored, "Network.enable");
-  await send(Ignored, "Network.setExtraHTTPHeaders", {
-    headers: {
-      "cf-connecting-ip": `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`,
-    },
+  await send(Ignored, "Fetch.enable", {
+    patterns: [
+      { requestStage: "Request", urlPattern: `${new URL(url).origin}/*` },
+    ],
   });
   await send(Ignored, "Emulation.setDeviceMetricsOverride", viewport);
   await send(Ignored, "Emulation.setEmulatedMedia", {
