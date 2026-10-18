@@ -93,6 +93,36 @@ const jsonLdOf = (html: string) =>
 
 const textOf = (html: string) => html.replaceAll(/<[^>]+>/gu, " ");
 
+const SITE = "https://jobs.rowlandekemezie.com";
+
+const OWN_LINKS = [
+  `${SITE}/api/auth/magic-link/verify?token=x`,
+  "https:/api/auth/magic-link/verify?token=x&callbackURL=/account",
+  "HTTPS:/api/auth/magic-link/verify?token=x",
+  "https:\\api/auth/magic-link/verify?token=x",
+  " https:/api/auth/magic-link/verify?token=x",
+  "https:\t/api/auth/magic-link/verify?token=x",
+  "https:/account/confirm?token=x",
+  "https:api/auth/magic-link/verify?token=x",
+];
+
+const HREF = /href="(?<href>[^"]*)"/gu;
+
+const linksHome = (html: string, path: string) =>
+  Array.from(html.matchAll(HREF), (match) =>
+    URL.parse(
+      (match.groups?.href ?? "").replaceAll("&amp;", "&"),
+      `${ORIGIN}${path}`
+    )
+  )
+    .filter(
+      (url) =>
+        url !== null &&
+        [ORIGIN, SITE].includes(url.origin) &&
+        url.searchParams.has("token")
+    )
+    .map(String);
+
 describe("job page render", () => {
   it.effect(
     "renders the client view with the job, its own head, and a canonical URL",
@@ -244,22 +274,25 @@ describe("job page render", () => {
     )
   );
 
-  it.effect("links the apply button only to a posting off this site", () =>
-    Effect.gen(function* applyLinks() {
-      const verify =
-        "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x";
-
-      const own = yield* renderJob(
-        jobFrom("Greenhouse", "greenhouse:acme/123", { url: verify }),
-        allowedOnly
-      );
-
-      const offSite = yield* renderJob(greenhouse, allowedOnly);
-
-      expect(own.html).toMatch(/<a class="apply"[^>]*>Apply on/u);
-      expect(own.html).not.toContain(`href="${verify}"`);
-      expect(offSite.html).toContain(`href="${greenhouse.url}"`);
+  it.effect("links the apply button to an off-site posting", () =>
+    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+      expect(html).toContain(`href="${greenhouse.url}"`);
     })
+  );
+
+  it.effect.each(OWN_LINKS)(
+    "never links the apply button home through %s",
+    (url) =>
+      Effect.map(
+        renderJob(
+          jobFrom("Greenhouse", "greenhouse:acme/123", { url }),
+          allowedOnly
+        ),
+        ({ html }) => {
+          expect(html).toMatch(/<a class="apply"[^>]*>Apply on/u);
+          expect(linksHome(html, GREENHOUSE_PATH)).toStrictEqual([]);
+        }
+      )
   );
 
   it.effect("answers a pruned job with 404 and a link back to the board", () =>
@@ -281,9 +314,6 @@ const acmeVp = jobFrom("Lever", "lever:acme/2", {
   role: "VicePresident",
   title: "VP Engineering",
 });
-
-const OWN_VERIFY =
-  "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x";
 
 const markOf = (job: ListedJobValue): MarkedJobValue => ({
   company: job.company,
@@ -312,49 +342,56 @@ const renderTracking = (
   );
 
 describe("original posting links", () => {
-  it.effect("links a listed row only to a posting off this site", () =>
+  it.effect.each(OWN_LINKS)("never links a listed row home through %s", (url) =>
     Effect.map(
       render(
         "/companies/acme-robotics",
         Preload.Listing({
           generatedAt: 1_760_500_000_000,
-          jobs: [{ ...acmeDirector, url: OWN_VERIFY }, acmeVp],
+          jobs: [{ ...acmeDirector, url }, acmeVp],
           total: 2,
         })
       ),
       ({ html }) => {
         expect(html.match(/<a class="job-source"/gu)).toHaveLength(2);
-        expect(html).not.toContain(`href="${OWN_VERIFY}"`);
         expect(html).toContain(`href="${acmeVp.url}"`);
+        expect(linksHome(html, "/companies/acme-robotics")).toStrictEqual([]);
       }
     )
   );
 
-  it.effect("links a tracked job only to a posting off this site", () =>
-    Effect.gen(function* trackedLinks() {
-      const marks = [
-        { ...markOf(acmeDirector), url: OWN_VERIFY },
-        markOf(acmeVp),
-      ];
+  it.effect.each(OWN_LINKS)(
+    "never links a shortlist mark home through %s",
+    (url) =>
+      Effect.map(
+        renderTracking("/shortlist", Preload.Nothing(), [
+          { ...markOf(acmeDirector), url },
+          markOf(acmeVp),
+        ]),
+        ({ html }) => {
+          expect(html.match(/<a class="job-source"/gu)).toHaveLength(2);
+          expect(html).toContain(`href="${acmeVp.url}"`);
+          expect(linksHome(html, "/shortlist")).toStrictEqual([]);
+        }
+      )
+  );
 
-      const shortlist = yield* renderTracking(
-        "/shortlist",
-        Preload.Nothing(),
-        marks
-      );
-
-      const missing = yield* renderTracking(
-        jobRouter({ id: acmeDirector.id }),
-        Preload.JobMissing(),
-        marks
-      );
-
-      expect(shortlist.html.match(/<a class="job-source"/gu)).toHaveLength(2);
-      expect(shortlist.html).not.toContain(`href="${OWN_VERIFY}"`);
-      expect(shortlist.html).toContain(`href="${acmeVp.url}"`);
-      expect(textOf(missing.html)).toContain("Open the original posting");
-      expect(missing.html).not.toContain(`href="${OWN_VERIFY}"`);
-    })
+  it.effect.each(OWN_LINKS)(
+    "never links a pruned job's mark home through %s",
+    (url) =>
+      Effect.map(
+        renderTracking(
+          jobRouter({ id: acmeDirector.id }),
+          Preload.JobMissing(),
+          [{ ...markOf(acmeDirector), url }]
+        ),
+        ({ html }) => {
+          expect(textOf(html)).toContain("Open the original posting");
+          expect(
+            linksHome(html, jobRouter({ id: acmeDirector.id }))
+          ).toStrictEqual([]);
+        }
+      )
   );
 });
 

@@ -46,6 +46,17 @@ describe("posting apply links", () => {
     "data:text/html,apply",
     "ftp://jobs.acme.example/1",
     "mailto:jobs@acme.example",
+    "https:/api/auth/magic-link/verify?token=x&callbackURL=/account",
+    "HTTPS:/api/auth/magic-link/verify?token=x",
+    "https:\\api/auth/magic-link/verify?token=x",
+    " https:/api/auth/magic-link/verify?token=x",
+    "https:\t/api/auth/magic-link/verify?token=x",
+    "https:/account/confirm?token=x",
+    "https:api/auth/magic-link/verify?token=x",
+    "http:/api/auth/magic-link/verify?token=x",
+    "https://jobs.rowlandekemezie.com../account/confirm?token=x",
+    "https://127.0.0.2/account/confirm?token=x",
+    "https://0.0.0.0/account/confirm?token=x",
   ])("drops a posting whose apply link is %s", (url) => {
     expect(linkOf(url)).toStrictEqual(Option.none());
   });
@@ -56,5 +67,11 @@ describe("posting apply links", () => {
     "https://notrowlandekemezie.com/jobs/1",
   ])("keeps a posting that links off site to %s", (url) => {
     expect(linkOf(url)).toStrictEqual(Option.some(url));
+  });
+
+  it("stores the absolute form of the link it checked", () => {
+    expect(linkOf(" HTTPS://Boards.Greenhouse.io/acme/jobs/42")).toStrictEqual(
+      Option.some("https://boards.greenhouse.io/acme/jobs/42")
+    );
   });
 });
