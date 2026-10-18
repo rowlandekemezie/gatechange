@@ -177,8 +177,43 @@ const arrivals = new EventTarget();
 
 const closed = settlesAs(once(socket, "close"), false);
 
+const PausedRequest = Schema.Struct({
+  method: Schema.Literal("Fetch.requestPaused"),
+  params: Schema.Struct({
+    request: Schema.Struct({
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    requestId: Schema.String,
+  }),
+});
+
+const isPausedRequest = Schema.is(PausedRequest);
+
+const clientIp = `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`;
+
 socket.addEventListener("message", (event) => {
-  const reply = Schema.decodeUnknownSync(Reply)(JSON.parse(String(event.data)));
+  const message: unknown = JSON.parse(String(event.data));
+
+  if (isPausedRequest(message)) {
+    socket.send(
+      JSON.stringify({
+        method: "Fetch.continueRequest",
+        params: {
+          headers: [
+            ...Object.entries(message.params.request.headers).map(
+              ([header, value]) => ({ name: header, value })
+            ),
+            { name: "cf-connecting-ip", value: clientIp },
+          ],
+          requestId: message.params.requestId,
+        },
+      })
+    );
+
+    return;
+  }
+
+  const reply = Schema.decodeUnknownSync(Reply)(message);
 
   if (reply.id !== undefined) {
     received.set(String(reply.id), reply);
@@ -456,10 +491,10 @@ const run = async () => {
   await send(Ignored, "Page.enable");
   await send(Ignored, "Runtime.enable");
   await send(Ignored, "Network.enable");
-  await send(Ignored, "Network.setExtraHTTPHeaders", {
-    headers: {
-      "cf-connecting-ip": `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`,
-    },
+  await send(Ignored, "Fetch.enable", {
+    patterns: [
+      { requestStage: "Request", urlPattern: `${new URL(url).origin}/*` },
+    ],
   });
   await send(Ignored, "Emulation.setDeviceMetricsOverride", viewport);
   await send(Ignored, "Emulation.setEmulatedMedia", {

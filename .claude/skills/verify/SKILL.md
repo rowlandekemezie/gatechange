@@ -61,7 +61,7 @@ Recording reads live public job boards, so do it by hand and commit the result. 
 
 ## Drive
 
-`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, sends a random `cf-connecting-ip` so each run gets its own better-auth rate-limit bucket, and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 20) and fails as soon as the board shows its error alert.
+`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, sends a random `cf-connecting-ip` on requests to the board's own origin so each run gets its own better-auth rate-limit bucket (other origins, such as Google Fonts, get no extra header), and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 20) and fails as soon as the board shows its error alert.
 
 ```sh
 mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
