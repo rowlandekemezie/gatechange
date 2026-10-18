@@ -8,7 +8,13 @@ export const SITE_ZONE = "rowlandekemezie.com";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
 
-const OWN_DOMAINS = [SITE_ZONE, "workers.dev", "localhost"] as const;
+const OWN_DOMAINS = [
+  SITE_ZONE,
+  "workers.dev",
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+] as const;
 
 const WEB_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
 

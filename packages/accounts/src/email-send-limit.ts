@@ -1,6 +1,7 @@
 import type { BetterAuthPlugin, DBAdapter, Where } from "better-auth";
 import { APIError } from "better-auth/api";
 import type { MagicLinkOptions } from "better-auth/plugins";
+import { Schema } from "effect";
 
 import type { MagicLinkRequest } from "./options.js";
 
@@ -27,6 +28,18 @@ const GMAIL_DOMAINS: ReadonlySet<string> = new Set([
   "googlemail.com",
 ]);
 
+const PROVIDER_FAILURES: ReadonlySet<string> = new Set([
+  "E_DAILY_LIMIT_EXCEEDED",
+  "E_INTERNAL_SERVER_ERROR",
+  "E_RATE_LIMIT_EXCEEDED",
+  "E_SENDER_DOMAIN_NOT_AVAILABLE",
+  "E_SENDER_NOT_VERIFIED",
+]);
+
+const CodedSendError = Schema.Struct({
+  cause: Schema.Struct({ code: Schema.String }),
+});
+
 const inboxOf = (email: string) => {
   const address = email.toLowerCase();
   const at = address.lastIndexOf("@");
@@ -38,6 +51,29 @@ const inboxOf = (email: string) => {
   const [tagless = ""] = address.slice(0, at).split("+");
 
   return `${tagless.replaceAll(".", "")}@gmail.com`;
+};
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const createFirst = async (adapter: DBAdapter, key: string, now: number) => {
+  try {
+    await adapter.create({
+      data: { count: 1, key, lastRequest: now },
+      model: MODEL,
+    });
+
+    return true;
+  } catch (error) {
+    const racer = await adapter.findOne<RateLimitRow>({
+      model: MODEL,
+      where: [{ field: "key", value: key }],
+    });
+
+    if (racer === null) {
+      throw error;
+    }
+
+    return false;
+  }
 };
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based, and this mirrors its own database rate limiter.
@@ -72,12 +108,7 @@ const consume = async (
 
   const claimed =
     row === null
-      ? await adapter
-          .create({ data: { count: 1, key, lastRequest: now }, model: MODEL })
-          .then(
-            () => true,
-            () => false
-          )
+      ? await createFirst(adapter, key, now)
       : (await adapter.incrementOne({
           increment: {},
           model: MODEL,
@@ -95,6 +126,18 @@ const consume = async (
   return claimed || retries === 0
     ? claimed
     : await consume(adapter, key, max, now, retries - 1);
+};
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const refund = async (adapter: DBAdapter, key: string) => {
+  await adapter.incrementOne({
+    increment: { count: -1 },
+    model: MODEL,
+    where: [
+      { field: "key", value: key },
+      { field: "count", operator: "gt", value: 0 },
+    ],
+  });
 };
 
 const keepSendRowsForTheWindow = {
@@ -126,17 +169,14 @@ export const limitSends =
 
     const { adapter } = ctx.context;
     const inbox = inboxOf(email);
+    const attemptKey = `magic-link-attempt:${inbox}`;
     const sendKey = `magic-link-email:${inbox}`;
     // @effect-diagnostics-next-line globalDate:off -- better-auth's limiter rows are stamped with the same wall clock.
     const now = Date.now();
 
     const allowed =
-      (await consume(
-        adapter,
-        `magic-link-attempt:${inbox}`,
-        EMAIL_SEND_LIMIT.attempts,
-        now
-      )) && (await consume(adapter, sendKey, EMAIL_SEND_LIMIT.max, now));
+      (await consume(adapter, attemptKey, EMAIL_SEND_LIMIT.attempts, now)) &&
+      (await consume(adapter, sendKey, EMAIL_SEND_LIMIT.max, now));
 
     if (!allowed) {
       throw new APIError("TOO_MANY_REQUESTS", {
@@ -147,14 +187,14 @@ export const limitSends =
     try {
       await send({ email, url });
     } catch (error) {
-      await adapter.incrementOne({
-        increment: { count: -1 },
-        model: MODEL,
-        where: [
-          { field: "key", value: sendKey },
-          { field: "count", operator: "gt", value: 0 },
-        ],
-      });
+      await refund(adapter, sendKey);
+
+      if (
+        Schema.is(CodedSendError)(error) &&
+        PROVIDER_FAILURES.has(error.cause.code)
+      ) {
+        await refund(adapter, attemptKey);
+      }
 
       throw error;
     }

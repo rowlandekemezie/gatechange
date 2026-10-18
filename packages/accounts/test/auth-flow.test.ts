@@ -52,30 +52,56 @@ const migrate = <D extends DatabaseSync>(database: D) => {
 
 const migratedDatabase = () => migrate(new DatabaseSync(":memory:"));
 
+const refusingLimiterInserts = () => {
+  const database = migratedDatabase();
+
+  database.exec(`
+    CREATE TRIGGER refuse_magic_link_counts BEFORE INSERT ON "rateLimit"
+    WHEN NEW.key LIKE 'magic-link-%'
+    BEGIN SELECT RAISE(ABORT, 'D1 refused the write'); END;
+  `);
+
+  return database;
+};
+
+type Mailer = (request: MagicLinkRequest) => boolean | Error;
+
 const settings = (
   sent: MagicLinkRequest[],
   hosts: SiteHosts = LOCAL_HOSTS,
-  mailerUp: (request: MagicLinkRequest) => boolean = () => true
+  mailer: Mailer = () => true
 ): AuthSettings => ({
   hosts,
   // @effect-diagnostics-next-line asyncFunction:off -- better-auth calls the sender as a Promise-returning callback.
   sendMagicLink: async (request) => {
-    await (mailerUp(request)
+    const outcome = mailer(request);
+
+    await (outcome === true
       ? Promise.resolve(sent.push(request))
-      : Promise.reject(new Error("mailer down")));
+      : Promise.reject(
+          outcome instanceof Error ? outcome : new Error("mailer down")
+        ));
   },
   social: {},
 });
 
+const longAddress = (lastLabel: number) =>
+  `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(lastLabel)}.com`;
+
+const cloudflareSendError = (code: string) =>
+  Object.assign(new Error("send_email failed"), {
+    cause: Object.assign(new Error(code), { code }),
+  });
+
 const makeAuth = (
   hosts: SiteHosts = LOCAL_HOSTS,
   database: DatabaseSync = migratedDatabase(),
-  mailerUp: (request: MagicLinkRequest) => boolean = () => true
+  mailer: Mailer = () => true
 ) => {
   const sent: MagicLinkRequest[] = [];
 
   const auth = betterAuth({
-    ...authOptions(settings(sent, hosts, mailerUp)),
+    ...authOptions(settings(sent, hosts, mailer)),
     database,
     secret: "test-secret-test-secret-test-secret-0",
   });
@@ -666,24 +692,27 @@ describe("per-email send limit", () => {
     })
   );
 
-  it.effect(
-    `stops calling a failing mailer after ${EMAIL_SEND_LIMIT.attempts} tries at one inbox`,
-    () =>
+  it.effect.each([
+    ["an unexplained failure", () => false],
+    [
+      "a suppressed recipient",
+      () => cloudflareSendError("E_RECIPIENT_SUPPRESSED"),
+    ],
+  ] satisfies [string, Mailer][])(
+    "stops calling the mailer after 6 tries at one address on %s",
+    ([, fails]) =>
       Effect.gen(function* failingMailer() {
         let tries = 0;
 
         const { auth } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () => {
           tries += 1;
 
-          return false;
+          return fails();
         });
 
         const statuses: number[] = [];
 
-        for (const index of Array.from(
-          { length: EMAIL_SEND_LIMIT.attempts + 1 },
-          (_, at) => at
-        )) {
+        for (const index of [0, 1, 2, 3, 4, 5, 6]) {
           statuses.push(
             yield* statusOf(
               requestLink(auth, "victim@example.com", `2001:db8:${index}::1`)
@@ -691,11 +720,119 @@ describe("per-email send limit", () => {
           );
         }
 
-        expect(statuses).toStrictEqual([
-          ...Array.from({ length: EMAIL_SEND_LIMIT.attempts }, () => 500),
-          429,
-        ]);
-        expect(tries).toBe(EMAIL_SEND_LIMIT.attempts);
+        expect(statuses).toStrictEqual([500, 500, 500, 500, 500, 500, 429]);
+        expect(tries).toBe(6);
+      })
+  );
+
+  it.effect.each([
+    "E_DAILY_LIMIT_EXCEEDED",
+    "E_RATE_LIMIT_EXCEEDED",
+    "E_INTERNAL_SERVER_ERROR",
+  ])("spends no attempt when the mail provider fails with %s", (code) =>
+    Effect.gen(function* providerOutage() {
+      let down = true;
+
+      const { auth, sent } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+        down ? cloudflareSendError(code) : true
+      );
+
+      const outage: number[] = [];
+
+      for (const index of [0, 1, 2, 3, 4, 5, 6, 7]) {
+        outage.push(
+          yield* statusOf(
+            requestLink(auth, "victim@example.com", `2001:db8:${index}::1`)
+          )
+        );
+      }
+
+      down = false;
+
+      const recovered = yield* requestLink(
+        auth,
+        "victim@example.com",
+        "2001:db8:9::1"
+      );
+
+      expect(outage).toStrictEqual([500, 500, 500, 500, 500, 500, 500, 500]);
+      expect(recovered.status).toBe(200);
+      expect(sent).toHaveLength(1);
+    })
+  );
+
+  it.effect(
+    "mails a 254-character address and refuses a 255-character one",
+    () =>
+      Effect.gen(function* lengthBoundary() {
+        const { auth, sent } = makeAuth();
+        const longest = longAddress(57);
+        const tooLong = longAddress(58);
+
+        const accepted = yield* requestLink(auth, longest, "2001:db8:1::1");
+        const refused = yield* requestLink(auth, tooLong, "2001:db8:2::1");
+
+        expect([longest.length, tooLong.length]).toStrictEqual([254, 255]);
+        expect([accepted.status, refused.status]).toStrictEqual([200, 400]);
+        expect(sent.map(({ email }) => email)).toStrictEqual([longest]);
+      })
+  );
+
+  it.effect(
+    "never lets a refund push an address's count below zero after the window reset under it",
+    () =>
+      Effect.gen(function* lateRefund() {
+        const database = migratedDatabase();
+        let calls = 0;
+
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, database, () => {
+          calls += 1;
+
+          if (calls === 1) {
+            database
+              .prepare(
+                "UPDATE \"rateLimit\" SET count = 0 WHERE key = 'magic-link-email:victim@example.com'"
+              )
+              .run();
+          }
+
+          return calls > 1;
+        });
+
+        const late = yield* statusOf(
+          requestLink(auth, "victim@example.com", "2001:db8:1::1")
+        );
+
+        const after: number[] = [];
+
+        for (const index of [3, 4, 5, 6]) {
+          after.push(
+            (yield* requestLink(
+              auth,
+              "victim@example.com",
+              `2001:db8:${index}::1`
+            )).status
+          );
+        }
+
+        expect(late).toBe(500);
+        expect(after).toStrictEqual([200, 200, 200, 429]);
+        expect(sent).toHaveLength(3);
+      })
+  );
+
+  it.effect(
+    "answers 500, not too many links, when the database refuses an address's first count",
+    () =>
+      Effect.gen(function* firstInsertFails() {
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, refusingLimiterInserts());
+
+        const status = yield* statusOf(
+          requestLink(auth, "victim@example.com", "2001:db8:1::1")
+        );
+
+        expect(status).toBe(500);
+        expect(sent).toHaveLength(0);
       })
   );
 });

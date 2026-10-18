@@ -7,13 +7,18 @@ import type {
   SourceNameValue,
 } from "@rat-stack/core/contracts";
 import { Effect, Option, Schema } from "effect";
+import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
 
 import indexHtml from "../index.html?raw";
+import { application } from "../src/client/application.js";
 import { Preload } from "../src/client/board/model.js";
-import type { PreloadValue } from "../src/client/board/model.js";
+import type {
+  MarkedJobValue,
+  PreloadValue,
+} from "../src/client/board/model.js";
 import { collectListing, LISTING_ROWS } from "../src/client/listing.js";
-import { Route, routeOfUrl } from "../src/client/route.js";
+import { jobRouter, Route, routeOfUrl } from "../src/client/route.js";
 import { allowedOnly, allowedOrUnstated } from "../src/server/markup.js";
 import type { MarkupPolicy } from "../src/server/markup.js";
 import { renderPage } from "../src/server/render.js";
@@ -275,6 +280,82 @@ const acmeDirector = jobFrom("Greenhouse", "greenhouse:acme/1");
 const acmeVp = jobFrom("Lever", "lever:acme/2", {
   role: "VicePresident",
   title: "VP Engineering",
+});
+
+const OWN_VERIFY =
+  "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x";
+
+const markOf = (job: ListedJobValue): MarkedJobValue => ({
+  company: job.company,
+  id: job.id,
+  kind: "Saved",
+  location: job.location,
+  title: job.title,
+  url: job.url,
+});
+
+const renderTracking = (
+  path: string,
+  preload: PreloadValue,
+  marks: readonly MarkedJobValue[]
+) =>
+  renderToString(
+    {
+      ...application,
+      init: (...args: Parameters<typeof application.init>) => {
+        const started = application.init(...args);
+
+        return { ...started, model: { ...started.model, marks } };
+      },
+    },
+    { flags: { origin: ORIGIN, preload }, url: `${ORIGIN}${path}` }
+  );
+
+describe("original posting links", () => {
+  it.effect("links a listed row only to a posting off this site", () =>
+    Effect.map(
+      render(
+        "/companies/acme-robotics",
+        Preload.Listing({
+          generatedAt: 1_760_500_000_000,
+          jobs: [{ ...acmeDirector, url: OWN_VERIFY }, acmeVp],
+          total: 2,
+        })
+      ),
+      ({ html }) => {
+        expect(html.match(/<a class="job-source"/gu)).toHaveLength(2);
+        expect(html).not.toContain(`href="${OWN_VERIFY}"`);
+        expect(html).toContain(`href="${acmeVp.url}"`);
+      }
+    )
+  );
+
+  it.effect("links a tracked job only to a posting off this site", () =>
+    Effect.gen(function* trackedLinks() {
+      const marks = [
+        { ...markOf(acmeDirector), url: OWN_VERIFY },
+        markOf(acmeVp),
+      ];
+
+      const shortlist = yield* renderTracking(
+        "/shortlist",
+        Preload.Nothing(),
+        marks
+      );
+
+      const missing = yield* renderTracking(
+        jobRouter({ id: acmeDirector.id }),
+        Preload.JobMissing(),
+        marks
+      );
+
+      expect(shortlist.html.match(/<a class="job-source"/gu)).toHaveLength(2);
+      expect(shortlist.html).not.toContain(`href="${OWN_VERIFY}"`);
+      expect(shortlist.html).toContain(`href="${acmeVp.url}"`);
+      expect(textOf(missing.html)).toContain("Open the original posting");
+      expect(missing.html).not.toContain(`href="${OWN_VERIFY}"`);
+    })
+  );
 });
 
 describe("listing page render", () => {
