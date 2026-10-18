@@ -298,7 +298,7 @@ export const boardMasthead = (
     ]
   );
 
-const jobRow = (
+export const jobRow = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
   job: ListedJobValue,

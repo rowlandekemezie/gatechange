@@ -19,7 +19,7 @@ import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { boardUrl } from "../../client/route.js";
+import { boardUrl, companyRouter, companySlugOf } from "../../client/route.js";
 
 const backLink = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.a(
@@ -88,7 +88,16 @@ const foundView = (
     [
       backLink(model, h),
       h.h1([h.Class("detail-title")], [job.title]),
-      h.p([h.Class("job-company")], [job.company]),
+      h.p(
+        [h.Class("job-company")],
+        [
+          Option.match(companySlugOf(job.company), {
+            onNone: () => job.company,
+            onSome: (slug) =>
+              h.a([h.Href(companyRouter({ slug }))], [job.company]),
+          }),
+        ]
+      ),
       h.dl(
         [h.Class("detail-facts")],
         [

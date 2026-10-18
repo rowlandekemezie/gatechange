@@ -33,7 +33,7 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `@rat-stack/job-enrichment` | `packages/job-enrichment` | Workers AI `ListingEnricher` (JSON mode, model from `ENRICHMENT_MODEL`) and the Cloudflare Queue `EnrichmentQueue` adapter |
 | `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc`, runs `runIngest` on a 20 minute cron, queues new company-board listings, and consumes `EnrichmentQueue` to enrich them |
 | `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` to `JobsBackend` and serves assets |
-| `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com` |
+| `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com`. Only the `prod` stage attaches that domain (`src/site-routing.ts`); every other deployed stage serves on its `workers.dev` URL |
 
 ## Commands
 
