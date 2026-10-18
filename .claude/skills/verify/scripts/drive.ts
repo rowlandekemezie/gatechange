@@ -559,9 +559,7 @@ const rpcFromElsewhere = async (
   payload: RpcPayload,
   site: Readonly<Record<string, string>>
 ) => {
-  const { cookies } = await send(Cookies, "Network.getCookies", {
-    urls: [url],
-  });
+  const { cookies } = await send(Cookies, "Network.getCookies");
 
   const response = await fetch(new URL("/rpc", url), {
     body: `{"_tag":"Request","headers":[],"id":"1","payload":${JSON.stringify(payload)},"tag":${JSON.stringify(tag)}}`,
