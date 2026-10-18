@@ -3,10 +3,8 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
   authOptions,
   authSecret,
-  isAuthPath,
   magicLinkEmail,
   makeAccountStore,
-  viewerOfRequest,
 } from "@rat-stack/accounts";
 import type { SocialCredentials } from "@rat-stack/accounts";
 import { toRpc } from "@rat-stack/capability/rpc";
@@ -28,7 +26,6 @@ import {
 import type { ViewerValue } from "@rat-stack/core";
 import {
   makeDigestMailer,
-  UNSUBSCRIBE_PATH,
   unsubscribePage,
   verifyUnsubscribeToken,
 } from "@rat-stack/digest-mailer";
@@ -42,12 +39,11 @@ import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
-import {
-  FetchHttpClient,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/http";
+import { FetchHttpClient, HttpServerResponse } from "effect/http";
+import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
+
+import { handleRoutes } from "./route.js";
 
 export const rpcProjection = toRpc(capabilities);
 
@@ -103,8 +99,6 @@ const socialCredentials = (prefix: string) =>
           })
     )
   );
-
-const pathOf = (url: string) => new URL(url, SITE_ORIGIN).pathname;
 
 export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBackend>()(
   "JobsBackend",
@@ -303,28 +297,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         )
       );
 
-    const handle = Effect.gen(function* handle() {
-      const request = yield* HttpServerRequest.HttpServerRequest;
-
-      if (isAuthPath(request.url)) {
-        return yield* auth.fetch;
-      }
-
-      if (pathOf(request.url) === UNSUBSCRIBE_PATH) {
-        return yield* unsubscribe(request);
-      }
-
-      return yield* viewerOfRequest(accountStore, request.headers).pipe(
-        Effect.matchEffect({
-          onFailure: () =>
-            Effect.succeed(
-              HttpServerResponse.text("Cross-site request refused.", {
-                status: 403,
-              })
-            ),
-          onSuccess: serveRpc,
-        })
-      );
+    const handle = handleRoutes({
+      accountStore,
+      auth: auth.fetch,
+      rpc: serveRpc,
+      unsubscribe,
     });
 
     // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.
