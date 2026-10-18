@@ -55,12 +55,12 @@ const migratedDatabase = () => migrate(new DatabaseSync(":memory:"));
 const settings = (
   sent: MagicLinkRequest[],
   hosts: SiteHosts = LOCAL_HOSTS,
-  mailerUp: () => boolean = () => true
+  mailerUp: (request: MagicLinkRequest) => boolean = () => true
 ): AuthSettings => ({
   hosts,
   // @effect-diagnostics-next-line asyncFunction:off -- better-auth calls the sender as a Promise-returning callback.
   sendMagicLink: async (request) => {
-    await (mailerUp()
+    await (mailerUp(request)
       ? Promise.resolve(sent.push(request))
       : Promise.reject(new Error("mailer down")));
   },
@@ -70,7 +70,7 @@ const settings = (
 const makeAuth = (
   hosts: SiteHosts = LOCAL_HOSTS,
   database: DatabaseSync = migratedDatabase(),
-  mailerUp: () => boolean = () => true
+  mailerUp: (request: MagicLinkRequest) => boolean = () => true
 ) => {
   const sent: MagicLinkRequest[] = [];
 
@@ -399,7 +399,7 @@ describe("magic link storage and lifetime", () => {
 
 describe("per-email send limit", () => {
   it.effect(
-    `sends at most ${EMAIL_SEND_LIMIT.max} links to one inbox in 15 minutes, whatever the client address or +tag`,
+    `sends at most ${EMAIL_SEND_LIMIT.max} links to one address in 15 minutes, whatever the client address or letter case`,
     () =>
       Effect.gen(function* perEmail() {
         travelTo(T0);
@@ -410,8 +410,8 @@ describe("per-email send limit", () => {
         for (const [index, email] of [
           "victim@example.com",
           "Victim@Example.com",
-          "victim+a@example.com",
-          "victim+b@example.com",
+          "VICTIM@example.com",
+          "victim@EXAMPLE.COM",
         ].entries()) {
           statuses.push(
             (yield* requestLink(auth, email, `2001:db8:${index}::1`)).status
@@ -476,6 +476,80 @@ describe("per-email send limit", () => {
         expect(statuses).toStrictEqual([200, 200, 200, 429]);
         expect(elsewhere).toStrictEqual([200, 200, 200, 200]);
         expect(sent).toHaveLength(7);
+      })
+  );
+
+  it.effect(
+    "gives each +tag address outside Gmail its own budget, so tags cannot spend the base address's",
+    () =>
+      Effect.gen(function* plusTagsElsewhere() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth();
+        const tagged: number[] = [];
+
+        for (const index of [1, 2, 3]) {
+          tagged.push(
+            (yield* requestLink(
+              auth,
+              `victim+${index}@corp.com`,
+              `2001:db8:${index}::1`
+            )).status
+          );
+        }
+
+        const real = yield* requestLink(
+          auth,
+          "victim@corp.com",
+          "2001:db8:9::1"
+        );
+
+        expect(tagged).toStrictEqual([200, 200, 200]);
+        expect(real.status).toBe(200);
+        expect(
+          sent.filter(({ email }) => email === "victim@corp.com")
+        ).toHaveLength(1);
+      })
+  );
+
+  it.effect(
+    "keeps a base address usable when the mailer rejects one of its +tag addresses",
+    () =>
+      Effect.gen(function* suppressedTag() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          ({ email }) => email !== "victim+x@corp.com"
+        );
+
+        const rejected: number[] = [];
+
+        for (const index of Array.from(
+          { length: EMAIL_SEND_LIMIT.attempts },
+          (_, at) => at
+        )) {
+          rejected.push(
+            yield* statusOf(
+              requestLink(auth, "victim+x@corp.com", `2001:db8:${index}::1`)
+            )
+          );
+        }
+
+        const real = yield* requestLink(
+          auth,
+          "victim@corp.com",
+          "2001:db8:9::1"
+        );
+
+        expect(rejected).toStrictEqual(
+          Array.from({ length: EMAIL_SEND_LIMIT.attempts }, () => 500)
+        );
+        expect(real.status).toBe(200);
+        expect(sent.map(({ email }) => email)).toStrictEqual([
+          "victim@corp.com",
+        ]);
       })
   );
 

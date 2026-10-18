@@ -30,12 +30,14 @@ const GMAIL_DOMAINS: ReadonlySet<string> = new Set([
 const inboxOf = (email: string) => {
   const address = email.toLowerCase();
   const at = address.lastIndexOf("@");
-  const [tagless = ""] = address.slice(0, at).split("+");
-  const domain = address.slice(at + 1);
-  const gmail = GMAIL_DOMAINS.has(domain);
-  const mailbox = gmail ? tagless.replaceAll(".", "") : tagless;
 
-  return `${mailbox}@${gmail ? "gmail.com" : domain}`;
+  if (!GMAIL_DOMAINS.has(address.slice(at + 1))) {
+    return address;
+  }
+
+  const [tagless = ""] = address.slice(0, at).split("+");
+
+  return `${tagless.replaceAll(".", "")}@gmail.com`;
 };
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based, and this mirrors its own database rate limiter.

@@ -239,6 +239,24 @@ describe("job page render", () => {
     )
   );
 
+  it.effect("links the apply button only to a posting off this site", () =>
+    Effect.gen(function* applyLinks() {
+      const verify =
+        "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x";
+
+      const own = yield* renderJob(
+        jobFrom("Greenhouse", "greenhouse:acme/123", { url: verify }),
+        allowedOnly
+      );
+
+      const offSite = yield* renderJob(greenhouse, allowedOnly);
+
+      expect(own.html).toMatch(/<a class="apply"[^>]*>Apply on/u);
+      expect(own.html).not.toContain(`href="${verify}"`);
+      expect(offSite.html).toContain(`href="${greenhouse.url}"`);
+    })
+  );
+
   it.effect("answers a pruned job with 404 and a link back to the board", () =>
     Effect.map(
       render("/jobs/Z29uZQ", Preload.JobMissing(), allowedOrUnstated),

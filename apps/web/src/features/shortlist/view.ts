@@ -1,3 +1,4 @@
+import { isOffSiteWebUrl } from "@rat-stack/core/contracts";
 import { Array, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
@@ -30,7 +31,7 @@ const markRow = (h: HtmlBuilder<MessageValue>, mark: MarkedJobValue): Html =>
               h.a(
                 [
                   h.Class("job-source"),
-                  h.Href(mark.url),
+                  ...(isOffSiteWebUrl(mark.url) ? [h.Href(mark.url)] : []),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],

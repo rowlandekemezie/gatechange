@@ -10,7 +10,7 @@ import { emailSendLimit, limitSends } from "./email-send-limit.js";
 const AUTH_BASE_PATH = "/api/auth";
 
 export const isAuthPath = (url: string) => {
-  const { pathname } = new URL(url, "http://backend.invalid");
+  const pathname = URL.parse(`http://backend.invalid${url}`)?.pathname ?? "";
 
   return (
     pathname === AUTH_BASE_PATH || pathname.startsWith(`${AUTH_BASE_PATH}/`)

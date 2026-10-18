@@ -8,6 +8,7 @@ import type { IngestReceiptValue, JobValue } from "./job.js";
 import { PostingFeeds } from "./posting-feeds.js";
 import { DAY_MILLIS, normalizePosting } from "./posting.js";
 import type { PostingValue } from "./posting.js";
+import { isOffSiteWebUrl } from "./site.js";
 
 export interface IngestPlan {
   readonly feedConcurrency: number;
@@ -36,6 +37,20 @@ export const jobsFromPostings = (
     Array.dedupeWith((left, right) => left.id === right.id)
   );
 
+const warnOfUnlinkablePostings = (
+  feed: FeedRef,
+  postings: readonly PostingValue[]
+) => {
+  const skipped = postings.filter(({ url }) => !isOffSiteWebUrl(url)).length;
+
+  return skipped === 0
+    ? Effect.void
+    : Effect.logWarning("skipped postings without an off-site web link", {
+        feed: feed.key,
+        skipped,
+      });
+};
+
 const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
   feed: FeedRef,
   seenAt: number
@@ -63,6 +78,7 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
             seenAt
           )
           .pipe(
+            Effect.tap(() => warnOfUnlinkablePostings(feed, postings)),
             Effect.map((replacement): FeedOutcomeValue => ({
               error: null,
               key: feed.key,
