@@ -5,13 +5,16 @@ import {
   importShortlist,
   JobStore,
   noteTrackedJob,
+  TRACKER_LIMIT,
   TrackedJobs,
   trackedJobs,
+  TrackerFull,
   trackJob,
   TrackRequest,
   Unauthorized,
   untrackJob,
   Viewer,
+  MAX_IMPORTED_JOBS,
 } from "@rat-stack/core";
 import type {
   JobValue,
@@ -274,6 +277,62 @@ describe("tracker", () => {
             jobIdsOf(yield* trackedJobs.handler({}).pipe(as(ada)))
           ).toStrictEqual(["g:1"]);
         })
+      )
+  );
+
+  it.effect(
+    "a full tracker refuses new jobs atomically but still moves and frees its own",
+    () =>
+      withStore(
+        Effect.gen(function* fullTracker() {
+          const full = new TrackerFull({ limit: TRACKER_LIMIT });
+
+          const filler = Array.makeBy(TRACKER_LIMIT - 1, (index) =>
+            request(`f:${index}`)
+          );
+
+          yield* Effect.forEach(
+            Array.chunksOf(filler, MAX_IMPORTED_JOBS),
+            (jobs) => importShortlist.handler({ jobs })
+          );
+
+          const overflowingImport = yield* Effect.flip(
+            importShortlist.handler({
+              jobs: [request("g:1"), request("g:2")],
+            })
+          );
+
+          expect(overflowingImport).toStrictEqual(full);
+          expect(yield* trackedJobs.handler({})).toHaveLength(
+            TRACKER_LIMIT - 1
+          );
+
+          expect(yield* trackJob.handler(request("g:1"))).toHaveLength(
+            TRACKER_LIMIT
+          );
+          expect(
+            yield* Effect.flip(trackJob.handler(request("g:2")))
+          ).toStrictEqual(full);
+
+          const moved = yield* trackJob.handler(request("f:0", "Applied"));
+
+          expect(
+            Array.findFirst(moved, ({ jobId }) => jobId === "f:0").pipe(
+              Option.map(({ stage }) => stage)
+            )
+          ).toStrictEqual(Option.some("Applied"));
+
+          expect(
+            yield* trackJob.handler(request("g:2")).pipe(as(grace))
+          ).toHaveLength(1);
+
+          yield* untrackJob.handler({ jobId: "f:1" });
+
+          const freed = yield* trackJob.handler(request("g:2"));
+
+          expect(freed).toHaveLength(TRACKER_LIMIT);
+          expect(freed.some(({ jobId }) => jobId === "g:2")).toBe(true);
+        }).pipe(as(ada))
       )
   );
 });

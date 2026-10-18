@@ -19,6 +19,7 @@ import {
 } from "./contracts.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { JobStore } from "./job-store.js";
+import type { TrackerFull } from "./tracker-full.js";
 import { TrackerStore } from "./tracker.js";
 
 export const listJobs = implement(listJobsContract, (query) =>
@@ -55,12 +56,12 @@ export const signInOptions = implement(signInOptionsContract, () =>
   AccountStore.use((store) => Effect.succeed(store.signInOptions))
 );
 
-const changeTracker = (
+const changeTracker = <E extends JobStoreUnavailable | TrackerFull>(
   change: (
     store: TrackerStore["Service"],
     owner: AccountIdValue,
     now: number
-  ) => EffectType.Effect<void, JobStoreUnavailable>
+  ) => EffectType.Effect<void, E>
 ) =>
   Effect.gen(function* changeTrackerHandler() {
     const { id } = yield* currentMember;

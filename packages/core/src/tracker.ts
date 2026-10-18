@@ -4,6 +4,7 @@ import type { Effect } from "effect";
 import type { AccountIdValue } from "./account.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { EpochMillis } from "./job.js";
+import type { TrackerFull } from "./tracker-full.js";
 
 export const stages = [
   "Saved",
@@ -20,6 +21,8 @@ export type StageValue = typeof Stage.Type;
 export const MAX_NOTES_LENGTH = 2000;
 
 export const MAX_IMPORTED_JOBS = 200;
+
+export const TRACKER_LIMIT = 500;
 
 const SnapshotText = Schema.String.check(Schema.isMaxLength(500));
 
@@ -69,7 +72,7 @@ export class TrackerStore extends Context.Service<
       owner: AccountIdValue,
       jobs: readonly TrackRequestValue[],
       now: number
-    ) => Effect.Effect<void, JobStoreUnavailable>;
+    ) => Effect.Effect<void, JobStoreUnavailable | TrackerFull>;
     readonly list: (
       owner: AccountIdValue
     ) => Effect.Effect<readonly TrackedJobValue[], JobStoreUnavailable>;
@@ -82,7 +85,7 @@ export class TrackerStore extends Context.Service<
       owner: AccountIdValue,
       job: TrackRequestValue,
       now: number
-    ) => Effect.Effect<void, JobStoreUnavailable>;
+    ) => Effect.Effect<void, JobStoreUnavailable | TrackerFull>;
     readonly untrack: (
       owner: AccountIdValue,
       jobId: string

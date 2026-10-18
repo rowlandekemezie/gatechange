@@ -4,6 +4,7 @@ import { Schema } from "effect";
 import { Account, SignInOptions } from "./account.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, Job, JobPage, JobQuery } from "./job.js";
+import { TrackerFull } from "./tracker-full.js";
 import {
   ImportShortlist,
   Notes,
@@ -74,10 +75,13 @@ export {
   MAX_NOTES_LENGTH,
   Stage,
   stages,
+  TRACKER_LIMIT,
   TrackedJob,
   TrackedJobs,
   TrackRequest,
 } from "./tracker.js";
+
+export { TrackerFull } from "./tracker-full.js";
 
 export type {
   JobSnapshotValue,
@@ -136,6 +140,12 @@ export const signInOptionsContract = defineContract("signInOptions", {
 
 const TrackerFailure = Schema.Union([Unauthorized, JobStoreUnavailable]);
 
+const TrackerAddFailure = Schema.Union([
+  Unauthorized,
+  JobStoreUnavailable,
+  TrackerFull,
+]);
+
 const TrackedJobKey = Schema.Struct({ jobId: Schema.NonEmptyString });
 
 export const trackedJobsContract = defineContract("trackedJobs", {
@@ -151,7 +161,7 @@ export const trackJobContract = defineContract("trackJob", {
   annotations: { idempotent: true },
   description:
     "Track a job for the signed-in member at a stage, or move a tracked job to that stage, and return the tracker",
-  failure: TrackerFailure,
+  failure: TrackerAddFailure,
   input: TrackRequest,
   output: TrackedJobs,
 });
@@ -160,7 +170,7 @@ export const importShortlistContract = defineContract("importShortlist", {
   annotations: { idempotent: true },
   description:
     "Add a browser shortlist to the signed-in member's tracker, skipping jobs already tracked, and return the tracker",
-  failure: TrackerFailure,
+  failure: TrackerAddFailure,
   input: ImportShortlist,
   output: TrackedJobs,
 });

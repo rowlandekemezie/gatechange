@@ -1,5 +1,14 @@
-import { Stage, TrackerStore } from "@rat-stack/core";
-import type { AccountIdValue, TrackRequestValue } from "@rat-stack/core";
+import {
+  Stage,
+  TRACKER_LIMIT,
+  TrackerFull,
+  TrackerStore,
+} from "@rat-stack/core";
+import type {
+  AccountIdValue,
+  JobStoreUnavailable,
+  TrackRequestValue,
+} from "@rat-stack/core";
 import { Array, Effect, Layer, pipe, Schema } from "effect";
 
 import { SqlExecutor, statement } from "./sql-executor.js";
@@ -50,6 +59,16 @@ const MOVE_TRACKED = `UPDATE SET
   location = excluded.location,
   url = excluded.url`;
 
+const TRACKER_FULL_SIGNAL = "tracker_full";
+
+const refusedWhenFull = <A>(write: Effect.Effect<A, JobStoreUnavailable>) =>
+  write.pipe(
+    Effect.catchIf(
+      (failure) => failure.message.includes(TRACKER_FULL_SIGNAL),
+      () => Effect.fail(new TrackerFull({ limit: TRACKER_LIMIT }))
+    )
+  );
+
 export const makeTrackerStore = Effect.gen(function* makeTrackerStore() {
   const sql = yield* SqlExecutor;
 
@@ -63,7 +82,7 @@ export const makeTrackerStore = Effect.gen(function* makeTrackerStore() {
             Array.map((job) => insertTracked(owner, job, now, "NOTHING"))
           )
         )
-        .pipe(Effect.asVoid),
+        .pipe(refusedWhenFull, Effect.asVoid),
     list: (owner) =>
       sql
         .all(
@@ -109,7 +128,7 @@ export const makeTrackerStore = Effect.gen(function* makeTrackerStore() {
     track: (owner, job, now) =>
       sql
         .batch("track a job", [insertTracked(owner, job, now, MOVE_TRACKED)])
-        .pipe(Effect.asVoid),
+        .pipe(refusedWhenFull, Effect.asVoid),
     untrack: (owner, jobId) =>
       sql
         .batch("untrack a job", [
