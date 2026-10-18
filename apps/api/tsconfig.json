@@ -8,6 +8,7 @@
         "allowedUnstableApis": [
           "effect/http/FetchHttpClient",
           "effect/http/HttpServerRequest",
+          "effect/http/HttpServerResponse",
           "effect/rpc/RpcSerialization",
           "effect/rpc/RpcServer"
         ]

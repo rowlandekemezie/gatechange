@@ -3,6 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import { Array, Effect, Layer, Schema, pipe } from "effect";
 
+import { alertStoreLayer } from "./alert-store.js";
 import { jobStoreMigrationDirectory } from "./migrations.js";
 import { SqlExecutor } from "./sql-executor.js";
 import type { SqlStatement } from "./sql-executor.js";
@@ -57,5 +58,10 @@ export const JobsDatabase = Cloudflare.D1.Database("JobsDatabase", {
 
 export const d1JobStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
   jobStoreLayer.pipe(
+    Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
+  );
+
+export const d1AlertStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
+  alertStoreLayer.pipe(
     Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
   );

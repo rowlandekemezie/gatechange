@@ -2,8 +2,10 @@ import { defineContract } from "@rat-stack/capability/contract";
 import { Schema } from "effect";
 
 import { Account, SignInOptions } from "./account.js";
+import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, Job, JobPage, JobQuery } from "./job.js";
+import { SavedSearchLimit } from "./saved-search-limit.js";
 import { Unauthorized } from "./unauthorized.js";
 
 export {
@@ -52,6 +54,23 @@ export {
 } from "./account.js";
 
 export { Unauthorized } from "./unauthorized.js";
+
+export {
+  DigestFrequency,
+  MAX_SAVED_SEARCHES,
+  SavedSearch,
+  SavedSearchId,
+  SearchFilters,
+} from "./alerts.js";
+
+export { SavedSearchLimit } from "./saved-search-limit.js";
+
+export type {
+  DigestFrequencyValue,
+  SavedSearchIdValue,
+  SavedSearchValue,
+  SearchFiltersValue,
+} from "./alerts.js";
 
 export type {
   AccountIdValue,
@@ -110,10 +129,40 @@ export const signInOptionsContract = defineContract("signInOptions", {
   output: SignInOptions,
 });
 
+const MemberStoreFailure = Schema.Union([Unauthorized, JobStoreUnavailable]);
+
+export const saveSearchContract = defineContract("saveSearch", {
+  description:
+    "Save the signed-in member's board filters as a search that a weekly email digest reports new matches for",
+  failure: Schema.Union([Unauthorized, JobStoreUnavailable, SavedSearchLimit]),
+  input: Schema.Struct({ filters: SearchFilters }),
+  output: SavedSearch,
+});
+
+export const savedSearchesContract = defineContract("savedSearches", {
+  annotations: { idempotent: true, readOnly: true },
+  description: "List the signed-in member's saved searches, newest first",
+  failure: MemberStoreFailure,
+  input: Schema.Struct({}),
+  output: Schema.Array(SavedSearch),
+});
+
+export const deleteSearchContract = defineContract("deleteSearch", {
+  annotations: { destructive: true, idempotent: true },
+  description:
+    "Delete one of the signed-in member's saved searches so it stops producing digests",
+  failure: MemberStoreFailure,
+  input: Schema.Struct({ id: SavedSearchId }),
+  output: Schema.Void,
+});
+
 export const jobBoardContracts = [
   listJobsContract,
   boardStatsContract,
   getJobContract,
   accountContract,
   signInOptionsContract,
+  saveSearchContract,
+  savedSearchesContract,
+  deleteSearchContract,
 ] as const;

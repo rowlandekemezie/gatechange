@@ -1,0 +1,211 @@
+import { describe, expect, it } from "@effect/vitest";
+import { AccountId, MAX_DIGEST_JOBS } from "@rat-stack/core";
+import type { Digest, JobValue } from "@rat-stack/core";
+import { Array, Effect, Option, Redacted } from "effect";
+
+import {
+  makeDigestMailer,
+  unsubscribePage,
+  unsubscribeToken,
+  verifyUnsubscribeToken,
+} from "../src/index.js";
+import type { DigestEmail, SendFailure } from "../src/index.js";
+
+const SECRET = Redacted.make("a".repeat(32));
+
+const OTHER_SECRET = Redacted.make("b".repeat(32));
+
+const ORIGIN = "https://jobs.rowlandekemezie.com";
+
+const ada = AccountId.make("user_ada");
+
+const job = (id: string, overrides: Partial<JobValue> = {}): JobValue => ({
+  arrangement: "Remote",
+  company: "Acme",
+  feed: "greenhouse:acme",
+  firstSeenAt: 0,
+  id,
+  lastSeenAt: 0,
+  location: "Remote - Canada",
+  postedAt: 0,
+  region: "RemoteCanada",
+  relevance: 50,
+  role: "EngineeringManager",
+  salary: null,
+  source: "Greenhouse",
+  title: "Engineering Manager",
+  url: "https://boards.greenhouse.io/acme/1",
+  ...overrides,
+});
+
+const digest = (jobs: readonly JobValue[], total = jobs.length): Digest => ({
+  account: ada,
+  jobs,
+  periodStart: 0,
+  to: "ada@example.com",
+  total,
+});
+
+const capture = (outcome: Effect.Effect<unknown, SendFailure>) => {
+  const sent: DigestEmail[] = [];
+
+  const mailer = makeDigestMailer({
+    secret: SECRET,
+    send: (email) =>
+      Effect.sync(() => sent.push(email)).pipe(Effect.andThen(outcome)),
+    sender: "digest@rowlandekemezie.com",
+    siteOrigin: ORIGIN,
+  });
+
+  return { mailer, sent };
+};
+
+const tokenIn = (url: string) => new URL(url).searchParams.get("token") ?? "";
+
+const failingSend = (code: string) =>
+  capture(
+    Effect.fail({
+      cause: Object.assign(new Error("refused"), { code }),
+      message: "refused",
+    })
+  ).mailer.send(digest([job("x")]));
+
+describe("digest email", () => {
+  it.effect(
+    "links every role to its job page on the board and carries one-click unsubscribe headers",
+    () =>
+      Effect.gen(function* links() {
+        const { mailer, sent } = capture(Effect.void);
+
+        yield* mailer.send(
+          digest([job("greenhouse:acme:1"), job("lever:acme:2")])
+        );
+
+        const [email] = sent;
+
+        const unsubscribe = /^<(?<url>https:\/\/[^>]+)>$/u.exec(
+          email?.headers["List-Unsubscribe"] ?? ""
+        )?.groups?.url;
+
+        expect(email?.headers["List-Unsubscribe-Post"]).toBe(
+          "List-Unsubscribe=One-Click"
+        );
+        expect(unsubscribe?.startsWith(`${ORIGIN}/unsubscribe?token=`)).toBe(
+          true
+        );
+        expect(
+          Array.fromIterable(
+            email?.html.matchAll(/href="(?<href>[^"]+\/jobs\/[^"]+)"/gu) ?? []
+          ).map((match) => match.groups?.href)
+        ).toEqual([
+          `${ORIGIN}/jobs/Z3JlZW5ob3VzZTphY21lOjE`,
+          `${ORIGIN}/jobs/bGV2ZXI6YWNtZToy`,
+        ]);
+        expect(email?.text).toContain(`${ORIGIN}/jobs/bGV2ZXI6YWNtZToy`);
+        expect(email?.text).toContain(unsubscribe);
+        expect(
+          yield* verifyUnsubscribeToken(SECRET, tokenIn(unsubscribe ?? ORIGIN))
+        ).toEqual(Option.some(ada));
+      })
+  );
+
+  it.effect("escapes listing text that came from a feed", () =>
+    Effect.gen(function* escaped() {
+      const { mailer, sent } = capture(Effect.void);
+
+      yield* mailer.send(
+        digest([
+          job("x", {
+            company: `"><script>alert(1)</script>`,
+            title: "<img src=x onerror=alert(1)>",
+          }),
+        ])
+      );
+
+      expect(sent[0]?.html).not.toMatch(/<script|<img/u);
+      expect(sent[0]?.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    })
+  );
+
+  it.effect("says how many roles it left out when there are more", () =>
+    Effect.gen(function* more() {
+      const { mailer, sent } = capture(Effect.void);
+
+      yield* mailer.send(
+        digest(
+          Array.makeBy(MAX_DIGEST_JOBS, (index) => job(`id-${index}`)),
+          MAX_DIGEST_JOBS + 7
+        )
+      );
+
+      expect(sent[0]?.subject).toBe(
+        `${MAX_DIGEST_JOBS + 7} new engineering leadership roles for your saved searches`
+      );
+      expect(sent[0]?.text).toContain(
+        `Showing the newest ${MAX_DIGEST_JOBS} of ${MAX_DIGEST_JOBS + 7}.`
+      );
+    })
+  );
+
+  it.effect("reports quota errors from Email Sending so the run can stop", () =>
+    Effect.gen(function* quota() {
+      const daily = yield* Effect.flip(failingSend("E_DAILY_LIMIT_EXCEEDED"));
+
+      const suppressed = yield* Effect.flip(
+        failingSend("E_RECIPIENT_SUPPRESSED")
+      );
+
+      expect([daily.quotaExhausted, suppressed.quotaExhausted]).toEqual([
+        true,
+        false,
+      ]);
+      expect(daily.message).toContain("E_DAILY_LIMIT_EXCEEDED");
+    })
+  );
+});
+
+describe("unsubscribe token", () => {
+  it.effect("needs no login and identifies only its own account", () =>
+    Effect.gen(function* roundTrip() {
+      const token = yield* unsubscribeToken(SECRET, ada);
+      const [account = "", signature = ""] = token.split(".");
+      const bob = yield* unsubscribeToken(SECRET, AccountId.make("user_bob"));
+      const [bobAccount = ""] = bob.split(".");
+
+      expect(yield* verifyUnsubscribeToken(SECRET, token)).toEqual(
+        Option.some(ada)
+      );
+      expect(yield* verifyUnsubscribeToken(OTHER_SECRET, token)).toEqual(
+        Option.none()
+      );
+      expect(
+        yield* verifyUnsubscribeToken(SECRET, `${bobAccount}.${signature}`)
+      ).toEqual(Option.none());
+      expect(
+        yield* Effect.forEach(
+          [
+            "",
+            account,
+            `${account}.`,
+            `${token}.x`,
+            "!!.??",
+            `${account}.AAAA`,
+          ],
+          (candidate) => verifyUnsubscribeToken(SECRET, candidate)
+        )
+      ).toEqual(Array.makeBy(6, () => Option.none()));
+    })
+  );
+});
+
+describe("unsubscribe page", () => {
+  it("asks before unsubscribing and escapes the token it echoes", () => {
+    const confirm = unsubscribePage("Confirm", `x"><script>`);
+
+    expect(confirm.status).toBe(200);
+    expect(confirm.html).toContain('method="post"');
+    expect(confirm.html).not.toContain("<script>");
+    expect(unsubscribePage("Invalid", "").status).toBe(400);
+    expect(unsubscribePage("Unavailable", "").status).toBe(503);
+  });
+});

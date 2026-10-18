@@ -6,6 +6,7 @@ const routePrefixes: readonly (readonly [
 ])[] = [
   ["/rpc", "backend"],
   ["/api/auth", "backend"],
+  ["/unsubscribe", "backend"],
   ["/account", "private"],
 ];
 
