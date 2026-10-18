@@ -9,6 +9,7 @@ import type {
   IngestReceiptValue,
   JobQueryValue,
   JobValue,
+  Sighted,
 } from "@rat-stack/core";
 
 import { statement } from "./sql-executor.js";
@@ -171,10 +172,7 @@ ON CONFLICT (id) DO UPDATE SET
     ]
   );
 
-export const sightingStatement = (
-  job: JobValue,
-  seenAt: number
-): SqlStatement =>
+export const sightingStatement = (job: Sighted, seenAt: number): SqlStatement =>
   statement(
     `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, last_seen_feed, sightings, reposts)
 VALUES (?, MIN(COALESCE((SELECT MIN(first_seen_at) FROM jobs WHERE fingerprint = ?), ?), ?), ?, ?, 1, 0)

@@ -360,6 +360,30 @@ describe("original posting links", () => {
     )
   );
 
+  it.effect("renders no href for a host outside DNS characters", () =>
+    Effect.map(
+      render(
+        "/companies/acme-robotics",
+        Preload.Listing({
+          generatedAt: 1_760_500_000_000,
+          jobs: [
+            {
+              ...acmeDirector,
+              url: `${SITE}&sol;api/auth/magic-link/verify?token=x`,
+            },
+            acmeVp,
+          ],
+          total: 2,
+        })
+      ),
+      ({ html }) => {
+        expect(html.match(/<a class="job-source"/gu)).toHaveLength(2);
+        expect(html).toContain(`href="${acmeVp.url}"`);
+        expect(html).not.toMatch(/href="[^"]*sol;api/u);
+      }
+    )
+  );
+
   it.effect.each(OWN_LINKS)(
     "never links a shortlist mark home through %s",
     (url) =>
