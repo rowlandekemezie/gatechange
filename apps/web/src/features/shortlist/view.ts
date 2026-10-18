@@ -1,4 +1,9 @@
-import { MAX_NOTES_LENGTH, Stage, stages } from "@rat-stack/core/contracts";
+import {
+  isOffSiteWebUrl,
+  MAX_NOTES_LENGTH,
+  Stage,
+  stages,
+} from "@rat-stack/core/contracts";
 import type { StageValue, TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -15,11 +20,14 @@ import type {
 } from "../../client/board/model.js";
 import { accountRouter, jobRouter } from "../../client/route.js";
 
-const originalPosting = (h: HtmlBuilder<MessageValue>, url: string): Html =>
+const originalPosting = (
+  h: HtmlBuilder<MessageValue>,
+  url: string | undefined
+): Html =>
   h.a(
     [
       h.Class("job-source"),
-      h.Href(url),
+      ...(url === undefined ? [] : [h.Href(url)]),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],
@@ -43,7 +51,10 @@ const markRow = (h: HtmlBuilder<MessageValue>, mark: MarkedJobValue): Html =>
             [h.Class("job-meta")],
             [
               h.span([h.Class("job-where")], [mark.location]),
-              originalPosting(h, mark.url),
+              originalPosting(
+                h,
+                isOffSiteWebUrl(mark.url) ? mark.url : undefined
+              ),
             ]
           ),
         ]

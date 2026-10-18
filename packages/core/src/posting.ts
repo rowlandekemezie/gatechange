@@ -5,6 +5,7 @@ import { Arrangement, EpochMillis } from "./job.js";
 import type { JobValue } from "./job.js";
 import { classifyPlacement, regionWeight } from "./location.js";
 import { classifyRole, roleWeight } from "./role.js";
+import { isOffSiteWebUrl } from "./site.js";
 
 export const Posting = Schema.Struct({
   company: Schema.String,
@@ -43,7 +44,11 @@ export const normalizePosting = (
       : Option.getOrElse(feed.company, () => "")
   );
 
-  if (title.length === 0 || company.length === 0) {
+  if (
+    title.length === 0 ||
+    company.length === 0 ||
+    !isOffSiteWebUrl(posting.url)
+  ) {
     return Option.none();
   }
 
