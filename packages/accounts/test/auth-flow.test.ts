@@ -3,18 +3,30 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import { MAGIC_LINK_TTL_MINUTES, siteHostsOf } from "@rat-stack/core";
+import {
+  CurrentViewer,
+  JobStoreUnavailable,
+  MAGIC_LINK_TTL_MINUTES,
+  siteHostsOf,
+  trackJob,
+} from "@rat-stack/core";
 import type { SiteHosts } from "@rat-stack/core";
-import { jobStoreMigrationDirectory } from "@rat-stack/job-store";
+import {
+  jobStoreMigrationDirectory,
+  SqlExecutor,
+  trackerStoreLayer,
+} from "@rat-stack/job-store";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
-import { DateTime, Effect, Option } from "effect";
+import { DateTime, Effect, Layer, Option, Schema } from "effect";
+import { HttpServerResponse } from "effect/http";
 import { vi } from "vitest";
 
 import {
   authOptions,
   EMAIL_SEND_LIMIT,
   makeAccountStore,
+  respondAsViewer,
   viewerOfRequest,
 } from "../src/index.js";
 import type { AuthSettings, MagicLinkRequest } from "../src/index.js";
@@ -648,6 +660,99 @@ describe("stage hosts", () => {
         expect(sent.map(({ url }) => new URL(url).origin)).toStrictEqual([
           PROD,
         ]);
+      })
+  );
+});
+
+const trackerOn = (database: DatabaseSync) =>
+  trackerStoreLayer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        SqlExecutor,
+        SqlExecutor.of({
+          all: (operation, sql, row) =>
+            Schema.decodeEffect(Schema.Array(row))(
+              database.prepare(sql.sql).all(...sql.params)
+            ).pipe(
+              Effect.mapError(
+                (failure) =>
+                  new JobStoreUnavailable({
+                    message: failure.message,
+                    operation,
+                  })
+              )
+            ),
+          batch: (_operation, statements) =>
+            Effect.sync(() =>
+              statements.map((sql) => ({
+                changes: Number(
+                  database.prepare(sql.sql).run(...sql.params).changes
+                ),
+              }))
+            ),
+        })
+      )
+    )
+  );
+
+describe("tracker writes over /rpc", () => {
+  const save = {
+    jobId: "greenhouse:acme/1",
+    snapshot: {
+      company: "Acme",
+      location: "Remote",
+      title: "Engineering Manager",
+      url: "https://boards.example/acme/1",
+    },
+    stage: "Saved" as const,
+  };
+
+  it.effect.each([
+    ["a cross-site fetch", { "sec-fetch-site": "cross-site" }, 403, 0],
+    ["a same-site sibling", { "sec-fetch-site": "same-site" }, 403, 0],
+    ["a foreign Origin", { origin: "https://evil.example" }, 403, 0],
+    ["a same-origin fetch", { "sec-fetch-site": "same-origin" }, 200, 1],
+  ] as const)(
+    "a member's trackJob from %s answers %d and saves %d rows",
+    ([, extra, status, rows]) =>
+      Effect.gen(function* crossSiteTrack() {
+        const { auth, database, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""));
+
+        const store = makeAccountStore(
+          (headers) =>
+            Effect.promise(
+              // @effect-diagnostics-next-line asyncFunction:off -- better-auth's api is Promise-based.
+              async () => await auth.api.getSession({ headers })
+            ),
+          { socialProviders: [] }
+        );
+
+        const response = yield* respondAsViewer(
+          store,
+          {
+            cookie: cookieOf(verified),
+            host: new URL(ORIGIN).host,
+            origin: ORIGIN,
+            ...extra,
+          },
+          (viewer) =>
+            trackJob
+              .handler(save)
+              .pipe(
+                Effect.provideService(CurrentViewer, viewer),
+                Effect.provide(trackerOn(database)),
+                Effect.as(HttpServerResponse.empty({ status: 200 }))
+              )
+        );
+
+        expect(response.status).toBe(status);
+        expect(
+          database.prepare("SELECT job_id FROM tracked_jobs").all()
+        ).toHaveLength(rows);
       })
   );
 });

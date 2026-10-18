@@ -5,6 +5,7 @@ import type {
   ViewerValue,
 } from "@rat-stack/core";
 import { Config, Data, Effect, Schema } from "effect";
+import { HttpServerResponse } from "effect/http";
 
 import { hasSessionCookie } from "./account-store.js";
 import { isCrossSite } from "./cross-site.js";
@@ -35,3 +36,22 @@ export const viewerOfRequest = (
             )
           )
         );
+
+export const respondAsViewer = <E, R>(
+  store: AccountStore["Service"],
+  headers: RequestHeaders,
+  serve: (
+    viewer: ViewerValue
+  ) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>
+) =>
+  viewerOfRequest(store, headers).pipe(
+    Effect.matchEffect({
+      onFailure: () =>
+        Effect.succeed(
+          HttpServerResponse.text("Cross-site request refused.", {
+            status: 403,
+          })
+        ),
+      onSuccess: serve,
+    })
+  );
