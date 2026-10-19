@@ -14,6 +14,7 @@ export {
   authSecret,
   CrossSiteRequest,
   MIN_AUTH_SECRET_LENGTH,
+  respondAsViewer,
   viewerOfRequest,
 } from "./request-viewer.js";
 

@@ -8,6 +8,7 @@ import { jobStoreMigrationDirectory } from "./migrations.js";
 import { SqlExecutor } from "./sql-executor.js";
 import type { SqlStatement } from "./sql-executor.js";
 import { jobStoreLayer } from "./store.js";
+import { trackerStoreLayer } from "./tracker-store.js";
 
 const unavailable = (operation: string, reason: string) =>
   new JobStoreUnavailable({
@@ -57,7 +58,7 @@ export const JobsDatabase = Cloudflare.D1.Database("JobsDatabase", {
 });
 
 export const d1JobStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
-  jobStoreLayer.pipe(
+  Layer.mergeAll(jobStoreLayer, trackerStoreLayer).pipe(
     Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
   );
 
