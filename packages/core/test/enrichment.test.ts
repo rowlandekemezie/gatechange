@@ -1493,6 +1493,38 @@ describe("enrichListing", () => {
       null,
     ],
     [
+      "a Greenhouse pay range under its location title and a benefits line",
+      "At Pinterest we believe the workplace should be equitable, inclusive, and inspiring for every employee. In an effort to provide greater transparency, we are sharing the base salary range for this position. The position is also eligible for equity. Final salary is based on a number of factors including location, travel, relevant prior experience, or particular skills and expertise.\nInformation regarding the culture at Pinterest and benefits available for this position can be found here .\nUS based applicants only\n$177,185—$364,795 USD",
+      177_185,
+      364_795,
+      { currency: "USD", max: 364_795, min: 177_185 },
+    ],
+    [
+      "a pay range under its location title, a bonus heading and a salary heading",
+      "Base Salary\nAnnual Bonus\nUS based applicants only\n$20,000—$50,000 USD",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a pay range four label lines below the base salary sentence",
+      "We are sharing the base salary range for this position.\nBenefits are listed on our site.\nOffices in New York and Austin.\nHiring now.\nUS based applicants only\n$177,185—$364,795 USD",
+      177_185,
+      364_795,
+      null,
+    ],
+    ...Array.map(
+      ["-", "‐", "‑", "‒", "–", "—", "―", "−", " to "],
+      (dash) =>
+        [
+          `a base salary range joined by ${JSON.stringify(dash)}`,
+          `Base salary $150,000${dash}$180,000 per year.`,
+          150_000,
+          180_000,
+          { currency: "USD", max: 180_000, min: 150_000 },
+        ] as const
+    ),
+    [
       "a city-labelled range under a base-salary paragraph",
       "The base salary range for this position is below.\nSan Francisco: $180,000 - $220,000",
       180_000,

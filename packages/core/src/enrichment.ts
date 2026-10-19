@@ -171,7 +171,7 @@ const amountNamed = (name: string) =>
   String.raw`(?<${name}>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?<${name}K>\s?[kK](?![a-zA-Z]))?`;
 
 const moneyPattern = new RegExp(
-  String.raw`(?:(?<floor>\b(?:from|at least|minimum(?: of)?|starting at)\s+)|(?<ceiling>\b(?:up to|as much as|maximum(?: of)?)\s+))?(?<before>${markerRun})${amountNamed("low")}(?:\s*(?<middle>${markerRun})(?:-|–|—|\bto\b|\band\b)\s*(?<between>${markerRun})${amountNamed("high")})?(?<after>(?:\s*${currencyMarker})?)`,
+  String.raw`(?:(?<floor>\b(?:from|at least|minimum(?: of)?|starting at)\s+)|(?<ceiling>\b(?:up to|as much as|maximum(?: of)?)\s+))?(?<before>${markerRun})${amountNamed("low")}(?:\s*(?<middle>${markerRun})(?:[-‐-―−]|\bto\b|\band\b)\s*(?<between>${markerRun})${amountNamed("high")})?(?<after>(?:\s*${currencyMarker})?)`,
   "gu"
 );
 
@@ -355,12 +355,29 @@ const rangeWords = new RegExp(
 const rangeOnly = (text: string) =>
   /^[\s/(),:]*$/u.test(text.replaceAll(rangeWords, " "));
 
-const headingAbove = (text: string, { start }: Span) => {
-  const lineStart = text.lastIndexOf("\n", start - 1);
+const MAX_LABEL_LINES_ABOVE = 3;
 
-  return lineStart <= 0
-    ? ""
-    : lineAround(text, { end: lineStart, start: lineStart }).before;
+const namesPay = (line: string) =>
+  lastIndexOf(basePayCue, line) !== -1 ||
+  lastIndexOf(otherPayCues, line) !== -1;
+
+const headingAbove = (text: string, { start }: Span) => {
+  let lineStart = text.lastIndexOf("\n", start - 1);
+
+  for (let seen = 0; seen < MAX_LABEL_LINES_ABOVE && lineStart > 0; seen += 1) {
+    const heading = lineAround(text, {
+      end: lineStart,
+      start: lineStart,
+    }).before;
+
+    if (namesPay(heading)) {
+      return heading;
+    }
+
+    lineStart = text.lastIndexOf("\n", lineStart - 1);
+  }
+
+  return "";
 };
 
 const isBasePay = (text: string, span: Span, title: string) => {
