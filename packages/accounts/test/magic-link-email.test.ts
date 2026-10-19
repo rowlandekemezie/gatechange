@@ -7,7 +7,7 @@ const verifyUrl =
 
 describe("magicLinkEmail", () => {
   it("links to the confirm page, so a mail scanner's GET cannot spend the token", () => {
-    const mail = magicLinkEmail("sign-in@rowlandekemezie.com", {
+    const mail = magicLinkEmail("sign-in@jobs.rowlandekemezie.com", {
       email: "ada@example.com",
       url: verifyUrl,
     });
