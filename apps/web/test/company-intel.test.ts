@@ -98,7 +98,7 @@ const textOf = (html: string) =>
   html.replaceAll(/<[^>]+>/gu, " ").replaceAll(/\s+/gu, " ");
 
 const TEASER =
-  "Pro shows how long each role has been open, how often it was reposted, a 90-day hiring trend, and typical salary bands.";
+  "Pro shows how long each role has been open, how often it was reposted, a 13-week hiring trend, and typical salary bands.";
 
 describe("the company summary", () => {
   it.effect(

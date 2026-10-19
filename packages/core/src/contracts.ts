@@ -116,6 +116,7 @@ export {
   CompanySummary,
   companySlugOf,
   companySummaryOf,
+  TREND_WEEKS,
 } from "./company-intel.js";
 
 export type { CompanySummaryValue } from "./company-intel.js";

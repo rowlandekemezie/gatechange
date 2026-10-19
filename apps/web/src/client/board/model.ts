@@ -1,7 +1,5 @@
 import {
   BoardStats,
-  CompanySummary,
-  EpochMillis,
   JobDetail,
   ListedJob,
   Stage,
@@ -13,7 +11,7 @@ import { defineTaggedUnion } from "foldkit/schema";
 
 import { Model as AccountModel } from "../account/model.js";
 import { Model as BillingModel } from "../billing/model.js";
-import { ListingRoute } from "../listing.js";
+import { Listing, ListingRoute } from "../listing.js";
 import { Route } from "../route.js";
 import { Model as SavedSearchesModel } from "../saved-searches/model.js";
 import { Filters } from "./filters.js";
@@ -39,13 +37,7 @@ export const JobState = defineTaggedUnion({
 
 export const ListingState = defineTaggedUnion({
   Failed: { message: Schema.String, route: ListingRoute },
-  Loaded: {
-    generatedAt: EpochMillis,
-    jobs: Schema.Array(JobDetail),
-    route: ListingRoute,
-    summary: Schema.NullOr(CompanySummary),
-    total: Schema.Finite,
-  },
+  Loaded: { ...Listing.fields, route: ListingRoute },
   Loading: { route: ListingRoute },
   NotAsked: {},
 });
@@ -53,12 +45,7 @@ export const ListingState = defineTaggedUnion({
 export const Preload = defineTaggedUnion({
   Job: { job: JobDetail },
   JobMissing: {},
-  Listing: {
-    generatedAt: EpochMillis,
-    jobs: Schema.Array(JobDetail),
-    summary: Schema.NullOr(CompanySummary),
-    total: Schema.Finite,
-  },
+  Listing: Listing.fields,
   Nothing: {},
 });
 
