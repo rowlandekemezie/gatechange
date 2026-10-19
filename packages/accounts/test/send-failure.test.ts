@@ -19,16 +19,17 @@ const REQUEST: MagicLinkRequest = {
 const refusedBySender = (_mail: MagicLinkEmail) =>
   Effect.fail(
     new SendEmailError({
-      cause: Object.assign(new Error("sender domain not available"), {
-        code: "E_SENDER_DOMAIN_NOT_AVAILABLE",
-      }),
+      cause: Object.assign(
+        new Error(`invalid recipient address ${REQUEST.email}`),
+        { code: "E_VALIDATION_ERROR" }
+      ),
       message: "send_email failed",
     })
   );
 
 describe("logSendFailure", () => {
   it.effect(
-    "logs Cloudflare's error code and message without the recipient or token",
+    "logs Cloudflare's error code without its message, the recipient or the token",
     () =>
       Effect.gen(function* logsCode() {
         const entries: unknown[] = [];
@@ -52,17 +53,17 @@ describe("logSendFailure", () => {
 
         const logged = JSON.stringify(entries);
 
-        expect(logged).toContain("E_SENDER_DOMAIN_NOT_AVAILABLE");
+        expect(logged).toContain("E_VALIDATION_ERROR");
         expect(entries).toStrictEqual([
           {
             fields: {
-              causeCode: "E_SENDER_DOMAIN_NOT_AVAILABLE",
-              causeMessage: "sender domain not available",
+              causeCode: "E_VALIDATION_ERROR",
               errorTag: "SendEmailError",
             },
             message: ["magic link send failed"],
           },
         ]);
+        expect(logged).not.toContain("causeMessage");
         expect(logged).not.toContain(REQUEST.email);
         expect(logged).not.toContain(TOKEN);
         expect(logged).not.toContain("magic-link/verify");

@@ -2,7 +2,6 @@ import { Effect, Option, Schema } from "effect";
 
 const ProviderCause = Schema.Struct({
   code: Schema.String,
-  message: Schema.String,
 });
 
 export interface SendFailure {
@@ -18,10 +17,6 @@ export const logSendFailure = ({ _tag, cause }: SendFailure) => {
       causeCode: Option.match(provider, {
         onNone: () => "unknown",
         onSome: ({ code }) => code,
-      }),
-      causeMessage: Option.match(provider, {
-        onNone: () => "unknown",
-        onSome: ({ message }) => message,
       }),
       errorTag: _tag,
     })
