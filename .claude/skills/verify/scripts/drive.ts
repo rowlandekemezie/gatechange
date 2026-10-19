@@ -397,6 +397,7 @@ interface Step extends Partial<BoardStateValue> {
   readonly heading?: string;
   readonly localStorageKeys?: number;
   readonly problem?: string;
+  readonly query?: string;
   readonly sent?: string;
   readonly step: string;
   readonly titles?: readonly string[];
