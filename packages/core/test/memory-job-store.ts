@@ -1,6 +1,14 @@
 import { Array, Effect, Layer, Option, pipe } from "effect";
 
-import { daysOpen, fingerprintOf, isRepost, JobStore } from "../src/index.js";
+import {
+  daysOpen,
+  fingerprintOf,
+  historyRangeOf,
+  isRepost,
+  JobStore,
+  MAX_AGE_DAYS,
+  TREND_WINDOW_MILLIS,
+} from "../src/index.js";
 import type {
   EnrichmentSkip,
   EnrichmentValue,
@@ -144,6 +152,52 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         neurons.set(claim.day, claimed + claim.neurons);
 
         return true;
+      }),
+    companyRecords: (slug, now) =>
+      Effect.sync(() => {
+        const { from, until } = historyRangeOf(slug);
+
+        const inRange = (fingerprint: string) =>
+          fingerprint >= from && fingerprint < until;
+
+        return {
+          history: [...history.entries()].flatMap(([fingerprint, found]) =>
+            inRange(fingerprint) && found.lastSeenAt > now - TREND_WINDOW_MILLIS
+              ? [
+                  {
+                    feed: lastSeenFeeds.get(fingerprint) ?? "",
+                    firstSeenAt: found.firstSeenAt,
+                    lastSeenAt: found.lastSeenAt,
+                  },
+                ]
+              : []
+          ),
+          open: [...jobs.values()].flatMap((job) => {
+            const found = history.get(fingerprintOf(job));
+
+            return inRange(fingerprintOf(job)) &&
+              job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
+              ? [
+                  {
+                    company: job.company,
+                    id: job.id,
+                    openedAt: found?.firstSeenAt ?? job.firstSeenAt,
+                    reposts: found?.reposts ?? 0,
+                    role: job.role,
+                    salary: enrichmentOf(job.id)?.salary ?? null,
+                    source: job.source,
+                    title: job.title,
+                  },
+                ]
+              : [];
+          }),
+          trackedSince:
+            history.size === 0
+              ? null
+              : Math.min(
+                  ...[...history.values()].map((found) => found.lastSeenAt)
+                ),
+        };
       }),
     feedStates: Effect.sync(() => [...states.values()]),
     find: (id) =>
