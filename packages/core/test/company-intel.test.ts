@@ -33,11 +33,18 @@ const open = (
   ...overrides,
 });
 
-const seen = (feed: string, firstDaysAgo: number, lastDaysAgo: number) =>
+const seen = (
+  feed: string,
+  firstDaysAgo: number,
+  lastDaysAgo: number,
+  company = "Acme Cloud"
+) =>
   ({
+    company,
     feed,
-    firstSeenAt: NOW - firstDaysAgo * DAY,
-    lastSeenAt: NOW - lastDaysAgo * DAY,
+    stints: [
+      { from: NOW - firstDaysAgo * DAY, until: NOW - lastDaysAgo * DAY },
+    ],
   }) satisfies HistoryRecord;
 
 const acme: CompanyRecords = {
@@ -162,6 +169,58 @@ describe("companyIntelOf", () => {
       trackedSince: NOW - 100 * DAY,
       trend: ThinTrend.make({ roles: 0, weeks: 13 }),
     });
+  });
+
+  it("counts a reopened role only in the weeks of its current and previous stints", () => {
+    const steady = seen("greenhouse:acme-cloud", 90, 0);
+
+    const intel = companyIntelOf(
+      "acme-cloud",
+      {
+        history: [
+          steady,
+          steady,
+          {
+            company: "Acme Cloud",
+            feed: "greenhouse:acme-cloud",
+            stints: [
+              { from: NOW - 2 * DAY, until: NOW },
+              { from: NOW - 90 * DAY, until: NOW - 52 * DAY },
+            ],
+          },
+        ],
+        open: [],
+        trackedSince: NOW - 90 * DAY,
+      },
+      NOW
+    );
+
+    expect(intel.trend).toStrictEqual(
+      ShownTrend.make({
+        weeks: [3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 3].map((count, index) => ({
+          open: count,
+          weekEnding: NOW - (11 - index) * 7 * DAY,
+        })),
+      })
+    );
+  });
+
+  it("leaves another company whose name shares the slug's letters out of the trend", () => {
+    const intel = companyIntelOf(
+      "acme-cloud",
+      {
+        history: [
+          seen("greenhouse:acme-cloud", 30, 0),
+          seen("greenhouse:acme-cloud", 30, 0),
+          seen("lever:acmecloud", 30, 0, "AcmeCloud"),
+        ],
+        open: [],
+        trackedSince: NOW - 30 * DAY,
+      },
+      NOW
+    );
+
+    expect(intel.trend).toStrictEqual(ThinTrend.make({ roles: 2, weeks: 4 }));
   });
 
   it("shows no trend for a company with one role", () => {

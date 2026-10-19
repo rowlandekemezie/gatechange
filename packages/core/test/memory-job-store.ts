@@ -7,6 +7,8 @@ import {
   isRepost,
   JobStore,
   MAX_AGE_DAYS,
+  paidFeaturesAllowed,
+  sourceOfFeedKey,
   TREND_WINDOW_MILLIS,
 } from "../src/index.js";
 import type {
@@ -18,7 +20,17 @@ import type {
   JobValue,
   ListingHistory,
   Sighted,
+  Stint,
 } from "../src/index.js";
+
+interface IntelHistory {
+  readonly company: string;
+  readonly feed: string;
+  readonly firstSeenAt: number;
+  readonly previous: Stint | null;
+  readonly reposts: number;
+  readonly stint: Stint;
+}
 
 export interface MemoryJobStore {
   readonly enrichments: () => ReadonlyMap<string, EnrichmentValue>;
@@ -40,6 +52,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const enrichments = new Map<string, EnrichmentValue>();
   const skips = new Map<string, EnrichmentSkip>();
 
+  const intel = new Map<string, IntelHistory>();
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
   const lease = { heldUntil: 0, startedAt: 0 };
@@ -99,6 +112,53 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     ) {
       lastSeenFeeds.set(fingerprint, job.feed);
     }
+  };
+
+  const sightIntel = (job: Sighted, seenAt: number) => {
+    if (
+      !Option.exists(sourceOfFeedKey(job.feed), (source) =>
+        paidFeaturesAllowed(source)
+      )
+    ) {
+      return;
+    }
+
+    const fingerprint = fingerprintOf(job);
+    const found = intel.get(fingerprint);
+
+    if (found === undefined) {
+      intel.set(fingerprint, {
+        company: job.company,
+        feed: job.feed,
+        firstSeenAt: seenAt,
+        previous: null,
+        reposts: 0,
+        stint: { from: seenAt, until: seenAt },
+      });
+
+      return;
+    }
+
+    const reopened = isRepost({
+      lastSeenAt: found.stint.until,
+      lastSeenFeedSuccessAt: successBefore(found.feed, seenAt),
+      seenAt,
+    });
+
+    const newer =
+      found.stint.until < seenAt ||
+      (found.stint.until === seenAt && job.feed < found.feed);
+
+    const stint = reopened ? { from: seenAt, until: seenAt } : found.stint;
+
+    intel.set(fingerprint, {
+      company: found.stint.until < seenAt ? job.company : found.company,
+      feed: newer ? job.feed : found.feed,
+      firstSeenAt: found.firstSeenAt,
+      previous: reopened ? found.stint : found.previous,
+      reposts: found.reposts + (reopened ? 1 : 0),
+      stint: { from: stint.from, until: Math.max(stint.until, seenAt) },
+    });
   };
 
   const enrichmentOf = (id: string) => enrichments.get(id) ?? null;
@@ -161,19 +221,23 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           fingerprint >= from && fingerprint < until;
 
         return {
-          history: [...history.entries()].flatMap(([fingerprint, found]) =>
-            inRange(fingerprint) && found.lastSeenAt > now - TREND_WINDOW_MILLIS
+          history: [...intel.entries()].flatMap(([fingerprint, found]) =>
+            inRange(fingerprint) &&
+            found.stint.until > now - TREND_WINDOW_MILLIS
               ? [
                   {
-                    feed: lastSeenFeeds.get(fingerprint) ?? "",
-                    firstSeenAt: found.firstSeenAt,
-                    lastSeenAt: found.lastSeenAt,
+                    company: found.company,
+                    feed: found.feed,
+                    stints:
+                      found.previous === null
+                        ? [found.stint]
+                        : [found.stint, found.previous],
                   },
                 ]
               : []
           ),
           open: [...jobs.values()].flatMap((job) => {
-            const found = history.get(fingerprintOf(job));
+            const found = intel.get(fingerprintOf(job));
 
             return inRange(fingerprintOf(job)) &&
               job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
@@ -181,7 +245,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
                   {
                     company: job.company,
                     id: job.id,
-                    openedAt: found?.firstSeenAt ?? job.firstSeenAt,
+                    openedAt: found?.stint.from ?? job.firstSeenAt,
                     reposts: found?.reposts ?? 0,
                     role: job.role,
                     salary: enrichmentOf(job.id)?.salary ?? null,
@@ -192,10 +256,10 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               : [];
           }),
           trackedSince:
-            history.size === 0
+            intel.size === 0
               ? null
               : Math.min(
-                  ...[...history.values()].map((found) => found.lastSeenAt)
+                  ...[...intel.values()].map((found) => found.firstSeenAt)
                 ),
         };
       }),
@@ -295,6 +359,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       Effect.sync(() => {
         for (const listing of listings) {
           sight(listing, seenAt);
+          sightIntel(listing, seenAt);
         }
       }),
     recordSkip: (id, skip) =>
@@ -323,6 +388,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         for (const job of incoming) {
           sight(job, seenAt);
+          sightIntel(job, seenAt);
 
           const existing = Option.fromNullishOr(jobs.get(job.id));
 

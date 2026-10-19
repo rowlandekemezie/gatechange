@@ -150,7 +150,7 @@ const withStores = <A, E>(
 
 describe("the companyIntel capability", () => {
   it.effect(
-    "gives a Pro member days open, reposts from history, a trend and bands, without Remotive data or a look-alike company",
+    "gives a Pro member days open in the current stint, reposts from history, a trend and bands, without Remotive data or a look-alike company",
     () =>
       withStores(
         Effect.gen(function* proIntel() {
@@ -227,7 +227,7 @@ describe("the companyIntel capability", () => {
                   title: "Director of Platform",
                 },
                 {
-                  daysOpen: 29,
+                  daysOpen: 9,
                   id: idOf("VP Engineering"),
                   reposts: 2,
                   role: "VicePresident",
@@ -236,8 +236,13 @@ describe("the companyIntel capability", () => {
               ],
               trackedSince: NOW,
               trend: ShownTrend.make({
-                weeks: [3, 2, 1, 0].map((weeksAgo) => ({
-                  open: 2,
+                weeks: [
+                  [3, 1],
+                  [2, 2],
+                  [1, 2],
+                  [0, 2],
+                ].map(([weeksAgo = 0, open = 0]) => ({
+                  open,
                   weekEnding: NOW + (29 - 7 * weeksAgo) * DAY_MILLIS,
                 })),
               }),
