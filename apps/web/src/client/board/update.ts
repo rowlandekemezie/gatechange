@@ -10,6 +10,9 @@ import type { MessageValue as AccountMessageValue } from "../account/message.js"
 import { SessionState } from "../account/model.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
+import type { MessageValue as AgentTokensMessageValue } from "../agent-tokens/message.js";
+import type { ModelValue as AgentTokensModelValue } from "../agent-tokens/model.js";
+import * as AgentTokens from "../agent-tokens/update.js";
 import type { MessageValue as BillingMessageValue } from "../billing/message.js";
 import type { ModelValue as BillingModelValue } from "../billing/model.js";
 import * as Billing from "../billing/update.js";
@@ -118,6 +121,24 @@ const foldSavedSearchesEntered = Update.foldChildStep({
   update: SavedSearches.entered,
 });
 
+const agentTokensChild = {
+  read: (model: ModelValue) => Option.some(model.agentTokens),
+  toParentMessage: (message: AgentTokensMessageValue) =>
+    Message.GotAgentTokensMessage({ message }),
+  write: (model: ModelValue, agentTokens: AgentTokensModelValue) =>
+    modifyFields(model, { agentTokens: () => agentTokens }),
+};
+
+const foldAgentTokens = Update.foldChild({
+  ...agentTokensChild,
+  update: AgentTokens.update,
+});
+
+const foldAgentTokensEntered = Update.foldChildStep({
+  ...agentTokensChild,
+  update: AgentTokens.entered,
+});
+
 const billingChild = {
   read: (model: ModelValue) => Option.some(model.billing),
   toParentMessage: (message: BillingMessageValue) =>
@@ -165,8 +186,12 @@ const enteredAccount = (
   model: ModelValue,
   notice: AccountNoticeValue
 ): UpdateReturn =>
-  joined(joined(foldAccountEntered(model), foldSavedSearchesEntered), (next) =>
-    enteredBilling(next, notice === "CheckoutDone")
+  joined(
+    joined(
+      joined(foldAccountEntered(model), foldSavedSearchesEntered),
+      foldAgentTokensEntered
+    ),
+    (next) => enteredBilling(next, notice === "CheckoutDone")
   );
 
 const sameFilters = Schema.toEquivalence(Filters);
@@ -503,7 +528,10 @@ const followedBilling = (step: UpdateReturn): UpdateReturn =>
     SignedIn: () => joined(step, foldBillingStep(Billing.signedIn)),
     SignedOut: () => ({
       ...step,
-      model: modifyFields(step.model, { billing: Billing.signedOut }),
+      model: modifyFields(step.model, {
+        agentTokens: AgentTokens.signedOut,
+        billing: Billing.signedOut,
+      }),
     }),
   });
 
@@ -566,6 +594,7 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
 
 export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   const account = Account.init();
+  const agentTokens = AgentTokens.init();
   const billing = Billing.init();
   const savedSearches = SavedSearches.init();
 
@@ -573,6 +602,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
     preloaded(
       {
         account: account.model,
+        agentTokens: agentTokens.model,
         awaitingEcho: [],
         billing: billing.model,
         draftSearch: "",
@@ -764,6 +794,8 @@ export const update = (
     },
     GotAccountMessage: ({ message: accountMessage }) =>
       followedSession(foldAccount(model, accountMessage)),
+    GotAgentTokensMessage: ({ message: agentTokensMessage }) =>
+      foldAgentTokens(model, agentTokensMessage),
     GotBillingMessage: ({ message: billingMessage }) =>
       foldBilling(model, billingMessage),
     GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>

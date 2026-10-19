@@ -12,6 +12,7 @@ import { UrlRequest } from "foldkit/navigation";
 import { Url } from "foldkit/url";
 
 import { Message as AccountMessage } from "../account/message.js";
+import { Message as AgentTokensMessage } from "../agent-tokens/message.js";
 import { Message as BillingMessage } from "../billing/message.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { Message as SavedSearchesMessage } from "../saved-searches/message.js";
@@ -52,6 +53,7 @@ export const Message = defineMessageUnion({
   FailedSyncTracker: { message: Schema.String, revision: Schema.Finite },
   FailedTrackerChange: { message: Schema.String, revision: Schema.Finite },
   GotAccountMessage: { message: AccountMessage },
+  GotAgentTokensMessage: { message: AgentTokensMessage },
   GotBillingMessage: { message: BillingMessage },
   GotSavedSearchesMessage: { message: SavedSearchesMessage },
   SubmittedSearch: {},
