@@ -1,18 +1,23 @@
 import { Billing, BillingUnavailable } from "@rat-stack/core";
-import type { CheckoutRequest, PlanValue } from "@rat-stack/core";
+import type { AccountValue, CheckoutRequest, PlanValue } from "@rat-stack/core";
 import { Effect, Option, Schema } from "effect";
 
 export interface CheckoutSessionRequest {
   readonly cancel_url: string;
   readonly client_reference_id: string;
-  readonly customer?: string;
-  readonly customer_email?: string;
+  readonly customer: string;
   readonly line_items: { price: string; quantity: number }[];
   readonly managed_payments: { enabled: boolean };
   readonly metadata: Record<string, string>;
   readonly mode: "subscription";
   readonly subscription_data: { metadata: Record<string, string> };
   readonly success_url: string;
+}
+
+export interface CustomerRequest {
+  readonly email: string;
+  readonly metadata: Record<string, string>;
+  readonly name: string;
 }
 
 export interface PortalSessionRequest {
@@ -25,6 +30,9 @@ export interface StripeSessions<E> {
   readonly createCheckout: (
     request: CheckoutSessionRequest
   ) => Effect.Effect<{ readonly url?: string | null }, E>;
+  readonly createCustomer: (
+    request: CustomerRequest
+  ) => Effect.Effect<{ readonly id: string }, E>;
   readonly createPortal: (
     request: PortalSessionRequest
   ) => Effect.Effect<{ readonly url: string }, E>;
@@ -43,10 +51,7 @@ export const checkoutSessionRequest = (
   return {
     cancel_url: new URL("/pricing", siteOrigin).href,
     client_reference_id: request.account.id,
-    ...Option.match(request.customer, {
-      onNone: () => ({ customer_email: request.account.email }),
-      onSome: (customer) => ({ customer }),
-    }),
+    customer: request.customer,
     line_items: [{ price, quantity: 1 }],
     managed_payments: { enabled: false },
     metadata,
@@ -83,6 +88,12 @@ const unavailable = (step: string) => (cause: unknown) => {
   );
 };
 
+export const customerRequest = (account: AccountValue): CustomerRequest => ({
+  email: account.email,
+  metadata: { account_id: account.id },
+  name: account.name,
+});
+
 export const makeBilling = <E>(sessions: StripeSessions<E>) =>
   Billing.of({
     checkout: (request) =>
@@ -98,6 +109,14 @@ export const makeBilling = <E>(sessions: StripeSessions<E>) =>
         return yield* Effect.fromOption(Option.fromNullishOr(session.url)).pipe(
           Effect.catch(unavailable("checkout url"))
         );
+      }),
+    createCustomer: (account) =>
+      Effect.gen(function* createCustomer() {
+        const customer = yield* sessions
+          .createCustomer(customerRequest(account))
+          .pipe(Effect.catch(unavailable("customer")));
+
+        return customer.id;
       }),
     portal: (customer) =>
       Effect.gen(function* portal() {
@@ -120,5 +139,6 @@ const notOnSale = () =>
 
 export const billingOff = Billing.of({
   checkout: notOnSale,
+  createCustomer: notOnSale,
   portal: notOnSale,
 });

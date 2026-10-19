@@ -16,6 +16,7 @@ import {
 
 import {
   checkoutSessionRequest,
+  customerRequest,
   billingChangeOf,
   makeBilling,
   signatureHeader,
@@ -316,9 +317,9 @@ describe("Stripe events to billing changes", () => {
 });
 
 describe("checkout session request", () => {
-  it("tags the session and the subscription with the member and asks a new buyer for their email", () => {
+  it("tags the session and the subscription with the member and bills their linked customer", () => {
     const request = checkoutSessionRequest(
-      { account: ada, customer: Option.none(), plan: "Yearly" },
+      { account: ada, customer: "cus_TestAda", plan: "Yearly" },
       "price_yearly",
       "https://jobs.example"
     );
@@ -326,7 +327,7 @@ describe("checkout session request", () => {
     expect(request).toEqual({
       cancel_url: "https://jobs.example/pricing",
       client_reference_id: "user_ada",
-      customer_email: "ada@example.com",
+      customer: "cus_TestAda",
       line_items: [{ price: "price_yearly", quantity: 1 }],
       managed_payments: { enabled: false },
       metadata: { account_id: "user_ada" },
@@ -336,17 +337,12 @@ describe("checkout session request", () => {
     });
   });
 
-  it("reuses the member's Stripe customer on a return visit", () => {
-    const request = checkoutSessionRequest(
-      { account: ada, customer: Option.some("cus_TestAda"), plan: "Monthly" },
-      "price_monthly",
-      "https://jobs.example"
-    );
-
-    expect([request.customer, request.customer_email]).toEqual([
-      "cus_TestAda",
-      undefined,
-    ]);
+  it("creates the member's Stripe customer with their email, name and account id", () => {
+    expect(customerRequest(ada)).toEqual({
+      email: "ada@example.com",
+      metadata: { account_id: "user_ada" },
+      name: "Ada",
+    });
   });
 
   it.effect(
@@ -364,6 +360,7 @@ describe("checkout session request", () => {
                 request_log_url: "https://dashboard.stripe.com/test/logs/req_1",
               })
             ),
+          createCustomer: () => Effect.succeed({ id: "cus_TestAda" }),
           createPortal: () => Effect.succeed({ url: "https://portal.example" }),
           portalConfiguration: Effect.succeed("bpc_1"),
           priceOf: () => Effect.succeed("price_monthly"),
@@ -371,7 +368,7 @@ describe("checkout session request", () => {
         });
 
         const failure = yield* billing
-          .checkout({ account: ada, customer: Option.none(), plan: "Monthly" })
+          .checkout({ account: ada, customer: "cus_TestAda", plan: "Monthly" })
           .pipe(
             Effect.flip,
             Effect.provide(

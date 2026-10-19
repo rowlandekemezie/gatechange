@@ -4,10 +4,16 @@ export { stripeKeyRefusal, StripeKeyRefused, stripeModeOf } from "./keys.js";
 
 export type { StripeKeys, StripeMode } from "./keys.js";
 
-export { billingOff, checkoutSessionRequest, makeBilling } from "./live.js";
+export {
+  billingOff,
+  checkoutSessionRequest,
+  customerRequest,
+  makeBilling,
+} from "./live.js";
 
 export type {
   CheckoutSessionRequest,
+  CustomerRequest,
   PortalSessionRequest,
   StripeSessions,
 } from "./live.js";

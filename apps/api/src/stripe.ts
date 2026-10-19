@@ -66,12 +66,17 @@ export const stripeBilling = Effect.fn("stripeBilling")(function* stripeBilling(
   const portalConfiguration = yield* catalog.portal.id;
   const secret = yield* catalog.webhook.secret;
   const createCheckout = yield* Stripe.CreateCheckoutSession();
+  const createCustomer = yield* Stripe.CreateCustomer();
   const createPortal = yield* Stripe.CreateBillingPortalSession();
 
   return {
     billing: makeBilling({
       createCheckout: (request) =>
         createCheckout(request).pipe(
+          Effect.provide(RuntimeContext.RuntimeContext.phantom)
+        ),
+      createCustomer: (request) =>
+        createCustomer(request).pipe(
           Effect.provide(RuntimeContext.RuntimeContext.phantom)
         ),
       createPortal: (request) =>

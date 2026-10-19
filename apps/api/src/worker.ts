@@ -380,6 +380,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         Cloudflare.Email.SendBinding,
         CloudflareD1(JobsDatabase),
         Stripe.CreateCheckoutSessionHttp,
+        Stripe.CreateCustomerHttp,
         Stripe.CreateBillingPortalSessionHttp
       )
     )
