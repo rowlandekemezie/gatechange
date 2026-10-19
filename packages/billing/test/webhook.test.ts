@@ -51,7 +51,7 @@ const endpoint: StripeEndpoint = { ...sandbox, secret };
 
 class InvalidRequestError extends Data.TaggedError("InvalidRequestError")<{
   readonly message: string;
-  readonly request_log_url: string;
+  readonly request_log_url: string | undefined;
 }> {}
 
 const NOW = 1_760_600_100_000;
@@ -421,6 +421,52 @@ describe("checkout session request", () => {
               stripeRequestLog: "https://dashboard.stripe.com/test/logs/req_1",
             },
             message: ["stripe checkout failed"],
+          },
+        ]);
+      })
+  );
+
+  it.effect(
+    "logs a refusal that has no request log, such as Stripe rejecting the API key",
+    () =>
+      Effect.gen(function* logsKeyRefusal() {
+        const entries: unknown[] = [];
+
+        const billing = makeBilling({
+          createCheckout: () => Effect.succeed({ url: "https://pay.example" }),
+          createCustomer: () =>
+            Effect.fail(
+              new InvalidRequestError({
+                message:
+                  "Invalid API Key provided: rk_test_***********************0000",
+                request_log_url: undefined,
+              })
+            ),
+          createPortal: () => Effect.succeed({ url: "https://portal.example" }),
+          portalConfiguration: Effect.succeed("bpc_1"),
+          priceOf: () => Effect.succeed("price_monthly"),
+          siteOrigin: "https://jobs.example",
+        });
+
+        yield* billing
+          .createCustomer(ada)
+          .pipe(
+            Effect.flip,
+            Effect.provide(
+              Logger.layer([
+                Logger.make(({ fiber }) =>
+                  entries.push(fiber.getRef(References.CurrentLogAnnotations))
+                ),
+              ])
+            )
+          );
+
+        expect(entries).toStrictEqual([
+          {
+            stripeError: "InvalidRequestError",
+            stripeMessage:
+              "Invalid API Key provided: rk_test_***********************0000",
+            stripeRequestLog: "none",
           },
         ]);
       })

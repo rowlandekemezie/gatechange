@@ -62,9 +62,9 @@ export const checkoutSessionRequest = (
 };
 
 const StripeRefusal = Schema.Struct({
-  _tag: Schema.optionalKey(Schema.String),
-  message: Schema.optionalKey(Schema.String),
-  request_log_url: Schema.optionalKey(Schema.String),
+  _tag: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+  request_log_url: Schema.optional(Schema.String),
 });
 
 const unavailable = (step: string) => (cause: unknown) => {
