@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   agentSources,
+  boardStats,
   CurrentViewer,
   getJob,
   JobStore,
@@ -110,6 +111,21 @@ describe("agent sources", () => {
           expect(Option.isSome(yield* getJob.handler({ id: "r:1" }))).toBe(
             true
           );
+
+          const agentStats = yield* boardStats
+            .handler({})
+            .pipe(Effect.provideService(ServedSources, agentSources()));
+
+          const boardWide = yield* boardStats.handler({});
+
+          expect(agentStats.activeJobs).toBe(agents.total);
+          expect(agentStats.regions).toStrictEqual([
+            { count: 2, region: "RemoteCanada" },
+          ]);
+          expect(agentStats.roles).toStrictEqual([
+            { count: 2, role: "Director" },
+          ]);
+          expect(boardWide.activeJobs).toBe(board.total);
         }).pipe(as(Viewer.Anonymous()))
       )
   );

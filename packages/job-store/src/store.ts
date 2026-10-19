@@ -276,19 +276,31 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         return { removed: removed?.changes ?? 0, upserted: jobs.length };
       }),
 
-    stats: (now) =>
+    stats: (now, sources) =>
       Effect.all(
         {
-          active: sql.all("activeJobs", activeCountStatement(now), TotalRow),
+          active: sql.all(
+            "activeJobs",
+            activeCountStatement(now, sources),
+            TotalRow
+          ),
           feeds: sql.all("feedHealth", feedHealthStatement, FeedHealthRow),
           lastRun: sql.all("lastRun", lastRunStatement, RunRow),
-          newToday: sql.all("newToday", newTodayStatement(now), TotalRow),
+          newToday: sql.all(
+            "newToday",
+            newTodayStatement(now, sources),
+            TotalRow
+          ),
           regions: sql.all(
             "regionCounts",
-            regionCountsStatement(now),
+            regionCountsStatement(now, sources),
             RegionCountRow
           ),
-          roles: sql.all("roleCounts", roleCountsStatement(now), RoleCountRow),
+          roles: sql.all(
+            "roleCounts",
+            roleCountsStatement(now, sources),
+            RoleCountRow
+          ),
         },
         { concurrency: 3 }
       ).pipe(
