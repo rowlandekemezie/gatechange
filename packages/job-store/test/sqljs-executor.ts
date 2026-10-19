@@ -9,6 +9,7 @@ import {
   jobStoreLayer,
   jobStoreMigrationDirectory,
   SqlExecutor,
+  trackerStoreLayer,
 } from "../src/index.js";
 import type { SqlStatement } from "../src/index.js";
 
@@ -74,16 +75,28 @@ export const seededSqlJsJobStore = Effect.fnUntraced(function* makeSqlJsStore(
             operation,
             cause instanceof Error ? cause : new Error(String(cause))
           ),
-        try: () =>
-          statements.map((sql) => {
-            database.run(sql.sql, [...sql.params]);
+        try: () => {
+          database.run("BEGIN");
 
-            return { changes: database.getRowsModified() };
-          }),
+          try {
+            const results = statements.map((sql) => {
+              database.run(sql.sql, [...sql.params]);
+
+              return { changes: database.getRowsModified() };
+            });
+
+            database.run("COMMIT");
+
+            return results;
+          } catch (error) {
+            database.run("ROLLBACK");
+            throw error;
+          }
+        },
       }),
   });
 
-  return jobStoreLayer.pipe(
+  return Layer.mergeAll(jobStoreLayer, trackerStoreLayer).pipe(
     Layer.provideMerge(Layer.succeed(SqlExecutor, executor))
   );
 });

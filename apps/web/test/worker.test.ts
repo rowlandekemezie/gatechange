@@ -53,13 +53,18 @@ const backend = HttpRouter.toWebHandler(
         account: () => Effect.die("account is not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         getJob: () => Effect.succeed(Option.none()),
+        importShortlist: () => Effect.die("the tracker is not served here"),
         listJobs: () =>
           Effect.succeed({
             generatedAt: 1_760_500_000_000,
             jobs: [director],
             total: 1,
           }),
+        noteTrackedJob: () => Effect.die("the tracker is not served here"),
         signInOptions: () => Effect.succeed({ socialProviders: [] }),
+        trackJob: () => Effect.die("the tracker is not served here"),
+        trackedJobs: () => Effect.die("the tracker is not served here"),
+        untrackJob: () => Effect.die("the tracker is not served here"),
       }),
       RpcSerialization.layerJson,
     ])

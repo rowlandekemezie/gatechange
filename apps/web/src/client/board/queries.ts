@@ -1,6 +1,9 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
-import type { JobQueryValue } from "@rat-stack/core/contracts";
+import type {
+  JobQueryValue,
+  TrackRequestValue,
+} from "@rat-stack/core/contracts";
 import { Context, Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { RpcClient, RpcSerialization } from "effect/rpc";
@@ -16,9 +19,16 @@ const make = Effect.gen(function* makeJobQueries() {
 
   return {
     getJob: (id: string) => client.getJob({ id }),
+    importShortlist: (jobs: readonly TrackRequestValue[]) =>
+      client.importShortlist({ jobs }),
     listJobs: (query: JobQueryValue) => client.listJobs(query),
+    noteTrackedJob: (jobId: string, notes: string) =>
+      client.noteTrackedJob({ jobId, notes }),
     signInOptions: client.signInOptions({}),
     stats: client.boardStats({}),
+    trackJob: (job: TrackRequestValue) => client.trackJob(job),
+    trackedJobs: client.trackedJobs({}),
+    untrackJob: (jobId: string) => client.untrackJob({ jobId }),
   };
 });
 

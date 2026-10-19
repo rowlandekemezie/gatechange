@@ -21,4 +21,6 @@ export type {
 
 export { jobStoreLayer, makeJobStore } from "./store.js";
 
+export { makeTrackerStore, trackerStoreLayer } from "./tracker-store.js";
+
 export { jobStoreMigrationDirectory } from "./migrations.js";

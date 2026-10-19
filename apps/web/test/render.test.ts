@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type {
   JobDetailValue,
   JobPageValue,
+  TrackedJobValue,
   JobQueryValue,
   JobValue,
   ListedJobValue,
@@ -13,7 +14,11 @@ import { fromString } from "foldkit/url";
 
 import indexHtml from "../index.html?raw";
 import { application } from "../src/client/application.js";
-import { Preload } from "../src/client/board/model.js";
+import {
+  ImportOffer,
+  Preload,
+  TrackerState,
+} from "../src/client/board/model.js";
 import type {
   MarkedJobValue,
   PreloadValue,
@@ -326,6 +331,49 @@ const markOf = (job: ListedJobValue): MarkedJobValue => ({
   url: job.url,
 });
 
+const renderRemoteTracker = (jobs: readonly TrackedJobValue[]) =>
+  renderToString(
+    {
+      ...application,
+      init: (...args: Parameters<typeof application.init>) => {
+        const started = application.init(...args);
+
+        return {
+          ...started,
+          model: {
+            ...started.model,
+            tracker: TrackerState.Remote({
+              adding: [],
+              jobs,
+              loaded: true,
+              offer: ImportOffer.None(),
+              problem: Option.none(),
+            }),
+          },
+        };
+      },
+    },
+    {
+      flags: { origin: ORIGIN, preload: Preload.Nothing() },
+      url: `${ORIGIN}/shortlist`,
+    }
+  );
+
+const trackedFrom = (job: ListedJobValue, url: string): TrackedJobValue => ({
+  jobId: job.id,
+  listed: true,
+  movedAt: 1_760_000_000_000,
+  notes: "",
+  savedAt: 1_760_000_000_000,
+  snapshot: {
+    company: job.company,
+    location: job.location,
+    title: job.title,
+    url,
+  },
+  stage: "Saved",
+});
+
 const renderTracking = (
   path: string,
   preload: PreloadValue,
@@ -416,6 +464,46 @@ describe("original posting links", () => {
           expect(
             linksHome(html, jobRouter({ id: acmeDirector.id }))
           ).toStrictEqual([]);
+        }
+      )
+  );
+});
+
+const OWN_VERIFY = `${SITE}/api/auth/magic-link/verify?token=x`;
+
+describe("tracker row original posting link", () => {
+  it.effect.each(OWN_LINKS)(
+    "never links a tracker row home through %s",
+    (url) =>
+      Effect.map(
+        renderRemoteTracker([
+          trackedFrom(acmeDirector, url),
+          trackedFrom(acmeVp, acmeVp.url),
+        ]),
+        ({ html }) => {
+          expect(html.match(/<a class="job-source"/gu)).toHaveLength(2);
+          expect(html).toContain(`href="${acmeVp.url}"`);
+          expect(linksHome(html, "/shortlist")).toStrictEqual([]);
+        }
+      )
+  );
+
+  it.effect(
+    "links a tracker row only to an absolute posting off this site",
+    () =>
+      Effect.map(
+        renderRemoteTracker([
+          trackedFrom(acmeDirector, OWN_VERIFY),
+          trackedFrom(acmeVp, "/jobs/legacy-relative"),
+          trackedFrom(acmeVp, "ftp://files.example.com/old"),
+          trackedFrom(acmeVp, acmeVp.url),
+        ]),
+        ({ html }) => {
+          expect(html.match(/<a class="job-source"/gu)).toHaveLength(4);
+          expect(html).not.toContain(`href="${OWN_VERIFY}"`);
+          expect(html).not.toContain('href="/jobs/legacy-relative"');
+          expect(html).not.toContain("ftp://files.example.com");
+          expect(html).toContain(`href="${acmeVp.url}"`);
         }
       )
   );

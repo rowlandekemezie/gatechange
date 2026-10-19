@@ -78,6 +78,14 @@ Scenarios:
 - `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
 - `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
 - `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.
+- `tracker-import` presses `Save` on the first two rows and `Applied` on the third while signed out, then signs in. It requires a `.import-offer` prompt that names `--email` and `3 jobs` while the tracker is still empty and the `jobs.shortlist.v1` key is still set. It saves the prompt as `<name>-prompt.png`, then presses `Move them` and requires all three in the tracker exactly once with the key gone. Run it twice with the same `--email` to prove a second import adds nothing.
+- `tracker-import-decline` saves the same three rows, signs in, presses `Keep them in this browser`, and requires the prompt gone, the tracker empty, and all three titles still in the `jobs.shortlist.v1` key.
+- `tracker-list` signs in and reports the tracker's sections and titles. Run it with the same `--email` as another drive to act as a second browser.
+- `tracker-stages` signs in, saves the first row if the tracker is empty, and moves the first card through Applied, Offer, Rejected, Saved, and Interviewing, reloading after each move. It fails if the page scrolls sideways.
+- `tracker-note` signs in, writes a note on the first card, reloads, and requires the note.
+- `tracker-remove` signs in, removes the first card, reloads, and requires it gone.
+- `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
+- `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. It then reads the session cookie over the DevTools protocol and replays it from Node: a `trackJob` with `sec-fetch-site: cross-site` and a foreign `Origin` must answer 403, and a `trackedJobs` with the same cookie and same-origin headers must answer as a member, which proves the refusal came from the cross-site guard. Read the victim's row from the local D1 afterwards to prove it did not change.
 
 Flags:
 

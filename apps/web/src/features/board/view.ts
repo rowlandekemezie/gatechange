@@ -32,7 +32,7 @@ import type {
   PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
-import { markButtons, markKindOf } from "../../client/board/marks.js";
+import { markButtons, stageOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
@@ -309,7 +309,11 @@ export const jobRow = (
   job: ListedJobValue,
   now: number
 ): Html => {
-  const isApplied = Option.contains(markKindOf(model, job.id), "Applied");
+  const isApplied = Option.exists(
+    stageOf(model, job.id),
+    (stage) => stage !== "Saved"
+  );
+
   const isNew = now - job.firstSeenAt < NEW_WINDOW;
 
   const where =

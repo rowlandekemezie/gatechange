@@ -16,8 +16,12 @@ import {
 } from "../../features/board/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
-import { shortlistPage } from "../../features/shortlist/view.js";
+import {
+  shortlistPage,
+  trackerNotices,
+} from "../../features/shortlist/view.js";
 import { boardUrl, canonicalPathOf, Route, shortlistRouter } from "../route.js";
+import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
@@ -48,7 +52,7 @@ const tabs = (model: ModelValue, h: H): Html =>
         h,
         shortlistRouter(),
         Schema.is(Route.Shortlist)(model.route),
-        `Your shortlist (${model.marks.length})`
+        `Your shortlist (${shortlistSize(model)})`
       ),
       sessionLink(
         model.account.session,
@@ -129,6 +133,7 @@ export const view = (model: ModelValue, h: H): Document =>
           ? [boardMasthead(model, h)]
           : []),
         tabs(model, h),
+        ...trackerNotices(model, h),
         Route.match<Html>(model.route, {
           Account: ({ notice }) =>
             h.submodel({
@@ -158,6 +163,6 @@ export const view = (model: ModelValue, h: H): Document =>
       Job: () => jobTitle(model),
       NotFound: () => "Page not found",
       Role: () => listingTitle(model),
-      Shortlist: () => `Your shortlist (${model.marks.length})`,
+      Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
     }),
   });
