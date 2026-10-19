@@ -174,7 +174,7 @@ describe("company intel on a company page", () => {
         const text = textOf(html);
 
         expect(text).toContain(
-          "Pro shows how long each role has been open, how often it was reposted, a 90-day hiring trend, and typical salary bands."
+          "Pro shows how long each role has been open, how often it was reposted, a 13-week hiring trend, and typical salary bands."
         );
 
         for (const detail of PRO_DETAIL) {

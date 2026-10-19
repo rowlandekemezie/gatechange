@@ -2,6 +2,7 @@ import {
   paidFeaturesAllowed,
   SourceName,
   SourceTerms,
+  TREND_WEEKS,
 } from "@rat-stack/core/contracts";
 import type {
   CompanyIntelValue,
@@ -271,7 +272,7 @@ const teaser = (h: H): Html =>
   h.p(
     [h.Class("upgrade-prompt intel-teaser")],
     [
-      "Pro shows how long each role has been open, how often it was reposted, a 90-day hiring trend, and typical salary bands. ",
+      `Pro shows how long each role has been open, how often it was reposted, a ${TREND_WEEKS}-week hiring trend, and typical salary bands. `,
       h.a([h.Href(pricingRouter())], ["See Pro plans"]),
     ]
   );
