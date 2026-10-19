@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 export const RoleLevel = Schema.Literals([
   "VicePresident",
@@ -94,6 +94,9 @@ export const JobQuery = Schema.Struct({
   offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   regions: Schema.Array(Region),
   roles: Schema.Array(RoleLevel),
+  salaryListed: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
   search: Schema.String.check(Schema.isMaxLength(80)),
   sort: JobSort,
 });

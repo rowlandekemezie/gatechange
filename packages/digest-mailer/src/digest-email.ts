@@ -37,10 +37,29 @@ export const unsubscribeLink = (siteOrigin: string, token: string) => {
   return url.href;
 };
 
-const subjectOf = (digest: Digest) =>
+const reasonOf = (digest: Digest) =>
+  digest.cadence === "Instant"
+    ? "You get this within 20 minutes of a new match because you turned on instant alerts for your saved searches."
+    : "You get this weekly because you saved a search on the engineering leadership job board.";
+
+const instantSubjectOf = (digest: Digest) => {
+  const first = digest.jobs[0]?.title ?? "an engineering leadership role";
+  const rest = digest.total - 1;
+
+  return rest > 0
+    ? `New match: ${first} and ${rest} more`
+    : `New match: ${first}`;
+};
+
+const weeklySubjectOf = (digest: Digest) =>
   digest.total === 1
     ? "1 new engineering leadership role for your saved searches"
     : `${digest.total} new engineering leadership roles for your saved searches`;
+
+const subjectOf = (digest: Digest) =>
+  digest.cadence === "Instant"
+    ? instantSubjectOf(digest)
+    : weeklySubjectOf(digest);
 
 const placeOf = (job: JobValue) =>
   job.location === "" ? job.company : `${job.company} · ${job.location}`;
@@ -99,7 +118,7 @@ export const digestEmail = (
       "</ul>",
       ...(more === "" ? [] : [`<p style="color:#444">${escapeHtml(more)}</p>`]),
       '<hr style="border:0;border-top:1px solid #ddd;margin:24px 0">',
-      `<p style="font-size:13px;color:#666">You get this weekly because you saved a search on the engineering leadership job board. <a href="${escapeHtml(account)}" style="color:#666">Manage saved searches</a> or <a href="${escapeHtml(unsubscribe)}" style="color:#666">unsubscribe</a>.</p>`,
+      `<p style="font-size:13px;color:#666">${escapeHtml(reasonOf(digest))} <a href="${escapeHtml(account)}" style="color:#666">Manage saved searches</a> or <a href="${escapeHtml(unsubscribe)}" style="color:#666">unsubscribe</a>.</p>`,
       "</div></body></html>",
     ].join(""),
     subject: subjectOf(digest),
@@ -108,7 +127,7 @@ export const digestEmail = (
       "",
       ...digest.jobs.map((job) => `${textItem(links.siteOrigin, job)}\n`),
       ...(more === "" ? [] : [more, ""]),
-      "You get this weekly because you saved a search on the engineering leadership job board.",
+      reasonOf(digest),
       `Manage saved searches: ${account}`,
       `Unsubscribe: ${unsubscribe}`,
     ].join("\n"),

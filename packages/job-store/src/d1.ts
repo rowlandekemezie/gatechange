@@ -4,6 +4,7 @@ import * as RuntimeContext from "alchemy/RuntimeContext";
 import { Array, Effect, Layer, Schema, pipe } from "effect";
 
 import { alertStoreLayer } from "./alert-store.js";
+import { billingStoreLayer } from "./billing-store.js";
 import { jobStoreMigrationDirectory } from "./migrations.js";
 import { SqlExecutor } from "./sql-executor.js";
 import type { SqlStatement } from "./sql-executor.js";
@@ -64,5 +65,12 @@ export const d1JobStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
 
 export const d1AlertStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
   alertStoreLayer.pipe(
+    Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
+  );
+
+export const d1BillingStoreLayer = (
+  client: Cloudflare.D1.QueryDatabaseClient
+) =>
+  billingStoreLayer.pipe(
     Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
   );

@@ -48,6 +48,7 @@ export const Filters = Schema.Struct({
   maxAgeDays: AgeWindow,
   regionGroups: Schema.Array(RegionGroup),
   roles: Schema.Array(RoleLevel),
+  salaryListed: Schema.Boolean,
   search: Schema.String,
   sort: Sort,
 });
@@ -63,6 +64,7 @@ export const defaultFilters: FiltersValue = {
     "Director",
     "EngineeringManager",
   ],
+  salaryListed: false,
   search: "",
   sort: "Relevance",
 };
@@ -101,6 +103,7 @@ export const queryOf = (
     Array.dedupe
   ),
   roles: filters.roles,
+  salaryListed: filters.salaryListed,
   search: filters.search.trim().slice(0, 80),
   sort: filters.sort,
 });

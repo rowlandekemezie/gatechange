@@ -192,9 +192,9 @@ describe("weekly saved-search digests", () => {
 
           const racing = AlertStore.of({
             ...base,
-            dueRecipients: (periodStart, now) =>
+            dueRecipients: (cadence, periodStart, now) =>
               base
-                .dueRecipients(periodStart, now)
+                .dueRecipients(cadence, periodStart, now)
                 .pipe(Effect.tap(() => Effect.yieldNow)),
           });
 
@@ -558,6 +558,7 @@ describe("weekly saved-search digests", () => {
         const claims = yield* AlertStore.use((store) =>
           Effect.forEach([0, 1, 2], (week) =>
             store.claimDigest(
+              "Weekly",
               ada,
               MONDAY + week * WEEK_MILLIS,
               MONDAY + 6 * DAY_MILLIS + week

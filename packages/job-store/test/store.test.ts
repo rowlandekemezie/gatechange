@@ -32,6 +32,7 @@ const query = (overrides: Partial<JobQueryValue> = {}): JobQueryValue => ({
   offset: 0,
   regions: [],
   roles: [],
+  salaryListed: false,
   search: "",
   sort: "Newest",
   ...overrides,

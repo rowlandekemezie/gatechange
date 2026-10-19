@@ -2,6 +2,7 @@ import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type {
   JobQueryValue,
+  PlanValue,
   SavedSearchIdValue,
   SearchFiltersValue,
   TrackRequestValue,
@@ -25,11 +26,16 @@ const make = Effect.gen(function* makeJobQueries() {
     importShortlist: (jobs: readonly TrackRequestValue[]) =>
       client.importShortlist({ jobs }),
     listJobs: (query: JobQueryValue) => client.listJobs(query),
+    membership: client.membership({}),
     noteTrackedJob: (jobId: string, notes: string) =>
       client.noteTrackedJob({ jobId, notes }),
+    openBillingPortal: client.openBillingPortal({}),
     saveSearch: (filters: SearchFiltersValue) => client.saveSearch({ filters }),
     savedSearches: client.savedSearches({}),
+    setInstantAlerts: (enabled: boolean) =>
+      client.setInstantAlerts({ enabled }),
     signInOptions: client.signInOptions({}),
+    startCheckout: (plan: PlanValue) => client.startCheckout({ plan }),
     stats: client.boardStats({}),
     trackJob: (job: TrackRequestValue) => client.trackJob(job),
     trackedJobs: client.trackedJobs({}),

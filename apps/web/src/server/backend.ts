@@ -53,6 +53,7 @@ export const listedJobs = (backend: ServiceBinding) =>
           offset: page * MAX_PAGE_SIZE,
           regions: [],
           roles: [],
+          salaryListed: false,
           search: "",
           sort: "Newest",
         });

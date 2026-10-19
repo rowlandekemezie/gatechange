@@ -52,6 +52,7 @@ const everyRoleOf = (route: ListingRouteValue, jobs: readonly JobValue[]) =>
         maxAgeDays: 30,
         regionGroups,
         roles: roleLevels,
+        salaryListed: false,
         search: companyNameOf(route.slug, jobs),
         sort: "Newest",
       })

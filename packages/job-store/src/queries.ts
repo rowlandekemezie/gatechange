@@ -2,6 +2,7 @@ import {
   DAY_MILLIS,
   fingerprintOf,
   MAX_AGE_DAYS,
+  paidFeatureSources,
   RECENCY_PENALTY_PER_DAY,
   REPOST_GAP,
 } from "@rat-stack/core";
@@ -19,7 +20,7 @@ export const UPSERT_CHUNK = 40;
 
 export const FEED_STATE_LIMIT = 5000;
 
-const placeholders = (count: number) =>
+export const placeholders = (count: number) =>
   Array.from({ length: count }, () => "?").join(", ");
 
 const likePattern = (search: string) =>
@@ -66,6 +67,15 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
   if (query.regions.length > 0) {
     conditions.push(`region IN (${placeholders(query.regions.length)})`);
     params.push(...query.regions);
+  }
+
+  if (query.salaryListed) {
+    const sources = paidFeatureSources();
+
+    conditions.push(
+      `salary IS NOT NULL AND source IN (${placeholders(sources.length)})`
+    );
+    params.push(...sources);
   }
 
   const search = query.search.trim();

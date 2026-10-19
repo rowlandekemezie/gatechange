@@ -7,6 +7,7 @@ const routePrefixes: readonly (readonly [
   ["/rpc", "backend"],
   ["/api/auth", "backend"],
   ["/unsubscribe", "backend"],
+  ["/webhooks/stripe", "backend"],
   ["/account", "private"],
 ];
 

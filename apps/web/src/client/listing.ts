@@ -48,6 +48,7 @@ const baseQuery = {
   limit: MAX_PAGE_SIZE,
   maxAgeDays: MAX_AGE_DAYS,
   offset: 0,
+  salaryListed: false,
 } as const;
 
 const companyQuery = (slug: string, offset: number): JobQueryValue => ({

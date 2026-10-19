@@ -4,6 +4,7 @@ import { AccountId } from "./account.js";
 import type { AccountIdValue } from "./account.js";
 import { AlertStore } from "./alert-store.js";
 import { DigestMailer } from "./digest-mailer.js";
+import { paidFeaturesAllowed } from "./entitlement.js";
 import { fingerprintOf } from "./job-store.js";
 import { EpochMillis, Region, RoleLevel, SourceName } from "./job.js";
 import type { JobValue, SourceNameValue } from "./job.js";
@@ -29,6 +30,12 @@ export type SavedSearchIdValue = typeof SavedSearchId.Type;
 export const DigestFrequency = Schema.Literals(["Weekly"]);
 
 export type DigestFrequencyValue = typeof DigestFrequency.Type;
+
+export const Cadence = Schema.Literals(["Weekly", "Instant"]);
+
+export type CadenceValue = typeof Cadence.Type;
+
+export const INSTANT_WINDOW_MILLIS = 20 * 60 * 1000;
 
 export const SearchFilters = Schema.Struct({
   regions: Schema.NonEmptyArray(Region),
@@ -57,6 +64,7 @@ export interface DigestRecipient {
 
 export interface Digest {
   readonly account: AccountIdValue;
+  readonly cadence: CadenceValue;
   readonly jobs: readonly JobValue[];
   readonly periodStart: number;
   readonly to: string;
@@ -68,6 +76,12 @@ const FIRST_MONDAY_MILLIS = 4 * DAY_MILLIS;
 export const periodStartOf = (now: number) =>
   Math.floor((now - FIRST_MONDAY_MILLIS) / WEEK_MILLIS) * WEEK_MILLIS +
   FIRST_MONDAY_MILLIS;
+
+export const windowStartOf = (now: number) =>
+  Math.floor(now / INSTANT_WINDOW_MILLIS) * INSTANT_WINDOW_MILLIS;
+
+const periodOf = (cadence: CadenceValue, now: number) =>
+  cadence === "Weekly" ? periodStartOf(now) : windowStartOf(now);
 
 export const alertsAllowed = (
   source: SourceNameValue,
@@ -113,7 +127,8 @@ export const digestFor = (
   recipient: DigestRecipient,
   periodStart: number,
   jobs: readonly JobValue[],
-  terms: Readonly<Record<SourceNameValue, SourceTermsValue>> = SourceTerms
+  terms: Readonly<Record<SourceNameValue, SourceTermsValue>> = SourceTerms,
+  cadence: CadenceValue = "Weekly"
 ): Digest => {
   const matched = pipe(
     jobs
@@ -121,6 +136,7 @@ export const digestFor = (
         (job) =>
           job.firstSeenAt >= recipient.since &&
           alertsAllowed(job.source, terms) &&
+          (cadence === "Weekly" || paidFeaturesAllowed(job.source, terms)) &&
           recipient.searches.some((search) =>
             matchesFilters(search.filters, job)
           )
@@ -133,6 +149,7 @@ export const digestFor = (
 
   return {
     account: recipient.account,
+    cadence,
     jobs: Array.take(matched, MAX_DIGEST_JOBS),
     periodStart,
     to: recipient.email,
@@ -165,6 +182,7 @@ const deliver = Effect.fn("deliverDigest")(function* deliverDigest(
   const mailer = yield* DigestMailer;
 
   const claimed = yield* store.claimDigest(
+    digest.cadence,
     digest.account,
     digest.periodStart,
     now
@@ -179,20 +197,28 @@ const deliver = Effect.fn("deliverDigest")(function* deliverDigest(
   return yield* mailer.send(digest).pipe(
     Effect.matchEffect({
       onFailure: (failure) =>
-        store.releaseDigest(digest.account, digest.periodStart).pipe(
-          Effect.tap(() =>
-            Effect.logWarning("digest send failed", {
-              account: digest.account,
-              message: failure.message,
-            })
+        store
+          .releaseDigest(digest.cadence, digest.account, digest.periodStart)
+          .pipe(
+            Effect.tap(() =>
+              Effect.logWarning("digest send failed", {
+                account: digest.account,
+                message: failure.message,
+              })
+            ),
+            Effect.as<SendOutcome>(
+              failure.quotaExhausted ? "QuotaExhausted" : "Failed"
+            )
           ),
-          Effect.as<SendOutcome>(
-            failure.quotaExhausted ? "QuotaExhausted" : "Failed"
-          )
-        ),
       onSuccess: () =>
         store
-          .markSent(digest.account, digest.periodStart, now, digest.total)
+          .markSent(
+            digest.cadence,
+            digest.account,
+            digest.periodStart,
+            now,
+            digest.total
+          )
           .pipe(Effect.as<SendOutcome>("Sent")),
     })
   );
@@ -201,12 +227,13 @@ const deliver = Effect.fn("deliverDigest")(function* deliverDigest(
 const count = (outcomes: readonly SendOutcome[], outcome: SendOutcome) =>
   outcomes.filter((candidate) => candidate === outcome).length;
 
-export const runDigests = Effect.fn("runDigests")(function* runDigests(
+const runAlerts = Effect.fn("runAlerts")(function* runAlerts(
+  cadence: CadenceValue,
   plan: DigestPlan,
   now: number
 ) {
   const store = yield* AlertStore;
-  const periodStart = periodStartOf(now);
+  const periodStart = periodOf(cadence, now);
   const sentToday = yield* store.sendsSince(now - DAY_MILLIS);
 
   const budget = Math.max(
@@ -214,7 +241,7 @@ export const runDigests = Effect.fn("runDigests")(function* runDigests(
     Math.min(plan.sendsPerRun, plan.dailySendLimit - sentToday)
   );
 
-  const recipients = yield* store.dueRecipients(periodStart, now);
+  const recipients = yield* store.dueRecipients(cadence, periodStart, now);
 
   const jobs = Array.isReadonlyArrayNonEmpty(recipients)
     ? yield* store.jobsSeenSince(
@@ -223,7 +250,7 @@ export const runDigests = Effect.fn("runDigests")(function* runDigests(
     : [];
 
   const digests = recipients.map((recipient) =>
-    digestFor(recipient, periodStart, jobs)
+    digestFor(recipient, periodStart, jobs, SourceTerms, cadence)
   );
 
   const withMatches = digests.filter((digest) => digest.total > 0);
@@ -251,3 +278,9 @@ export const runDigests = Effect.fn("runDigests")(function* runDigests(
 
   return receipt;
 });
+
+export const runDigests = (plan: DigestPlan, now: number) =>
+  runAlerts("Weekly", plan, now);
+
+export const runInstantAlerts = (plan: DigestPlan, now: number) =>
+  runAlerts("Instant", plan, now);

@@ -19,6 +19,8 @@ const handle = handleRoutes({
   auth: Effect.succeed(HttpServerResponse.text("auth")),
   rpc: (viewer) =>
     Effect.succeed(HttpServerResponse.text(`rpc:${viewer._tag}`)),
+  stripeWebhook: (request) =>
+    Effect.succeed(HttpServerResponse.text(`stripe:${request.method}`)),
   unsubscribe: (request) =>
     Effect.succeed(HttpServerResponse.text(`unsubscribe:${request.method}`)),
 });
@@ -130,6 +132,28 @@ describe("backend routing", () => {
             method: "POST",
           })
         ).toEqual({ body: "unsubscribe:POST", status: 200 });
+      })
+  );
+
+  it.effect(
+    "sends Stripe deliveries to the webhook handler, never through the session check",
+    () =>
+      Effect.gen(function* stripe() {
+        expect(
+          yield* send("/webhooks/stripe", {
+            headers: { "sec-fetch-site": "cross-site" },
+            method: "POST",
+          })
+        ).toEqual({ body: "stripe:POST", status: 200 });
+        expect(
+          yield* send("/webhooks/stripe", {
+            method: "POST",
+            ...crossSiteWithSession,
+          })
+        ).toEqual({ body: "stripe:POST", status: 200 });
+        expect(
+          yield* send("/webhooks/stripe/extra", { method: "POST" })
+        ).toEqual({ body: "rpc:Anonymous", status: 200 });
       })
   );
 

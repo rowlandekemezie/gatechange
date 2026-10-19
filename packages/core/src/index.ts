@@ -19,24 +19,89 @@ export { DigestMailerUnavailable } from "./digest-mailer-unavailable.js";
 
 export { SavedSearchLimit } from "./saved-search-limit.js";
 
+export { AlreadyPro } from "./already-pro.js";
+
+export { BillingUnavailable } from "./billing-unavailable.js";
+
+export { NoBillingAccount } from "./no-billing-account.js";
+
+export { ProRequired } from "./pro-required.js";
+
+export {
+  applyBillingChange,
+  Billing,
+  BillingChange,
+  entitlementOfAccount,
+} from "./billing.js";
+
+export { BillingStore } from "./billing-store.js";
+
+export { BillingFailure } from "./billing-errors.js";
+
+export type { BillingFailureValue } from "./billing-errors.js";
+
+export type {
+  BillingChangeValue,
+  BillingOutcome,
+  CheckoutRequest,
+  SubscriptionChange,
+} from "./billing.js";
+
+export {
+  Entitlement,
+  entitlementOf,
+  EventVersion,
+  FREE,
+  FreeEntitlement,
+  GRANTING_STATUSES,
+  isPro,
+  Membership,
+  paidFeatureSources,
+  paidFeaturesAllowed,
+  Plan,
+  PLAN_PRICES,
+  plans,
+  ProEntitlement,
+  proFiltersCleared,
+  SubscriptionRecord,
+  SubscriptionStatus,
+  usesProFilters,
+  versionOrder,
+} from "./entitlement.js";
+
+export type {
+  EntitlementValue,
+  EventVersionValue,
+  MembershipValue,
+  PlanPrice,
+  PlanValue,
+  SubscriptionRecordValue,
+  SubscriptionStatusValue,
+} from "./entitlement.js";
+
 export {
   alertsAllowed,
+  Cadence,
   DigestFrequency,
   digestFor,
   digestSourceLabels,
+  INSTANT_WINDOW_MILLIS,
   matchesFilters,
   MAX_DIGEST_JOBS,
   MAX_SAVED_SEARCHES,
   periodStartOf,
   RECIPIENT_SENDS_PER_WEEK,
   runDigests,
+  runInstantAlerts,
   SavedSearch,
   SavedSearchId,
   SearchFilters,
   WEEK_MILLIS,
+  windowStartOf,
 } from "./alerts.js";
 
 export type {
+  CadenceValue,
   Digest,
   DigestFrequencyValue,
   DigestPlan,
@@ -69,10 +134,14 @@ export {
   getJob,
   importShortlist,
   listJobs,
+  membership,
+  openBillingPortal,
   savedSearches,
   saveSearch,
   noteTrackedJob,
+  setInstantAlerts,
   signInOptions,
+  startCheckout,
   trackedJobs,
   trackJob,
   untrackJob,
@@ -186,6 +255,10 @@ export {
   ListedJob,
   listJobsContract,
   MAX_AGE_DAYS,
+  membershipContract,
+  openBillingPortalContract,
+  setInstantAlertsContract,
+  startCheckoutContract,
   MAX_PAGE_SIZE,
   Region,
   RegionCount,
@@ -222,6 +295,7 @@ export {
   offSiteHref,
   previewWorkerName,
   PROD_STAGE,
+  publicOriginOf,
   SITE_HOSTNAME,
   SITE_ORIGIN,
   SITE_ZONE,

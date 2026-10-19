@@ -1,8 +1,10 @@
 import { offSiteHref, roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
-import { Array, DateTime, Match, Option, pipe } from "effect";
+import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
+import { SessionState } from "../../client/account/model.js";
+import { isProMember, MembershipState } from "../../client/billing/model.js";
 import {
   ageChip,
   dayHeading,
@@ -24,7 +26,7 @@ import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { jobRouter } from "../../client/route.js";
+import { jobRouter, pricingRouter } from "../../client/route.js";
 import { saveSearchControl } from "../saved-searches/view.js";
 
 const NEW_WINDOW = 86_400_000;
@@ -167,6 +169,40 @@ const searchView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
     ]
   );
 
+const isFreeViewer = (model: ModelValue) =>
+  SessionState.match<boolean>(model.account.session, {
+    Checking: () => false,
+    SignedIn: () =>
+      Schema.is(MembershipState.Loaded)(model.billing.membership) &&
+      !isProMember(model.billing),
+    SignedOut: () => true,
+  });
+
+const proFilterView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  h.div(
+    [h.Class("pro-filters")],
+    [
+      chip(
+        h,
+        model.filters.salaryListed,
+        "Only roles that state a salary",
+        Message.ToggledSalaryListed()
+      ),
+      h.span([h.Class("pro-badge")], ["Pro"]),
+      ...(model.filters.salaryListed && isFreeViewer(model)
+        ? [
+            h.p(
+              [h.Class("upgrade-prompt"), h.Role("status")],
+              [
+                "Salary filters come with Pro, so the list below still shows every role. ",
+                h.a([h.Href(pricingRouter())], ["See Pro plans"]),
+              ]
+            ),
+          ]
+        : []),
+    ]
+  );
+
 const statusLine = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   StatsState.match<Html>(model.stats, {
     Loaded: ({ stats }) =>
@@ -196,6 +232,7 @@ export const boardMasthead = (
     [
       sentenceView(model, h),
       searchView(model, h),
+      proFilterView(model, h),
       h.submodel({
         model: model.savedSearches,
         slotId: "save-search",

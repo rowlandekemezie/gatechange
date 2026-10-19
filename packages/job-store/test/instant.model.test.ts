@@ -1,0 +1,217 @@
+import { describe, expect, it } from "@effect/vitest";
+import {
+  AccountId,
+  AlertStore,
+  BillingStore,
+  DAY_MILLIS,
+  DigestMailer,
+  INSTANT_WINDOW_MILLIS,
+  JobStore,
+  MAX_SAVED_SEARCHES,
+  runInstantAlerts,
+  windowStartOf,
+} from "@rat-stack/core";
+import type {
+  AccountIdValue,
+  Digest,
+  DigestPlan,
+  JobValue,
+  SubscriptionStatusValue,
+} from "@rat-stack/core";
+import { Array, Effect, Layer } from "effect";
+
+import {
+  alertStoreLayer,
+  billingStoreLayer,
+  SqlExecutor,
+  statement,
+} from "../src/index.js";
+import { sqlJsJobStore } from "./sqljs-executor.js";
+
+const NOW = windowStartOf(1_761_000_000_000) + 10 * 60_000;
+
+const PLAN: DigestPlan = { dailySendLimit: 1000, sendsPerRun: 1000 };
+
+const pro = AccountId.make("user_pro");
+
+const free = AccountId.make("user_free");
+
+const lapsed = AccountId.make("user_lapsed");
+
+const withStores = <A, E>(
+  body: Effect.Effect<
+    A,
+    E,
+    AlertStore | BillingStore | JobStore | SqlExecutor | DigestMailer
+  >,
+  sent: Digest[]
+) =>
+  Effect.gen(function* provideStores() {
+    const base = yield* sqlJsJobStore;
+
+    return yield* body.pipe(
+      Effect.provide(
+        Layer.mergeAll(alertStoreLayer, billingStoreLayer).pipe(
+          Layer.provideMerge(base)
+        )
+      ),
+      Effect.provideService(
+        DigestMailer,
+        DigestMailer.of({
+          send: (digest) =>
+            Effect.sync(() => {
+              sent.push(digest);
+            }),
+        })
+      )
+    );
+  });
+
+const addMember = (id: AccountIdValue) =>
+  SqlExecutor.use((sql) =>
+    sql.batch("addMember", [
+      statement(
+        `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, ?, ?, 1, 0, 0)`,
+        [id, id, `${id}@example.com`]
+      ),
+    ])
+  );
+
+const subscribe = (
+  account: AccountIdValue,
+  status: SubscriptionStatusValue,
+  periodEnd: number
+) =>
+  BillingStore.use((store) =>
+    store.applySubscription({
+      account,
+      cancelAtPeriodEnd: false,
+      periodEnd,
+      plan: "Monthly",
+      status,
+      subscriptionId: `sub_${account}`,
+      version: { created: 1, eventId: `evt_${account}`, rank: 0 },
+    })
+  );
+
+const job = (id: string, firstSeenAt: number): JobValue => ({
+  arrangement: "Remote",
+  company: "Acme",
+  feed: "jobicy:all",
+  firstSeenAt,
+  id,
+  lastSeenAt: firstSeenAt,
+  location: "Remote - Canada",
+  postedAt: firstSeenAt,
+  region: "RemoteCanada",
+  relevance: 50,
+  role: "Director",
+  salary: null,
+  source: "Jobicy",
+  title: `Director of Engineering ${id}`,
+  url: `https://jobicy.example/${id}`,
+});
+
+const setUp = Effect.gen(function* setUp() {
+  yield* Effect.forEach([pro, free, lapsed], addMember, { discard: true });
+  yield* subscribe(pro, "active", NOW + 30 * DAY_MILLIS);
+  yield* subscribe(lapsed, "active", NOW - DAY_MILLIS);
+
+  yield* AlertStore.use((store) =>
+    Effect.forEach(
+      [pro, free, lapsed],
+      (account) =>
+        Effect.andThen(
+          store.saveSearch(
+            account,
+            { regions: ["RemoteCanada"], roles: ["Director"], search: "" },
+            NOW - 2 * DAY_MILLIS,
+            MAX_SAVED_SEARCHES
+          ),
+          store.setInstantAlerts(account, true, NOW - DAY_MILLIS)
+        ),
+      { discard: true }
+    )
+  );
+
+  yield* JobStore.use((store) =>
+    store.replaceFeed(
+      "jobicy:all",
+      [job("old", NOW - 2 * DAY_MILLIS), job("new", NOW - 5 * 60_000)],
+      NOW - 5 * 60_000
+    )
+  );
+});
+
+describe("instant alerts", () => {
+  it.effect(
+    "emails a Pro member the matches seen since they switched alerts on, once per 20-minute window",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* oncePerWindow() {
+          yield* setUp;
+
+          const first = yield* runInstantAlerts(PLAN, NOW);
+          const again = yield* runInstantAlerts(PLAN, NOW + 60_000);
+
+          const next = yield* runInstantAlerts(
+            PLAN,
+            NOW + INSTANT_WINDOW_MILLIS
+          );
+
+          expect(
+            sent.map((digest) => [
+              digest.cadence,
+              digest.account,
+              digest.jobs.map((listed) => listed.id),
+            ])
+          ).toEqual([["Instant", pro, ["new"]]]);
+          expect([first.sent, again.sent, next.sent]).toEqual([1, 0, 0]);
+        }),
+        sent
+      );
+    }
+  );
+
+  it.effect(
+    "never emails a Free or lapsed member, even with alerts left on",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* freeMembers() {
+          yield* setUp;
+          yield* runInstantAlerts(PLAN, NOW);
+
+          expect(Array.dedupe(sent.map((digest) => digest.account))).toEqual([
+            pro,
+          ]);
+        }),
+        sent
+      );
+    }
+  );
+
+  it.effect(
+    "counts instant sends against the shared daily email budget",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* budget() {
+          yield* setUp;
+          yield* runInstantAlerts(PLAN, NOW);
+
+          const counted = yield* AlertStore.use((store) =>
+            store.sendsSince(NOW - DAY_MILLIS)
+          );
+
+          expect(counted).toBe(1);
+        }),
+        sent
+      );
+    }
+  );
+});

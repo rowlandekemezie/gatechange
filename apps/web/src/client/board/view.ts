@@ -16,6 +16,11 @@ import {
 } from "../../features/board/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
+import {
+  billingPanel,
+  planLink,
+  pricingPage,
+} from "../../features/pricing/view.js";
 import { savedSearchesPanel } from "../../features/saved-searches/view.js";
 import {
   shortlistPage,
@@ -55,6 +60,12 @@ const tabs = (model: ModelValue, h: H): Html =>
         shortlistRouter(),
         Schema.is(Route.Shortlist)(model.route),
         `Your shortlist (${shortlistSize(model)})`
+      ),
+      planLink(
+        model.billing,
+        model.account.session,
+        Schema.is(Route.Pricing)(model.route),
+        h
       ),
       sessionLink(
         model.account.session,
@@ -152,6 +163,14 @@ export const view = (model: ModelValue, h: H): Document =>
                 ...(Schema.is(SessionState.SignedIn)(model.account.session)
                   ? [
                       h.submodel({
+                        model: model.billing,
+                        slotId: "billing",
+                        toParentMessage: (message) =>
+                          Message.GotBillingMessage({ message }),
+                        view: billingPanel,
+                        viewInputs: { notice },
+                      }),
+                      h.submodel({
                         model: model.savedSearches,
                         slotId: "saved-searches",
                         toParentMessage: (message) =>
@@ -167,6 +186,15 @@ export const view = (model: ModelValue, h: H): Document =>
           ConfirmSignIn: ({ token }) => confirmSignInPage(token, h),
           Job: () => jobPage(model, h),
           NotFound: () => notFoundPage(model, h),
+          Pricing: () =>
+            h.submodel({
+              model: model.billing,
+              slotId: "pricing",
+              toParentMessage: (message) =>
+                Message.GotBillingMessage({ message }),
+              view: pricingPage,
+              viewInputs: { session: model.account.session },
+            }),
           Role: () => listingPage(model, h),
           Shortlist: () => shortlistPage(model, h),
         }),
@@ -180,6 +208,7 @@ export const view = (model: ModelValue, h: H): Document =>
       ConfirmSignIn: () => "Finish signing in",
       Job: () => jobTitle(model),
       NotFound: () => "Page not found",
+      Pricing: () => "Pro plans",
       Role: () => listingTitle(model),
       Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
     }),

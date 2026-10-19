@@ -1,0 +1,200 @@
+[
+  {
+    "id": "evt_1SJ01checkoutAda",
+    "object": "event",
+    "api_version": "2025-09-30.clover",
+    "created": 1760600000,
+    "livemode": false,
+    "pending_webhooks": 1,
+    "request": { "id": null, "idempotency_key": null },
+    "type": "checkout.session.completed",
+    "data": {
+      "object": {
+        "id": "cs_test_a1AdaMonthly",
+        "object": "checkout.session",
+        "client_reference_id": "user_ada",
+        "customer": "cus_TestAda",
+        "customer_email": "ada@example.com",
+        "metadata": { "account_id": "user_ada" },
+        "mode": "subscription",
+        "payment_status": "paid",
+        "status": "complete",
+        "subscription": "sub_1SJAda"
+      }
+    }
+  },
+  {
+    "id": "evt_1SJ02createdAda",
+    "object": "event",
+    "api_version": "2025-09-30.clover",
+    "created": 1760600000,
+    "livemode": false,
+    "pending_webhooks": 1,
+    "request": { "id": "req_create", "idempotency_key": null },
+    "type": "customer.subscription.created",
+    "data": {
+      "object": {
+        "id": "sub_1SJAda",
+        "object": "subscription",
+        "cancel_at_period_end": false,
+        "customer": "cus_TestAda",
+        "metadata": { "account_id": "user_ada" },
+        "status": "active",
+        "items": {
+          "object": "list",
+          "data": [
+            {
+              "id": "si_TestAdaMonthly",
+              "object": "subscription_item",
+              "current_period_start": 1760600000,
+              "current_period_end": 1763278400,
+              "price": {
+                "id": "price_TestProMonthly",
+                "object": "price",
+                "currency": "usd",
+                "metadata": { "plan": "Monthly" },
+                "recurring": {
+                  "interval": "month",
+                  "interval_count": 1,
+                  "usage_type": "licensed"
+                },
+                "unit_amount": 1900
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_1SJ03cancelAda",
+    "object": "event",
+    "api_version": "2025-09-30.clover",
+    "created": 1760686400,
+    "livemode": false,
+    "pending_webhooks": 1,
+    "request": { "id": "req_portal_cancel", "idempotency_key": null },
+    "type": "customer.subscription.updated",
+    "data": {
+      "object": {
+        "id": "sub_1SJAda",
+        "object": "subscription",
+        "cancel_at_period_end": true,
+        "customer": "cus_TestAda",
+        "metadata": { "account_id": "user_ada" },
+        "status": "active",
+        "items": {
+          "object": "list",
+          "data": [
+            {
+              "id": "si_TestAdaMonthly",
+              "object": "subscription_item",
+              "current_period_start": 1760600000,
+              "current_period_end": 1763278400,
+              "price": {
+                "id": "price_TestProMonthly",
+                "object": "price",
+                "currency": "usd",
+                "metadata": { "plan": "Monthly" },
+                "recurring": {
+                  "interval": "month",
+                  "interval_count": 1,
+                  "usage_type": "licensed"
+                },
+                "unit_amount": 1900
+              }
+            }
+          ]
+        }
+      },
+      "previous_attributes": { "cancel_at_period_end": false }
+    }
+  },
+  {
+    "id": "evt_1SJ04resumeAda",
+    "object": "event",
+    "api_version": "2025-09-30.clover",
+    "created": 1760772800,
+    "livemode": false,
+    "pending_webhooks": 1,
+    "request": { "id": "req_portal_resume", "idempotency_key": null },
+    "type": "customer.subscription.updated",
+    "data": {
+      "object": {
+        "id": "sub_1SJAda",
+        "object": "subscription",
+        "cancel_at_period_end": false,
+        "customer": "cus_TestAda",
+        "metadata": { "account_id": "user_ada" },
+        "status": "active",
+        "items": {
+          "object": "list",
+          "data": [
+            {
+              "id": "si_TestAdaMonthly",
+              "object": "subscription_item",
+              "current_period_start": 1760600000,
+              "current_period_end": 1763278400,
+              "price": {
+                "id": "price_TestProMonthly",
+                "object": "price",
+                "currency": "usd",
+                "metadata": { "plan": "Monthly" },
+                "recurring": {
+                  "interval": "month",
+                  "interval_count": 1,
+                  "usage_type": "licensed"
+                },
+                "unit_amount": 1900
+              }
+            }
+          ]
+        }
+      },
+      "previous_attributes": { "cancel_at_period_end": true }
+    }
+  },
+  {
+    "id": "evt_1SJ05deletedAda",
+    "object": "event",
+    "api_version": "2025-09-30.clover",
+    "created": 1760859200,
+    "livemode": false,
+    "pending_webhooks": 1,
+    "request": { "id": "req_portal_cancel_now", "idempotency_key": null },
+    "type": "customer.subscription.deleted",
+    "data": {
+      "object": {
+        "id": "sub_1SJAda",
+        "object": "subscription",
+        "cancel_at_period_end": false,
+        "customer": "cus_TestAda",
+        "metadata": { "account_id": "user_ada" },
+        "status": "canceled",
+        "items": {
+          "object": "list",
+          "data": [
+            {
+              "id": "si_TestAdaMonthly",
+              "object": "subscription_item",
+              "current_period_start": 1760600000,
+              "current_period_end": 1763278400,
+              "price": {
+                "id": "price_TestProMonthly",
+                "object": "price",
+                "currency": "usd",
+                "metadata": { "plan": "Monthly" },
+                "recurring": {
+                  "interval": "month",
+                  "interval_count": 1,
+                  "usage_type": "licensed"
+                },
+                "unit_amount": 1900
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+]
