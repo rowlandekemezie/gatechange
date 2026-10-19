@@ -77,7 +77,7 @@ export const boardStats = implement(boardStatsContract, () =>
   Effect.gen(function* boardStatsHandler() {
     const store = yield* JobStore;
     const generatedAt = yield* Clock.currentTimeMillis;
-    const stats = yield* store.stats(generatedAt);
+    const stats = yield* store.stats(generatedAt, yield* ServedSources);
 
     return { ...stats, generatedAt };
   })

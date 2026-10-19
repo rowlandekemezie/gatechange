@@ -275,7 +275,7 @@ describe("D1 job store queries", () => {
           yield* store.recordFeedFailure("b", NOW + 1, "timeout");
 
           const states = yield* store.feedStates;
-          const stats = yield* store.stats(NOW);
+          const stats = yield* store.stats(NOW, SourceName.literals);
 
           expect(pruned).toBe(1);
           expect(

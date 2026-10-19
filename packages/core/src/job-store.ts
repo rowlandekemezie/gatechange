@@ -101,7 +101,8 @@ export class JobStore extends Context.Service<
       seenAt: number
     ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
     readonly stats: (
-      now: number
+      now: number,
+      sources: readonly SourceNameValue[]
     ) => Effect.Effect<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable
