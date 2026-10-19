@@ -328,23 +328,42 @@ const moneyMatchesIn = (text: string): readonly MoneyMatch[] => {
 export const moneyRangesIn = (text: string): readonly MoneyRange[] =>
   Array.map(moneyMatchesIn(text), ({ range }) => range);
 
-const basePayWord = String.raw`(?:salary|salaries|base|compensation|pay|wages?|ote|remuneration|earnings)`;
+const basePayWord = String.raw`(?:salary|salaries|base|compensation|pay|wages?|remuneration)`;
 
 const payNegation = String.raw`\b(?:not(?:\s+(?:counted|included|part))?(?:\s+(?:as|in|of))?|separate\s+from|in\s+addition\s+to|on\s+top\s+of|excluding|outside(?:\s+of)?)\s+(?:(?:the|your|our|any)\s+)?`;
 
-const otherPayWord = String.raw`\b(?:stipends?|bonus(?:es)?|commissions?|incentives?|variable|rsus?|stock|options|allowances?|equity|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|budgets?)\b`;
+const otherPayWord = String.raw`(?:stipends?|bonus(?:es)?|commissions?|rsus?|allowances?|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|ote|on-target)`;
+
+const loosePayWord = String.raw`(?:incentives?|variable|stock|options?|equity|budgets?)`;
+
+const moneyWord = String.raw`(?:${basePayWord}|${otherPayWord}|${loosePayWord}|grants?|plans?|targets?|awards?|units|cash)`;
+
+const payJoiner = String.raw`(?:-based)?[\s/-]+`;
+
+const otherPayInContext = String.raw`\b(?:${otherPayWord}|(?<=\breceives?\s+)${loosePayWord}|${loosePayWord}(?=${payJoiner}${moneyWord}\b))\b`;
 
 const basePayCue = new RegExp(
-  String.raw`(?<!${payNegation}(?:base\s+)?)(?<!${otherPayWord}\s+)\b${basePayWord}\b`,
+  String.raw`(?<!${payNegation}(?:base\s+)?)(?<!\b(?:${otherPayWord}|${loosePayWord})${payJoiner}(?:targets?\s+)?)\b${basePayWord}\b`,
   "giu"
 );
 
-const otherPayCue = String.raw`(?:${otherPayWord}|${payNegation}(?=(?:base\s+)?${basePayWord}\b))`;
-
-const otherPopulation =
-  /\b(?:interns?|internships?|apprentices?|apprenticeships?|contractors?|students?|co-?ops?)\b/iu;
+const otherPayCue = String.raw`(?:(?<!${payNegation})${otherPayInContext}|${payNegation}(?=(?:base\s+)?${basePayWord}\b))`;
 
 const otherPayCues = new RegExp(otherPayCue, "giu");
+
+const looseLabel = new RegExp(
+  String.raw`^\W*${loosePayWord}(?:\W+${loosePayWord})*\W*$`,
+  "iu"
+);
+
+const populationWord = String.raw`(?:interns?|internships?|apprentices?|apprenticeships?|contractors?|students?|co-?ops?)`;
+
+const populationInTitle = new RegExp(String.raw`\b${populationWord}\b`, "iu");
+
+const otherPopulation = new RegExp(
+  String.raw`\b(?:(?:for|our)\s+(?:the\s+)?${populationWord}\b|${populationWord}(?=[\s(]+(?:applicants?|candidates?|roles?|positions?|rates?|program|pay|salary|salaries|wages?|compensation|hourly|only)\b))|^\W*${populationWord}\W*$`,
+  "iu"
+);
 
 const otherPayNext = new RegExp(
   String.raw`^\s*(?!(?:plus|and|with|or)\b)(?:[\p{L}-]+\s+){0,2}?${otherPayCue}`,
@@ -358,9 +377,15 @@ const lastIndexOf = (pattern: RegExp, text: string) =>
     Option.getOrElse(() => -1)
   );
 
+const namesPay = (line: string) =>
+  lastIndexOf(basePayCue, line) !== -1 ||
+  lastIndexOf(otherPayCues, line) !== -1;
+
 const namesBasePay = (label: string) =>
   lastIndexOf(basePayCue, label) !== -1 &&
   lastIndexOf(otherPayCues, label) <= lastIndexOf(basePayCue, label);
+
+const withoutAsides = (text: string) => text.replaceAll(/\([^()]*\)/gu, " ");
 
 const rangeWords = new RegExp(
   String.raw`${currencyMarker}|${periodCue.source}`,
@@ -370,57 +395,77 @@ const rangeWords = new RegExp(
 const rangeOnly = (text: string) =>
   /^[\s/(),:]*$/u.test(text.replaceAll(rangeWords, " "));
 
-const MAX_LABEL_LINES_ABOVE = 3;
+const carriesRange = (line: string) =>
+  [...line.matchAll(moneyPattern)].some(
+    ({ groups = {} }) =>
+      groups.high !== undefined &&
+      currencyOfMarkers(
+        [groups.before, groups.middle, groups.between, groups.after].join(" "),
+        "USD"
+      ) !== null
+  );
 
-const namesPay = (line: string) =>
-  lastIndexOf(basePayCue, line) !== -1 ||
-  lastIndexOf(otherPayCues, line) !== -1;
+const MAX_UNLABELLED_LINES_ABOVE = 2;
 
-const eligibilityOrPointer =
-  /\b(?:applicants?|candidates?)\b|\b(?:can be found|found here|learn more|click here)\b/iu;
+const LABEL_WINDOW_CHARS = 2000;
 
-const carriesNoLabel = (line: string) =>
-  eligibilityOrPointer.test(line) &&
-  !otherPopulation.test(line) &&
-  !namesPay(line);
+const labelAbove = (text: string, { start }: Span, rangeAlone: boolean) => {
+  const lines = pipe(
+    text
+      .slice(0, Math.max(0, text.lastIndexOf("\n", start - 1)))
+      .slice(-LABEL_WINDOW_CHARS)
+      .split("\n"),
+    Array.map((line) => withoutAsides(line.slice(-LINE_CONTEXT_CHARS))),
+    Array.filter((line) => line.trim() !== ""),
+    Array.reverse
+  );
 
-const headingAbove = (text: string, { start }: Span) => {
-  let lineStart = text.lastIndexOf("\n", start - 1);
+  let unlabelled = 0;
 
-  for (let seen = 0; seen < MAX_LABEL_LINES_ABOVE && lineStart > 0; seen += 1) {
-    const heading = lineAround(text, {
-      end: lineStart,
-      start: lineStart,
-    }).before;
+  for (const line of lines) {
+    if (carriesRange(line)) {
+      if (rangeAlone && !rangeOnly(line.replaceAll(moneyPattern, " "))) {
+        return "";
+      }
+    } else if (
+      !rangeAlone ||
+      namesPay(line) ||
+      looseLabel.test(line) ||
+      otherPopulation.test(line) ||
+      line.trimEnd().endsWith(":")
+    ) {
+      return line;
+    } else {
+      unlabelled += 1;
 
-    if (!carriesNoLabel(heading)) {
-      return heading;
+      if (unlabelled > MAX_UNLABELLED_LINES_ABOVE) {
+        return "";
+      }
     }
-
-    lineStart = text.lastIndexOf("\n", lineStart - 1);
   }
 
   return "";
 };
 
 const isBasePay = (text: string, span: Span, title: string) => {
-  const { after, before, line } = lineAround(text, span);
+  const around = lineAround(text, span);
+  const before = withoutAsides(around.before);
+  const after = withoutAsides(around.after);
+  const line = `${before} ${after}`;
 
   const forOtherPopulation = (label: string) =>
-    otherPopulation.test(label) && !otherPopulation.test(title);
+    otherPopulation.test(label) && !populationInTitle.test(title);
 
   if (forOtherPopulation(before)) {
     return false;
   }
 
-  if (
-    rangeOnly(`${before} ${after}`) ||
-    (lastIndexOf(basePayCue, line) === -1 &&
-      lastIndexOf(otherPayCues, line) === -1)
-  ) {
-    const heading = headingAbove(text, span);
+  const rangeAlone = rangeOnly(line);
 
-    return namesBasePay(heading) && !forOtherPopulation(heading);
+  if (rangeAlone || !namesPay(line)) {
+    const label = labelAbove(text, span, rangeAlone);
+
+    return namesBasePay(label) && !forOtherPopulation(label);
   }
 
   return (

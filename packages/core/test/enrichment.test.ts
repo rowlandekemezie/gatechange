@@ -52,6 +52,7 @@ import type {
   PostingValue,
 } from "../src/index.js";
 import { makeMemoryJobStore } from "./memory-job-store.js";
+import { salaryLabelCases } from "./salary-label-cases.js";
 
 const MODEL = "test-model";
 
@@ -1809,6 +1810,18 @@ describe("enrichListing", () => {
 
       expect(performance.now() - started).toBeLessThan(50);
       expect(details.salary).toBeNull();
+    }
+  );
+
+  it.each(salaryLabelCases)(
+    "salary label case %s",
+    (_name, text, low, high, saved, title) => {
+      const { salary } = detailsOfAnswer(
+        { ...validAnswer, salaryMax: high, salaryMin: low },
+        { company: "Acme", salary: null, text, title, workplace: "Unspecified" }
+      );
+
+      expect(salary !== null).toBe(saved);
     }
   );
 
