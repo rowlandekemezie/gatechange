@@ -241,7 +241,6 @@ interface Span {
 interface LineAround {
   readonly after: string;
   readonly before: string;
-  readonly line: string;
 }
 
 const lineAround = (text: string, { end, start }: Span): LineAround => {
@@ -258,7 +257,6 @@ const lineAround = (text: string, { end, start }: Span): LineAround => {
   return {
     after: text.slice(end, to),
     before: text.slice(from, start),
-    line: text.slice(from, to),
   };
 };
 
@@ -340,6 +338,18 @@ const moneyWord = String.raw`(?:${basePayWord}|${otherPayWord}|${loosePayWord}|g
 
 const payJoiner = String.raw`(?:-based)?[\s/-]+`;
 
+const totalWord = String.raw`(?:total|target(?:ed)?)`;
+
+const totalHeading = new RegExp(
+  String.raw`^\W*(?:[\p{L}-]+\s+){0,2}?${totalWord}\s+(?:${totalWord}\s+)?(?:cash|compensation)(?:\s+[\p{L}-]+){0,2}\W*$`,
+  "iu"
+);
+
+const totalCash = new RegExp(
+  String.raw`\b${totalWord}\s+(?:${totalWord}\s+)?cash\b`,
+  "iu"
+);
+
 const otherPayInContext = String.raw`\b(?:${otherPayWord}|(?<=\breceives?\s+)${loosePayWord}|${loosePayWord}(?=${payJoiner}${moneyWord}\b))\b`;
 
 const basePayCue = new RegExp(
@@ -385,7 +395,19 @@ const namesBasePay = (label: string) =>
   lastIndexOf(basePayCue, label) !== -1 &&
   lastIndexOf(otherPayCues, label) <= lastIndexOf(basePayCue, label);
 
-const withoutAsides = (text: string) => text.replaceAll(/\([^()]*\)/gu, " ");
+const asideOtherPay =
+  /\b(?:ote|on[\s-]target|commissions?|(?:stock|equity)\s+grants?|bonus(?:es)?)\b/iu;
+
+const asideNegation =
+  /^\W*(?:and|with|or)\b|\b(?:not|excluding|exclude[sd]?|exclusive|without|separate(?:ly)?|elsewhere|plus|before|in\s+addition|(?:if|where)\s+(?:applicable|eligible))\b/iu;
+
+const namesOtherPayAside = (aside: string) =>
+  asideOtherPay.test(aside) && !asideNegation.test(aside);
+
+const withoutAsides = (text: string) =>
+  text.replaceAll(/\([^()]*\)/gu, (aside) =>
+    namesOtherPayAside(aside) ? ` ${aside.slice(1, -1)} ` : " "
+  );
 
 const rangeWords = new RegExp(
   String.raw`${currencyMarker}|${periodCue.source}`,
@@ -409,45 +431,111 @@ const MAX_UNLABELLED_LINES_ABOVE = 2;
 
 const LABEL_WINDOW_CHARS = 2000;
 
-const labelAbove = (text: string, { start }: Span, rangeAlone: boolean) => {
-  const lines = pipe(
-    text
-      .slice(0, Math.max(0, text.lastIndexOf("\n", start - 1)))
-      .slice(-LABEL_WINDOW_CHARS)
-      .split("\n"),
-    Array.map((line) => withoutAsides(line.slice(-LINE_CONTEXT_CHARS))),
-    Array.filter((line) => line.trim() !== ""),
-    Array.reverse
-  );
+type LineKind = "Blank" | "BareRow" | "SiblingRow" | "Label" | "Plain";
 
+interface JudgedLine {
+  readonly kind: LineKind;
+  readonly label: string;
+}
+
+const judgedLineOf = (raw: string): JudgedLine => {
+  const line = withoutAsides(raw.slice(-LINE_CONTEXT_CHARS));
+
+  if (line.trim() === "") {
+    return { kind: "Blank", label: "" };
+  }
+
+  if (carriesRange(line)) {
+    const label = line.replaceAll(moneyPattern, " ");
+
+    return { kind: rangeOnly(label) ? "BareRow" : "SiblingRow", label };
+  }
+
+  if (totalHeading.test(line) || totalCash.test(raw)) {
+    return { kind: "Label", label: "" };
+  }
+
+  const labels =
+    namesPay(line) ||
+    looseLabel.test(line) ||
+    otherPopulation.test(line) ||
+    line.trimEnd().endsWith(":");
+
+  return { kind: labels ? "Label" : "Plain", label: line };
+};
+
+interface PostingLines {
+  readonly judgedByStart: Map<number, JudgedLine>;
+  readonly text: string;
+}
+
+const judgedLineAt = (
+  { judgedByStart, text }: PostingLines,
+  start: number,
+  end: number
+) => {
+  const known = judgedByStart.get(start);
+
+  if (known !== undefined) {
+    return known;
+  }
+
+  const judged = judgedLineOf(text.slice(start, end));
+
+  judgedByStart.set(start, judged);
+
+  return judged;
+};
+
+const labelAbove = (
+  lines: PostingLines,
+  { start }: Span,
+  rangeAlone: boolean
+) => {
+  const { text } = lines;
   let unlabelled = 0;
+  let nearestRow: string | undefined;
+  let room = LABEL_WINDOW_CHARS;
+  let end = text.lastIndexOf("\n", start - 1);
 
-  for (const line of lines) {
-    if (carriesRange(line)) {
-      if (rangeAlone && !rangeOnly(line.replaceAll(moneyPattern, " "))) {
-        return "";
-      }
-    } else if (
-      !rangeAlone ||
-      namesPay(line) ||
-      looseLabel.test(line) ||
-      otherPopulation.test(line) ||
-      line.trimEnd().endsWith(":")
-    ) {
-      return line;
-    } else {
+  while (end >= 0 && room > 0) {
+    const from = end === 0 ? 0 : text.lastIndexOf("\n", end - 1) + 1;
+    const length = end - from;
+
+    const { kind, label } =
+      length <= room
+        ? judgedLineAt(lines, from, end)
+        : judgedLineOf(text.slice(end - room, end));
+
+    room -= length + 1;
+    end = from - 1;
+
+    if (kind === "Label" || (kind === "Plain" && !rangeAlone)) {
+      return label;
+    }
+
+    if (kind === "SiblingRow" && rangeAlone) {
+      return unlabelled === 0 ? label : "";
+    }
+
+    if (kind === "Plain") {
       unlabelled += 1;
 
       if (unlabelled > MAX_UNLABELLED_LINES_ABOVE) {
         return "";
       }
     }
+
+    if (kind === "SiblingRow" || kind === "BareRow") {
+      nearestRow ??= label;
+    }
   }
 
-  return "";
+  return nearestRow ?? "";
 };
 
-const isBasePay = (text: string, span: Span, title: string) => {
+const isBasePay = (lines: PostingLines, span: Span, title: string) => {
+  const { text } = lines;
   const around = lineAround(text, span);
   const before = withoutAsides(around.before);
   const after = withoutAsides(around.after);
@@ -456,14 +544,14 @@ const isBasePay = (text: string, span: Span, title: string) => {
   const forOtherPopulation = (label: string) =>
     otherPopulation.test(label) && !populationInTitle.test(title);
 
-  if (forOtherPopulation(before)) {
+  if (forOtherPopulation(before) || totalHeading.test(before)) {
     return false;
   }
 
   const rangeAlone = rangeOnly(line);
 
   if (rangeAlone || !namesPay(line)) {
-    const label = labelAbove(text, span, rangeAlone);
+    const label = labelAbove(lines, span, rangeAlone);
 
     return namesBasePay(label) && !forOtherPopulation(label);
   }
@@ -490,24 +578,23 @@ const salaryBandOf = (
   }
 
   const stated = [salaryMin, salaryMax];
+  const lines: PostingLines = { judgedByStart: new Map(), text };
 
   return pipe(
     moneyMatchesIn(text),
-    Array.findFirst(
-      (match) =>
-        statesBand(stated, match.range.amounts) && isBasePay(text, match, title)
-    ),
-    Option.flatMap(({ range }) =>
-      Option.fromNullishOr(
-        annualSalaryBandOf(
-          {
-            currency: range.currency,
-            max: Math.max(...stated),
-            min: Math.min(...stated),
-          },
-          range.period
-        )
-      )
+    Array.findFirst((match) =>
+      statesBand(stated, match.range.amounts) && isBasePay(lines, match, title)
+        ? Option.fromNullishOr(
+            annualSalaryBandOf(
+              {
+                currency: match.range.currency,
+                max: Math.max(...stated),
+                min: Math.min(...stated),
+              },
+              match.range.period
+            )
+          )
+        : Option.none()
     ),
     Option.getOrNull
   );

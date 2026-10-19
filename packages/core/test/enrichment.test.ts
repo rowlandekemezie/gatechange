@@ -1825,6 +1825,43 @@ describe("enrichListing", () => {
     }
   );
 
+  it("a stated band read as hourly by an aside falls through to a later yearly line that states it", () => {
+    const text =
+      "The base salary range (or hourly wage range, if applicable) that we reasonably expect to pay for this position is $200,000 to $270,000. A successful candidate's actual base salary (or hourly wage) amount will be determined by location.\nCompensation: $200K – $270K • Offers Equity • Plus up to 15% bonus USD per 1 YEAR";
+
+    expect(
+      detailsOfAnswer(
+        { ...validAnswer, salaryMax: 270_000, salaryMin: 200_000 },
+        {
+          company: "Acme",
+          salary: null,
+          text,
+          title: "Engineer",
+          workplace: "Unspecified",
+        }
+      ).salary
+    ).toStrictEqual({ currency: "USD", max: 270_000, min: 200_000 });
+  });
+
+  it("12,000 characters of range lines that all state the band are checked in milliseconds", () => {
+    const text = "$1 - $2\n".repeat(1500).slice(0, 12_000);
+    const started = performance.now();
+
+    const details = detailsOfAnswer(
+      { ...validAnswer, salaryMax: 2, salaryMin: 1 },
+      {
+        company: "Acme",
+        salary: null,
+        text,
+        title: "Engineer",
+        workplace: "Unspecified",
+      }
+    );
+
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(details.salary).toBeNull();
+  });
+
   it("a range paid in addition to base salary is not saved as salary", () => {
     expect(
       detailsOfAnswer(

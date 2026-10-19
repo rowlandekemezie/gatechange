@@ -71,6 +71,18 @@ const fetchPosting = Effect.fnUntraced(function* fetchPosting(id: string) {
   return yield* texts.fetch(jobWithId(id));
 });
 
+const salaryComponent = (
+  interval: string,
+  minValue: number,
+  maxValue: number
+) => ({
+  compensationType: "Salary",
+  currencyCode: "USD",
+  interval,
+  maxValue,
+  minValue,
+});
+
 const fetchText = (id: string) =>
   fetchPosting(id).pipe(Effect.map((posting) => posting.text));
 
@@ -303,6 +315,95 @@ describe("posting texts", () => {
                   id: "hybrid",
                   isRemote: true,
                   workplaceType: "Hybrid",
+                },
+              ],
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect.each([
+    [
+      "a yearly salary tier",
+      [{ components: [salaryComponent("1 YEAR", 200_000, 250_000)] }],
+      { currency: "USD", max: 250_000, min: 200_000 },
+    ],
+    [
+      "an hourly salary tier",
+      [{ components: [salaryComponent("1 HOUR", 50, 60)] }],
+      { currency: "USD", max: 124_800, min: 104_000 },
+    ],
+    [
+      "a monthly salary tier",
+      [{ components: [salaryComponent("1 MONTH", 12_000, 15_000)] }],
+      { currency: "USD", max: 180_000, min: 144_000 },
+    ],
+    [
+      "two tiers whose summary merges them",
+      [
+        {
+          components: [
+            { compensationType: "EquityPercentage", minValue: 0.1 },
+            salaryComponent("1 YEAR", 240_000, 310_000),
+          ],
+          title: "Tier 1",
+        },
+        {
+          components: [salaryComponent("1 YEAR", 210_000, 280_000)],
+          title: "Tier 2",
+        },
+      ],
+      { currency: "USD", max: 310_000, min: 240_000 },
+    ],
+    [
+      "no salary component",
+      [{ components: [{ compensationType: "EquityPercentage", minValue: 1 }] }],
+      null,
+    ],
+    [
+      "a salary with no max",
+      [
+        {
+          components: [
+            { ...salaryComponent("1 YEAR", 200_000, 0), maxValue: null },
+          ],
+        },
+      ],
+      null,
+    ],
+    [
+      "an interval the board does not annualise",
+      [{ components: [salaryComponent("1 WEEK", 60_000, 80_000)] }],
+      null,
+    ],
+    ["malformed tiers", "not a list", null],
+    ["no tiers", undefined, null],
+  ] as const)(
+    "an Ashby posting with %s carries its first tier's salary as its salary field and is still read",
+    ([, compensationTiers, salary]) =>
+      Effect.gen(function* readAshbySalary() {
+        const posting = yield* fetchPosting("ashby:clickhouse:tiers");
+
+        expect(posting.salary).toStrictEqual(salary);
+        expect(posting.text).toBe(
+          "Lead the database team.\n\nCompensation: $210K – $310K USD per 1 YEAR"
+        );
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              jobs: [
+                {
+                  compensation: {
+                    compensationTierSummary: "$210K – $310K",
+                    compensationTiers,
+                    summaryComponents: [
+                      salaryComponent("1 YEAR", 210_000, 310_000),
+                    ],
+                  },
+                  descriptionPlain: "Lead the database team.",
+                  id: "tiers",
                 },
               ],
             })

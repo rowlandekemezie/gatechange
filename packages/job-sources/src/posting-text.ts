@@ -7,6 +7,7 @@ import {
 import type {
   JobValue,
   PostingTextValue,
+  SalaryBandValue,
   SalaryPeriodValue,
 } from "@rat-stack/core";
 import {
@@ -63,6 +64,7 @@ const AshbyDetail = Schema.Struct({
     Schema.NullOr(
       Schema.Struct({
         compensationTierSummary: OptionalString,
+        compensationTiers: Schema.optional(Schema.Unknown),
         summaryComponents: Schema.optional(
           Schema.NullOr(
             Schema.Array(
@@ -185,6 +187,62 @@ const ashbyCompensation = (
   );
 };
 
+const AshbyTiers = Schema.Array(Schema.Unknown);
+
+const AshbyTier = Schema.Struct({ components: Schema.Array(Schema.Unknown) });
+
+const AshbySalaryComponent = Schema.Struct({
+  compensationType: Schema.Literal("Salary"),
+  currencyCode: Schema.String,
+  interval: Schema.String,
+  maxValue: Schema.Finite,
+  minValue: Schema.Finite,
+});
+
+const decodeAshbySalaryComponent =
+  Schema.decodeUnknownOption(AshbySalaryComponent);
+
+const ashbyPeriodOf = (interval: string) =>
+  Match.value(interval).pipe(
+    Match.withReturnType<SalaryPeriodValue | null>(),
+    Match.when("1 HOUR", () => "Hour"),
+    Match.when("1 MONTH", () => "Month"),
+    Match.when("1 YEAR", () => "Year"),
+    Match.orElse(() => null)
+  );
+
+const ashbySalary = (
+  compensation: typeof AshbyDetail.Type.compensation
+): SalaryBandValue | null =>
+  pipe(
+    Schema.decodeUnknownOption(AshbyTiers)(compensation?.compensationTiers),
+    Option.flatMap(Array.head),
+    Option.flatMap(Schema.decodeUnknownOption(AshbyTier)),
+    Option.flatMap(({ components }) =>
+      Array.findFirst(components, (component) =>
+        decodeAshbySalaryComponent(component)
+      )
+    ),
+    Option.flatMap((salary) =>
+      pipe(
+        Option.fromNullishOr(ashbyPeriodOf(salary.interval)),
+        Option.flatMap((period) =>
+          Option.fromNullishOr(
+            annualSalaryBandOf(
+              {
+                currency: salary.currencyCode,
+                max: salary.maxValue,
+                min: salary.minValue,
+              },
+              period
+            )
+          )
+        )
+      )
+    ),
+    Option.getOrNull
+  );
+
 const ashbyText = ({ externalId, id, slug }: PostingKey) =>
   getJson(
     `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}?includeCompensation=true`,
@@ -209,7 +267,7 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
           ),
         onSome: (job) =>
           Effect.succeed<PostingTextValue>({
-            salary: null,
+            salary: ashbySalary(job.compensation),
             text: nonEmpty([
               job.descriptionPlain,
               ashbyCompensation(job.compensation),

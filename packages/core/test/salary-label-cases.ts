@@ -958,4 +958,130 @@ export const salaryLabelCases: readonly (readonly [
     true,
     "Software Engineer",
   ],
+  ...(
+    [
+      ["Total Target Cash", "Compensation\nTotal Target Cash"],
+      [
+        "Total Targeted Cash",
+        "Base salary is competitive.\nTotal Targeted Cash",
+      ],
+      ["Total Cash", "Base salary is competitive.\nTotal Cash"],
+      [
+        "Target Total Compensation",
+        "Base pay range\n$80,000 - $100,000\nTarget Total Compensation",
+      ],
+      ["Total compensation", "Salary\nTotal compensation"],
+    ] as const
+  ).map(
+    ([heading, above]) =>
+      [
+        `r17: a range under a ${heading} heading is not base pay`,
+        `${above}\n$115,000 — $185,000 USD`,
+        115_000,
+        185_000,
+        false,
+        "Account Executive",
+      ] as const
+  ),
+  [
+    "r17: a range on a Total compensation line is not base pay",
+    "Total compensation: $150,000 - $200,000",
+    150_000,
+    200_000,
+    false,
+    "Software Engineer",
+  ],
+  [
+    "r17: Toast zone rows under a Total Targeted Cash paragraph are not base pay",
+    "The estimated Total Targeted Cash compensation range for this role is listed below. Total Targeted Cash for this role includes base salary, commission, and bonus (if eligible). You can learn more about how we align pay with local labor markets in our Geographic Pay Zone Philosophy .\nZone A\n$119,000 — $190,000 USD\nZone B\n$104,000 — $166,000 USD",
+    104_000,
+    166_000,
+    false,
+    "Account Executive",
+  ],
+  [
+    "r17: Toast zone rows under a base salary paragraph that mentions cash compensation are base pay",
+    "The base salary range for this role is listed below. In addition to base salary, our total rewards components include cash compensation (overtime, bonus/commissions if eligible), equity, and benefits. You can learn more about how we align pay with local labor markets in our Geographic Pay Zone Philosophy .\nZone A\n$181,000 — $290,000 USD\nZone B\n$157,000 — $251,000 USD",
+    157_000,
+    251_000,
+    true,
+    "Software Engineer",
+  ],
+  [
+    "r17: a country row under a labelled base row keeps its own base label",
+    "Base: $100,000 - $120,000\nUK: $150,000 - $200,000",
+    150_000,
+    200_000,
+    true,
+    "Software Engineer",
+  ],
+  [
+    "r17: a bare range under a labelled base row is base pay",
+    "Base: $100,000 - $120,000\n$150,000 - $200,000",
+    150_000,
+    200_000,
+    true,
+    "Software Engineer",
+  ],
+  [
+    "r17: a country row under a bonus row and a base row takes the nearest row's label",
+    "Base: $100,000 - $120,000\nBonus: $30,000 - $50,000\nUK: $150,000 - $200,000",
+    150_000,
+    200_000,
+    false,
+    "Software Engineer",
+  ],
+  [
+    "r17: a bare range under a bonus row is not base pay",
+    "Bonus: $100,000 - $120,000\n$150,000 - $200,000",
+    150_000,
+    200_000,
+    false,
+    "Software Engineer",
+  ],
+  ...(
+    [
+      ["Salary (commission only)\n", false],
+      ["Compensation (stock grant)\n", false],
+      ["Compensation (equity grant)\n", false],
+      ["Total compensation (OTE): ", false],
+      ["Pay (OTE): ", false],
+      ["Base salary (bonus target): ", false],
+      ["Salary (variable by location)\n", true],
+      ["Salary (excluding equity and bonus)\n", true],
+      ["Base salary (plus bonus): ", true],
+      ["Base salary (OTE shown elsewhere): ", true],
+      ["Base salary range (we offer stock options): ", true],
+      [
+        "Our expected cash compensation (salary + commission if applicable) range for this role is:\n",
+        true,
+      ],
+    ] as const
+  ).map(
+    ([label, saved]) =>
+      [
+        `r17: an aside in ${JSON.stringify(label)} is read for other pay`,
+        `${label}$150,000 - $200,000`,
+        150_000,
+        200_000,
+        saved,
+        "Software Engineer",
+      ] as const
+  ),
+  [
+    "r17: a long label line is judged on its tail, so a bonus in its opening does not hide the base label",
+    `Annual bonus details follow. ${"We hire across many teams and locations and review every application with care. ".repeat(3)}Base salary range:\n$150,000 - $200,000`,
+    150_000,
+    200_000,
+    true,
+    "Software Engineer",
+  ],
+  [
+    "r17: a long label line is judged on its tail, so base pay in its opening does not label a bonus range",
+    `Base salary details follow. ${"We hire across many teams and locations and review every application with care. ".repeat(3)}Annual bonus range:\n$150,000 - $200,000`,
+    150_000,
+    200_000,
+    false,
+    "Software Engineer",
+  ],
 ];
