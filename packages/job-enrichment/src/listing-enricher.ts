@@ -80,6 +80,11 @@ const fixedInputTokens =
   bytesOf(JSON.stringify(responseFormat)) +
   CHAT_TEMPLATE_TOKENS;
 
+const letterRunsOf = (text: string) => text.match(/\p{L}+/gu)?.length ?? 0;
+
+export const PROMPT_TOKEN_FLOOR =
+  letterRunsOf(SYSTEM_PROMPT) + letterRunsOf(JSON.stringify(responseFormat));
+
 const inputTokensOf = (request: ChatRequest) =>
   fixedInputTokens + bytesOf(request.messages[1]?.content ?? "");
 
@@ -119,6 +124,19 @@ export const neuronsFor = (posting: PostingRequest) =>
 
 export const MAX_NEURONS = neuronsOf(MAX_INPUT_TOKENS, MAX_ANSWER_TOKENS);
 
+export const MIN_NEURONS = neuronsOf(PROMPT_TOKEN_FLOOR, 0);
+
+const reportedNeurons = (usage: {
+  readonly completion_tokens: number;
+  readonly prompt_tokens: number;
+}) =>
+  Number.isSafeInteger(usage.completion_tokens) &&
+  Number.isSafeInteger(usage.prompt_tokens) &&
+  usage.completion_tokens >= 0 &&
+  usage.prompt_tokens >= PROMPT_TOKEN_FLOOR
+    ? neuronsOf(usage.prompt_tokens, usage.completion_tokens)
+    : null;
+
 const ModelOutput = Schema.Struct({
   response: Schema.Union([
     Schema.fromJsonString(Schema.Unknown),
@@ -151,10 +169,7 @@ export const listingEnricherLayer = (options: {
             Schema.decodeUnknownEffect(ModelOutput)(output).pipe(
               Effect.map(({ response, usage }): ModelReply => ({
                 answer: response,
-                neurons:
-                  usage === undefined
-                    ? null
-                    : neuronsOf(usage.prompt_tokens, usage.completion_tokens),
+                neurons: usage === undefined ? null : reportedNeurons(usage),
               })),
               Effect.orElseSucceed((): ModelReply => ({
                 answer: null,
@@ -164,6 +179,7 @@ export const listingEnricherLayer = (options: {
           )
         ),
       maxNeurons: MAX_NEURONS,
+      minNeurons: MIN_NEURONS,
       model: options.model,
       neuronsFor,
     })

@@ -40,9 +40,6 @@ export interface NeuronUsage {
   readonly neurons: number;
 }
 
-export const unspentNeurons = ({ claimed, neurons }: NeuronUsage) =>
-  Math.min(claimed, Math.max(0, claimed - neurons));
-
 export interface UnenrichedSweep {
   readonly finalSkips: readonly SkipReasonValue[];
   readonly limit: number;

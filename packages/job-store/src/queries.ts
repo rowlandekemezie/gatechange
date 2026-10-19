@@ -4,7 +4,6 @@ import {
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
   REPOST_GAP,
-  unspentNeurons,
 } from "@rat-stack/core";
 import type {
   EnrichmentSkip,
@@ -381,8 +380,8 @@ export const neuronsClaimedStatement = (day: number) =>
 
 export const recordNeuronsUsedStatement = (usage: NeuronUsage) =>
   statement(
-    "UPDATE enrichment_neurons SET used = used + ?, claimed = MAX(0, claimed - ?) WHERE day = ?",
-    [usage.neurons, unspentNeurons(usage), usage.day]
+    "UPDATE enrichment_neurons SET used = used + ?, claimed = MAX(0, claimed + ? - ?) WHERE day = ? AND ? >= 0",
+    [usage.neurons, usage.neurons, usage.claimed, usage.day, usage.neurons]
   );
 
 export const pruneNeuronsStatement = (cutoff: number) =>

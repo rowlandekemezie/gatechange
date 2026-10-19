@@ -57,6 +57,8 @@ const MODEL = "test-model";
 
 const NEURONS_PER_CALL = 100;
 
+const MIN_NEURONS = 10;
+
 const MAX_NEURONS = 400;
 
 const posted = (
@@ -72,6 +74,7 @@ const enricherOf = (
   ListingEnricher.of({
     extract,
     maxNeurons: MAX_NEURONS,
+    minNeurons: MIN_NEURONS,
     model: MODEL,
     neuronsFor: () => NEURONS_PER_CALL,
   });
@@ -1775,6 +1778,42 @@ describe("enrichListing", () => {
         expect(reasonOf(result.outcome)).toBe("Enriched");
         expect([...result.neurons]).toStrictEqual([[0, 42]]);
         expect([...result.neuronsUsed]).toStrictEqual([[0, 42]]);
+      })
+  );
+
+  it.effect(
+    "a call that reports more neurons than it claimed adds the overage to the claim, so the gate counts what it spent",
+    () =>
+      Effect.gen(function* overage() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          reportedNeurons: NEURONS_PER_CALL + 50,
+        });
+
+        expect([...result.neurons]).toStrictEqual([[0, NEURONS_PER_CALL + 50]]);
+        expect([...result.neuronsUsed]).toStrictEqual([
+          [0, NEURONS_PER_CALL + 50],
+        ]);
+      })
+  );
+
+  it.effect.each<readonly [string, number]>([
+    ["0", 0],
+    ["-50", -50],
+    ["a fraction", 42.5],
+    ["fewer than the fixed prompt implies", MIN_NEURONS - 1],
+  ])(
+    "a call that reports %s neurons keeps its full claim and adds nothing to used",
+    ([, reportedNeurons]) =>
+      Effect.gen(function* untrustedUsage() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          reportedNeurons,
+        });
+
+        expect(reasonOf(result.outcome)).toBe("Enriched");
+        expect([...result.neurons]).toStrictEqual([[0, NEURONS_PER_CALL]]);
+        expect([...result.neuronsUsed]).toStrictEqual([]);
       })
   );
 

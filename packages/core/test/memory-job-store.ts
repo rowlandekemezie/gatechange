@@ -1,12 +1,6 @@
 import { Array, Effect, Layer, Option, pipe } from "effect";
 
-import {
-  daysOpen,
-  fingerprintOf,
-  isRepost,
-  JobStore,
-  unspentNeurons,
-} from "../src/index.js";
+import { daysOpen, fingerprintOf, isRepost, JobStore } from "../src/index.js";
 import type {
   EnrichmentSkip,
   EnrichmentValue,
@@ -223,13 +217,20 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       }),
     recordNeuronsUsed: (usage) =>
       Effect.sync(() => {
+        if (usage.neurons < 0) {
+          return;
+        }
+
         neuronsUsed.set(
           usage.day,
           (neuronsUsed.get(usage.day) ?? 0) + usage.neurons
         );
         neurons.set(
           usage.day,
-          Math.max(0, (neurons.get(usage.day) ?? 0) - unspentNeurons(usage))
+          Math.max(
+            0,
+            (neurons.get(usage.day) ?? 0) + usage.neurons - usage.claimed
+          )
         );
       }),
     recordRun: (receipt) =>

@@ -70,6 +70,7 @@ export class ListingEnricher extends Context.Service<
       request: PostingRequest
     ) => Effect.Effect<ModelReply, EnricherUnavailable>;
     readonly maxNeurons: number;
+    readonly minNeurons: number;
     readonly model: string;
     readonly neuronsFor: (request: PostingRequest) => number;
   }
@@ -936,7 +937,9 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
       enricher.extract(posting).pipe(
         Effect.mapError((failure) => skip("ModelUnavailable", failure.message)),
         Effect.tap(({ neurons }) =>
-          neurons === null
+          neurons === null ||
+          !Number.isSafeInteger(neurons) ||
+          neurons < enricher.minNeurons
             ? Effect.void
             : store.recordNeuronsUsed({
                 claimed: enricher.neuronsFor(posting),

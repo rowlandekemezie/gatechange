@@ -682,7 +682,7 @@ describe("claimNeurons", () => {
   });
 
   it.effect(
-    "lowers the day's claimed neurons to what each call used, never by more than its claim and never below 0",
+    "reconciles each claim to the call's reported neurons, adds any overage to claimed, and ignores a negative report",
     () =>
       withStore(
         Effect.gen(function* reconcile() {
@@ -704,40 +704,40 @@ describe("claimNeurons", () => {
           yield* store.recordNeuronsUsed({
             claimed: 300,
             day: today,
-            neurons: 500,
+            neurons: 450,
           });
 
           expect(yield* ledgerOf).toStrictEqual([
-            { claimed: 370, day: today, used: 570 },
-          ]);
-
-          yield* store.claimNeurons({ budget: 1000, day: today, neurons: 300 });
-          yield* store.recordNeuronsUsed({
-            claimed: 400,
-            day: today,
-            neurons: -50,
-          });
-
-          expect(yield* ledgerOf).toStrictEqual([
-            { claimed: 270, day: today, used: 520 },
-          ]);
-
-          yield* store.recordNeuronsUsed({
-            claimed: 400,
-            day: today,
-            neurons: 0,
-          });
-
-          expect(yield* ledgerOf).toStrictEqual([
-            { claimed: 0, day: today, used: 520 },
+            { claimed: 520, day: today, used: 520 },
           ]);
           expect(
             yield* store.claimNeurons({
               budget: 1000,
               day: today,
-              neurons: 1000,
+              neurons: 481,
             })
-          ).toBe(true);
+          ).toBe(false);
+
+          yield* store.claimNeurons({ budget: 1000, day: today, neurons: 300 });
+          yield* store.recordNeuronsUsed({
+            claimed: 300,
+            day: today,
+            neurons: -50,
+          });
+
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 820, day: today, used: 520 },
+          ]);
+
+          yield* store.recordNeuronsUsed({
+            claimed: 300,
+            day: today,
+            neurons: 0,
+          });
+
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 520, day: today, used: 520 },
+          ]);
         })
       )
   );
@@ -764,7 +764,7 @@ describe("claimNeurons", () => {
             Effect.provideService(SqlExecutor, yielding)
           );
 
-          const usages = Array.makeBy(60, (index) => 40 + (index % 7) * 10);
+          const usages = Array.makeBy(60, (index) => 40 + (index % 5) * 100);
 
           const granted = yield* Effect.forEach(
             usages,
@@ -797,6 +797,7 @@ describe("claimNeurons", () => {
           expect(
             granted.filter((neurons) => neurons > 0).length
           ).toBeGreaterThan(5);
+          expect(granted.some((neurons) => neurons > 400)).toBe(true);
           expect(yield* ledgerOf).toStrictEqual([
             { claimed: used, day: today, used },
           ]);

@@ -15,8 +15,10 @@ import {
   listingEnricherLayer,
   MAX_INPUT_TOKENS,
   MAX_NEURONS,
+  MIN_NEURONS,
   modelAnswerJsonSchema,
   neuronsFor,
+  PROMPT_TOKEN_FLOOR,
   SYSTEM_PROMPT,
 } from "../src/index.js";
 import type { ChatRequest, RunModel } from "../src/index.js";
@@ -168,6 +170,68 @@ describe("listing enricher", () => {
         expect(reported.neurons).toBe(48);
       })
   );
+
+  it.effect.each<readonly [string, number, number]>([
+    ["no prompt tokens", 0, 100],
+    ["negative prompt tokens", -50, 100],
+    ["negative completion tokens", 1000, -50],
+    ["fractional prompt tokens", 1000.5, 100],
+    ["fractional completion tokens", 1000, 0.5],
+    [
+      "fewer prompt tokens than the fixed prompt and schema hold",
+      PROMPT_TOKEN_FLOOR - 1,
+      100,
+    ],
+    [
+      "no more prompt tokens than the system prompt alone holds",
+      SYSTEM_PROMPT.match(/\p{L}+/gu)?.length ?? 0,
+      100,
+    ],
+  ])(
+    "treats a usage report with %s as missing, so the call keeps its full claim",
+    ([, promptTokens, completionTokens]) =>
+      Effect.gen(function* untrustedUsage() {
+        const reported = yield* extractWith(
+          recording(
+            Effect.succeed({
+              response: answer,
+              usage: {
+                completion_tokens: completionTokens,
+                prompt_tokens: promptTokens,
+              },
+            })
+          ).run
+        );
+
+        expect(reported).toStrictEqual({ answer, neurons: null });
+      })
+  );
+
+  it.effect(
+    "trusts a report at the prompt token floor and no report below the neurons that floor implies",
+    () =>
+      Effect.gen(function* atFloor() {
+        const reported = yield* extractWith(
+          recording(
+            Effect.succeed({
+              response: answer,
+              usage: {
+                completion_tokens: 0,
+                prompt_tokens: PROMPT_TOKEN_FLOOR,
+              },
+            })
+          ).run
+        );
+
+        expect(reported.neurons).toBe(MIN_NEURONS);
+        expect(MIN_NEURONS).toBeGreaterThan(0);
+      })
+  );
+
+  it("keeps the prompt token floor under the smallest prompt Workers AI reported in the round 11 eval", () => {
+    expect(PROMPT_TOKEN_FLOOR).toBeGreaterThan(0);
+    expect(PROMPT_TOKEN_FLOOR).toBeLessThan(953);
+  });
 
   it("names the ATS workplace type to the model only when the board states one", () => {
     expect(
