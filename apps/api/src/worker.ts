@@ -59,9 +59,9 @@ export const INGEST_SCHEDULE = `*/${INGEST_INTERVAL_MINUTES} * * * *`;
 
 export const DEFAULT_FEED_CONCURRENCY = 6;
 
-export const MAGIC_LINK_SENDER = "sign-in@rowlandekemezie.com";
+export const MAGIC_LINK_SENDER = "sign-in@jobs.rowlandekemezie.com";
 
-export const DIGEST_SENDER = "digest@rowlandekemezie.com";
+export const DIGEST_SENDER = "digest@jobs.rowlandekemezie.com";
 
 export const DIGEST_SCHEDULE = "7 * * * *";
 
