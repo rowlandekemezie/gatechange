@@ -2,6 +2,8 @@ import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type {
   JobQueryValue,
+  SavedSearchIdValue,
+  SearchFiltersValue,
   TrackRequestValue,
 } from "@rat-stack/core/contracts";
 import { Context, Effect, Layer } from "effect";
@@ -18,12 +20,15 @@ const make = Effect.gen(function* makeJobQueries() {
   const client = yield* RpcClient.make(group).pipe(Effect.provide(protocol));
 
   return {
+    deleteSearch: (id: SavedSearchIdValue) => client.deleteSearch({ id }),
     getJob: (id: string) => client.getJob({ id }),
     importShortlist: (jobs: readonly TrackRequestValue[]) =>
       client.importShortlist({ jobs }),
     listJobs: (query: JobQueryValue) => client.listJobs(query),
     noteTrackedJob: (jobId: string, notes: string) =>
       client.noteTrackedJob({ jobId, notes }),
+    saveSearch: (filters: SearchFiltersValue) => client.saveSearch({ filters }),
+    savedSearches: client.savedSearches({}),
     signInOptions: client.signInOptions({}),
     stats: client.boardStats({}),
     trackJob: (job: TrackRequestValue) => client.trackJob(job),

@@ -11,6 +11,42 @@ export {
 
 export { AccountStore } from "./account-store.js";
 
+export { AlertStore } from "./alert-store.js";
+
+export { DigestMailer } from "./digest-mailer.js";
+
+export { DigestMailerUnavailable } from "./digest-mailer-unavailable.js";
+
+export { SavedSearchLimit } from "./saved-search-limit.js";
+
+export {
+  alertsAllowed,
+  DigestFrequency,
+  digestFor,
+  digestSourceLabels,
+  matchesFilters,
+  MAX_DIGEST_JOBS,
+  MAX_SAVED_SEARCHES,
+  periodStartOf,
+  RECIPIENT_SENDS_PER_WEEK,
+  runDigests,
+  SavedSearch,
+  SavedSearchId,
+  SearchFilters,
+  WEEK_MILLIS,
+} from "./alerts.js";
+
+export type {
+  Digest,
+  DigestFrequencyValue,
+  DigestPlan,
+  DigestReceipt,
+  DigestRecipient,
+  SavedSearchIdValue,
+  SavedSearchValue,
+  SearchFiltersValue,
+} from "./alerts.js";
+
 export type { RequestHeaders } from "./account-store.js";
 
 export { AccountStoreUnavailable } from "./account-store-unavailable.js";
@@ -29,10 +65,13 @@ export {
   account,
   boardStats,
   capabilities,
+  deleteSearch,
   getJob,
   importShortlist,
   listJobs,
   noteTrackedJob,
+  savedSearches,
+  saveSearch,
   signInOptions,
   trackedJobs,
   trackJob,
@@ -133,6 +172,7 @@ export {
   BoardStats,
   boardStatsContract,
   DEFAULT_AGE_DAYS,
+  deleteSearchContract,
   EpochMillis,
   getJobContract,
   IngestOutcome,
@@ -153,6 +193,8 @@ export {
   RoleCount,
   RoleLevel,
   roleLevels,
+  savedSearchesContract,
+  saveSearchContract,
   signInOptionsContract,
   SourceName,
   importShortlistContract,

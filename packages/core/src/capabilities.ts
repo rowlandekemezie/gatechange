@@ -5,13 +5,18 @@ import type { Effect as EffectType } from "effect";
 import { AccountStore } from "./account-store.js";
 import { currentMember } from "./account.js";
 import type { AccountIdValue } from "./account.js";
+import { AlertStore } from "./alert-store.js";
+import { MAX_SAVED_SEARCHES } from "./alerts.js";
 import {
   accountContract,
   boardStatsContract,
+  deleteSearchContract,
   getJobContract,
   importShortlistContract,
   listJobsContract,
   noteTrackedJobContract,
+  savedSearchesContract,
+  saveSearchContract,
   signInOptionsContract,
   trackedJobsContract,
   trackJobContract,
@@ -19,6 +24,7 @@ import {
 } from "./contracts.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { JobStore } from "./job-store.js";
+import { SavedSearchLimit } from "./saved-search-limit.js";
 import type { TrackerFull } from "./tracker-full.js";
 import { TrackerStore } from "./tracker.js";
 
@@ -54,6 +60,42 @@ export const account = implement(accountContract, () => currentMember);
 
 export const signInOptions = implement(signInOptionsContract, () =>
   AccountStore.use((store) => Effect.succeed(store.signInOptions))
+);
+
+export const saveSearch = implement(saveSearchContract, ({ filters }) =>
+  Effect.gen(function* saveSearchHandler() {
+    const member = yield* currentMember;
+    const store = yield* AlertStore;
+
+    const saved = yield* store.saveSearch(
+      member.id,
+      filters,
+      yield* Clock.currentTimeMillis,
+      MAX_SAVED_SEARCHES
+    );
+
+    return yield* Effect.fromOption(saved).pipe(
+      Effect.mapError(() => new SavedSearchLimit({ limit: MAX_SAVED_SEARCHES }))
+    );
+  })
+);
+
+export const savedSearches = implement(savedSearchesContract, () =>
+  Effect.gen(function* savedSearchesHandler() {
+    const member = yield* currentMember;
+    const store = yield* AlertStore;
+
+    return yield* store.searchesOf(member.id);
+  })
+);
+
+export const deleteSearch = implement(deleteSearchContract, ({ id }) =>
+  Effect.gen(function* deleteSearchHandler() {
+    const member = yield* currentMember;
+    const store = yield* AlertStore;
+
+    yield* store.deleteSearch(member.id, id);
+  })
 );
 
 const changeTracker = <E extends JobStoreUnavailable | TrackerFull>(
@@ -101,6 +143,9 @@ export const capabilities = [
   getJob,
   account,
   signInOptions,
+  saveSearch,
+  savedSearches,
+  deleteSearch,
   trackedJobs,
   trackJob,
   importShortlist,

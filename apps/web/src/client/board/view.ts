@@ -16,10 +16,12 @@ import {
 } from "../../features/board/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
+import { savedSearchesPanel } from "../../features/saved-searches/view.js";
 import {
   shortlistPage,
   trackerNotices,
 } from "../../features/shortlist/view.js";
+import { SessionState } from "../account/model.js";
 import { boardUrl, canonicalPathOf, Route, shortlistRouter } from "../route.js";
 import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
@@ -136,14 +138,30 @@ export const view = (model: ModelValue, h: H): Document =>
         ...trackerNotices(model, h),
         Route.match<Html>(model.route, {
           Account: ({ notice }) =>
-            h.submodel({
-              model: model.account,
-              slotId: "account",
-              toParentMessage: (message) =>
-                Message.GotAccountMessage({ message }),
-              view: accountView,
-              viewInputs: { notice },
-            }),
+            h.div(
+              [h.Class("account-page")],
+              [
+                h.submodel({
+                  model: model.account,
+                  slotId: "account",
+                  toParentMessage: (message) =>
+                    Message.GotAccountMessage({ message }),
+                  view: accountView,
+                  viewInputs: { notice },
+                }),
+                ...(Schema.is(SessionState.SignedIn)(model.account.session)
+                  ? [
+                      h.submodel({
+                        model: model.savedSearches,
+                        slotId: "saved-searches",
+                        toParentMessage: (message) =>
+                          Message.GotSavedSearchesMessage({ message }),
+                        view: savedSearchesPanel,
+                      }),
+                    ]
+                  : []),
+              ]
+            ),
           Board: () => boardPage(model, h),
           Company: () => listingPage(model, h),
           ConfirmSignIn: ({ token }) => confirmSignInPage(token, h),

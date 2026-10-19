@@ -87,6 +87,15 @@ Scenarios:
 - `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
 - `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. It then reads the session cookie over the DevTools protocol and replays it from Node: a `trackJob` with `sec-fetch-site: cross-site` and a foreign `Origin` must answer 403, and a `trackedJobs` with the same cookie and same-origin headers must answer as a member, which proves the refusal came from the cross-site guard. Read the victim's row from the local D1 afterwards to prove it did not change.
 
+Saved-search digest scenarios take `--backend "$(cat /tmp/verify-jobs/<stage>/backend-url)"` and `--log /tmp/verify-jobs/<stage>/dev.log`. They sign in as `--email` first, so give each run its own address: a member gets at most one digest a week, and a second run with the same address sends nothing. The digest cron is fired through the backend's `/cdn-cgi/handler/scheduled?cron=7+*+*+*+*&time=<ms>` route, and a digest counts when `dev.log` shows `alchemy dev` handing one to `--email`.
+
+- `save-search` presses `Email me new matches weekly` under the board search (after typing `--search` when given), waits for the saved notice, and requires the search on `/account`.
+- `digest` saves, fires the cron, requires `--expect-digests` (default 1) new digests, and when one arrived opens its HTML and requires no sideways scroll. Add `--mobile` for the phone check.
+- `no-double-send` saves, fires the cron twice for the same moment and once three hours later, and requires exactly one digest.
+- `unsubscribe` opens the emailed unsubscribe link on the stage, presses `Unsubscribe`, requires `You are unsubscribed`, and requires no digest a week later.
+- `digest-links` opens every job link in the digest on the stage and requires each job page to load.
+- `delete-search` deletes the saved search on `/account` and requires no digest from the next run.
+
 Flags:
 
 - `--mobile` emulates a 390 by 844 phone at 3x, so the PNG is 1170 pixels wide.
