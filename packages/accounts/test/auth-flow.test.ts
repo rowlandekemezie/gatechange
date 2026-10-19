@@ -64,6 +64,24 @@ const refusingLimiterInserts = () => {
   return database;
 };
 
+const RACED_KEY = "magic-link-attempt:victim@example.com";
+
+const losingFirstCountRace = () => {
+  const database = migratedDatabase();
+
+  database.exec(`
+    CREATE TRIGGER first_count_race BEFORE INSERT ON "rateLimit"
+    WHEN NEW.key = '${RACED_KEY}' AND NEW.id <> 'racer'
+    BEGIN
+      INSERT INTO "rateLimit" (id, key, count, "lastRequest")
+        VALUES ('racer', NEW.key, 1, NEW."lastRequest");
+      SELECT RAISE(FAIL, 'UNIQUE constraint failed: rateLimit.key');
+    END;
+  `);
+
+  return database;
+};
+
 type Mailer = (request: MagicLinkRequest) => boolean | Error;
 
 const settings = (
@@ -698,6 +716,10 @@ describe("per-email send limit", () => {
       "a suppressed recipient",
       () => cloudflareSendError("E_RECIPIENT_SUPPRESSED"),
     ],
+    [
+      "a recipient server rejection",
+      () => cloudflareSendError("E_DELIVERY_FAILED"),
+    ],
   ] satisfies [string, Mailer][])(
     "stops calling the mailer after 6 tries at one address on %s",
     ([, fails]) =>
@@ -818,6 +840,33 @@ describe("per-email send limit", () => {
         expect(late).toBe(500);
         expect(after).toStrictEqual([200, 200, 200, 429]);
         expect(sent).toHaveLength(3);
+      })
+  );
+
+  it.effect(
+    "counts a first request that loses the insert race for a new address against the row that won",
+    () =>
+      Effect.gen(function* firstInsertRace() {
+        const database = losingFirstCountRace();
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, database);
+
+        const status = yield* statusOf(
+          requestLink(auth, "victim@example.com", "2001:db8:1::1")
+        );
+
+        const counts = database
+          .prepare(
+            "SELECT key, count, id = 'racer' AS racer FROM \"rateLimit\" WHERE key LIKE 'magic-link-%' ORDER BY key"
+          )
+          .all()
+          .map(({ count, key, racer }) => ({ count, key, racer }));
+
+        expect(status).toBe(200);
+        expect(sent).toHaveLength(1);
+        expect(counts).toStrictEqual([
+          { count: 2, key: RACED_KEY, racer: 1 },
+          { count: 1, key: "magic-link-email:victim@example.com", racer: 0 },
+        ]);
       })
   );
 

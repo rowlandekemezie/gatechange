@@ -8,18 +8,29 @@ export const SITE_ZONE = "rowlandekemezie.com";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
 
-const OWN_DOMAINS = [SITE_ZONE, "workers.dev", "localhost", "[::1]"] as const;
+const SITE_WORKERS_SUBDOMAIN = "rowland-ekemezie";
 
-const UNSPECIFIED_OR_LOOPBACK = /^(?:0\.0\.0\.0|127\.\d+\.\d+\.\d+)$/u;
+const OWN_DOMAINS = [
+  SITE_ZONE,
+  `${SITE_WORKERS_SUBDOMAIN}.workers.dev`,
+  "localhost",
+] as const;
+
+const DNS_NAME = /^[a-z0-9.-]+$/u;
+
+const IPV4_LITERAL = /^[0-9.]+$/u;
 
 const WEB_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
 
-const isOwnHost = (hostname: string) => {
+const isOffSiteName = (hostname: string) => {
   const host = hostname.replace(/\.+$/u, "");
 
   return (
-    UNSPECIFIED_OR_LOOPBACK.test(host) ||
-    OWN_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`))
+    DNS_NAME.test(host) &&
+    !IPV4_LITERAL.test(host) &&
+    !OWN_DOMAINS.some(
+      (domain) => host === domain || host.endsWith(`.${domain}`)
+    )
   );
 };
 
@@ -32,7 +43,7 @@ export const offSiteHref = (url: string): Option.Option<string> => {
 
   const onOurPage = URL.parse(url, `${parsed.protocol}//${SITE_HOSTNAME}/x/`);
 
-  return onOurPage?.href === parsed.href && !isOwnHost(parsed.hostname)
+  return onOurPage?.href === parsed.href && isOffSiteName(parsed.hostname)
     ? Option.some(parsed.href)
     : Option.none();
 };

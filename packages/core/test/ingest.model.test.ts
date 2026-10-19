@@ -7,6 +7,7 @@ import {
   Logger,
   Option,
   Predicate,
+  References,
   Schema,
   pipe,
 } from "effect";
@@ -414,7 +415,7 @@ describe("ingest", () => {
   );
 
   it.effect(
-    "skips a posting that links back to this site and logs how many it skipped",
+    "keeps a role whose link points back at this site off the board and logs how many roles it kept off",
     () =>
       Effect.gen(function* skipOwnLinks() {
         const memory = yield* makeMemoryJobStore;
@@ -429,6 +430,11 @@ describe("ingest", () => {
                 ...postingFor("b"),
                 url: "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x",
               },
+              {
+                ...postingFor("c"),
+                title: "Product Manager",
+                url: "/careers/c",
+              },
             ]),
         });
 
@@ -438,8 +444,13 @@ describe("ingest", () => {
               memory.layer,
               Layer.succeed(PostingFeeds, feeds),
               Logger.layer([
-                Logger.make(({ logLevel, message }) =>
-                  logLevel === "Warn" ? warnings.push(message) : 0
+                Logger.make(({ fiber, logLevel, message }) =>
+                  logLevel === "Warn"
+                    ? warnings.push({
+                        fields: fiber.getRef(References.CurrentLogAnnotations),
+                        message,
+                      })
+                    : 0
                 ),
               ])
             )
@@ -453,10 +464,10 @@ describe("ingest", () => {
           )
         ).toStrictEqual(["https://jobs.example/a"]);
         expect(warnings).toStrictEqual([
-          [
-            "skipped postings without an off-site web link",
-            { feed: onlyFeed.key, skipped: 1 },
-          ],
+          {
+            fields: { feed: onlyFeed.key, unlinked: 1 },
+            message: ["kept roles without an off-site web link off the board"],
+          },
         ]);
       })
   );

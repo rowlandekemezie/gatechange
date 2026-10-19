@@ -89,7 +89,7 @@ export type { FeedOutcomeValue, FeedRef, FeedStateValue } from "./feed.js";
 export {
   INGEST_LEASE_MILLIS,
   IngestInProgress,
-  jobsFromPostings,
+  listingsFromPostings,
   retentionCutoff,
   runIngest,
 } from "./ingest.js";
@@ -109,6 +109,7 @@ export type {
   FeedReplacementValue,
   JobListing,
   ListingHistory,
+  Sighted,
 } from "./job-store.js";
 
 export { classifyPlacement, regionWeight } from "./location.js";

@@ -20,6 +20,10 @@ export const Posting = Schema.Struct({
 
 export type PostingValue = typeof Posting.Type;
 
+export interface Listing extends Omit<JobValue, "url"> {
+  readonly url: Option.Option<string>;
+}
+
 export const SALARY_BONUS = 3;
 
 export const REMOTE_BONUS = 2;
@@ -35,7 +39,7 @@ export const normalizePosting = (
   feed: FeedRef,
   posting: PostingValue,
   seenAt: number
-): Option.Option<JobValue> => {
+): Option.Option<Listing> => {
   const title = collapseWhitespace(posting.title);
 
   const company = collapseWhitespace(
@@ -44,9 +48,7 @@ export const normalizePosting = (
       : Option.getOrElse(feed.company, () => "")
   );
 
-  const url = offSiteHref(posting.url);
-
-  if (title.length === 0 || company.length === 0 || Option.isNone(url)) {
+  if (title.length === 0 || company.length === 0) {
     return Option.none();
   }
 
@@ -84,7 +86,7 @@ export const normalizePosting = (
         salary: hasSalary ? salary : null,
         source: feed.source,
         title,
-        url: url.value,
+        url: offSiteHref(posting.url),
       };
     })
   );
