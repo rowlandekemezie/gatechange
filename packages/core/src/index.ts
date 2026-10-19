@@ -253,6 +253,7 @@ export {
   EnrichmentOutcome,
   ListingEnricher,
   MAX_POSTING_CHARS,
+  namesVariablePay,
   ModelAnswer,
   moneyRangesIn,
   SalaryPeriod,

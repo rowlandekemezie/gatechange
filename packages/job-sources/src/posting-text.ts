@@ -1,5 +1,6 @@
 import {
   annualSalaryBandOf,
+  namesVariablePay,
   PostingGone,
   PostingTexts,
   PostingUnavailable,
@@ -25,6 +26,10 @@ import { HttpClient } from "effect/http";
 import { CompanyAts } from "./boards.js";
 import { getJson } from "./http.js";
 import { linesOfHtml, nonEmpty, textOfHtml, workplaceOf } from "./parse.js";
+import {
+  SmartRecruitersLocation,
+  smartRecruitersWorkplaceOf,
+} from "./smartrecruiters.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
@@ -60,25 +65,8 @@ const LeverDetail = Schema.Struct({
 });
 
 const AshbyDetail = Schema.Struct({
-  compensation: Schema.optional(
-    Schema.NullOr(
-      Schema.Struct({
-        compensationTierSummary: OptionalString,
-        compensationTiers: Schema.optional(Schema.Unknown),
-        summaryComponents: Schema.optional(
-          Schema.NullOr(
-            Schema.Array(
-              Schema.Struct({
-                compensationType: OptionalString,
-                currencyCode: OptionalString,
-                interval: OptionalString,
-              })
-            )
-          )
-        ),
-      })
-    )
-  ),
+  address: Schema.optional(Schema.Unknown),
+  compensation: Schema.optional(Schema.Unknown),
   descriptionPlain: OptionalString,
   id: Schema.String,
   location: OptionalString,
@@ -106,6 +94,7 @@ const SmartRecruitersDetail = Schema.Struct({
       qualifications: SmartRecruitersSection,
     }),
   }),
+  location: Schema.optional(Schema.Unknown),
 });
 
 const WorkableDetail = Schema.Struct({
@@ -161,35 +150,27 @@ const leverText = ({ externalId, slug }: PostingKey) =>
     }))
   );
 
-const ashbyCompensation = (
-  compensation: typeof AshbyDetail.Type.compensation
-): string | null => {
-  const summary = compensation?.compensationTierSummary;
+const AshbyCompensation = Schema.Struct({
+  compensationTierSummary: Schema.optional(Schema.Unknown),
+  compensationTiers: Schema.optional(Schema.Unknown),
+  summaryComponents: Schema.optional(Schema.Unknown),
+});
 
-  if (summary === null || summary === undefined) {
-    return null;
-  }
+type AshbyCompensationValue = typeof AshbyCompensation.Type;
 
-  return pipe(
-    compensation?.summaryComponents ?? [],
-    Array.findFirst((part) => part.compensationType === "Salary"),
-    Option.match({
-      onNone: () => `Compensation: ${summary}`,
-      onSome: (salary) =>
-        nonEmpty([
-          `Compensation: ${summary}`,
-          salary.currencyCode,
-          salary.interval === null || salary.interval === undefined
-            ? null
-            : `per ${salary.interval}`,
-        ]).join(" "),
-    })
-  );
-};
+const AshbySummaryComponent = Schema.Struct({
+  compensationType: OptionalString,
+  currencyCode: OptionalString,
+  interval: OptionalString,
+});
 
-const AshbyTiers = Schema.Array(Schema.Unknown);
+const AshbyTier = Schema.Struct({
+  additionalInformation: OptionalString,
+  components: Schema.Array(Schema.Unknown),
+  title: OptionalString,
+});
 
-const AshbyTier = Schema.Struct({ components: Schema.Array(Schema.Unknown) });
+type AshbyTierValue = typeof AshbyTier.Type;
 
 const AshbySalaryComponent = Schema.Struct({
   compensationType: Schema.Literal("Salary"),
@@ -197,10 +178,57 @@ const AshbySalaryComponent = Schema.Struct({
   interval: Schema.String,
   maxValue: Schema.Finite,
   minValue: Schema.Finite,
+  summary: OptionalString,
 });
+
+const AshbyAddress = Schema.Struct({
+  postalAddress: Schema.Struct({
+    addressCountry: OptionalString,
+    addressLocality: OptionalString,
+    addressRegion: OptionalString,
+  }),
+});
+
+const decodeList = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown));
+
+const decodeAshbyAddress = Schema.decodeUnknownOption(AshbyAddress);
+
+const decodeAshbyTier = Schema.decodeUnknownOption(AshbyTier);
 
 const decodeAshbySalaryComponent =
   Schema.decodeUnknownOption(AshbySalaryComponent);
+
+const ashbyCompensation = ({
+  compensationTierSummary,
+  summaryComponents,
+}: AshbyCompensationValue): string | null =>
+  pipe(
+    Schema.decodeUnknownOption(Schema.String)(compensationTierSummary),
+    Option.map((summary) =>
+      pipe(
+        decodeList(summaryComponents),
+        Option.getOrElse((): readonly unknown[] => []),
+        Array.findFirst((part) =>
+          Option.filter(
+            Schema.decodeUnknownOption(AshbySummaryComponent)(part),
+            (component) => component.compensationType === "Salary"
+          )
+        ),
+        Option.match({
+          onNone: () => `Compensation: ${summary}`,
+          onSome: (salary) =>
+            nonEmpty([
+              `Compensation: ${summary}`,
+              salary.currencyCode,
+              salary.interval === null || salary.interval === undefined
+                ? null
+                : `per ${salary.interval}`,
+            ]).join(" "),
+        })
+      )
+    ),
+    Option.getOrNull
+  );
 
 const ashbyPeriodOf = (interval: string) =>
   Match.value(interval).pipe(
@@ -211,16 +239,92 @@ const ashbyPeriodOf = (interval: string) =>
     Match.orElse(() => null)
   );
 
+const countryNames: readonly (readonly string[])[] = [
+  ["United States", "USA", "US"],
+  ["United Kingdom", "UK"],
+];
+
+const wordsOf = (text: string) =>
+  ` ${text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .join(" ")
+    .trim()} `;
+
+const namesOfPlace = (place: string) =>
+  pipe(
+    countryNames,
+    Array.findFirst((names) =>
+      names.some((name) => wordsOf(name) === wordsOf(place))
+    ),
+    Option.getOrElse(() => [place])
+  );
+
+const titleNamesPlace = (title: string, place: string) =>
+  namesOfPlace(place).some(
+    (name) =>
+      wordsOf(name).trim() !== "" && wordsOf(title).includes(wordsOf(name))
+  );
+
+const placesOf = (
+  location: string | null | undefined,
+  address: Option.Option<typeof AshbyAddress.Type>
+) =>
+  nonEmpty([
+    location,
+    ...pipe(
+      address,
+      Option.match({
+        onNone: () => [],
+        onSome: ({ postalAddress }) => [
+          postalAddress.addressLocality,
+          postalAddress.addressRegion,
+          postalAddress.addressCountry,
+        ],
+      })
+    ),
+  ]);
+
+const ashbyTierFor = (tiers: readonly unknown[], places: readonly string[]) =>
+  pipe(
+    places,
+    Array.findFirst((place) =>
+      Array.findFirst(tiers, (item) =>
+        Option.filter(
+          decodeAshbyTier(item),
+          ({ title }) =>
+            title !== null &&
+            title !== undefined &&
+            titleNamesPlace(title, place)
+        )
+      )
+    ),
+    Option.orElse(() => Option.flatMap(Array.head(tiers), decodeAshbyTier))
+  );
+
+const labelsVariablePay = (
+  tier: AshbyTierValue,
+  summary: string | null | undefined
+) =>
+  nonEmpty([summary, tier.title, tier.additionalInformation]).some(
+    namesVariablePay
+  );
+
 const ashbySalary = (
-  compensation: typeof AshbyDetail.Type.compensation
+  { compensationTiers }: AshbyCompensationValue,
+  places: readonly string[]
 ): SalaryBandValue | null =>
   pipe(
-    Schema.decodeUnknownOption(AshbyTiers)(compensation?.compensationTiers),
-    Option.flatMap(Array.head),
-    Option.flatMap(Schema.decodeUnknownOption(AshbyTier)),
-    Option.flatMap(({ components }) =>
-      Array.findFirst(components, (component) =>
-        decodeAshbySalaryComponent(component)
+    ashbyTierFor(
+      Option.getOrElse(decodeList(compensationTiers), () => []),
+      places
+    ),
+    Option.flatMap((tier) =>
+      pipe(
+        Array.findFirst(tier.components, (component) =>
+          decodeAshbySalaryComponent(component)
+        ),
+        Option.filter(({ summary }) => !labelsVariablePay(tier, summary))
       )
     ),
     Option.flatMap((salary) =>
@@ -265,16 +369,25 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
               message: "the posting is no longer on the Ashby board",
             })
           ),
-        onSome: (job) =>
-          Effect.succeed<PostingTextValue>({
-            salary: ashbySalary(job.compensation),
+        onSome: (job) => {
+          const compensation = pipe(
+            Schema.decodeUnknownOption(AshbyCompensation)(job.compensation),
+            Option.getOrElse(() => ({}))
+          );
+
+          return Effect.succeed<PostingTextValue>({
+            salary: ashbySalary(
+              compensation,
+              placesOf(job.location, decodeAshbyAddress(job.address))
+            ),
             text: nonEmpty([
               job.descriptionPlain,
-              ashbyCompensation(job.compensation),
+              ashbyCompensation(compensation),
               locationLine(job.location),
             ]).join("\n\n"),
             workplace: workplaceOf(job.workplaceType),
-          }),
+          });
+        },
       })
     )
   );
@@ -307,28 +420,34 @@ const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
     `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings/${encodeURIComponent(externalId)}`,
     SmartRecruitersDetail
   ).pipe(
-    Effect.map(({ compensation, jobAd: { sections } }): PostingTextValue => ({
-      salary: pipe(
-        decodeSmartRecruitersCompensation(compensation),
-        Option.flatMap(smartRecruitersSalary),
-        Option.getOrNull
-      ),
-      text: nonEmpty(
-        pipe(
-          [
-            sections.companyDescription,
-            sections.jobDescription,
-            sections.qualifications,
-            sections.additionalInformation,
-          ],
-          Array.flatMap((section) => [
-            section?.title,
-            linesOfHtml(section?.text ?? ""),
-          ])
-        )
-      ).join("\n\n"),
-      workplace: "Unspecified",
-    }))
+    Effect.map(
+      ({ compensation, jobAd: { sections }, location }): PostingTextValue => ({
+        salary: pipe(
+          decodeSmartRecruitersCompensation(compensation),
+          Option.flatMap(smartRecruitersSalary),
+          Option.getOrNull
+        ),
+        text: nonEmpty(
+          pipe(
+            [
+              sections.companyDescription,
+              sections.jobDescription,
+              sections.qualifications,
+              sections.additionalInformation,
+            ],
+            Array.flatMap((section) => [
+              section?.title,
+              linesOfHtml(section?.text ?? ""),
+            ])
+          )
+        ).join("\n\n"),
+        workplace: smartRecruitersWorkplaceOf(
+          Option.getOrNull(
+            Schema.decodeUnknownOption(SmartRecruitersLocation)(location)
+          )
+        ),
+      })
+    )
   );
 
 const workableText = ({ externalId, slug }: PostingKey) =>

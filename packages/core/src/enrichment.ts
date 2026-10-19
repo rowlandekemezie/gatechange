@@ -330,7 +330,9 @@ const basePayWord = String.raw`(?:salary|salaries|base|compensation|pay|wages?|r
 
 const payNegation = String.raw`\b(?:not(?:\s+(?:counted|included|part))?(?:\s+(?:as|in|of))?|separate\s+from|in\s+addition\s+to|on\s+top\s+of|excluding|outside(?:\s+of)?)\s+(?:(?:the|your|our|any)\s+)?`;
 
-const otherPayWord = String.raw`(?:stipends?|bonus(?:es)?|commissions?|rsus?|allowances?|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|ote|on-target)`;
+const variablePayWord = String.raw`(?:ote|on[\s-]target|commissions?)`;
+
+const otherPayWord = String.raw`(?:stipends?|bonus(?:es)?|${variablePayWord}|rsus?|allowances?|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*)`;
 
 const loosePayWord = String.raw`(?:incentives?|variable|stock|options?|equity|budgets?)`;
 
@@ -395,11 +397,19 @@ const namesBasePay = (label: string) =>
   lastIndexOf(basePayCue, label) !== -1 &&
   lastIndexOf(otherPayCues, label) <= lastIndexOf(basePayCue, label);
 
-const asideOtherPay =
-  /\b(?:ote|on[\s-]target|commissions?|(?:stock|equity)\s+grants?|bonus(?:es)?)\b/iu;
+const variablePay = new RegExp(String.raw`\b${variablePayWord}\b`, "iu");
 
-const asideNegation =
-  /^\W*(?:and|with|or)\b|\b(?:not|excluding|exclude[sd]?|exclusive|without|separate(?:ly)?|elsewhere|plus|before|in\s+addition|(?:if|where)\s+(?:applicable|eligible))\b/iu;
+export const namesVariablePay = (label: string) =>
+  variablePay.test(label) && !namesBasePay(label);
+
+const asideOtherPayWord = String.raw`(?:${variablePayWord}|(?:stock|equity)\s+grants?|bonus(?:es)?)`;
+
+const asideOtherPay = new RegExp(String.raw`\b${asideOtherPayWord}\b`, "iu");
+
+const asideNegation = new RegExp(
+  String.raw`^\W*(?:and\b|with\b|or\b|\+)|\b(?:not|no(?=\s+${asideOtherPayWord})|pre(?=-${asideOtherPayWord})|excl|excluding|exclude[sd]?|exclusive|w/o|without|separate(?:ly)?|elsewhere|plus|before|on\s+top|in\s+addition|(?:if|where)\s+(?:applicable|eligible))\b|\b(?:bonus(?:es)?|commissions?)\s+(?:eligible|var(?:y|ies))\b`,
+  "iu"
+);
 
 const namesOtherPayAside = (aside: string) =>
   asideOtherPay.test(aside) && !asideNegation.test(aside);
