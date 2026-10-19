@@ -60,10 +60,15 @@ export interface OpenRoleRecord {
   readonly title: string;
 }
 
+export interface Stint {
+  readonly from: number;
+  readonly until: number;
+}
+
 export interface HistoryRecord {
+  readonly company: string;
   readonly feed: string;
-  readonly firstSeenAt: number;
-  readonly lastSeenAt: number;
+  readonly stints: readonly Stint[];
 }
 
 export interface CompanyRecords {
@@ -211,9 +216,10 @@ const trendOf = (
       const weekStart = weekEnding - WEEK_MILLIS;
 
       return {
-        open: history.filter(
-          (record) =>
-            record.firstSeenAt <= weekEnding && record.lastSeenAt > weekStart
+        open: history.filter((record) =>
+          record.stints.some(
+            (stint) => stint.from <= weekEnding && stint.until > weekStart
+          )
         ).length,
         weekEnding,
       };
@@ -238,15 +244,17 @@ export const companyIntelOf = (
   const allowed = (source: SourceNameValue) =>
     paidFeaturesAllowed(source, terms);
 
+  const atCompany = (company: string) =>
+    Option.contains(companySlugOf(company), slug);
+
   const open = records.open.filter(
-    (record) =>
-      allowed(record.source) &&
-      Option.contains(companySlugOf(record.company), slug)
+    (record) => allowed(record.source) && atCompany(record.company)
   );
 
   const history = records.history.filter(
     (record) =>
-      record.lastSeenAt > now - TREND_WINDOW_MILLIS &&
+      atCompany(record.company) &&
+      record.stints.some((stint) => stint.until > now - TREND_WINDOW_MILLIS) &&
       Option.exists(sourceOfFeedKey(record.feed), allowed)
   );
 

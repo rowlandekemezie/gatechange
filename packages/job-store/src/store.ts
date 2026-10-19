@@ -18,6 +18,7 @@ import type {
   JobDetailValue,
   JobValue,
   ListedJobValue,
+  HistoryRecord,
   ListingHistory,
   OpenRoleRecord,
 } from "@rat-stack/core";
@@ -37,6 +38,7 @@ import {
   feedSucceededStatement,
   findJobStatement,
   historyStatement,
+  intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
   newTodayStatement,
@@ -128,9 +130,25 @@ const CompanyRoleRow = Schema.Struct({
 });
 
 const CompanyHistoryRow = Schema.Struct({
-  first_seen_at: Count,
+  company: Schema.String,
   last_seen_at: Count,
   last_seen_feed: Schema.String,
+  previous_ended_at: Schema.NullOr(Count),
+  previous_started_at: Schema.NullOr(Count),
+  stint_started_at: Count,
+});
+
+const historyRecordOfRow = (
+  row: typeof CompanyHistoryRow.Type
+): HistoryRecord => ({
+  company: row.company,
+  feed: row.last_seen_feed,
+  stints: [
+    { from: row.stint_started_at, until: row.last_seen_at },
+    ...(row.previous_started_at === null || row.previous_ended_at === null
+      ? []
+      : [{ from: row.previous_started_at, until: row.previous_ended_at }]),
+  ],
 });
 
 const TrackedSinceRow = Schema.Struct({ since: Schema.NullOr(Count) });
@@ -320,11 +338,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         { concurrency: 3 }
       ).pipe(
         Effect.map(({ history, open, tracked }) => ({
-          history: history.map((row) => ({
-            feed: row.last_seen_feed,
-            firstSeenAt: row.first_seen_at,
-            lastSeenAt: row.last_seen_at,
-          })),
+          history: history.map(historyRecordOfRow),
           open: open.map(openRoleOfRow),
           trackedSince: Option.match(Array.head(tracked), {
             onNone: () => null,
@@ -422,7 +436,10 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             "recordSightings",
             pipe(
               chunk,
-              Array.map((listing) => sightingStatement(listing, seenAt))
+              Array.flatMap((listing) => [
+                sightingStatement(listing, seenAt),
+                ...intelSightingStatements(listing, seenAt),
+              ])
             )
           ),
         { discard: true }
@@ -446,6 +463,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             Array.flatMap((job) => [
               upsertJobStatement(job),
               sightingStatement(job, seenAt),
+              ...intelSightingStatements(job, seenAt),
             ])
           )
         );
