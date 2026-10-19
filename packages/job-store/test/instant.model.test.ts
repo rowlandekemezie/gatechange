@@ -16,6 +16,7 @@ import type {
   AccountIdValue,
   Digest,
   DigestPlan,
+  DigestReceipt,
   JobValue,
   SubscriptionStatusValue,
 } from "@rat-stack/core";
@@ -265,6 +266,49 @@ describe("instant alerts", () => {
   );
 
   it.effect(
+    "refuses a seventh instant claim for one member inside 24 hours, even from a run that saw them as due",
+    () =>
+      withStores(
+        Effect.gen(function* claimCap() {
+          yield* addMember(pro);
+
+          const claims = yield* AlertStore.use((store) =>
+            Effect.forEach(Array.range(0, 7), (index) =>
+              store.claimDigest(
+                "Instant",
+                pro,
+                windowStartOf(NOW) + index * INSTANT_WINDOW_MILLIS,
+                NOW + index * INSTANT_WINDOW_MILLIS
+              )
+            )
+          );
+
+          const nextDay = yield* AlertStore.use((store) =>
+            store.claimDigest(
+              "Instant",
+              pro,
+              windowStartOf(NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS),
+              NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS
+            )
+          );
+
+          expect([...claims, nextDay]).toEqual([
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            false,
+            true,
+          ]);
+        }),
+        []
+      )
+  );
+
+  it.effect(
     "emails a Pro member at most six times in any 24 hours, then sends what waited",
     () => {
       const sent: Digest[] = [];
@@ -272,6 +316,8 @@ describe("instant alerts", () => {
       return withStores(
         Effect.gen(function* perMember() {
           yield* setUp;
+
+          const receipts: DigestReceipt[] = [];
 
           const windows = Array.makeBy(
             INSTANT_SENDS_PER_MEMBER_PER_DAY + 2,
@@ -287,7 +333,7 @@ describe("instant alerts", () => {
             yield* JobStore.use((store) =>
               store.replaceFeed("jobicy:all", live, at)
             );
-            yield* runInstantAlerts(PLAN, at);
+            receipts.push(yield* runInstantAlerts(PLAN, at));
           }
 
           const capped = sent.length;
@@ -297,7 +343,10 @@ describe("instant alerts", () => {
             NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS
           );
 
-          expect(capped).toBe(INSTANT_SENDS_PER_MEMBER_PER_DAY);
+          expect(capped).toBe(6);
+          expect(receipts.map((receipt) => receipt.due)).toEqual([
+            1, 1, 1, 1, 1, 1, 0, 0,
+          ]);
           expect(sent.at(-1)?.jobs.map((listed) => listed.id)).toEqual(
             windows
               .slice(INSTANT_SENDS_PER_MEMBER_PER_DAY)
