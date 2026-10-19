@@ -6,6 +6,7 @@ export {
   MAGIC_LINK_TTL_MINUTES,
   SignInOptions,
   SocialProvider,
+  UNAUTHORIZED_MESSAGE,
   Viewer,
 } from "./account.js";
 

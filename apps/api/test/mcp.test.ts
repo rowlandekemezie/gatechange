@@ -12,6 +12,7 @@ import {
   SavedSearchId,
   secretHashOf,
   TrackerStore,
+  UNAUTHORIZED_MESSAGE,
   Viewer,
 } from "@rat-stack/core";
 import type {
@@ -414,8 +415,8 @@ describe("board over MCP", () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content.map(({ text }) => text).join("")).toContain(
-          "Sign in"
+        expect(result.content.map(({ text }) => text).join("")).toBe(
+          UNAUTHORIZED_MESSAGE
         );
         expect(savedBy).toStrictEqual([]);
       }).pipe(Effect.scoped)
