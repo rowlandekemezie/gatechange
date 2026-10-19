@@ -52,6 +52,7 @@ const backend = HttpRouter.toWebHandler(
       group.toLayer({
         account: () => Effect.die("account is not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
+        companyIntel: () => Effect.die("company intel is not served here"),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
         getJob: () => Effect.succeed(Option.none()),
         importShortlist: () => Effect.die("the tracker is not served here"),
@@ -155,6 +156,18 @@ afterEach(() => {
 
 afterAll(async () => {
   await backend.dispose();
+});
+
+describe("company pages", () => {
+  it("serve the free intel summary and leave each role's days open and reposts out of the HTML", async () => {
+    const page = await edge(indexHtml).get(`${ORIGIN}/companies/acme`);
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain("Director of Engineering");
+    expect(page.html).toContain("1 open leadership role, listed for 2 days.");
+    expect(page.html).not.toContain("daysOpen");
+    expect(page.html).not.toContain("reposts");
+  });
 });
 
 describe("rendered page cache", () => {
