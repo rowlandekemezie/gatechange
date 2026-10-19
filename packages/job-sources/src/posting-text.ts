@@ -87,17 +87,15 @@ const SmartRecruitersSection = Schema.optional(
   Schema.NullOr(Schema.Struct({ text: OptionalString, title: OptionalString }))
 );
 
+const SmartRecruitersCompensation = Schema.Struct({
+  currency: Schema.String,
+  max: Schema.Finite,
+  min: Schema.Finite,
+  period: OptionalString,
+});
+
 const SmartRecruitersDetail = Schema.Struct({
-  compensation: Schema.optional(
-    Schema.NullOr(
-      Schema.Struct({
-        currency: Schema.String,
-        max: Schema.Finite,
-        min: Schema.Finite,
-        period: OptionalString,
-      })
-    )
-  ),
+  compensation: Schema.optional(Schema.Unknown),
   jobAd: Schema.Struct({
     sections: Schema.Struct({
       additionalInformation: SmartRecruitersSection,
@@ -232,20 +230,18 @@ const smartRecruitersPeriodOf = (period: string | null | undefined) =>
     Match.orElse(() => null)
   );
 
+const decodeSmartRecruitersCompensation = Schema.decodeUnknownOption(
+  SmartRecruitersCompensation
+);
+
 const smartRecruitersSalary = (
-  compensation: typeof SmartRecruitersDetail.Type.compensation
+  range: typeof SmartRecruitersCompensation.Type
 ) =>
   pipe(
-    Option.fromNullishOr(compensation),
-    Option.flatMap((range) =>
-      pipe(
-        Option.fromNullishOr(smartRecruitersPeriodOf(range.period)),
-        Option.flatMap((period) =>
-          Option.fromNullishOr(annualSalaryBandOf(range, period))
-        )
-      )
-    ),
-    Option.getOrNull
+    Option.fromNullishOr(smartRecruitersPeriodOf(range.period)),
+    Option.flatMap((period) =>
+      Option.fromNullishOr(annualSalaryBandOf(range, period))
+    )
   );
 
 const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
@@ -254,7 +250,11 @@ const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
     SmartRecruitersDetail
   ).pipe(
     Effect.map(({ compensation, jobAd: { sections } }): PostingTextValue => ({
-      salary: smartRecruitersSalary(compensation),
+      salary: pipe(
+        decodeSmartRecruitersCompensation(compensation),
+        Option.flatMap(smartRecruitersSalary),
+        Option.getOrNull
+      ),
       text: nonEmpty(
         pipe(
           [

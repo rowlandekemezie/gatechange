@@ -332,12 +332,14 @@ const basePayWord = String.raw`(?:salary|salaries|base|compensation|pay|wages?|o
 
 const payNegation = String.raw`\b(?:not(?:\s+(?:counted|included|part))?(?:\s+(?:as|in|of))?|separate\s+from|in\s+addition\s+to|on\s+top\s+of|excluding|outside(?:\s+of)?)\s+(?:(?:the|your|our|any)\s+)?`;
 
+const otherPayWord = String.raw`\b(?:stipends?|bonus(?:es)?|commissions?|incentives?|variable|rsus?|stock|options|allowances?|equity|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|budgets?)\b`;
+
 const basePayCue = new RegExp(
-  String.raw`(?<!${payNegation}(?:base\s+)?)\b${basePayWord}\b`,
+  String.raw`(?<!${payNegation}(?:base\s+)?)(?<!${otherPayWord}\s+)\b${basePayWord}\b`,
   "giu"
 );
 
-const otherPayCue = String.raw`(?:\b(?:stipends?|bonus(?:es)?|allowances?|equity|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|budgets?)\b|${payNegation}(?=(?:base\s+)?${basePayWord}\b))`;
+const otherPayCue = String.raw`(?:${otherPayWord}|${payNegation}(?=(?:base\s+)?${basePayWord}\b))`;
 
 const otherPopulation =
   /\b(?:interns?|internships?|apprentices?|apprenticeships?|contractors?|students?|co-?ops?)\b/iu;
@@ -374,6 +376,14 @@ const namesPay = (line: string) =>
   lastIndexOf(basePayCue, line) !== -1 ||
   lastIndexOf(otherPayCues, line) !== -1;
 
+const eligibilityOrPointer =
+  /\b(?:applicants?|candidates?)\b|\b(?:can be found|found here|learn more|click here)\b/iu;
+
+const carriesNoLabel = (line: string) =>
+  eligibilityOrPointer.test(line) &&
+  !otherPopulation.test(line) &&
+  !namesPay(line);
+
 const headingAbove = (text: string, { start }: Span) => {
   let lineStart = text.lastIndexOf("\n", start - 1);
 
@@ -383,7 +393,7 @@ const headingAbove = (text: string, { start }: Span) => {
       start: lineStart,
     }).before;
 
-    if (namesPay(heading)) {
+    if (!carriesNoLabel(heading)) {
       return heading;
     }
 
@@ -396,7 +406,10 @@ const headingAbove = (text: string, { start }: Span) => {
 const isBasePay = (text: string, span: Span, title: string) => {
   const { after, before, line } = lineAround(text, span);
 
-  if (otherPopulation.test(before) && !otherPopulation.test(title)) {
+  const forOtherPopulation = (label: string) =>
+    otherPopulation.test(label) && !otherPopulation.test(title);
+
+  if (forOtherPopulation(before)) {
     return false;
   }
 
@@ -405,7 +418,9 @@ const isBasePay = (text: string, span: Span, title: string) => {
     (lastIndexOf(basePayCue, line) === -1 &&
       lastIndexOf(otherPayCues, line) === -1)
   ) {
-    return namesBasePay(headingAbove(text, span));
+    const heading = headingAbove(text, span);
+
+    return namesBasePay(heading) && !forOtherPopulation(heading);
   }
 
   return (

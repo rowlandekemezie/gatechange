@@ -349,6 +349,27 @@ describe("posting texts", () => {
       { currency: "USD", max: 124_800, min: 104_000 },
     ],
     [
+      "a fractional hourly range",
+      { currency: "USD", max: 30.46, min: 22.84, period: "HOURLY" },
+      { currency: "USD", max: 63_357, min: 47_507 },
+    ],
+    [
+      "a monthly range",
+      { currency: "USD", max: 15_000, min: 12_000, period: "MONTHLY" },
+      { currency: "USD", max: 180_000, min: 144_000 },
+    ],
+    [
+      "a null max",
+      { currency: "USD", max: null, min: 177_400, period: "YEARLY" },
+      null,
+    ],
+    ["no max", { currency: "USD", min: 177_400, period: "YEARLY" }, null],
+    [
+      "a null currency",
+      { currency: null, max: 236_500, min: 177_400, period: "YEARLY" },
+      null,
+    ],
+    [
       "a range in a currency the board does not show",
       { currency: "JPY", max: 9_000_000, min: 7_000_000, period: "YEARLY" },
       null,
