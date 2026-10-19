@@ -53,7 +53,7 @@ const jobColumnNames = [
   "last_seen_at",
 ] as const;
 
-const jobColumns = jobColumnNames.join(", ");
+export const jobColumns = jobColumnNames.join(", ");
 
 const enrichmentColumnNames = [
   "salary_currency",

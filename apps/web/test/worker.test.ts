@@ -52,6 +52,7 @@ const backend = HttpRouter.toWebHandler(
       group.toLayer({
         account: () => Effect.die("account is not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
+        deleteSearch: () => Effect.die("deleteSearch is not served here"),
         getJob: () => Effect.succeed(Option.none()),
         importShortlist: () => Effect.die("the tracker is not served here"),
         listJobs: () =>
@@ -61,6 +62,8 @@ const backend = HttpRouter.toWebHandler(
             total: 1,
           }),
         noteTrackedJob: () => Effect.die("the tracker is not served here"),
+        saveSearch: () => Effect.die("saveSearch is not served here"),
+        savedSearches: () => Effect.die("savedSearches is not served here"),
         signInOptions: () => Effect.succeed({ socialProviders: [] }),
         trackJob: () => Effect.die("the tracker is not served here"),
         trackedJobs: () => Effect.die("the tracker is not served here"),

@@ -58,7 +58,7 @@ import { SqlExecutor } from "./sql-executor.js";
 
 const Count = Schema.Finite;
 
-const JobRow = Schema.Struct({
+export const JobRow = Schema.Struct({
   arrangement: Arrangement,
   company: Schema.String,
   feed: Schema.String,
@@ -132,7 +132,7 @@ const RunRow = Schema.Struct({
   started_at: Count,
 });
 
-const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
+export const jobOfRow = (row: typeof JobRow.Type): JobValue => ({
   arrangement: row.arrangement,
   company: row.company,
   feed: row.feed,

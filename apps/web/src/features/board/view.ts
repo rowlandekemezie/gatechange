@@ -38,6 +38,7 @@ import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
 import { jobRouter } from "../../client/route.js";
+import { saveSearchControl } from "../saved-searches/view.js";
 
 const NEW_WINDOW = 86_400_000;
 
@@ -299,6 +300,14 @@ export const boardMasthead = (
       sentenceView(model, h),
       refineView(model, h),
       searchView(model, h),
+      h.submodel({
+        model: model.savedSearches,
+        slotId: "save-search",
+        toParentMessage: (message) =>
+          Message.GotSavedSearchesMessage({ message }),
+        view: saveSearchControl,
+        viewInputs: { filters: model.filters, session: model.account.session },
+      }),
       statusLine(model, h),
     ]
   );

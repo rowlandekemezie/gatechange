@@ -21,14 +21,18 @@ import { Schema } from "effect";
 
 const { values } = parseArgs({
   options: {
+    backend: { type: "string" },
     dark: { default: false, type: "boolean" },
     email: { default: "verify@example.com", type: "string" },
+    "expect-digests": { default: "1", type: "string" },
     "full-page": { default: false, type: "boolean" },
+    log: { type: "string" },
     "min-rows": { default: "20", type: "string" },
     mobile: { default: false, type: "boolean" },
     name: { type: "string" },
     out: { type: "string" },
     scenario: { default: "board", type: "string" },
+    search: { default: "", type: "string" },
     "timeout-ms": { default: "45000", type: "string" },
     url: { type: "string" },
     "victim-job": { type: "string" },
@@ -44,6 +48,12 @@ const scenarios = [
   "bad-email",
   "signout",
   "link-reuse",
+  "save-search",
+  "delete-search",
+  "digest",
+  "no-double-send",
+  "unsubscribe",
+  "digest-links",
   "tracker-import",
   "tracker-import-decline",
   "tracker-list",
@@ -252,17 +262,28 @@ const send = async <S extends Schema.Decoder<unknown>>(
 
 const Ignored = Schema.Unknown;
 
+const isCancelledInterception = (error: Error) =>
+  error.message.includes("Invalid InterceptionId") ||
+  error.message ===
+    "Chrome closed the DevTools connection during Fetch.continueRequest";
+
 const continueWithClientIp = async ({ params }: typeof PausedRequest.Type) => {
-  await send(Ignored, "Fetch.continueRequest", {
-    headers: [
-      ...Object.entries(params.request.headers).map(([header, value]) => ({
-        name: header,
-        value,
-      })),
-      { name: "cf-connecting-ip", value: clientIp },
-    ],
-    requestId: params.requestId,
-  });
+  try {
+    await send(Ignored, "Fetch.continueRequest", {
+      headers: [
+        ...Object.entries(params.request.headers).map(([header, value]) => ({
+          name: header,
+          value,
+        })),
+        { name: "cf-connecting-ip", value: clientIp },
+      ],
+      requestId: params.requestId,
+    });
+  } catch (error) {
+    if (!(error instanceof Error && isCancelledInterception(error))) {
+      throw error;
+    }
+  }
 };
 
 socket.addEventListener("message", (event) => {
@@ -408,6 +429,58 @@ const latestLink = () => {
   const [link] = MAGIC_LINK.exec(readFileSync(newest ?? "", "utf-8")) ?? [];
 
   return link ?? fail(`no magic link in ${newest ?? mailOutbox}`);
+};
+
+const DIGEST_SENT =
+  /From: digest@\S+\n.*To: (?<to>\S+)\n.*Subject: [^\n]*for your saved searches\n.*\n.*Text: (?<text>\S+)\n.*HTML: (?<html>\S+)/gu;
+
+const digestsTo = (email: string) => {
+  const log = values.log ?? fail("--log is required for digest scenarios");
+
+  return [...readFileSync(log, "utf-8").matchAll(DIGEST_SENT)].flatMap(
+    (sent) =>
+      sent.groups?.to === email
+        ? [{ html: sent.groups.html ?? "", text: sent.groups.text ?? "" }]
+        : []
+  );
+};
+
+const DAY_MILLIS = 86_400_000;
+
+const DIGEST_CRON = "7 * * * *";
+
+const triggerDigest = async (at: number) => {
+  const backend =
+    values.backend ?? fail("--backend is required for digest scenarios");
+
+  const trigger = new URL("/cdn-cgi/handler/scheduled", backend);
+
+  trigger.searchParams.set("cron", DIGEST_CRON);
+  trigger.searchParams.set("time", String(at));
+
+  const response = await fetch(trigger);
+
+  if (!response.ok) {
+    throw new Error(`digest cron answered ${response.status}`);
+  }
+};
+
+const unsubscribeLink = (text: string) =>
+  (/https?:\/\/\S+\/unsubscribe\?token=\S+/u.exec(
+    readFileSync(text, "utf-8")
+  ) ?? [])[0] ?? fail(`no unsubscribe link in ${text}`);
+
+const expectDigests = (fresh: readonly unknown[], expected: number) => {
+  if (fresh.length !== expected) {
+    throw new Error(`expected ${expected} digest(s), got ${fresh.length}`);
+  }
+};
+
+const onSite = (link: string) => {
+  const moved = new URL(link);
+  const site = new URL(url);
+
+  return new URL(`${moved.pathname}${moved.search}`, site.origin).href;
 };
 
 const AccountState = Schema.Struct({
@@ -705,6 +778,262 @@ const run = async () => {
     steps.push({ step: "signed out and reloaded", ...reloaded });
   };
 
+  const saveSearch = async () => {
+    await signIn();
+    await goTo(url);
+    await waitForRows(
+      `at least ${minRows} job rows`,
+      (state) => state.rows >= minRows
+    );
+
+    if (values.search !== "") {
+      await evaluate(
+        Ignored,
+        `(() => {
+        const input = document.querySelector("form.search input");
+        input.value = ${JSON.stringify(values.search)};
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        document.querySelector("form.search").requestSubmit();
+      })()`
+      );
+      await waitFor("the board to show the search", async () => {
+        const query = await evaluate(Schema.String, "location.search");
+
+        return query.includes("q=") ? true : undefined;
+      });
+    }
+
+    await waitFor("the save-search button", async () =>
+      (await clickButton("button.save-search", "Email me new matches weekly"))
+        ? true
+        : undefined
+    );
+
+    const note = await waitFor("the saved notice", async () => {
+      const text = await evaluate(
+        Schema.String,
+        'document.querySelector(".save-search-note[role=status]")?.textContent ?? ""'
+      );
+
+      return text.startsWith("Saved") ? text : undefined;
+    });
+
+    steps.push({
+      sent: note,
+      step: `saved the board search ${JSON.stringify(values.search)}`,
+    });
+  };
+
+  const savedSearchLabels = async () =>
+    await evaluate(
+      Schema.Array(Schema.String),
+      '[...document.querySelectorAll("li.saved-search .saved-search-label")].map((node) => node.textContent)'
+    );
+
+  const openAccount = async (
+    accept: (labels: readonly string[]) => boolean
+  ) => {
+    await goTo(new URL("/account", url).href);
+
+    return await waitFor("the saved-search list", async () => {
+      const ready = await evaluate(
+        Schema.Boolean,
+        'document.querySelector("section.saved-searches .saved-search-list, section.saved-searches .account-lede") !== null'
+      );
+
+      const labels = await savedSearchLabels();
+
+      return ready && accept(labels) ? labels : undefined;
+    });
+  };
+
+  const runDigest = async (at: number, label: string) => {
+    const before = digestsTo(values.email).length;
+
+    await triggerDigest(at);
+    await sleep(2500);
+
+    const fresh = digestsTo(values.email).slice(before);
+
+    steps.push({
+      step: `${label}: ran the digest cron at ${new Date(at).toISOString()}, ${fresh.length} new digest(s)`,
+    });
+
+    return fresh;
+  };
+
+  const renderDigest = async () => {
+    const html =
+      digestsTo(values.email).at(-1)?.html ?? fail("no digest html in the log");
+
+    await goTo(`file://${html}`);
+    await waitFor("the digest heading", async () => {
+      const heading = await evaluate(
+        Schema.String,
+        'document.querySelector("h1")?.textContent ?? ""'
+      );
+
+      return heading.length > 0 ? true : undefined;
+    });
+
+    const rendered = await evaluate(
+      Schema.Struct({
+        heading: Schema.String,
+        links: Schema.Array(Schema.String),
+        overflow: Schema.Boolean,
+        titles: Schema.Array(Schema.String),
+      }),
+      `({
+        heading: document.querySelector("h1").textContent,
+        links: [...document.querySelectorAll("li a")].map((node) => node.href),
+        overflow: document.documentElement.scrollWidth > window.innerWidth,
+        titles: [...document.querySelectorAll("li a")].map((node) => node.textContent),
+      })`
+    );
+
+    steps.push({
+      heading: rendered.heading,
+      step: `rendered ${path.basename(html)}; horizontal overflow ${rendered.overflow}`,
+      titles: rendered.titles,
+    });
+
+    if (rendered.overflow) {
+      throw new Error("the digest scrolls sideways");
+    }
+
+    return rendered;
+  };
+
+  const openEach = async (
+    links: readonly string[],
+    titles: readonly string[] = []
+  ): Promise<readonly string[]> => {
+    const [link, ...rest] = links;
+
+    if (link === undefined) {
+      return titles;
+    }
+
+    await goTo(onSite(link));
+
+    const title = await waitFor(`the job page for ${link}`, async () => {
+      const heading = await evaluate(
+        Schema.String,
+        'document.querySelector("h1.detail-title")?.textContent ?? ""'
+      );
+
+      return heading.length > 0 ? heading : undefined;
+    });
+
+    return await openEach(rest, [...titles, title]);
+  };
+
+  const digestActions: Partial<Record<Scenario, () => Promise<void>>> = {
+    "delete-search": async () => {
+      await saveSearch();
+      await openAccount((labels) => labels.length > 0);
+
+      if (!(await clickButton("li.saved-search button.mark", "Delete"))) {
+        throw new Error("no Delete button on the saved search");
+      }
+
+      const left = await waitFor("the saved search to disappear", async () => {
+        const labels = await savedSearchLabels();
+
+        return labels.length === 0 ? labels : undefined;
+      });
+
+      steps.push({ step: "deleted the saved search", titles: left });
+      expectDigests(await runDigest(Date.now() + 60_000, "after delete"), 0);
+    },
+    digest: async () => {
+      await saveSearch();
+      expectDigests(
+        await runDigest(Date.now() + 60_000, "first run"),
+        Number(values["expect-digests"])
+      );
+
+      if (Number(values["expect-digests"]) > 0) {
+        await renderDigest();
+      }
+    },
+    "digest-links": async () => {
+      await saveSearch();
+      expectDigests(await runDigest(Date.now() + 60_000, "first run"), 1);
+
+      const { links } = await renderDigest();
+      const titles = await openEach(links);
+
+      steps.push({
+        step: `opened ${titles.length} digest links on the board`,
+        titles,
+      });
+
+      if (!links.every((link) => new URL(link).pathname.startsWith("/jobs/"))) {
+        throw new Error("a digest link does not point at a job page");
+      }
+    },
+    "no-double-send": async () => {
+      await saveSearch();
+
+      const at = Date.now() + 60_000;
+      const first = await runDigest(at, "first run");
+      const second = await runDigest(at, "same window again");
+      const later = await runDigest(at + 3 * 3_600_000, "three hours later");
+
+      expectDigests([...first, ...second, ...later], 1);
+      await renderDigest();
+    },
+    "save-search": async () => {
+      await saveSearch();
+
+      const labels = await openAccount((found) => found.length > 0);
+
+      steps.push({ step: "opened the account page", titles: labels });
+    },
+    unsubscribe: async () => {
+      await saveSearch();
+
+      const at = Date.now() + 60_000;
+      const [sent] = await runDigest(at, "first run");
+
+      const link = onSite(
+        unsubscribeLink(sent?.text ?? fail("no digest arrived"))
+      );
+
+      await goTo(link);
+      await waitFor("the unsubscribe button", async () =>
+        (await clickButton("form button", "Unsubscribe")) ? true : undefined
+      );
+
+      const done = await waitFor("the unsubscribed page", async () => {
+        const heading = await evaluate(
+          Schema.String,
+          'document.querySelector("h1")?.textContent ?? ""'
+        );
+
+        return heading === "You are unsubscribed" ? heading : undefined;
+      });
+
+      steps.push({
+        heading: done,
+        step: "pressed Unsubscribe on the emailed link",
+      });
+
+      expectDigests(await runDigest(at + 7 * DAY_MILLIS, "next week"), 0);
+      await goTo(link);
+      await clickButton("form button", "Unsubscribe");
+      await waitFor("the unsubscribed page", async () =>
+        (await evaluate(
+          Schema.String,
+          'document.querySelector("h1")?.textContent ?? ""'
+        )) === "You are unsubscribed"
+          ? true
+          : undefined
+      );
+    },
+  };
+
   const shortlistUrl = new URL("/shortlist", url).href;
 
   const openTracker = async (label: string) => {
@@ -788,6 +1117,7 @@ const run = async () => {
   };
 
   const actions: Partial<Record<Scenario, () => Promise<void>>> = {
+    ...digestActions,
     "bad-email": async () => {
       const before = mailCount();
 

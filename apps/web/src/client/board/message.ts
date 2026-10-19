@@ -16,6 +16,7 @@ import { Url } from "foldkit/url";
 
 import { Message as AccountMessage } from "../account/message.js";
 import { Listing, ListingRoute } from "../listing.js";
+import { Message as SavedSearchesMessage } from "../saved-searches/message.js";
 import { AgeWindow, RegionGroup, SalaryStep, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
@@ -56,6 +57,7 @@ export const Message = defineMessageUnion({
   FailedSyncTracker: { message: Schema.String, revision: Schema.Finite },
   FailedTrackerChange: { message: Schema.String, revision: Schema.Finite },
   GotAccountMessage: { message: AccountMessage },
+  GotSavedSearchesMessage: { message: SavedSearchesMessage },
   SubmittedSearch: {},
   SucceededFetchJob: { id: Schema.String, job: Schema.Option(JobDetail) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },
