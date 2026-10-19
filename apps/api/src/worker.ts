@@ -3,7 +3,6 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
   authOptions,
   authSecret,
-  isAuthPath,
   logSendFailure,
   magicLinkEmail,
   makeAccountStore,
