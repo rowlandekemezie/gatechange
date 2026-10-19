@@ -18,6 +18,7 @@ import {
   checkoutSessionRequest,
   customerRequest,
   billingChangeOf,
+  PAST_DUE_GRACE_SECONDS,
   makeBilling,
   signatureHeader,
   signPayload,
@@ -207,6 +208,33 @@ describe("Stripe events to billing changes", () => {
               ]
             : null
         ).toEqual([1_793_000_000_000, true]);
+      })
+  );
+
+  it.effect(
+    "keeps a past-due subscription on Pro for seven days from the failed renewal, not the whole new period",
+    () =>
+      Effect.gen(function* pastDue() {
+        const failed = created.replace(
+          '"status":"active"',
+          '"status":"past_due"'
+        );
+
+        const changes = yield* Effect.all([
+          changeOf(failed),
+          changeOf(created),
+        ]);
+
+        expect(
+          changes.map((change) =>
+            Predicate.isTagged(change, "ApplySubscription")
+              ? [change.subscription.status, change.subscription.periodEnd]
+              : null
+          )
+        ).toEqual([
+          ["past_due", (1_792_424_047 + PAST_DUE_GRACE_SECONDS) * 1000],
+          ["active", 1_795_102_447_000],
+        ]);
       })
   );
 

@@ -161,6 +161,25 @@ describe("entitlementOf", () => {
     expect(entitlementOf([subscription()], 2000)).toEqual(FREE);
   });
 
+  it("grants Pro to a trialing or past-due subscription until its period end", () => {
+    const granting: readonly SubscriptionStatusValue[] = [
+      "trialing",
+      "past_due",
+    ];
+
+    expect(
+      granting.map((status) => [
+        entitlementOf([subscription({ status })], 1999),
+        entitlementOf([subscription({ status })], 2000),
+      ])
+    ).toEqual(
+      granting.map(() => [
+        ProEntitlement.make({ periodEnd: 2000, plan: "Monthly", renews: true }),
+        FREE,
+      ])
+    );
+  });
+
   it("never grants Pro for an unpaid, incomplete, or canceled subscription", () => {
     const lapsed: readonly SubscriptionStatusValue[] = [
       "incomplete",

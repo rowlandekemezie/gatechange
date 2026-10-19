@@ -11,6 +11,8 @@ export const STRIPE_WEBHOOK_PATH = "/webhooks/stripe";
 
 export const SIGNATURE_TOLERANCE_SECONDS = 300;
 
+export const PAST_DUE_GRACE_SECONDS = 7 * 24 * 60 * 60;
+
 const CHECKOUT_COMPLETED = "checkout.session.completed";
 
 const SubscriptionEventType = Schema.Literals([
@@ -236,9 +238,17 @@ const subscriptionChangeOf = (
     return BillingChange.Ignore({ type: event.type });
   }
 
-  const { plan } = priced.value;
+  const { item, plan } = priced.value;
 
   const cancelAt = subscription.cancel_at ?? null;
+
+  const periodStart =
+    subscription.current_period_start ?? item.current_period_start;
+
+  const graceEnd =
+    subscription.status === "past_due" && periodStart !== undefined
+      ? periodStart + PAST_DUE_GRACE_SECONDS
+      : Number.POSITIVE_INFINITY;
 
   return BillingChange.ApplySubscription({
     account: Schema.decodeUnknownOption(AccountId)(
@@ -248,7 +258,11 @@ const subscriptionChangeOf = (
     subscription: {
       cancelAtPeriodEnd: subscription.cancel_at_period_end || cancelAt !== null,
       periodEnd:
-        Math.min(periodEnd.value, cancelAt ?? Number.POSITIVE_INFINITY) * 1000,
+        Math.min(
+          periodEnd.value,
+          cancelAt ?? Number.POSITIVE_INFINITY,
+          graceEnd
+        ) * 1000,
       plan,
       status: subscription.status,
       subscriptionId: subscription.id,
