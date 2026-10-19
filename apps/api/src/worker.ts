@@ -6,7 +6,7 @@ import {
   isAuthPath,
   magicLinkEmail,
   makeAccountStore,
-  viewerOfRequest,
+  respondAsViewer,
 } from "@rat-stack/accounts";
 import type { SocialCredentials } from "@rat-stack/accounts";
 import { toRpc } from "@rat-stack/capability/rpc";
@@ -28,11 +28,7 @@ import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import { Config, Effect, Layer, Option, Record, Redacted } from "effect";
-import {
-  FetchHttpClient,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/http";
+import { FetchHttpClient, HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
 export const rpcProjection = toRpc(capabilities);
@@ -204,17 +200,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         return yield* auth.fetch;
       }
 
-      return yield* viewerOfRequest(accountStore, request.headers).pipe(
-        Effect.matchEffect({
-          onFailure: () =>
-            Effect.succeed(
-              HttpServerResponse.text("Cross-site request refused.", {
-                status: 403,
-              })
-            ),
-          onSuccess: serveRpc,
-        })
-      );
+      return yield* respondAsViewer(accountStore, request.headers, serveRpc);
     });
 
     // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.

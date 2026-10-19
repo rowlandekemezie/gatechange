@@ -30,9 +30,38 @@ export {
   boardStats,
   capabilities,
   getJob,
+  importShortlist,
   listJobs,
+  noteTrackedJob,
   signInOptions,
+  trackedJobs,
+  trackJob,
+  untrackJob,
 } from "./capabilities.js";
+
+export {
+  ImportShortlist,
+  JobSnapshot,
+  MAX_IMPORTED_JOBS,
+  MAX_NOTES_LENGTH,
+  Notes,
+  Stage,
+  stages,
+  TRACKER_LIMIT,
+  TrackedJob,
+  TrackedJobs,
+  TrackerStore,
+  TrackRequest,
+} from "./tracker.js";
+
+export { TrackerFull } from "./tracker-full.js";
+
+export type {
+  JobSnapshotValue,
+  StageValue,
+  TrackedJobValue,
+  TrackRequestValue,
+} from "./tracker.js";
 
 export {
   backoffMinutes,
@@ -126,6 +155,11 @@ export {
   roleLevels,
   signInOptionsContract,
   SourceName,
+  importShortlistContract,
+  noteTrackedJobContract,
+  trackedJobsContract,
+  trackJobContract,
+  untrackJobContract,
 } from "./contracts.js";
 
 export type {
