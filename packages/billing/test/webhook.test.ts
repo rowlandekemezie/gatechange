@@ -3,11 +3,21 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "@effect/vitest";
 import { Account, AccountId, BillingChange } from "@rat-stack/core";
-import { Effect, Option, Predicate, Redacted, Schema } from "effect";
+import {
+  Data,
+  Effect,
+  Logger,
+  Option,
+  Predicate,
+  Redacted,
+  References,
+  Schema,
+} from "effect";
 
 import {
   checkoutSessionRequest,
   billingChangeOf,
+  makeBilling,
   signatureHeader,
   signPayload,
   verifiedChange,
@@ -22,6 +32,11 @@ const payloads = Schema.decodeUnknownSync(Fixtures)(
 const [checkout = "", created = "", cancelled = ""] = payloads;
 
 const secret = Redacted.make("whsec_test_fixture_secret");
+
+class InvalidRequestError extends Data.TaggedError("InvalidRequestError")<{
+  readonly message: string;
+  readonly request_log_url: string;
+}> {}
 
 const NOW = 1_760_600_100_000;
 
@@ -109,7 +124,7 @@ describe("Stripe events to billing changes", () => {
         expect(yield* changeOf(checkout)).toEqual(
           BillingChange.LinkCustomer({
             account: AccountId.make("user_ada"),
-            customer: "cus_TestAda",
+            customer: "cus_VTF3ozBrlTYb0Y",
           })
         );
       })
@@ -122,16 +137,16 @@ describe("Stripe events to billing changes", () => {
         expect(yield* changeOf(cancelled)).toEqual(
           BillingChange.ApplySubscription({
             account: Option.some(AccountId.make("user_ada")),
-            customer: "cus_TestAda",
+            customer: "cus_VTF3ozBrlTYb0Y",
             subscription: {
               cancelAtPeriodEnd: true,
-              periodEnd: 1_763_278_400_000,
+              periodEnd: 1_795_102_447_000,
               plan: "Monthly",
               status: "active",
-              subscriptionId: "sub_1SJAda",
+              subscriptionId: "sub_1USIZh0ZnafJYNlY3wCgw7iV",
               version: {
-                created: 1_760_686_400,
-                eventId: "evt_1SJ03cancelAda",
+                created: 1_792_424_262,
+                eventId: "evt_1USId80ZnafJYNlY2e8Xj329",
                 rank: 1,
               },
             },
@@ -141,12 +156,51 @@ describe("Stripe events to billing changes", () => {
   );
 
   it.effect(
+    "reads a portal cancellation sent as cancel_at with cancel_at_period_end false",
+    () =>
+      Effect.gen(function* cancelAt() {
+        const change = yield* changeOf(cancelled);
+
+        expect(
+          Predicate.isTagged(change, "ApplySubscription")
+            ? [
+                cancelled.includes('"cancel_at_period_end":false'),
+                change.subscription.cancelAtPeriodEnd,
+              ]
+            : null
+        ).toEqual([true, true]);
+      })
+  );
+
+  it.effect(
+    "ends Pro at cancel_at when Stripe cancels before the period end",
+    () =>
+      Effect.gen(function* earlyCancel() {
+        const early = created.replace(
+          '"cancel_at":null',
+          '"cancel_at":1793000000'
+        );
+
+        const change = yield* changeOf(early);
+
+        expect(
+          Predicate.isTagged(change, "ApplySubscription")
+            ? [
+                change.subscription.periodEnd,
+                change.subscription.cancelAtPeriodEnd,
+              ]
+            : null
+        ).toEqual([1_793_000_000_000, true]);
+      })
+  );
+
+  it.effect(
     "falls back to the price interval when the price has no plan metadata",
     () =>
       Effect.gen(function* interval() {
         const quarterly = created
-          .replace('"metadata":{"plan":"Monthly"}', '"metadata":{}')
-          .replace('"interval_count":1', '"interval_count":3');
+          .replaceAll('"plan":"Monthly"', '"plan":"Unknown"')
+          .replaceAll('"interval_count":1', '"interval_count":3');
 
         const change = yield* changeOf(quarterly);
 
@@ -202,6 +256,7 @@ describe("checkout session request", () => {
       client_reference_id: "user_ada",
       customer_email: "ada@example.com",
       line_items: [{ price: "price_yearly", quantity: 1 }],
+      managed_payments: { enabled: false },
       metadata: { account_id: "user_ada" },
       mode: "subscription",
       subscription_data: { metadata: { account_id: "user_ada" } },
@@ -221,4 +276,56 @@ describe("checkout session request", () => {
       undefined,
     ]);
   });
+
+  it.effect(
+    "logs Stripe's refusal so an operator can see why checkout failed",
+    () =>
+      Effect.gen(function* logsRefusal() {
+        const entries: unknown[] = [];
+
+        const billing = makeBilling({
+          createCheckout: () =>
+            Effect.fail(
+              new InvalidRequestError({
+                message:
+                  "Invalid line_items[0]: the product tax code is missing.",
+                request_log_url: "https://dashboard.stripe.com/test/logs/req_1",
+              })
+            ),
+          createPortal: () => Effect.succeed({ url: "https://portal.example" }),
+          portalConfiguration: Effect.succeed("bpc_1"),
+          priceOf: () => Effect.succeed("price_monthly"),
+          siteOrigin: "https://jobs.example",
+        });
+
+        const failure = yield* billing
+          .checkout({ account: ada, customer: Option.none(), plan: "Monthly" })
+          .pipe(
+            Effect.flip,
+            Effect.provide(
+              Logger.layer([
+                Logger.make(({ fiber, message }) =>
+                  entries.push({
+                    fields: fiber.getRef(References.CurrentLogAnnotations),
+                    message,
+                  })
+                ),
+              ])
+            )
+          );
+
+        expect(failure._tag).toBe("BillingUnavailable");
+        expect(entries).toStrictEqual([
+          {
+            fields: {
+              stripeError: "InvalidRequestError",
+              stripeMessage:
+                "Invalid line_items[0]: the product tax code is missing.",
+              stripeRequestLog: "https://dashboard.stripe.com/test/logs/req_1",
+            },
+            message: ["stripe checkout failed"],
+          },
+        ]);
+      })
+  );
 });

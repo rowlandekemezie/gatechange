@@ -40,9 +40,9 @@ const lifecycle: readonly string[] = Schema.decodeUnknownSync(Fixtures)(
   )
 ).map((event) => JSON.stringify(event));
 
-const PERIOD_END = 1_763_278_400_000;
+const PERIOD_END = 1_795_102_447_000;
 
-const DURING_PERIOD = 1_761_000_000_000;
+const DURING_PERIOD = 1_793_000_000_000;
 
 const ada = AccountId.make("user_ada");
 
@@ -166,10 +166,7 @@ describe("Stripe webhook replay", () => {
 
           const [checkout = "", created = ""] = lifecycle;
 
-          const anonymous = created.replace(
-            '"metadata":{"account_id":"user_ada"},"status"',
-            '"metadata":{},"status"'
-          );
+          const anonymous = created.replaceAll('"account_id":"user_ada"', "");
 
           const early = yield* deliver(anonymous);
 

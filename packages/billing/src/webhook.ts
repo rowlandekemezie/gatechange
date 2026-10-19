@@ -160,6 +160,7 @@ const SubscriptionItem = Schema.Struct({
 });
 
 const SubscriptionObject = Schema.Struct({
+  cancel_at: Schema.optionalKey(Schema.NullOr(Schema.Int)),
   cancel_at_period_end: Schema.Boolean,
   current_period_end: Schema.optionalKey(Schema.Int),
   customer: Schema.NonEmptyString,
@@ -246,14 +247,17 @@ const subscriptionChangeOf = (
     return BillingChange.Ignore({ type: event.type });
   }
 
+  const cancelAt = subscription.cancel_at ?? null;
+
   return BillingChange.ApplySubscription({
     account: Schema.decodeUnknownOption(AccountId)(
       subscription.metadata.account_id
     ),
     customer: subscription.customer,
     subscription: {
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      periodEnd: periodEnd.value * 1000,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end || cancelAt !== null,
+      periodEnd:
+        Math.min(periodEnd.value, cancelAt ?? Number.POSITIVE_INFINITY) * 1000,
       plan: plan.value,
       status: subscription.status,
       subscriptionId: subscription.id,

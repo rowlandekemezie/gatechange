@@ -133,7 +133,7 @@ describe("Stripe webhook endpoint", () => {
           { body: "Applied", status: 200 },
           { body: "Stale", status: 200 },
         ]);
-        expect(writes).toEqual(["evt_1SJ02createdAda"]);
+        expect(writes).toEqual(["evt_1USIZj0ZnafJYNlYFqQEBJXC"]);
       })
   );
 
@@ -143,10 +143,7 @@ describe("Stripe webhook endpoint", () => {
       Effect.gen(function* unmatched() {
         const { store } = makeStore();
 
-        const orphan = created.replace(
-          '"metadata":{"account_id":"user_ada"},"status"',
-          '"metadata":{},"status"'
-        );
+        const orphan = created.replaceAll('"account_id":"user_ada"', "");
 
         expect(
           yield* post(store, orphan, yield* signedHeaders(orphan, 0))

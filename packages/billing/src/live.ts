@@ -1,6 +1,6 @@
 import { Billing, BillingUnavailable } from "@rat-stack/core";
 import type { CheckoutRequest, PlanValue } from "@rat-stack/core";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 export interface CheckoutSessionRequest {
   readonly cancel_url: string;
@@ -8,6 +8,7 @@ export interface CheckoutSessionRequest {
   readonly customer?: string;
   readonly customer_email?: string;
   readonly line_items: { price: string; quantity: number }[];
+  readonly managed_payments: { enabled: boolean };
   readonly metadata: Record<string, string>;
   readonly mode: "subscription";
   readonly subscription_data: { metadata: Record<string, string> };
@@ -47,6 +48,7 @@ export const checkoutSessionRequest = (
       onSome: (customer) => ({ customer }),
     }),
     line_items: [{ price, quantity: 1 }],
+    managed_payments: { enabled: false },
     metadata,
     mode: "subscription",
     subscription_data: { metadata },
@@ -54,8 +56,23 @@ export const checkoutSessionRequest = (
   };
 };
 
-const unavailable = (step: string) => (cause: unknown) =>
-  Effect.logWarning(`stripe ${step} failed`, cause).pipe(
+const StripeRefusal = Schema.Struct({
+  _tag: Schema.optionalKey(Schema.String),
+  message: Schema.optionalKey(Schema.String),
+  request_log_url: Schema.optionalKey(Schema.String),
+});
+
+const unavailable = (step: string) => (cause: unknown) => {
+  const refusal = Option.getOrUndefined(
+    Schema.decodeUnknownOption(StripeRefusal)(cause)
+  );
+
+  return Effect.logWarning(`stripe ${step} failed`).pipe(
+    Effect.annotateLogs({
+      stripeError: refusal?._tag ?? "unknown",
+      stripeMessage: refusal?.message ?? "unknown",
+      stripeRequestLog: refusal?.request_log_url ?? "none",
+    }),
     Effect.andThen(
       Effect.fail(
         new BillingUnavailable({
@@ -64,6 +81,7 @@ const unavailable = (step: string) => (cause: unknown) =>
       )
     )
   );
+};
 
 export const makeBilling = <E>(sessions: StripeSessions<E>) =>
   Billing.of({
