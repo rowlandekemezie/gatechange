@@ -51,7 +51,7 @@ import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
-import { mcpAppLayer, serveMcp } from "./mcp.js";
+import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { handleRoutes } from "./route.js";
 import { stripeBilling } from "./stripe.js";
 
@@ -371,6 +371,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       accountStore,
       auth: auth.fetch,
       mcp,
+      mcpDiscovery: serveMcpDiscovery,
       rpc: serveRpc,
       stripeWebhook,
       unsubscribe,

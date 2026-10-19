@@ -3,13 +3,16 @@ import {
   agentCapabilities,
   agentSources,
   AgentTokenStore,
+  ANONYMOUS_MCP_CALLS_PER_MINUTE,
   bearerSecretOf,
   CurrentViewer,
   entitlementOfAccount,
+  freeAgentCapabilities,
   isPro,
   MCP_PATH,
   secretHashOf,
   ServedSources,
+  TOKEN_MCP_CALLS_PER_MINUTE,
   Viewer,
 } from "@rat-stack/core";
 import type {
@@ -34,6 +37,10 @@ const INSTRUCTIONS =
   "Search engineering leadership roles (managers to CTOs) posted in the last 30 days with listJobs, and read board health with boardStats. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
 
 export const agentToolkit = toToolkit(agentCapabilities);
+
+const freeToolNames: ReadonlySet<string> = new Set(
+  freeAgentCapabilities.map(({ contract }) => contract.name)
+);
 
 type AgentStores = AlertStore | BillingStore | JobStore | TrackerStore;
 
@@ -135,3 +142,37 @@ export const serveMcp =
           ),
       })
     );
+
+export const mcpDiscovery = (origin: string) => ({
+  authentication: {
+    description:
+      "Free tools need no token. Pro tools need a personal token from the account page, sent as Authorization: Bearer <token> on every request.",
+    required: false,
+    scheme: "bearer",
+    tokens: `${origin}/account`,
+  },
+  description:
+    "Engineering leadership roles from company boards and job aggregators, refreshed every 20 minutes. Listings from sources whose terms forbid redistribution are left out.",
+  endpoint: `${origin}${MCP_PATH}`,
+  name: MCP_SERVER_NAME,
+  protocolVersions: MCP_PROTOCOLS.map((protocol) => protocol.protocolVersion),
+  rateLimits: {
+    anonymousCallsPerMinute: ANONYMOUS_MCP_CALLS_PER_MINUTE,
+    tokenCallsPerMinute: TOKEN_MCP_CALLS_PER_MINUTE,
+  },
+  tools: agentCapabilities.map(({ contract }) => ({
+    access: freeToolNames.has(contract.name) ? "free" : "pro",
+    description: contract.description,
+    name: contract.name,
+  })),
+  transport: "streamable-http",
+  version: MCP_SERVER_VERSION,
+});
+
+export const serveMcpDiscovery = (
+  request: HttpServerRequest.HttpServerRequest
+) =>
+  HttpServerResponse.jsonUnsafe(
+    mcpDiscovery(new URL(request.originalUrl).origin),
+    { headers: { "access-control-allow-origin": "*" } }
+  );

@@ -91,7 +91,12 @@ export type {
 
 export { AgentTokenLimit } from "./agent-token-limit.js";
 
-export { MCP_PATH } from "./agent-access.js";
+export {
+  ANONYMOUS_MCP_CALLS_PER_MINUTE,
+  MCP_DISCOVERY_PATH,
+  MCP_PATH,
+  TOKEN_MCP_CALLS_PER_MINUTE,
+} from "./agent-access.js";
 
 export { Unauthorized } from "./unauthorized.js";
 

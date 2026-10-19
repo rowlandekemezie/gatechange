@@ -45,6 +45,10 @@ const director: ListedJobValue = {
 
 const { group } = toRpcGroup(jobBoardContracts);
 
+const unlimited = {
+  limit: async () => await Promise.resolve({ success: true }),
+};
+
 const backend = HttpRouter.toWebHandler(
   RpcServer.layerHttp({ group, path: "/rpc", protocol: "http" }).pipe(
     Layer.provide([
@@ -108,6 +112,8 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
           : new Response("down", { status: backendStatus });
       },
     },
+    MCP_ANONYMOUS_LIMIT: unlimited,
+    MCP_TOKEN_LIMIT: unlimited,
     SITE_INDEXING: options.indexing ?? "index",
   };
 
