@@ -1,6 +1,19 @@
+import { BetterAuth } from "@alchemy.run/better-auth";
+import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
+import {
+  authOptions,
+  authSecret,
+  isAuthPath,
+  magicLinkEmail,
+  makeAccountStore,
+  viewerOfRequest,
+} from "@rat-stack/accounts";
+import type { SocialCredentials } from "@rat-stack/accounts";
 import { toRpc } from "@rat-stack/capability/rpc";
 import {
+  AccountStore,
   capabilities,
+  CurrentViewer,
   DEFAULT_DAILY_MODEL_CALLS,
   DEFAULT_FEEDS_PER_RUN,
   enqueueUnenriched,
@@ -10,7 +23,11 @@ import {
   runIngest,
   skipHandling,
   sweepLimitOf,
+  siteHostsOf,
+  SocialProvider,
+  WorkersSubdomain,
 } from "@rat-stack/core";
+import type { ViewerValue } from "@rat-stack/core";
 import {
   enrichmentModel,
   enrichmentQueueLayer,
@@ -23,8 +40,21 @@ import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import { Config, Effect, Layer, Option, Schema, Stream } from "effect";
-import { FetchHttpClient } from "effect/http";
+import {
+  Config,
+  Effect,
+  Layer,
+  Option,
+  Record,
+  Redacted,
+  Schema,
+  Stream,
+} from "effect";
+import {
+  FetchHttpClient,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
 export const rpcProjection = toRpc(capabilities);
@@ -71,6 +101,47 @@ const enrichMessage =
           )
         ),
     });
+
+export const MAGIC_LINK_SENDER = "sign-in@rowlandekemezie.com";
+
+const currentStage = Effect.gen(function* currentStage() {
+  const planned = yield* Effect.serviceOption(Stage);
+
+  return Option.isSome(planned)
+    ? planned.value
+    : yield* Config.String("ALCHEMY_STAGE");
+});
+
+const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
+  Config.withDefault(""),
+  Config.map((hosts) =>
+    hosts
+      .split(",")
+      .map((host) => host.trim())
+      .filter((host) => host !== "")
+  )
+);
+
+const workersSubdomain = Config.option(
+  Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
+);
+
+const socialCredentials = (prefix: string) =>
+  Config.all({
+    clientId: Config.String(`${prefix}_CLIENT_ID`).pipe(Config.withDefault("")),
+    clientSecret: Config.Redacted(`${prefix}_CLIENT_SECRET`).pipe(
+      Config.withDefault(Redacted.make(""))
+    ),
+  }).pipe(
+    Config.map(({ clientId, clientSecret }) =>
+      clientId === "" || Redacted.value(clientSecret) === ""
+        ? Option.none<SocialCredentials>()
+        : Option.some({
+            clientId,
+            clientSecret: Redacted.value(clientSecret),
+          })
+    )
+  );
 
 export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBackend>()(
   "JobsBackend",
@@ -208,14 +279,97 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         )
     );
 
-    // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.
-    return RpcServer.toHttpEffect(rpcProjection.group).pipe(
-      Effect.provide(
-        Layer.mergeAll(rpcProjection.layer, RpcSerialization.layerJson).pipe(
-          Layer.provide(storeLayer)
-        )
-      )
+    const secret = yield* authSecret;
+
+    const social = Record.getSomes({
+      github: yield* socialCredentials("GITHUB"),
+      google: yield* socialCredentials("GOOGLE"),
+    });
+
+    const hosts = siteHostsOf(yield* currentStage, {
+      localHosts: yield* localAuthHosts,
+      workersSubdomain: yield* workersSubdomain,
+    });
+
+    const mailer = yield* Cloudflare.Email.Send(
+      yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
+        allowedSenderAddresses: [MAGIC_LINK_SENDER],
+      })
     );
+
+    const runPromise = Effect.runPromiseWith(yield* Effect.context());
+
+    const auth = yield* BetterAuth({
+      ...authOptions({
+        hosts,
+        // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
+        sendMagicLink: async (request) => {
+          await runPromise(
+            mailer
+              .send(magicLinkEmail(MAGIC_LINK_SENDER, request))
+              .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom))
+          );
+        },
+        social,
+      }),
+      migrate: false,
+      secret,
+    });
+
+    const accountStore = makeAccountStore(
+      (headers) =>
+        auth.api
+          .getSession({ headers, query: { disableRefresh: true } })
+          .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
+      {
+        socialProviders: SocialProvider.literals.filter(
+          (provider) => social[provider] !== undefined
+        ),
+      }
+    );
+
+    const serveRpc = (viewer: ViewerValue) =>
+      Effect.flatten(
+        RpcServer.toHttpEffect(rpcProjection.group).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              rpcProjection.layer,
+              RpcSerialization.layerJson
+            ).pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  storeLayer,
+                  Layer.succeed(AccountStore, accountStore),
+                  Layer.succeed(CurrentViewer, viewer)
+                )
+              )
+            )
+          )
+        )
+      );
+
+    const handle = Effect.gen(function* handle() {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+
+      if (isAuthPath(request.url)) {
+        return yield* auth.fetch;
+      }
+
+      return yield* viewerOfRequest(accountStore, request.headers).pipe(
+        Effect.matchEffect({
+          onFailure: () =>
+            Effect.succeed(
+              HttpServerResponse.text("Cross-site request refused.", {
+                status: 403,
+              })
+            ),
+          onSuccess: serveRpc,
+        })
+      );
+    });
+
+    // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.
+    return Effect.succeed(handle);
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
@@ -223,7 +377,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         Cloudflare.Workers.CronEventSourceLive,
         Cloudflare.Queues.WriteQueueBinding,
         Cloudflare.Queues.EventSourceLive,
-        Cloudflare.Workers.AIBinding
+        Cloudflare.Workers.AIBinding,
+        Cloudflare.Email.SendBinding,
+        CloudflareD1(JobsDatabase)
       )
     )
   )

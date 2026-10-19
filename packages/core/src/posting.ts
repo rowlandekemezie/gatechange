@@ -5,6 +5,7 @@ import { Arrangement, EpochMillis } from "./job.js";
 import type { JobValue } from "./job.js";
 import { classifyPlacement, regionWeight } from "./location.js";
 import { classifyRole, roleWeight } from "./role.js";
+import { offSiteHref } from "./site.js";
 
 export const Posting = Schema.Struct({
   company: Schema.String,
@@ -18,6 +19,10 @@ export const Posting = Schema.Struct({
 });
 
 export type PostingValue = typeof Posting.Type;
+
+export interface Listing extends Omit<JobValue, "url"> {
+  readonly url: Option.Option<string>;
+}
 
 export const SALARY_BONUS = 3;
 
@@ -34,7 +39,7 @@ export const normalizePosting = (
   feed: FeedRef,
   posting: PostingValue,
   seenAt: number
-): Option.Option<JobValue> => {
+): Option.Option<Listing> => {
   const title = collapseWhitespace(posting.title);
 
   const company = collapseWhitespace(
@@ -81,7 +86,7 @@ export const normalizePosting = (
         salary: hasSalary ? salary : null,
         source: feed.source,
         title,
-        url: posting.url,
+        url: offSiteHref(posting.url),
       };
     })
   );

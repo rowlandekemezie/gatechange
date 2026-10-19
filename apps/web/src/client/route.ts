@@ -43,13 +43,23 @@ import {
 } from "./board/filters.js";
 import type { FiltersValue, PayFloorValue } from "./board/filters.js";
 
+export const AccountNotice = Schema.Literals([
+  "None",
+  "LinkRefused",
+  "SignInFailed",
+]);
+
+export type AccountNoticeValue = typeof AccountNotice.Type;
+
 export const CompanySlug = Schema.String.check(
   Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
 );
 
 export const Route = defineRouteUnion({
+  Account: { notice: AccountNotice },
   Board: { filters: Filters },
   Company: { slug: CompanySlug },
+  ConfirmSignIn: { token: Schema.String },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
   Role: { place: RegionGroup, role: RoleLevel },
@@ -244,6 +254,51 @@ const JobIdSegment = Schema.String.pipe(
 
 export const boardRouter = pipe(root, query(BoardParams), mapTo(Route.Board));
 
+const refusedLinkErrors = new Set([
+  "INVALID_TOKEN",
+  "EXPIRED_TOKEN",
+  "ATTEMPTS_EXCEEDED",
+]);
+
+const noticeOfError = (error: string | undefined): AccountNoticeValue => {
+  if (error === undefined) {
+    return "None";
+  }
+
+  return refusedLinkErrors.has(error) ? "LinkRefused" : "SignInFailed";
+};
+
+const errorOfNotice = {
+  LinkRefused: { error: "INVALID_TOKEN" },
+  None: {},
+  SignInFailed: { error: "SIGN_IN_FAILED" },
+} as const;
+
+const AccountParams = Schema.Struct({
+  error: Schema.optionalKey(Schema.String),
+}).pipe(
+  Schema.decodeTo(
+    Schema.Struct({ notice: AccountNotice }),
+    SchemaTransformation.transform({
+      decode: ({ error }) => ({ notice: noticeOfError(error) }),
+      encode: ({ notice }) => errorOfNotice[notice],
+    })
+  )
+);
+
+export const accountRouter = pipe(
+  literal("account"),
+  query(AccountParams),
+  mapTo(Route.Account)
+);
+
+export const confirmSignInRouter = pipe(
+  literal("account"),
+  slash(literal("confirm")),
+  query(Schema.Struct({ token: Schema.String })),
+  mapTo(Route.ConfirmSignIn)
+);
+
 export const shortlistRouter = pipe(
   literal("shortlist"),
   mapTo(Route.Shortlist)
@@ -269,7 +324,15 @@ export const roleRouter = pipe(
 );
 
 export const routeOfUrl = parseUrlWithFallback(
-  oneOf(jobRouter, companyRouter, roleRouter, shortlistRouter, boardRouter),
+  oneOf(
+    jobRouter,
+    companyRouter,
+    roleRouter,
+    shortlistRouter,
+    confirmSignInRouter,
+    accountRouter,
+    boardRouter
+  ),
   { make: () => Route.NotFound() }
 );
 
@@ -277,8 +340,10 @@ export const boardUrl = (filters: FiltersValue) => boardRouter({ filters });
 
 export const canonicalPathOf = (route: RouteValue) =>
   Route.match<Option.Option<string>>(route, {
+    Account: () => Option.none(),
     Board: ({ filters }) => Option.some(boardUrl(filters)),
     Company: ({ slug }) => Option.some(companyRouter({ slug })),
+    ConfirmSignIn: () => Option.none(),
     Job: ({ id }) => Option.some(jobRouter({ id })),
     NotFound: () => Option.none(),
     Role: ({ place, role }) => Option.some(roleRouter({ place, role })),

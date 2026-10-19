@@ -1,12 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off asyncFunction:off globalDate:off globalFetch:off -- drive.ts is standalone Node tooling that drives Chrome over the DevTools protocol, outside any Effect runtime.
 import { spawn } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { once } from "node:events";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +22,7 @@ import { Schema } from "effect";
 const { values } = parseArgs({
   options: {
     dark: { default: false, type: "boolean" },
+    email: { default: "verify@example.com", type: "string" },
     "full-page": { default: false, type: "boolean" },
     "min-rows": { default: "20", type: "string" },
     mobile: { default: false, type: "boolean" },
@@ -30,7 +34,16 @@ const { values } = parseArgs({
   },
 });
 
-const scenarios = ["board", "filter", "search", "shortlist"] as const;
+const scenarios = [
+  "board",
+  "filter",
+  "search",
+  "shortlist",
+  "signin",
+  "bad-email",
+  "signout",
+  "link-reuse",
+] as const;
 
 type Scenario = (typeof scenarios)[number];
 
@@ -164,6 +177,20 @@ const arrivals = new EventTarget();
 
 const closed = settlesAs(once(socket, "close"), false);
 
+const PausedRequest = Schema.Struct({
+  method: Schema.Literal("Fetch.requestPaused"),
+  params: Schema.Struct({
+    request: Schema.Struct({
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    requestId: Schema.String,
+  }),
+});
+
+const isPausedRequest = Schema.is(PausedRequest);
+
+const clientIp = `10.${[0, 0, 0].map(() => randomInt(1, 251)).join(".")}`;
+
 socket.addEventListener("message", (event) => {
   const reply = Schema.decodeUnknownSync(Reply)(JSON.parse(String(event.data)));
 
@@ -215,6 +242,27 @@ const send = async <S extends Schema.Decoder<unknown>>(
 };
 
 const Ignored = Schema.Unknown;
+
+const continueWithClientIp = async ({ params }: typeof PausedRequest.Type) => {
+  await send(Ignored, "Fetch.continueRequest", {
+    headers: [
+      ...Object.entries(params.request.headers).map(([header, value]) => ({
+        name: header,
+        value,
+      })),
+      { name: "cf-connecting-ip", value: clientIp },
+    ],
+    requestId: params.requestId,
+  });
+};
+
+socket.addEventListener("message", (event) => {
+  const message: unknown = JSON.parse(String(event.data));
+
+  if (isPausedRequest(message)) {
+    void continueWithClientIp(message);
+  }
+});
 
 const Evaluation = Schema.Struct({
   exceptionDetails: Schema.optional(Schema.Struct({ text: Schema.String })),
@@ -321,11 +369,118 @@ const screenshot = async (slug: string) => {
 interface Step extends Partial<BoardStateValue> {
   readonly background?: string;
   readonly companies?: readonly string[];
+  readonly email?: string;
+  readonly header?: string;
   readonly heading?: string;
   readonly localStorageKeys?: number;
+  readonly problem?: string;
+  readonly sent?: string;
   readonly step: string;
   readonly titles?: readonly string[];
 }
+
+const mailOutbox = new URL(
+  "../../../../apps/infra/.alchemy/local/email/text/",
+  import.meta.url
+).pathname;
+
+const mailCount = () =>
+  existsSync(mailOutbox) ? readdirSync(mailOutbox).length : 0;
+
+const MAGIC_LINK = /https?:\/\/\S+\/account\/confirm\?token=\S+/u;
+
+const latestLink = () => {
+  const [newest] = readdirSync(mailOutbox)
+    .map((file) => path.join(mailOutbox, file))
+    .toSorted((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+
+  const [link] = MAGIC_LINK.exec(readFileSync(newest ?? "", "utf-8")) ?? [];
+
+  return link ?? fail(`no magic link in ${newest ?? mailOutbox}`);
+};
+
+const AccountState = Schema.Struct({
+  email: Schema.String,
+  header: Schema.String,
+  problem: Schema.String,
+  sent: Schema.String,
+});
+
+const accountState = async () =>
+  await evaluate(
+    AccountState,
+    `({
+    email: document.querySelector(".account-email")?.textContent ?? "",
+    header: document.querySelector("nav.tabs a.account-tab")?.textContent ?? "",
+    problem: [...document.querySelectorAll(".sign-in-problem[role=alert]")].map((node) => node.textContent).join(" "),
+    sent: document.querySelector(".sign-in-sent")?.textContent ?? "",
+  })`
+  );
+
+const waitForAccount = async (
+  label: string,
+  accept: (state: typeof AccountState.Type) => boolean
+) =>
+  await waitFor(label, async () => {
+    const state = await accountState();
+
+    return accept(state) ? state : undefined;
+  });
+
+const goTo = async (address: string) => {
+  const navigation = await send(
+    Schema.Struct({ errorText: Schema.optional(Schema.String) }),
+    "Page.navigate",
+    { url: address }
+  );
+
+  if (navigation.errorText !== undefined) {
+    throw new Error(`navigation to ${address} failed: ${navigation.errorText}`);
+  }
+};
+
+const finishSignIn = async (link: string) => {
+  await goTo(link);
+
+  await waitFor("the finish-signing-in button", async () =>
+    (await evaluate(
+      Schema.Boolean,
+      `(() => {
+      const button = [...document.querySelectorAll("form button")]
+        .find((node) => node.textContent.trim() === "Finish signing in");
+      if (button !== undefined) setTimeout(() => button.click(), 0);
+      return button !== undefined;
+    })()`
+    ))
+      ? true
+      : undefined
+  );
+};
+
+const submitEmail = async (email: string) => {
+  if (!(await clickButton("nav.tabs a.account-tab", "Sign in"))) {
+    throw new Error("no Sign in link in the header");
+  }
+
+  await waitFor("the sign-in form", async () =>
+    (await evaluate(
+      Schema.Boolean,
+      'document.querySelector("form.sign-in input") !== null'
+    ))
+      ? true
+      : undefined
+  );
+
+  await evaluate(
+    Ignored,
+    `(() => {
+    const input = document.querySelector("form.sign-in input");
+    input.value = ${JSON.stringify(email)};
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector("form.sign-in").requestSubmit();
+  })()`
+  );
+};
 
 const Shortlist = Schema.Struct({
   heading: Schema.String,
@@ -335,6 +490,12 @@ const Shortlist = Schema.Struct({
 const run = async () => {
   await send(Ignored, "Page.enable");
   await send(Ignored, "Runtime.enable");
+  await send(Ignored, "Network.enable");
+  await send(Ignored, "Fetch.enable", {
+    patterns: [
+      { requestStage: "Request", urlPattern: `${new URL(url).origin}/*` },
+    ],
+  });
   await send(Ignored, "Emulation.setDeviceMetricsOverride", viewport);
   await send(Ignored, "Emulation.setEmulatedMedia", {
     features: [
@@ -364,7 +525,79 @@ const run = async () => {
 
   const steps: Step[] = [{ step: "loaded", ...loaded, background }];
 
+  const signIn = async () => {
+    const before = mailCount();
+
+    await submitEmail(values.email);
+
+    const sent = await waitForAccount("the check-your-email notice", (state) =>
+      state.sent.includes(values.email)
+    );
+
+    steps.push({ step: `asked for a link for ${values.email}`, ...sent });
+
+    await waitFor("the magic link email", async () => {
+      await sleep(0);
+
+      return mailCount() > before ? true : undefined;
+    });
+
+    const link = latestLink();
+
+    await finishSignIn(link);
+
+    const signedIn = await waitForAccount(
+      "the header to show the account",
+      (state) => state.header === values.email
+    );
+
+    steps.push({ step: "opened the emailed link", ...signedIn });
+
+    return link;
+  };
+
+  const signOut = async () => {
+    if (!(await clickButton(".account button.more", "Sign out"))) {
+      throw new Error("no Sign out button on the account page");
+    }
+
+    await waitForAccount(
+      "the header to offer Sign in",
+      (state) => state.header === "Sign in"
+    );
+
+    await goTo(url);
+
+    const reloaded = await waitForAccount(
+      "the reloaded page to stay signed out",
+      (state) => state.header === "Sign in"
+    );
+
+    steps.push({ step: "signed out and reloaded", ...reloaded });
+  };
+
   const actions: Partial<Record<Scenario, () => Promise<void>>> = {
+    "bad-email": async () => {
+      const before = mailCount();
+
+      await submitEmail("not-an-email");
+
+      const refused = await waitForAccount(
+        "an inline email error",
+        (state) => state.problem.length > 0
+      );
+
+      await sleep(1000);
+
+      steps.push({
+        step: `submitted not-an-email; outbox ${before} -> ${mailCount()}`,
+        ...refused,
+      });
+
+      if (mailCount() !== before) {
+        throw new Error("an email was sent for an invalid address");
+      }
+    },
     filter: async () => {
       if (!(await clickButton("button.phrase", "day"))) {
         throw new Error('no "day" age chip to click');
@@ -381,6 +614,23 @@ const run = async () => {
         throw new Error(
           `the 1-day filter did not narrow the list (${loaded.rows} to ${narrowed.rows} rows)`
         );
+      }
+    },
+    "link-reuse": async () => {
+      const link = await signIn();
+
+      await signOut();
+      await finishSignIn(link);
+
+      const refused = await waitForAccount(
+        "the used link to be refused",
+        (state) => state.problem.includes("already used")
+      );
+
+      steps.push({ step: "reopened the used link", ...refused });
+
+      if (refused.header !== "Sign in") {
+        throw new Error("a used link signed the viewer in again");
       }
     },
     search: async () => {
@@ -461,6 +711,13 @@ const run = async () => {
         step: `saved ${title}`,
         titles: saved.titles,
       });
+    },
+    signin: async () => {
+      await signIn();
+    },
+    signout: async () => {
+      await signIn();
+      await signOut();
     },
   };
 

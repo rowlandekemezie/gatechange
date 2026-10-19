@@ -31,6 +31,7 @@ import type {
 import { PostingTexts } from "./posting-texts.js";
 import { DAY_MILLIS } from "./posting.js";
 import { seniorityOf } from "./role.js";
+import { PROD_STAGE } from "./site.js";
 import { SourceTerms } from "./source-terms.js";
 
 export const MAX_POSTING_CHARS = 12_000;
@@ -744,8 +745,6 @@ export const detailsOfAnswer = (
 };
 
 const HOUR_MILLIS = 3_600_000;
-
-export const PROD_STAGE = "prod";
 
 export const DEFAULT_ENRICHMENT_SWEEP_LIMIT = 8;
 

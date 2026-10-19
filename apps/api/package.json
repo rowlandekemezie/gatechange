@@ -14,6 +14,8 @@
     "check": "pnpm run typecheck"
   },
   "dependencies": {
+    "@alchemy.run/better-auth": "2.0.0-beta.83",
+    "@rat-stack/accounts": "workspace:*",
     "@rat-stack/capability": "workspace:*",
     "@rat-stack/core": "workspace:*",
     "@rat-stack/job-enrichment": "workspace:*",

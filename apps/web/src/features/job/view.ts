@@ -1,3 +1,4 @@
+import { offSiteHref } from "@rat-stack/core/contracts";
 import type {
   EnrichmentValue,
   JobDetailValue,
@@ -133,7 +134,9 @@ const foundView = (
           h.a(
             [
               h.Class("apply"),
-              h.Href(job.url),
+              ...Option.toArray(
+                Option.map(offSiteHref(job.url), (href) => h.Href(href))
+              ),
               h.Target("_blank"),
               h.Rel("noopener noreferrer"),
             ],
@@ -168,7 +171,9 @@ const missingView = (
               `You tracked ${mark.title} at ${mark.company}. `,
               h.a(
                 [
-                  h.Href(mark.url),
+                  ...Option.toArray(
+                    Option.map(offSiteHref(mark.url), (href) => h.Href(href))
+                  ),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],

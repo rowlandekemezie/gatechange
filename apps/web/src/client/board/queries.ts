@@ -17,6 +17,7 @@ const make = Effect.gen(function* makeJobQueries() {
   return {
     getJob: (id: string) => client.getJob({ id }),
     listJobs: (query: JobQueryValue) => client.listJobs(query),
+    signInOptions: client.signInOptions({}),
     stats: client.boardStats({}),
   };
 });

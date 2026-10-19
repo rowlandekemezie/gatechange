@@ -12,6 +12,7 @@ import { defineMessageUnion } from "foldkit/message";
 import { UrlRequest } from "foldkit/navigation";
 import { Url } from "foldkit/url";
 
+import { Message as AccountMessage } from "../account/message.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { AgeWindow, RegionGroup, SalaryStep, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
@@ -31,6 +32,7 @@ export const Message = defineMessageUnion({
   ClickedRetry: {},
   ClickedRetryJob: {},
   ClickedRetryListing: {},
+  CompletedForgetSignInToken: {},
   CompletedNavigation: {},
   CompletedReadShortlist: { marks: Shortlist },
   CompletedWriteShortlist: {},
@@ -39,6 +41,7 @@ export const Message = defineMessageUnion({
   FailedFetchListing: { message: Schema.String, route: ListingRoute },
   FailedFetchMoreJobs: { generation: Schema.Finite },
   FailedFetchStats: {},
+  GotAccountMessage: { message: AccountMessage },
   SubmittedSearch: {},
   SucceededFetchJob: { id: Schema.String, job: Schema.Option(JobDetail) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },

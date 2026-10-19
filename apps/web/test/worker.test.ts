@@ -50,6 +50,7 @@ const backend = HttpRouter.toWebHandler(
   RpcServer.layerHttp({ group, path: "/rpc", protocol: "http" }).pipe(
     Layer.provide([
       group.toLayer({
+        account: () => Effect.die("account is not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         getJob: () => Effect.succeed(Option.none()),
         listJobs: () =>
@@ -58,6 +59,7 @@ const backend = HttpRouter.toWebHandler(
             jobs: [director],
             total: 1,
           }),
+        signInOptions: () => Effect.succeed({ socialProviders: [] }),
       }),
       RpcSerialization.layerJson,
     ])
@@ -269,7 +271,6 @@ describe("per-viewer requests", () => {
   });
 
   it.each([
-    `${ORIGIN}/api/auth/session`,
     `${ORIGIN}/account/confirm?token=secret`,
     `${ORIGIN}/`,
     `${ORIGIN}/shortlist`,

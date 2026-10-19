@@ -1,4 +1,5 @@
-import { Array, pipe } from "effect";
+import { offSiteHref } from "@rat-stack/core/contracts";
+import { Array, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import { Message } from "../../client/board/message.js";
@@ -30,7 +31,9 @@ const markRow = (h: HtmlBuilder<MessageValue>, mark: MarkedJobValue): Html =>
               h.a(
                 [
                   h.Class("job-source"),
-                  h.Href(mark.url),
+                  ...Option.toArray(
+                    Option.map(offSiteHref(mark.url), (href) => h.Href(href))
+                  ),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],

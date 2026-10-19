@@ -52,6 +52,8 @@ export interface ListingHistory {
   readonly sightings: number;
 }
 
+export type Sighted = Pick<JobValue, "company" | "feed" | "title">;
+
 export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
   `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
 
@@ -111,6 +113,10 @@ export class JobStore extends Context.Service<
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly recordRun: (
       receipt: IngestReceiptValue
+    ) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly recordSightings: (
+      listings: readonly Sighted[],
+      seenAt: number
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly releaseIngest: (
       startedAt: number

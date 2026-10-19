@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { Runtime } from "foldkit";
 
+import { AuthClient } from "./account/auth-client.js";
 import { application } from "./application.js";
 import { Message } from "./board/message.js";
 import { Preload } from "./board/model.js";
@@ -14,7 +15,7 @@ const program = Runtime.makeApplication({
   ...application,
   container: served ?? document.querySelector<HTMLElement>("#root"),
   devTools: import.meta.env.DEV ? { Message } : false,
-  resources: JobQueries.layer,
+  resources: Layer.mergeAll(JobQueries.layer, AuthClient.layer),
 });
 
 if (served === null) {

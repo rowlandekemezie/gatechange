@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./edge-routes": {
+      "types": "./src/edge-routes.ts",
+      "default": "./src/edge-routes.ts"
+    }
+  },
   "scripts": {
     "dev": "vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -9,6 +9,7 @@ import type {
   JobQueryValue,
   JobValue,
   ListingHistory,
+  Sighted,
 } from "../src/index.js";
 
 export interface MemoryJobStore {
@@ -45,7 +46,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     return previous !== null && previous < seenAt ? previous : null;
   };
 
-  const sight = (job: JobValue, seenAt: number) => {
+  const sight = (job: Sighted, seenAt: number) => {
     const fingerprint = fingerprintOf(job);
     const previous = Option.fromNullishOr(history.get(fingerprint));
     const lastSeenFeed = lastSeenFeeds.get(fingerprint) ?? job.feed;
@@ -213,6 +214,12 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     recordRun: (receipt) =>
       Effect.sync(() => {
         runs.push(receipt);
+      }),
+    recordSightings: (listings, seenAt) =>
+      Effect.sync(() => {
+        for (const listing of listings) {
+          sight(listing, seenAt);
+        }
       }),
     recordSkip: (id, skip) =>
       Effect.sync(() => {

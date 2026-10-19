@@ -5,6 +5,12 @@ import { Preload } from "./client/board/model.js";
 import { collectListing, isListingRoute } from "./client/listing.js";
 import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
+import {
+  edgeRouteOf,
+  PRIVATE_CACHE_CONTROL,
+  PRIVATE_REFERRER_POLICY,
+} from "./edge-routes.js";
+import type { EdgeRoute } from "./edge-routes.js";
 import { clientOf, listedJobs, shellOf } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
@@ -18,8 +24,21 @@ interface EdgeBindings {
   readonly SITE_INDEXING?: string;
 }
 
-const isRpc = (pathname: string) =>
-  pathname === "/rpc" || pathname.startsWith("/rpc/");
+const withoutSharedCache = (route: EdgeRoute, response: Response) => {
+  if (route === "public" && !response.headers.has("set-cookie")) {
+    return response;
+  }
+
+  const guarded = new Response(response.body, response);
+
+  guarded.headers.set("cache-control", PRIVATE_CACHE_CONTROL);
+
+  if (route === "private") {
+    guarded.headers.set("referrer-policy", PRIVATE_REFERRER_POLICY);
+  }
+
+  return guarded;
+};
 
 const respond = (body: string, contentType: string, status = 200) =>
   new Response(body, {
@@ -179,17 +198,23 @@ export default {
     bindings: EdgeBindings,
     lifetime: Lifetime
   ): Promise<Response> => {
-    if (isRpc(new URL(request.url).pathname)) {
-      return await bindings.BACKEND.fetch(request);
+    const route = edgeRouteOf(new URL(request.url).pathname);
+
+    if (route === "backend") {
+      return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
     }
 
-    const served = await Effect.runPromise(
-      serveSite(request, bindings, lifetime)
-    );
+    const served =
+      route === "public"
+        ? await Effect.runPromise(serveSite(request, bindings, lifetime))
+        : Option.none<Response>();
 
-    const response = Option.isSome(served)
-      ? served.value
-      : await bindings.ASSETS.fetch(request);
+    const response = withoutSharedCache(
+      route,
+      Option.isSome(served)
+        ? served.value
+        : await bindings.ASSETS.fetch(request)
+    );
 
     return bindings.SITE_INDEXING === "index" ? response : noindex(response);
   },

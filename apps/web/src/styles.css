@@ -437,3 +437,86 @@ a {
       color 120ms ease-out;
   }
 }
+
+.tabs {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tab {
+  white-space: nowrap;
+}
+
+.account-tab {
+  margin-left: auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-lede,
+.account-email {
+  margin: 0.75rem 0 1.5rem;
+  color: var(--ink-soft);
+}
+
+.sign-in {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.sign-in label {
+  font-weight: 700;
+}
+
+.sign-in-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sign-in-row input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+
+.sign-in-row input[aria-invalid="true"] {
+  border-color: var(--marigold);
+  outline: 2px solid var(--marigold);
+}
+
+.sign-in-row button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.sign-in-problem {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid var(--marigold);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.sign-in-social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.sign-in-social .more,
+.account .more {
+  margin-top: 0;
+}
+
+.sign-in-sent p {
+  margin: 0 0 0.75rem;
+}

@@ -314,6 +314,20 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
     recordRun: (receipt) =>
       sql.batch("recordRun", [recordRunStatement(receipt)]).pipe(Effect.asVoid),
 
+    recordSightings: (listings, seenAt) =>
+      Effect.forEach(
+        Array.chunksOf(listings, UPSERT_CHUNK),
+        (chunk) =>
+          sql.batch(
+            "recordSightings",
+            pipe(
+              chunk,
+              Array.map((listing) => sightingStatement(listing, seenAt))
+            )
+          ),
+        { discard: true }
+      ),
+
     recordSkip: (id, skip) =>
       sql
         .batch("recordSkip", [recordSkipStatement(id, skip)])

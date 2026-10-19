@@ -1,10 +1,14 @@
 import { implement } from "@rat-stack/capability/implement";
 import { Clock, Effect } from "effect";
 
+import { AccountStore } from "./account-store.js";
+import { currentMember } from "./account.js";
 import {
+  accountContract,
   boardStatsContract,
   getJobContract,
   listJobsContract,
+  signInOptionsContract,
 } from "./contracts.js";
 import { JobStore } from "./job-store.js";
 
@@ -36,4 +40,16 @@ export const getJob = implement(getJobContract, ({ id }) =>
   })
 );
 
-export const capabilities = [listJobs, boardStats, getJob] as const;
+export const account = implement(accountContract, () => currentMember);
+
+export const signInOptions = implement(signInOptionsContract, () =>
+  AccountStore.use((store) => Effect.succeed(store.signInOptions))
+);
+
+export const capabilities = [
+  listJobs,
+  boardStats,
+  getJob,
+  account,
+  signInOptions,
+] as const;

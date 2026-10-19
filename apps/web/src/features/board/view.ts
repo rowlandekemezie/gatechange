@@ -1,4 +1,9 @@
-import { currencies, roleLevels, seniorities } from "@rat-stack/core/contracts";
+import {
+  currencies,
+  offSiteHref,
+  roleLevels,
+  seniorities,
+} from "@rat-stack/core/contracts";
 import type { ListedJobValue, RoleLevelValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -341,7 +346,9 @@ export const jobRow = (
               h.a(
                 [
                   h.Class("job-source"),
-                  h.Href(job.url),
+                  ...Option.toArray(
+                    Option.map(offSiteHref(job.url), (href) => h.Href(href))
+                  ),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],
