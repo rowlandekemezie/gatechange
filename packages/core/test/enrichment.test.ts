@@ -1626,6 +1626,72 @@ describe("enrichListing", () => {
     });
   });
 
+  it.each([
+    ["before", `${"USD$".repeat(22)}x $100,000 - $120,000`],
+    ["after", `$100,000 - $120,000 ${"usd$".repeat(25)}x`],
+    ["before", `${"/hr$".repeat(22)}x $100,000 - $120,000`],
+  ])(
+    "a stated band with a run of currency markers that also read as periods %s it is checked in milliseconds",
+    (_side, text) => {
+      const started = performance.now();
+
+      const details = detailsOfAnswer(
+        { ...validAnswer, salaryMax: 120_000, salaryMin: 100_000 },
+        { company: "Acme", text, title: "Engineer", workplace: "Unspecified" }
+      );
+
+      expect(performance.now() - started).toBeLessThan(50);
+      expect(details.salary).toBeNull();
+    }
+  );
+
+  it("a range paid in addition to base salary is not saved as salary", () => {
+    expect(
+      detailsOfAnswer(
+        { ...validAnswer, salaryMax: 50_000, salaryMin: 20_000 },
+        {
+          company: "Acme",
+          text: "Paid in addition to base salary: $20,000 - $50,000 per year.",
+          title: "Engineer",
+          workplace: "Unspecified",
+        }
+      ).salary
+    ).toBeNull();
+  });
+
+  it("a role sentence that restates the tagged policy beside another keeps the tag", () => {
+    expect(
+      detailsOfAnswer(
+        { ...validAnswer, remotePolicy: null, remotePolicyQuote: null },
+        {
+          company: "Acme",
+          text: "This role is hybrid, on-site every Tuesday and Thursday. #LI-Hybrid",
+          title: "Engineer",
+          workplace: "Unspecified",
+        }
+      ).remotePolicy
+    ).toBe("Hybrid");
+  });
+
+  it("a who-clause about a peer whose title shares the role's last words is not the role's reporting line", () => {
+    expect(
+      detailsOfAnswer(
+        {
+          ...validAnswer,
+          reportsTo: "VP of Engineering",
+          reportsToQuote:
+            "the Staff Engineering Manager, who reports to the VP of Engineering",
+        },
+        {
+          company: "Acme",
+          text: "You will work with the Staff Engineering Manager, who reports to the VP of Engineering.",
+          title: "Senior Engineering Manager",
+          workplace: "Unspecified",
+        }
+      ).reportsTo
+    ).toBeNull();
+  });
+
   it.effect(
     "a quote over 40 words is judged on its last 40, so a cue only in its opening is not enough",
     () =>
@@ -1698,7 +1764,7 @@ describe("enrichListing", () => {
   );
 
   it.effect(
-    "a call claims its estimated neurons before it runs and records the neurons the model reports",
+    "a call claims its estimated neurons before it runs, then lowers the claim to the neurons the model reports",
     () =>
       Effect.gen(function* neuronLedger() {
         const result = yield* enrich({
@@ -1707,8 +1773,23 @@ describe("enrichListing", () => {
         });
 
         expect(reasonOf(result.outcome)).toBe("Enriched");
-        expect([...result.neurons]).toStrictEqual([[0, NEURONS_PER_CALL]]);
+        expect([...result.neurons]).toStrictEqual([[0, 42]]);
         expect([...result.neuronsUsed]).toStrictEqual([[0, 42]]);
+      })
+  );
+
+  it.effect(
+    "a call whose usage the model does not report keeps its full claim",
+    () =>
+      Effect.gen(function* unreportedUsage() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          reportedNeurons: null,
+        });
+
+        expect(reasonOf(result.outcome)).toBe("Enriched");
+        expect([...result.neurons]).toStrictEqual([[0, NEURONS_PER_CALL]]);
+        expect([...result.neuronsUsed]).toStrictEqual([]);
       })
   );
 

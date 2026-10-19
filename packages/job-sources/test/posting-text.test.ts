@@ -528,4 +528,37 @@ describe("linesOfHtml", () => {
       )
     ).toBe("Shown.\nVisible.");
   });
+
+  it("a 200 KB unclosed tag whose name is word-hyphen pairs parses in under 100 ms", () => {
+    const started = performance.now();
+
+    linesOfHtml(`<p>Shown.</p><a${"-a".repeat(MAX_HTML_CHARS / 2 - 20)}`);
+
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  it("a 200 KB opacity of zeros ending in 1 parses in under 50 ms and stays shown", () => {
+    const zeros = "0".repeat(MAX_HTML_CHARS - 100);
+    const started = performance.now();
+
+    const text = linesOfHtml(`<span style="opacity:${zeros}1">Shown.</span>`);
+
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(text).toBe("Shown.");
+  });
+
+  it.each([
+    ["opacity:0", true],
+    ["opacity: 0.0;", true],
+    ["font-size:0px", true],
+    ["font-size:0 !important", true],
+    ["opacity:.0", true],
+    ["opacity:00", true],
+    ["opacity:0.5", false],
+    ["font-size:01px", false],
+  ])("style %j hides its element: %s", (style, hidden) => {
+    expect(linesOfHtml(`<p>Shown.</p><p style="${style}">Styled.</p>`)).toBe(
+      hidden ? "Shown." : "Shown.\nStyled."
+    );
+  });
 });

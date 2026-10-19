@@ -410,6 +410,33 @@ describe("enrichment storage", () => {
       )
   );
 
+  it.effect("saving an enrichment clears the listing's earlier skip row", () =>
+    withStore(
+      Effect.gen(function* clearsSkip() {
+        const store = yield* JobStore;
+        const sql = yield* SqlExecutor;
+
+        yield* store.recordSkip("later-enriched", {
+          reason: "DailyCapReached",
+          skippedAt: NOW,
+        });
+        yield* store.recordSkip("still-skipped", {
+          reason: "DailyCapReached",
+          skippedAt: NOW,
+        });
+        yield* store.saveEnrichment("later-enriched", enrichment());
+
+        expect(
+          yield* sql.all(
+            "skipRows",
+            statement("SELECT job_id FROM job_enrichment_skip ORDER BY job_id"),
+            Schema.Struct({ job_id: Schema.String })
+          )
+        ).toStrictEqual([{ job_id: "still-skipped" }]);
+      })
+    )
+  );
+
   it.effect(
     "recording a skip twice keeps one row, and pruning drops skips whose job is gone",
     () =>
@@ -636,31 +663,142 @@ describe("claimNeurons", () => {
       )
   );
 
+  const LedgerRow = Schema.Struct({
+    claimed: Schema.Number,
+    day: Schema.Number,
+    used: Schema.Number,
+  });
+
+  const ledgerOf = Effect.gen(function* readLedger() {
+    const sql = yield* SqlExecutor;
+
+    return yield* sql.all(
+      "neuronLedger",
+      statement(
+        "SELECT day, claimed, used FROM enrichment_neurons ORDER BY day"
+      ),
+      LedgerRow
+    );
+  });
+
   it.effect(
-    "records the neurons a model reports against the day it claimed",
+    "lowers the day's claimed neurons to what each call used, never by more than its claim and never below 0",
     () =>
       withStore(
-        Effect.gen(function* reportedUsage() {
+        Effect.gen(function* reconcile() {
           const store = yield* JobStore;
-          const sql = yield* SqlExecutor;
           const today = Math.floor(NOW / DAY_MILLIS);
 
           yield* store.claimNeurons({ budget: 1000, day: today, neurons: 400 });
-          yield* store.recordNeuronsUsed({ day: today, neurons: 70 });
-          yield* store.recordNeuronsUsed({ day: today, neurons: 30 });
+          yield* store.claimNeurons({ budget: 1000, day: today, neurons: 300 });
+          yield* store.recordNeuronsUsed({
+            claimed: 400,
+            day: today,
+            neurons: 70,
+          });
 
-          const ledger = yield* sql.all(
-            "neuronLedger",
-            statement("SELECT day, claimed, used FROM enrichment_neurons"),
-            Schema.Struct({
-              claimed: Schema.Number,
-              day: Schema.Number,
-              used: Schema.Number,
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 370, day: today, used: 70 },
+          ]);
+
+          yield* store.recordNeuronsUsed({
+            claimed: 300,
+            day: today,
+            neurons: 500,
+          });
+
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 370, day: today, used: 570 },
+          ]);
+
+          yield* store.claimNeurons({ budget: 1000, day: today, neurons: 300 });
+          yield* store.recordNeuronsUsed({
+            claimed: 400,
+            day: today,
+            neurons: -50,
+          });
+
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 270, day: today, used: 520 },
+          ]);
+
+          yield* store.recordNeuronsUsed({
+            claimed: 400,
+            day: today,
+            neurons: 0,
+          });
+
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 0, day: today, used: 520 },
+          ]);
+          expect(
+            yield* store.claimNeurons({
+              budget: 1000,
+              day: today,
+              neurons: 1000,
             })
+          ).toBe(true);
+        })
+      )
+  );
+
+  it.effect(
+    "concurrent claims and reconciles over a store that yields between statements leave claimed equal to the neurons used",
+    () =>
+      withStore(
+        Effect.gen(function* concurrentLedger() {
+          const sql = yield* SqlExecutor;
+          const today = Math.floor(NOW / DAY_MILLIS);
+
+          const yielding = SqlExecutor.of({
+            all: (operation, ledgerQuery, row) =>
+              Effect.andThen(
+                Effect.yieldNow,
+                sql.all(operation, ledgerQuery, row)
+              ),
+            batch: (operation, statements) =>
+              Effect.andThen(Effect.yieldNow, sql.batch(operation, statements)),
+          });
+
+          const store = yield* makeJobStore.pipe(
+            Effect.provideService(SqlExecutor, yielding)
           );
 
-          expect(ledger).toStrictEqual([
-            { claimed: 400, day: today, used: 100 },
+          const usages = Array.makeBy(60, (index) => 40 + (index % 7) * 10);
+
+          const granted = yield* Effect.forEach(
+            usages,
+            (neurons) =>
+              Effect.gen(function* call() {
+                const claimed = yield* store.claimNeurons({
+                  budget: 2000,
+                  day: today,
+                  neurons: 400,
+                });
+
+                if (!claimed) {
+                  return 0;
+                }
+
+                yield* Effect.yieldNow;
+                yield* store.recordNeuronsUsed({
+                  claimed: 400,
+                  day: today,
+                  neurons,
+                });
+
+                return neurons;
+              }),
+            { concurrency: 8 }
+          );
+
+          const used = granted.reduce((total, neurons) => total + neurons, 0);
+
+          expect(
+            granted.filter((neurons) => neurons > 0).length
+          ).toBeGreaterThan(5);
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: used, day: today, used },
           ]);
         })
       )

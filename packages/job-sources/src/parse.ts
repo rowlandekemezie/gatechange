@@ -115,7 +115,7 @@ export const MAX_HTML_CHARS = 200_000;
 const blockTag =
   /<\/?(?:p|div|li|ul|ol|br|h[1-6]|tr|table|section|article|blockquote|hr)\b[^<>]*>/giu;
 
-const htmlTag = /<(?<closing>\/?)(?<name>[a-z][\w-]*)\b[^<>]*>/giu;
+const htmlTag = /<(?<closing>\/?)(?<name>[a-z][\w-]*)(?![\w-])[^<>]*>/giu;
 
 const hiddenAttribute = /\shidden(?:[\s=/>]|$)/iu;
 
@@ -123,7 +123,7 @@ const styleAttribute =
   /\sstyle\s*=\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)'|(?<bare>[^\s"'>]+))/iu;
 
 const hiddenStyle =
-  /\b(?:display\s*:\s*none|visibility\s*:\s*hidden|(?:font-size|opacity)\s*:\s*0*\.?0+[a-z%]*\s*(?:[;!]|$))/iu;
+  /\b(?:display\s*:\s*none|visibility\s*:\s*hidden|(?:font-size|opacity)\s*:\s*(?:0+(?:\.0*)?|\.0+)(?![\d.])[a-z%]*\s*(?:[;!]|$))/iu;
 
 const hiddenByMarkup = (tag: string) => {
   const style = styleAttribute.exec(tag)?.groups;

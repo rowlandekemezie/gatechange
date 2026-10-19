@@ -200,11 +200,30 @@ describe("listing enricher", () => {
     expect(neuronsFor(posting)).toBeLessThan(MAX_NEURONS);
   });
 
-  it("keeps a month at the default daily budget under $10 after the 10,000 free neurons a day", () => {
-    expect(((DEFAULT_DAILY_NEURONS - 10_000) * 30 * 0.011) / 1000).toBeLessThan(
-      10
-    );
+  it("keeps a 31-day month at the default daily budget under $10 even when no free neurons are left", () => {
+    expect((DEFAULT_DAILY_NEURONS * 31 * 0.011) / 1000).toBeLessThan(10);
   });
+
+  it.each([
+    ["a short English posting", posting.text],
+    ["a short Chinese posting", "负责平台团队，管理八名工程师。".repeat(100)],
+    ["a short emoji posting", "🚀 ".repeat(1000)],
+    ["1 MB of English", "Lead the platform team. ".repeat(44_000)],
+    ["1 MB of Chinese", "负责平台团队。".repeat(150_000)],
+    ["1 MB of emoji", "🚀".repeat(250_000)],
+  ])(
+    "claims at least what %s can cost: every prompt byte, the chat template and a full answer",
+    (_label, text) => {
+      const request = { ...posting, text };
+      const promptBytes = inputBytesOf(request) + 64;
+
+      const worstCase = Math.ceil(
+        promptBytes * (26_668 / 1_000_000) + 256 * (204_805 / 1_000_000)
+      );
+
+      expect(neuronsFor(request)).toBeGreaterThanOrEqual(worstCase);
+    }
+  );
 
   it.effect("reports a Workers AI failure as EnricherUnavailable", () =>
     Effect.gen(function* failRun() {

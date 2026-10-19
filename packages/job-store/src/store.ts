@@ -24,6 +24,7 @@ import {
   activeCountStatement,
   claimIngestStatement,
   claimNeuronsStatement,
+  clearSkipStatement,
   countJobsStatement,
   feedFailedStatement,
   feedHealthStatement,
@@ -385,7 +386,10 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     saveEnrichment: (id, enrichment) =>
       sql
-        .batch("saveEnrichment", [saveEnrichmentStatement(id, enrichment)])
+        .batch("saveEnrichment", [
+          saveEnrichmentStatement(id, enrichment),
+          clearSkipStatement(id),
+        ])
         .pipe(Effect.asVoid),
 
     stats: (now) =>

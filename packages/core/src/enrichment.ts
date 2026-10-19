@@ -346,10 +346,13 @@ const namesBasePay = (label: string) =>
   lastIndexOf(basePayCue, label) !== -1 &&
   lastIndexOf(otherPayCues, label) <= lastIndexOf(basePayCue, label);
 
-const rangeOnly = new RegExp(
-  String.raw`^(?:\s|${currencyMarker}|${periodCue.source}|[/(),:])*$`,
-  "iu"
+const rangeWords = new RegExp(
+  String.raw`${currencyMarker}|${periodCue.source}`,
+  "giu"
 );
+
+const rangeOnly = (text: string) =>
+  /^[\s/(),:]*$/u.test(text.replaceAll(rangeWords, " "));
 
 const headingAbove = (text: string, { start }: Span) => {
   const lineStart = text.lastIndexOf("\n", start - 1);
@@ -367,7 +370,7 @@ const isBasePay = (text: string, span: Span, title: string) => {
   }
 
   if (
-    rangeOnly.test(`${before} ${after}`) ||
+    rangeOnly(`${before} ${after}`) ||
     (lastIndexOf(basePayCue, line) === -1 &&
       lastIndexOf(otherPayCues, line) === -1)
   ) {
@@ -745,7 +748,7 @@ const clauseLinks: ReadonlySet<string> = new Set(["and", "or", "then", "to"]);
 const relativePronouns: ReadonlySet<string> = new Set(["that", "which", "who"]);
 
 const namesTheRole = (words: readonly string[], postingTitle: string) => {
-  const title = titleWords(postingTitle).slice(-2);
+  const title = titleWords(postingTitle);
   const named = titleWords(words.join(" ")).slice(-title.length);
 
   return (
@@ -825,7 +828,7 @@ const HOUR_MILLIS = 3_600_000;
 
 export const DEFAULT_ENRICHMENT_SWEEP_LIMIT = 8;
 
-export const DEFAULT_DAILY_NEURONS = 40_000;
+export const DEFAULT_DAILY_NEURONS = 29_000;
 
 export const sweepLimitOf = (deploy: {
   readonly configured: Option.Option<number>;
@@ -935,7 +938,11 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
         Effect.tap(({ neurons }) =>
           neurons === null
             ? Effect.void
-            : store.recordNeuronsUsed({ day, neurons })
+            : store.recordNeuronsUsed({
+                claimed: enricher.neuronsFor(posting),
+                day,
+                neurons,
+              })
         ),
         Effect.flatMap(({ answer }) =>
           Schema.decodeUnknownEffect(ModelAnswer)(answer).pipe(

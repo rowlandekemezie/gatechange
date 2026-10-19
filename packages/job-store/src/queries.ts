@@ -4,6 +4,7 @@ import {
   MAX_AGE_DAYS,
   RECENCY_PENALTY_PER_DAY,
   REPOST_GAP,
+  unspentNeurons,
 } from "@rat-stack/core";
 import type {
   EnrichmentSkip,
@@ -183,6 +184,9 @@ ON CONFLICT (job_id) DO UPDATE SET
   skipped_at = excluded.skipped_at`,
     [id, skip.reason, skip.skippedAt]
   );
+
+export const clearSkipStatement = (id: string) =>
+  statement("DELETE FROM job_enrichment_skip WHERE job_id = ?", [id]);
 
 export const saveEnrichmentStatement = (
   id: string,
@@ -375,11 +379,11 @@ export const neuronsClaimedStatement = (day: number) =>
     [day]
   );
 
-export const recordNeuronsUsedStatement = ({ day, neurons }: NeuronUsage) =>
-  statement("UPDATE enrichment_neurons SET used = used + ? WHERE day = ?", [
-    neurons,
-    day,
-  ]);
+export const recordNeuronsUsedStatement = (usage: NeuronUsage) =>
+  statement(
+    "UPDATE enrichment_neurons SET used = used + ?, claimed = MAX(0, claimed - ?) WHERE day = ?",
+    [usage.neurons, unspentNeurons(usage), usage.day]
+  );
 
 export const pruneNeuronsStatement = (cutoff: number) =>
   statement("DELETE FROM enrichment_neurons WHERE day < ?", [

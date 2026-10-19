@@ -93,6 +93,7 @@ export {
   isRepost,
   JobStore,
   REPOST_GAP,
+  unspentNeurons,
 } from "./job-store.js";
 
 export type {
