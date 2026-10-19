@@ -57,6 +57,27 @@ const rankedColumns = jobColumnNames
   .map((column) => `ranked.${column}`)
   .join(", ");
 
+const servedSourcesCondition = (sources: readonly SourceNameValue[]) =>
+  SourceName.literals.some((source) => !sources.includes(source))
+    ? {
+        conditions: [`source IN (${placeholders(sources.length)})`],
+        params: [...sources],
+      }
+    : { conditions: [], params: [] };
+
+const servedJobsSince = (
+  column: "first_seen_at" | "posted_at",
+  since: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const served = servedSourcesCondition(sources);
+
+  return {
+    params: [since, ...served.params],
+    where: [`${column} >= ?`, ...served.conditions].join(" AND "),
+  };
+};
+
 const filteredJobs = (
   query: JobQueryValue,
   now: number,
@@ -65,10 +86,10 @@ const filteredJobs = (
   const conditions = ["posted_at >= ?"];
   const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
 
-  if (SourceName.literals.some((source) => !sources.includes(source))) {
-    conditions.push(`source IN (${placeholders(sources.length)})`);
-    params.push(...sources);
-  }
+  const served = servedSourcesCondition(sources);
+
+  conditions.push(...served.conditions);
+  params.push(...served.params);
 
   if (query.roles.length > 0) {
     conditions.push(`role IN (${placeholders(query.roles.length)})`);
@@ -320,27 +341,65 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ]
   );
 
-export const activeCountStatement = (now: number) =>
-  statement("SELECT COUNT(*) AS total FROM jobs WHERE posted_at >= ?", [
+export const activeCountStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
     now - MAX_AGE_DAYS * DAY_MILLIS,
-  ]);
-
-export const newTodayStatement = (now: number) =>
-  statement("SELECT COUNT(*) AS total FROM jobs WHERE first_seen_at >= ?", [
-    now - DAY_MILLIS,
-  ]);
-
-export const regionCountsStatement = (now: number) =>
-  statement(
-    "SELECT region, COUNT(*) AS count FROM jobs WHERE posted_at >= ? GROUP BY region ORDER BY count DESC",
-    [now - MAX_AGE_DAYS * DAY_MILLIS]
+    sources
   );
 
-export const roleCountsStatement = (now: number) =>
-  statement(
-    "SELECT role, COUNT(*) AS count FROM jobs WHERE posted_at >= ? GROUP BY role ORDER BY count DESC",
-    [now - MAX_AGE_DAYS * DAY_MILLIS]
+  return statement(
+    `SELECT COUNT(*) AS total FROM jobs WHERE ${active.where}`,
+    active.params
   );
+};
+
+export const newTodayStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const fresh = servedJobsSince("first_seen_at", now - DAY_MILLIS, sources);
+
+  return statement(
+    `SELECT COUNT(*) AS total FROM jobs WHERE ${fresh.where}`,
+    fresh.params
+  );
+};
+
+export const regionCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `SELECT region, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY region ORDER BY count DESC`,
+    active.params
+  );
+};
+
+export const roleCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `SELECT role, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY role ORDER BY count DESC`,
+    active.params
+  );
+};
 
 export const feedHealthStatement = statement(
   "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN consecutive_failures > 0 THEN 1 ELSE 0 END), 0) AS failing FROM feeds"
