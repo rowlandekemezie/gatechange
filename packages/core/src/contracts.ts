@@ -2,6 +2,13 @@ import { defineContract } from "@rat-stack/capability/contract";
 import { Schema } from "effect";
 
 import { Account, SignInOptions } from "./account.js";
+import { AgentTokenLimit } from "./agent-token-limit.js";
+import {
+  AgentToken,
+  AgentTokenId,
+  AgentTokenLabel,
+  IssuedAgentToken,
+} from "./agent-token.js";
 import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
 import { BillingUnavailable } from "./billing-unavailable.js";
@@ -66,6 +73,25 @@ export {
 } from "./account.js";
 
 export { offSiteHref } from "./site.js";
+
+export {
+  AgentToken,
+  AgentTokenId,
+  AgentTokenLabel,
+  IssuedAgentToken,
+  MAX_AGENT_TOKEN_LABEL_LENGTH,
+  MAX_AGENT_TOKENS,
+} from "./agent-token.js";
+
+export type {
+  AgentTokenIdValue,
+  AgentTokenValue,
+  IssuedAgentTokenValue,
+} from "./agent-token.js";
+
+export { AgentTokenLimit } from "./agent-token-limit.js";
+
+export { MCP_PATH } from "./agent-access.js";
 
 export { Unauthorized } from "./unauthorized.js";
 
@@ -324,6 +350,37 @@ export const setInstantAlertsContract = defineContract("setInstantAlerts", {
   output: Membership,
 });
 
+export const agentTokensContract = defineContract("agentTokens", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "List the signed-in member's personal tokens for AI agents, newest first, without their secrets",
+  failure: MemberStoreFailure,
+  input: Schema.Struct({}),
+  output: Schema.Array(AgentToken),
+});
+
+export const issueAgentTokenContract = defineContract("issueAgentToken", {
+  description:
+    "Issue a Pro member a personal token that lets an AI agent use the Pro tools over MCP, and return its secret once",
+  failure: Schema.Union([
+    Unauthorized,
+    JobStoreUnavailable,
+    ProRequired,
+    AgentTokenLimit,
+  ]),
+  input: Schema.Struct({ label: AgentTokenLabel }),
+  output: IssuedAgentToken,
+});
+
+export const revokeAgentTokenContract = defineContract("revokeAgentToken", {
+  annotations: { destructive: true, idempotent: true },
+  description:
+    "Revoke one of the signed-in member's agent tokens so every agent using it is refused",
+  failure: MemberStoreFailure,
+  input: Schema.Struct({ id: AgentTokenId }),
+  output: Schema.Void,
+});
+
 export const jobBoardContracts = [
   listJobsContract,
   boardStatsContract,
@@ -342,4 +399,7 @@ export const jobBoardContracts = [
   startCheckoutContract,
   openBillingPortalContract,
   setInstantAlertsContract,
+  agentTokensContract,
+  issueAgentTokenContract,
+  revokeAgentTokenContract,
 ] as const;

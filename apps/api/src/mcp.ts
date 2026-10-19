@@ -1,14 +1,26 @@
 import { toToolkit } from "@rat-stack/capability/toolkit";
 import {
+  agentCapabilities,
   agentSources,
+  AgentTokenStore,
+  bearerSecretOf,
   CurrentViewer,
-  freeAgentCapabilities,
+  entitlementOfAccount,
+  isPro,
   MCP_PATH,
+  secretHashOf,
   ServedSources,
   Viewer,
 } from "@rat-stack/core";
-import type { BillingStore, JobStore, ViewerValue } from "@rat-stack/core";
-import { Context, Effect, Layer, Option } from "effect";
+import type {
+  AlertStore,
+  BillingStore,
+  JobStore,
+  JobStoreUnavailable,
+  TrackerStore,
+  ViewerValue,
+} from "@rat-stack/core";
+import { Context, Data, Effect, Layer, Match, Option } from "effect";
 import { McpProtocol, McpServer } from "effect/ai";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
@@ -24,11 +36,11 @@ const MCP_PROTOCOLS = [
 ] as const;
 
 const INSTRUCTIONS =
-  "Search engineering leadership roles (managers to CTOs) posted in the last 30 days with listJobs, and read board health with boardStats. Every listing links to its original posting; send applicants there.";
+  "Search engineering leadership roles (managers to CTOs) posted in the last 30 days with listJobs, and read board health with boardStats. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
 
-export const agentToolkit = toToolkit(freeAgentCapabilities);
+export const agentToolkit = toToolkit(agentCapabilities);
 
-type AgentStores = BillingStore | JobStore;
+type AgentStores = AlertStore | BillingStore | JobStore | TrackerStore;
 
 export const mcpAppLayer = <E, R>(stores: Layer.Layer<AgentStores, E, R>) =>
   McpServer.toolkit(agentToolkit.toolkit).pipe(
@@ -55,11 +67,65 @@ export const mcpAppLayer = <E, R>(stores: Layer.Layer<AgentStores, E, R>) =>
     )
   );
 
+export class AgentTokenRefused extends Data.TaggedError("AgentTokenRefused")<{
+  readonly message: string;
+  readonly status: 401 | 403;
+}> {}
+
+export const agentViewerOf = Effect.fn("agentViewerOf")(function* agentViewerOf(
+  authorization: string | undefined
+) {
+  const secret = bearerSecretOf(authorization);
+
+  if (Option.isNone(secret)) {
+    return Viewer.Anonymous();
+  }
+
+  const hash = yield* secretHashOf(secret.value);
+  const holder = yield* AgentTokenStore.use((store) => store.holderOf(hash));
+
+  if (Option.isNone(holder)) {
+    return yield* new AgentTokenRefused({
+      message:
+        "This agent token is unknown or revoked. Issue a new one on your account page, or drop the Authorization header to use the free tools.",
+      status: 401,
+    });
+  }
+
+  if (!isPro(yield* entitlementOfAccount(holder.value.id))) {
+    return yield* new AgentTokenRefused({
+      message:
+        "Pro has ended for this token's account. Renew Pro to use the Pro tools, or drop the Authorization header to use the free tools.",
+      status: 403,
+    });
+  }
+
+  return Viewer.Member({ account: holder.value });
+});
+
 const jsonRpcError = (status: number, message: string, headers = {}) =>
   HttpServerResponse.jsonUnsafe(
     { error: { code: -32_001, message }, id: null, jsonrpc: "2.0" },
     { headers: { "cache-control": "private, no-store", ...headers }, status }
   );
+
+const refusalOf = (failure: AgentTokenRefused | JobStoreUnavailable) =>
+  Match.valueTags(failure, {
+    AgentTokenRefused: ({ message, status }) =>
+      jsonRpcError(
+        status,
+        message,
+        status === 401
+          ? { "www-authenticate": 'Bearer error="invalid_token"' }
+          : {}
+      ),
+    JobStoreUnavailable: () =>
+      jsonRpcError(
+        503,
+        "The job board is briefly unavailable. Retry in a minute.",
+        { "retry-after": "60" }
+      ),
+  });
 
 const SESSION_HEADER = "mcp-session-id";
 
@@ -190,10 +256,16 @@ export const serveMcp =
     handle: (request: Request, viewer: ViewerValue) => Effect.Effect<Response>
   ) =>
   (request: HttpServerRequest.HttpServerRequest) =>
-    HttpServerRequest.toWeb(request).pipe(
-      Effect.flatMap((web) => handle(web, Viewer.Anonymous())),
-      Effect.map(HttpServerResponse.fromWeb),
-      Effect.orElseSucceed(() =>
-        jsonRpcError(400, "The request could not be read.")
-      )
+    agentViewerOf(request.headers.authorization).pipe(
+      Effect.matchEffect({
+        onFailure: (failure) => Effect.succeed(refusalOf(failure)),
+        onSuccess: (viewer) =>
+          HttpServerRequest.toWeb(request).pipe(
+            Effect.flatMap((web) => handle(web, viewer)),
+            Effect.map(HttpServerResponse.fromWeb),
+            Effect.orElseSucceed(() =>
+              jsonRpcError(400, "The request could not be read.")
+            )
+          ),
+      })
     );

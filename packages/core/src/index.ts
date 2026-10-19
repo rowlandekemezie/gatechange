@@ -6,10 +6,33 @@ export {
   MAGIC_LINK_TTL_MINUTES,
   SignInOptions,
   SocialProvider,
+  UNAUTHORIZED_MESSAGE,
   Viewer,
 } from "./account.js";
 
 export { AccountStore } from "./account-store.js";
+
+export {
+  AGENT_TOKEN_PREFIX,
+  AgentToken,
+  AgentTokenId,
+  AgentTokenLabel,
+  AgentTokenStore,
+  bearerSecretOf,
+  IssuedAgentToken,
+  MAX_AGENT_TOKEN_LABEL_LENGTH,
+  MAX_AGENT_TOKENS,
+  mintAgentSecret,
+  secretHashOf,
+} from "./agent-token.js";
+
+export type {
+  AgentTokenIdValue,
+  AgentTokenValue,
+  IssuedAgentTokenValue,
+} from "./agent-token.js";
+
+export { AgentTokenLimit } from "./agent-token-limit.js";
 
 export { MCP_PATH } from "./agent-access.js";
 
@@ -136,13 +159,18 @@ export type {
 
 export {
   account,
+  agentCapabilities,
+  agentTokens,
   boardStats,
   capabilities,
   deleteSearch,
   freeAgentCapabilities,
   getJob,
   importShortlist,
+  issueAgentToken,
   listJobs,
+  proAgentCapabilities,
+  revokeAgentToken,
   membership,
   openBillingPortal,
   savedSearches,
@@ -247,6 +275,9 @@ export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 export {
   Arrangement,
   accountContract,
+  agentTokensContract,
+  issueAgentTokenContract,
+  revokeAgentTokenContract,
   BoardStats,
   boardStatsContract,
   DEFAULT_AGE_DAYS,

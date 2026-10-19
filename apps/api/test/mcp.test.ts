@@ -1,12 +1,27 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  Account,
+  agentCapabilities,
+  AgentTokenStore,
+  AlertStore,
   BillingStore,
   freeAgentCapabilities,
   jobBoardContracts,
   JobStore,
+  proAgentCapabilities,
+  SavedSearchId,
+  secretHashOf,
+  TrackerStore,
+  UNAUTHORIZED_MESSAGE,
   Viewer,
 } from "@rat-stack/core";
-import type { AccountStore, JobValue, SourceNameValue } from "@rat-stack/core";
+import type {
+  AccountStore,
+  AccountValue,
+  JobValue,
+  SourceNameValue,
+  SubscriptionRecordValue,
+} from "@rat-stack/core";
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
@@ -17,6 +32,17 @@ import { handleRoutes } from "../src/route.js";
 const ORIGIN = "https://jobs.example";
 
 const NOW = 1_760_000_000_000;
+
+const PRO_SECRET = "jobs_pat_pro";
+
+const FREE_SECRET = "jobs_pat_free";
+
+const accountOf = (id: string): AccountValue =>
+  Schema.decodeSync(Account)({ email: `${id}@example.com`, id, name: id });
+
+const pro = accountOf("user_pro");
+
+const free = accountOf("user_free");
 
 const unserved = (name: string) => () =>
   Effect.die(`${name} is not served here`);
@@ -44,6 +70,12 @@ const board = [job("Greenhouse", "g:1"), job("Remotive", "r:1")];
 const fixtureOf = (isolates: number) =>
   Effect.gen(function* fixture() {
     const listedSources: (readonly SourceNameValue[])[] = [];
+    const savedBy: string[] = [];
+
+    const hashes = new Map<string, AccountValue>([
+      [yield* secretHashOf(PRO_SECRET), pro],
+      [yield* secretHashOf(FREE_SECRET), free],
+    ]);
 
     const stores = Layer.mergeAll(
       Layer.succeed(
@@ -77,15 +109,80 @@ const fixtureOf = (isolates: number) =>
         })
       ),
       Layer.succeed(
+        AlertStore,
+        AlertStore.of({
+          claimDigest: unserved("claimDigest"),
+          deleteSearch: unserved("deleteSearch"),
+          dueRecipients: unserved("dueRecipients"),
+          instantAlertsOf: unserved("instantAlertsOf"),
+          jobsSeenSince: unserved("jobsSeenSince"),
+          markSent: unserved("markSent"),
+          releaseDigest: unserved("releaseDigest"),
+          saveSearch: (owner, filters, createdAt) => {
+            savedBy.push(owner);
+
+            return Effect.succeed(
+              Option.some({
+                createdAt,
+                filters,
+                frequency: "Weekly" as const,
+                id: SavedSearchId.make("s1"),
+                owner,
+              })
+            );
+          },
+          searchesOf: unserved("searchesOf"),
+          sendsSince: unserved("sendsSince"),
+          setInstantAlerts: unserved("setInstantAlerts"),
+          unsubscribe: unserved("unsubscribe"),
+        })
+      ),
+      Layer.succeed(
+        TrackerStore,
+        TrackerStore.of({
+          importMissing: unserved("importMissing"),
+          list: unserved("list"),
+          note: unserved("note"),
+          track: unserved("track"),
+          untrack: unserved("untrack"),
+        })
+      ),
+      Layer.succeed(
         BillingStore,
         BillingStore.of({
           accountOfCustomer: unserved("accountOfCustomer"),
           applySubscription: unserved("applySubscription"),
           customerOf: unserved("customerOf"),
           linkCustomer: unserved("linkCustomer"),
-          subscriptionsOf: unserved("subscriptionsOf"),
+          subscriptionsOf: (account) =>
+            Effect.succeed(
+              account === pro.id
+                ? [
+                    {
+                      account,
+                      cancelAtPeriodEnd: false,
+                      periodEnd: Number.MAX_SAFE_INTEGER,
+                      plan: "Monthly",
+                      status: "active",
+                      subscriptionId: "sub_1",
+                      version: { created: 1, eventId: "evt_1", rank: 0 },
+                    } satisfies SubscriptionRecordValue,
+                  ]
+                : []
+            ),
         })
       )
+    );
+
+    const tokens = Layer.succeed(
+      AgentTokenStore,
+      AgentTokenStore.of({
+        holderOf: (hash) =>
+          Effect.succeed(Option.fromNullishOr(hashes.get(hash))),
+        issue: unserved("issue"),
+        revoke: unserved("revoke"),
+        tokensOf: unserved("tokensOf"),
+      })
     );
 
     const servers: McpWebHandler[] = [];
@@ -111,6 +208,8 @@ const fixtureOf = (isolates: number) =>
         : await server(request, context);
     };
 
+    const sessions = recoveringSessions(roundRobin);
+
     const accountStore: AccountStore["Service"] = {
       signInOptions: { socialProviders: [] },
       viewerOf: () => Effect.succeed(Viewer.Anonymous()),
@@ -119,7 +218,10 @@ const fixtureOf = (isolates: number) =>
     const handle = handleRoutes({
       accountStore,
       auth: Effect.succeed(HttpServerResponse.text("auth")),
-      mcp: serveMcp(recoveringSessions(roundRobin)),
+      mcp: (request) =>
+        serveMcp(sessions)(request).pipe(
+          Effect.provide(Layer.mergeAll(tokens, stores))
+        ),
       rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
       stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
       unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsubscribe")),
@@ -142,7 +244,7 @@ const fixtureOf = (isolates: number) =>
         return { headers: web.headers, status: web.status, text };
       });
 
-    return { listedSources, send };
+    return { listedSources, savedBy, send };
   });
 
 const fixture = fixtureOf(1);
@@ -258,7 +360,7 @@ const listQuery = {
 
 describe("board over MCP", () => {
   it.effect(
-    "lists the board's read-only contracts as tools and nothing else",
+    "lists the board's free contracts plus the Pro tools and nothing else",
     () =>
       Effect.gen(function* toolList() {
         const { send } = yield* fixture;
@@ -275,15 +377,28 @@ describe("board over MCP", () => {
           jobBoardContracts.map(({ name }) => name)
         );
 
-        expect(names.toSorted()).toStrictEqual([
-          "boardStats",
-          "getJob",
-          "listJobs",
-        ]);
+        expect(names.toSorted()).toStrictEqual(
+          [
+            "boardStats",
+            "deleteSearch",
+            "getJob",
+            "listJobs",
+            "noteTrackedJob",
+            "saveSearch",
+            "savedSearches",
+            "trackJob",
+            "trackedJobs",
+            "untrackJob",
+          ].toSorted()
+        );
+        expect(names.toSorted()).toStrictEqual(
+          agentCapabilities.map(({ contract }) => contract.name).toSorted()
+        );
         expect(names.every((name) => contractNames.has(name))).toBe(true);
         expect(
           freeAgentCapabilities.map(({ contract }) => contract.name)
         ).toStrictEqual(["listJobs", "boardStats", "getJob"]);
+        expect(proAgentCapabilities).toHaveLength(7);
       }).pipe(Effect.scoped)
   );
 
@@ -308,6 +423,68 @@ describe("board over MCP", () => {
           "null",
         ]);
       }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "answers a Pro tool without a token with a typed Unauthorized error",
+    () =>
+      Effect.gen(function* anonymousPro() {
+        const { savedBy, send } = yield* fixture;
+        const { tool } = yield* session(send);
+
+        const result = yield* tool("saveSearch", {
+          filters: {
+            regions: ["RemoteCanada"],
+            roles: ["Director"],
+            search: "",
+          },
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content.map(({ text }) => text).join("")).toBe(
+          UNAUTHORIZED_MESSAGE
+        );
+        expect(savedBy).toStrictEqual([]);
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect("saves a search for the Pro member who holds the token", () =>
+    Effect.gen(function* proSave() {
+      const { savedBy, send } = yield* fixture;
+      const { tool } = yield* session(send, `Bearer ${PRO_SECRET}`);
+
+      const result = yield* tool("saveSearch", {
+        filters: { regions: ["RemoteCanada"], roles: ["Director"], search: "" },
+      });
+
+      expect(result.isError).toBe(false);
+      expect(savedBy).toStrictEqual(["user_pro"]);
+    }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "refuses an unknown or revoked token with 401 and a bearer challenge",
+    () =>
+      Effect.gen(function* revoked() {
+        const { send } = yield* fixture;
+        const { initialized } = yield* session(send, "Bearer jobs_pat_revoked");
+
+        expect(initialized.status).toBe(401);
+        expect(initialized.headers.get("www-authenticate")).toBe(
+          'Bearer error="invalid_token"'
+        );
+        expect(initialized.text).toContain("unknown or revoked");
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect("refuses a token whose holder is no longer Pro with 403", () =>
+    Effect.gen(function* lapsed() {
+      const { send } = yield* fixture;
+      const { initialized } = yield* session(send, `Bearer ${FREE_SECRET}`);
+
+      expect(initialized.status).toBe(403);
+      expect(initialized.text).toContain("Pro has ended");
+    }).pipe(Effect.scoped)
   );
 
   it.effect("answers malformed tool input with the schema error", () =>
@@ -342,18 +519,26 @@ describe("board over MCP", () => {
     "keeps a session working when its calls land on an isolate that never saw it",
     () =>
       Effect.gen(function* acrossIsolates() {
-        const { listedSources, send } = yield* fixtureOf(2);
-        const { tool } = yield* session(send);
+        const { savedBy, send } = yield* fixtureOf(2);
+        const { tool } = yield* session(send, `Bearer ${PRO_SECRET}`);
         const results = [];
 
         for (let index = 0; index < 6; index += 1) {
-          results.push(yield* tool("listJobs", listQuery));
+          results.push(
+            yield* tool("saveSearch", {
+              filters: {
+                regions: ["RemoteCanada"],
+                roles: ["Director"],
+                search: `run ${index}`,
+              },
+            })
+          );
         }
 
         expect(results.map(({ isError }) => isError)).toStrictEqual(
           Array.from({ length: 6 }, () => false)
         );
-        expect(listedSources).toHaveLength(6);
+        expect(savedBy).toHaveLength(6);
       }).pipe(Effect.scoped)
   );
 });
