@@ -1,9 +1,6 @@
 import {
-  CompanySummary,
-  companySlugOf,
-  companySummaryOf,
   EpochMillis,
-  JobDetail,
+  ListedJob,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
 } from "@rat-stack/core/contracts";
@@ -15,7 +12,7 @@ import type {
 import { Array, Effect, Option, pipe, Schema } from "effect";
 
 import { regionsOfGroup } from "./board/filters.js";
-import { Route } from "./route.js";
+import { companySlugOf, Route } from "./route.js";
 
 export const ListingRoute = Schema.Union([Route.Company, Route.Role]);
 
@@ -27,8 +24,7 @@ export const LISTING_ROWS = 12;
 
 export const Listing = Schema.Struct({
   generatedAt: EpochMillis,
-  jobs: Schema.Array(JobDetail),
-  summary: Schema.NullOr(CompanySummary),
+  jobs: Schema.Array(ListedJob),
   total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 
@@ -96,7 +92,6 @@ export const collectListing = <E, R>(
         return {
           generatedAt,
           jobs: matching.slice(0, LISTING_ROWS),
-          summary: companySummaryOf(matching),
           total: matching.length,
         };
       })
@@ -112,7 +107,6 @@ export const collectListing = <E, R>(
         (page) => ({
           generatedAt: page.generatedAt,
           jobs: page.jobs,
-          summary: null,
           total: page.total,
         })
       );

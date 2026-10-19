@@ -11,7 +11,6 @@ import { SessionState } from "../account/model.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
 import type { MessageValue as BillingMessageValue } from "../billing/message.js";
-import { isProMember } from "../billing/model.js";
 import type { ModelValue as BillingModelValue } from "../billing/model.js";
 import * as Billing from "../billing/update.js";
 import type { ListingRouteValue } from "../listing.js";
@@ -21,7 +20,6 @@ import type { MessageValue as SavedSearchesMessageValue } from "../saved-searche
 import type { ModelValue as SavedSearchesModelValue } from "../saved-searches/model.js";
 import * as SavedSearches from "../saved-searches/update.js";
 import {
-  FetchCompanyIntel,
   FetchJob,
   FetchJobs,
   FetchListing,
@@ -51,7 +49,6 @@ import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import {
   ImportOffer,
-  IntelState,
   JobsState,
   JobState,
   ListingState,
@@ -557,11 +554,11 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
       Schema.is(Route.Job)(route)
         ? modifyFields(model, { job: () => JobState.Missing({ id: route.id }) })
         : model,
-    Listing: ({ generatedAt, jobs, summary, total }) =>
+    Listing: ({ generatedAt, jobs, total }) =>
       Schema.is(Route.Company)(route) || Schema.is(Route.Role)(route)
         ? modifyFields(model, {
             listing: () =>
-              ListingState.Loaded({ generatedAt, jobs, route, summary, total }),
+              ListingState.Loaded({ generatedAt, jobs, route, total }),
           })
         : model,
     Nothing: () => model,
@@ -582,7 +579,6 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         draftSearch: "",
         filters: defaultFilters,
         generation: 0,
-        intel: IntelState.NotAsked(),
         job: JobState.NotAsked(),
         jobs: JobsState.NotAsked(),
         listing: ListingState.NotAsked(),
@@ -611,32 +607,10 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   };
 };
 
-const withCompanyIntel = (step: UpdateReturn): UpdateReturn => {
-  const { model } = step;
-
-  if (!Schema.is(Route.Company)(model.route) || !isProMember(model.billing)) {
-    return step;
-  }
-
-  const { slug } = model.route;
-
-  if (
-    !Schema.is(IntelState.NotAsked)(model.intel) &&
-    model.intel.slug === slug
-  ) {
-    return step;
-  }
-
-  return {
-    commands: [...(step.commands ?? []), FetchCompanyIntel({ slug })],
-    model: modifyFields(model, { intel: () => IntelState.Loading({ slug }) }),
-  };
-};
-
-const isAwaitingIntel = (model: ModelValue, slug: string) =>
-  Schema.is(IntelState.Loading)(model.intel) && model.intel.slug === slug;
-
-const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
+export const update = (
+  model: ModelValue,
+  message: MessageValue
+): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ChangedAge: ({ maxAgeDays }) =>
       navigatedTo(model, { ...model.filters, maxAgeDays }),
@@ -732,11 +706,6 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
         defaultFilters
       ),
     ClickedRetry: () => withFilters(model, model.filters),
-    ClickedRetryIntel: () => ({
-      model: Schema.is(IntelState.Failed)(model.intel)
-        ? modifyFields(model, { intel: () => IntelState.NotAsked() })
-        : model,
-    }),
     ClickedRetryJob: () =>
       Schema.is(Route.Job)(model.route)
         ? enteredJob(model, model.route.id)
@@ -774,16 +743,6 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
       );
     },
     CompletedWriteShortlist: () => ({ model }),
-    FailedFetchIntel: ({ locked, slug }) => ({
-      model: isAwaitingIntel(model, slug)
-        ? modifyFields(model, {
-            intel: () =>
-              locked
-                ? IntelState.Locked({ slug })
-                : IntelState.Failed({ slug }),
-          })
-        : model,
-    }),
     FailedFetchJob: ({ id, message: failure }) => ({
       model: isAwaitingJob(model, id)
         ? modifyFields(model, {
@@ -833,13 +792,6 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
       foldSavedSearches(model, savedSearchesMessage),
     SubmittedSearch: () =>
       navigatedTo(model, { ...model.filters, search: model.draftSearch }),
-    SucceededFetchIntel: ({ intel, slug }) => ({
-      model: isAwaitingIntel(model, slug)
-        ? modifyFields(model, {
-            intel: () => IntelState.Loaded({ intel, slug }),
-          })
-        : model,
-    }),
     SucceededFetchJob: ({ id, job }) => ({
       model: isAwaitingJob(model, id)
         ? modifyFields(model, {
@@ -933,8 +885,3 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
       model: modifyFields(model, { draftSearch: () => value }),
     }),
   });
-
-export const update = (
-  model: ModelValue,
-  message: MessageValue
-): UpdateReturn => withCompanyIntel(handled(model, message));

@@ -65,24 +65,6 @@ export const FetchListing = Command.define("FetchListing", {
   messages: [Message.SucceededFetchListing, Message.FailedFetchListing],
 });
 
-export const FetchCompanyIntel = Command.define("FetchCompanyIntel", {
-  args: { slug: Schema.String },
-  execute: ({ slug }) =>
-    JobQueries.use((queries) => queries.companyIntel(slug)).pipe(
-      Effect.match({
-        onFailure: (failure) =>
-          Message.FailedFetchIntel({
-            locked:
-              Predicate.isTagged(failure, "ProRequired") ||
-              Predicate.isTagged(failure, "Unauthorized"),
-            slug,
-          }),
-        onSuccess: (intel) => Message.SucceededFetchIntel({ intel, slug }),
-      })
-    ),
-  messages: [Message.SucceededFetchIntel, Message.FailedFetchIntel],
-});
-
 export const PushUrl = Command.define("PushUrl", {
   args: { url: Schema.String },
   execute: ({ url }) =>

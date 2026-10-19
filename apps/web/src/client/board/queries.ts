@@ -21,7 +21,6 @@ const make = Effect.gen(function* makeJobQueries() {
   const client = yield* RpcClient.make(group).pipe(Effect.provide(protocol));
 
   return {
-    companyIntel: (slug: string) => client.companyIntel({ slug }),
     deleteSearch: (id: SavedSearchIdValue) => client.deleteSearch({ id }),
     getJob: (id: string) => client.getJob({ id }),
     importShortlist: (jobs: readonly TrackRequestValue[]) =>

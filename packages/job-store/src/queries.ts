@@ -1,7 +1,6 @@
 import {
   DAY_MILLIS,
   fingerprintOf,
-  historyRangeOf,
   MAX_AGE_DAYS,
   paidFeatureSources,
   RECENCY_PENALTY_PER_DAY,
@@ -161,47 +160,6 @@ LIMIT ? OFFSET ?`,
     ]
   );
 };
-
-export const companyOpenRolesStatement = (
-  slug: string,
-  now: number
-): SqlStatement => {
-  const { from, until } = historyRangeOf(slug);
-
-  return statement(
-    `WITH ranked AS (
-  SELECT jobs.id, jobs.company, jobs.title, jobs.role, jobs.source, jobs.first_seen_at, jobs.fingerprint,
-    job_enrichment.salary_currency, job_enrichment.salary_min, job_enrichment.salary_max,
-    ROW_NUMBER() OVER (PARTITION BY jobs.fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
-  FROM ${enrichedJobs}
-  WHERE jobs.fingerprint >= ? AND jobs.fingerprint < ? AND posted_at >= ?
-)
-SELECT ranked.id, ranked.company, ranked.title, ranked.role, ranked.source,
-  ranked.salary_currency, ranked.salary_min, ranked.salary_max,
-  COALESCE(history.first_seen_at, ranked.first_seen_at) AS opened_at,
-  COALESCE(history.reposts, 0) AS reposts
-FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
-WHERE duplicate_rank = 1`,
-    [from, until, now - MAX_AGE_DAYS * DAY_MILLIS]
-  );
-};
-
-export const companyHistoryStatement = (
-  slug: string,
-  since: number
-): SqlStatement => {
-  const { from, until } = historyRangeOf(slug);
-
-  return statement(
-    "SELECT first_seen_at, last_seen_at, last_seen_feed FROM job_history WHERE fingerprint >= ? AND fingerprint < ? AND last_seen_at > ?",
-    [from, until, since]
-  );
-};
-
-export const trackedSinceStatement = statement(
-  "SELECT MIN(last_seen_at) AS since FROM job_history",
-  []
-);
 
 export const findJobStatement = (id: string): SqlStatement =>
   statement(

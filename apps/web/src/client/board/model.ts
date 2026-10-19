@@ -1,7 +1,5 @@
 import {
   BoardStats,
-  CompanyIntel,
-  CompanySummary,
   EpochMillis,
   JobDetail,
   ListedJob,
@@ -42,32 +40,20 @@ export const ListingState = defineTaggedUnion({
   Failed: { message: Schema.String, route: ListingRoute },
   Loaded: {
     generatedAt: EpochMillis,
-    jobs: Schema.Array(JobDetail),
+    jobs: Schema.Array(ListedJob),
     route: ListingRoute,
-    summary: Schema.NullOr(CompanySummary),
     total: Schema.Finite,
   },
   Loading: { route: ListingRoute },
   NotAsked: {},
 });
 
-export const IntelState = defineTaggedUnion({
-  Failed: { slug: Schema.String },
-  Loaded: { intel: CompanyIntel, slug: Schema.String },
-  Loading: { slug: Schema.String },
-  Locked: { slug: Schema.String },
-  NotAsked: {},
-});
-
-export type IntelStateValue = typeof IntelState.Type;
-
 export const Preload = defineTaggedUnion({
   Job: { job: JobDetail },
   JobMissing: {},
   Listing: {
     generatedAt: EpochMillis,
-    jobs: Schema.Array(JobDetail),
-    summary: Schema.NullOr(CompanySummary),
+    jobs: Schema.Array(ListedJob),
     total: Schema.Finite,
   },
   Nothing: {},
@@ -154,7 +140,6 @@ export const Model = Schema.Struct({
   draftSearch: Schema.String,
   filters: Filters,
   generation: Schema.Finite,
-  intel: IntelState,
   job: JobState,
   jobs: JobsState,
   listing: ListingState,

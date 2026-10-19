@@ -1,9 +1,5 @@
 import { roleLevels } from "@rat-stack/core/contracts";
-import type {
-  CompanySummaryValue,
-  JobDetailValue,
-  JobValue,
-} from "@rat-stack/core/contracts";
+import type { JobValue, ListedJobValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
@@ -20,7 +16,6 @@ import type { ModelValue } from "../../client/board/model.js";
 import type { ListingRouteValue } from "../../client/listing.js";
 import { boardUrl, Route } from "../../client/route.js";
 import { jobRow } from "../board/view.js";
-import { companyIntelSection } from "../company-intel/view.js";
 
 type H = HtmlBuilder<MessageValue>;
 
@@ -89,8 +84,7 @@ const loadedView = (
   h: H,
   route: ListingRouteValue,
   generatedAt: number,
-  jobs: readonly JobDetailValue[],
-  summary: CompanySummaryValue | null,
+  jobs: readonly ListedJobValue[],
   total: number
 ): Html =>
   Array.isReadonlyArrayEmpty(jobs)
@@ -108,16 +102,6 @@ const loadedView = (
           backLink(h, route),
           h.h1([h.Class("detail-title")], [listingHeading(route, jobs)]),
           h.p([h.Class("count")], [roleCount(total)]),
-          ...(Schema.is(Route.Company)(route) && summary !== null
-            ? [
-                companyIntelSection(
-                  model,
-                  h,
-                  companyNameOf(route.slug, jobs),
-                  summary
-                ),
-              ]
-            : []),
           h.ol(
             [h.Class("jobs")],
             pipe(
@@ -151,8 +135,8 @@ export const listingPage = (
           backLink(h, route),
         ]
       ),
-    Loaded: ({ generatedAt, jobs, route, summary, total }) =>
-      loadedView(model, h, route, generatedAt, jobs, summary, total),
+    Loaded: ({ generatedAt, jobs, route, total }) =>
+      loadedView(model, h, route, generatedAt, jobs, total),
     Loading: () =>
       h.div(
         [h.Class("empty detail"), h.Role("status")],

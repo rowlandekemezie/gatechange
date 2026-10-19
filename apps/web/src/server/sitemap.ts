@@ -1,9 +1,14 @@
-import { companySlugOf, roleLevels } from "@rat-stack/core/contracts";
+import { roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, pipe } from "effect";
 
 import { regionGroups, regionsOfGroup } from "../client/board/filters.js";
-import { companyRouter, jobRouter, roleRouter } from "../client/route.js";
+import {
+  companyRouter,
+  companySlugOf,
+  jobRouter,
+  roleRouter,
+} from "../client/route.js";
 
 const escapeXml = (text: string) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

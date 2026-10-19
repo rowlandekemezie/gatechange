@@ -399,7 +399,6 @@ describe("original posting links", () => {
         Preload.Listing({
           generatedAt: 1_760_500_000_000,
           jobs: [{ ...acmeDirector, url }, acmeVp],
-          summary: null,
           total: 2,
         })
       ),
@@ -424,7 +423,6 @@ describe("original posting links", () => {
             },
             acmeVp,
           ],
-          summary: null,
           total: 2,
         })
       ),
@@ -519,7 +517,6 @@ describe("listing page render", () => {
         Preload.Listing({
           generatedAt: 1_760_500_000_000,
           jobs: [acmeDirector, acmeVp],
-          summary: null,
           total: 2,
         })
       ),
@@ -547,7 +544,6 @@ describe("listing page render", () => {
         Preload.Listing({
           generatedAt: 1_760_500_000_000,
           jobs: [acmeDirector],
-          summary: null,
           total: 30,
         })
       ),
@@ -573,12 +569,7 @@ describe("listing page render", () => {
     Effect.map(
       render(
         "/companies/gone-co",
-        Preload.Listing({
-          generatedAt: 1_760_500_000_000,
-          jobs: [],
-          summary: null,
-          total: 0,
-        })
+        Preload.Listing({ generatedAt: 1_760_500_000_000, jobs: [], total: 0 })
       ),
       ({ html, status }) => {
         expect(status).toBe(404);

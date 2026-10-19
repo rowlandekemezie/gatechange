@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
-  companySlugOf,
   JobQuery,
   RoleLevel,
   roleLevels,
@@ -24,6 +23,7 @@ import { longestWord } from "../src/client/listing.js";
 import {
   boardUrl,
   companyRouter,
+  companySlugOf,
   jobRouter,
   roleRouter,
   Route,

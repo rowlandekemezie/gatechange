@@ -1,7 +1,6 @@
 import { Context, Schema } from "effect";
 import type { Effect, Option } from "effect";
 
-import type { CompanyRecords } from "./company-intel.js";
 import type { SkipReasonValue } from "./enrichment.js";
 import type { FeedStateValue } from "./feed.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
@@ -93,10 +92,6 @@ export class JobStore extends Context.Service<
     readonly claimNeurons: (
       claim: NeuronClaim
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
-    readonly companyRecords: (
-      slug: string,
-      now: number
-    ) => Effect.Effect<CompanyRecords, JobStoreUnavailable>;
     readonly feedStates: Effect.Effect<
       readonly FeedStateValue[],
       JobStoreUnavailable
