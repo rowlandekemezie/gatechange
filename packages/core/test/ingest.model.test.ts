@@ -166,8 +166,10 @@ const listAll: JobQueryValue = {
   offset: 0,
   regions: [],
   roles: [],
+  salaryFloor: null,
   salaryListed: false,
   search: "",
+  seniorities: [],
   sort: "Newest",
 };
 

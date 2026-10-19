@@ -2,19 +2,26 @@ import { Array, Effect, Layer, Option, pipe } from "effect";
 
 import { daysOpen, fingerprintOf, isRepost, JobStore } from "../src/index.js";
 import type {
+  EnrichmentSkip,
+  EnrichmentValue,
   FeedStateValue,
   IngestReceiptValue,
+  JobQueryValue,
   JobValue,
   ListingHistory,
   Sighted,
 } from "../src/index.js";
 
 export interface MemoryJobStore {
+  readonly enrichments: () => ReadonlyMap<string, EnrichmentValue>;
   readonly feedStates: () => readonly FeedStateValue[];
   readonly history: () => ReadonlyMap<string, ListingHistory>;
   readonly jobs: () => readonly JobValue[];
   readonly layer: Layer.Layer<JobStore>;
+  readonly neurons: () => ReadonlyMap<number, number>;
+  readonly neuronsUsed: () => ReadonlyMap<number, number>;
   readonly runs: () => readonly IngestReceiptValue[];
+  readonly skips: () => ReadonlyMap<string, EnrichmentSkip>;
 }
 
 export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
@@ -22,10 +29,14 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const states = new Map<string, FeedStateValue>();
   const runs: IngestReceiptValue[] = [];
   const history = new Map<string, ListingHistory>();
+  const enrichments = new Map<string, EnrichmentValue>();
+  const skips = new Map<string, EnrichmentSkip>();
 
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
   const lease = { heldUntil: 0, startedAt: 0 };
+  const neurons = new Map<number, number>();
+  const neuronsUsed = new Map<number, number>();
 
   const successBefore = (feedKey: string, seenAt: number) => {
     const latest = states.get(feedKey)?.lastSuccessAt ?? null;
@@ -82,6 +93,25 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     }
   };
 
+  const enrichmentOf = (id: string) => enrichments.get(id) ?? null;
+
+  const matchesEnrichment = (query: JobQueryValue) => (job: JobValue) => {
+    const salary = enrichmentOf(job.id)?.salary ?? null;
+    const seniority = enrichmentOf(job.id)?.seniority ?? null;
+    const { salaryFloor } = query;
+
+    const salaryMatches =
+      salaryFloor === null ||
+      (salary?.currency === salaryFloor.currency &&
+        salary.max >= salaryFloor.amount);
+
+    const seniorityMatches =
+      query.seniorities.length === 0 ||
+      (seniority !== null && query.seniorities.includes(seniority));
+
+    return salaryMatches && seniorityMatches;
+  };
+
   const stateOf = (key: string): FeedStateValue =>
     states.get(key) ?? {
       consecutiveFailures: 0,
@@ -103,8 +133,26 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         return true;
       }),
+    claimNeurons: (claim) =>
+      Effect.sync(() => {
+        const claimed = neurons.get(claim.day) ?? 0;
+
+        if (claimed + claim.neurons > claim.budget) {
+          return false;
+        }
+
+        neurons.set(claim.day, claimed + claim.neurons);
+
+        return true;
+      }),
     feedStates: Effect.sync(() => [...states.values()]),
-    find: (id) => Effect.sync(() => Option.fromNullishOr(jobs.get(id))),
+    find: (id) =>
+      Effect.sync(() =>
+        pipe(
+          Option.fromNullishOr(jobs.get(id)),
+          Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
+        )
+      ),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
     list: (query, now) =>
@@ -113,7 +161,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           [...jobs.values()],
           Array.filter(
             (job) => job.postedAt >= now - query.maxAgeDays * 86_400_000
-          )
+          ),
+          Array.filter(matchesEnrichment(query))
         );
 
         return {
@@ -125,6 +174,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               return {
                 ...job,
                 daysOpen: daysOpen(found?.firstSeenAt ?? job.firstSeenAt, now),
+                enrichment: enrichmentOf(job.id),
                 reposts: found?.reposts ?? 0,
               };
             })
@@ -132,6 +182,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           total: matching.length,
         };
       }),
+    neuronsClaimed: (day) => Effect.sync(() => neurons.get(day) ?? 0),
     pruneOlderThan: (cutoff) =>
       Effect.sync(() => {
         const expired = pipe(
@@ -141,6 +192,14 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         for (const job of expired) {
           jobs.delete(job.id);
+        }
+
+        for (const kept of [enrichments, skips]) {
+          for (const id of kept.keys()) {
+            if (!jobs.has(id)) {
+              kept.delete(id);
+            }
+          }
         }
 
         return expired.length;
@@ -156,6 +215,24 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           lastError: message,
         });
       }),
+    recordNeuronsUsed: (usage) =>
+      Effect.sync(() => {
+        if (usage.neurons < 0) {
+          return;
+        }
+
+        neuronsUsed.set(
+          usage.day,
+          (neuronsUsed.get(usage.day) ?? 0) + usage.neurons
+        );
+        neurons.set(
+          usage.day,
+          Math.max(
+            0,
+            (neurons.get(usage.day) ?? 0) + usage.neurons - usage.claimed
+          )
+        );
+      }),
     recordRun: (receipt) =>
       Effect.sync(() => {
         runs.push(receipt);
@@ -165,6 +242,10 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         for (const listing of listings) {
           sight(listing, seenAt);
         }
+      }),
+    recordSkip: (id, skip) =>
+      Effect.sync(() => {
+        skips.set(id, skip);
       }),
     releaseIngest: (startedAt) =>
       Effect.sync(() => {
@@ -233,6 +314,11 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         return { removed: stale.length, upserted: incoming.length };
       }),
+    saveEnrichment: (id, enrichment) =>
+      Effect.sync(() => {
+        enrichments.set(id, enrichment);
+        skips.delete(id);
+      }),
     stats: () =>
       Effect.sync(() => ({
         activeJobs: jobs.size,
@@ -246,13 +332,42 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         regions: [],
         roles: [],
       })),
+    unenrichedListings: ({ finalSkips, limit, since, sources }) =>
+      Effect.sync(() =>
+        pipe(
+          [...jobs.values()],
+          Array.filter((job) => {
+            const skip = skips.get(job.id);
+
+            return (
+              job.firstSeenAt >= since &&
+              sources.includes(job.source) &&
+              !enrichments.has(job.id) &&
+              (skip === undefined || !finalSkips.includes(skip.reason))
+            );
+          }),
+          (found) =>
+            found.toSorted(
+              (left, right) =>
+                Number(skips.has(left.id)) - Number(skips.has(right.id)) ||
+                right.firstSeenAt - left.firstSeenAt ||
+                left.id.localeCompare(right.id)
+            ),
+          Array.take(limit),
+          Array.map((job) => job.id)
+        )
+      ),
   });
 
   return {
+    enrichments: () => enrichments,
     feedStates: () => [...states.values()],
     history: () => history,
     jobs: () => [...jobs.values()],
     layer: Layer.succeed(JobStore, store),
+    neurons: () => neurons,
+    neuronsUsed: () => neuronsUsed,
     runs: () => runs,
+    skips: () => skips,
   };
 });

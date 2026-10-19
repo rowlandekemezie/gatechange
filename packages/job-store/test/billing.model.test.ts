@@ -241,8 +241,10 @@ const everything: JobQueryValue = {
   offset: 0,
   regions: [],
   roles: [],
+  salaryFloor: null,
   salaryListed: false,
   search: "",
+  seniorities: [],
   sort: "Newest",
 };
 
@@ -324,6 +326,93 @@ describe("listJobs for Free and Pro viewers", () => {
               .toSorted()
           );
           expect(proFiltered.toSorted()).toEqual(["gh-1", "jb-1"]);
+        })
+      )
+  );
+
+  it.effect(
+    "ignores a Free viewer's salary floor and seniority filters and applies them for Pro",
+    () =>
+      withBilling(
+        Effect.gen(function* enrichedFilters() {
+          const free = member("user_free");
+          const pro = member("user_pro");
+
+          yield* Effect.forEach([free.id, pro.id], addMember, {
+            discard: true,
+          });
+
+          yield* JobStore.use((store) =>
+            Effect.gen(function* seedEnriched() {
+              yield* Effect.forEach(
+                Object.values(Array.groupBy(board, (job) => job.feed)),
+                (group) => store.replaceFeed(group[0].feed, group, NOW - DAY),
+                { discard: true }
+              );
+              yield* store.saveEnrichment("gh-1", {
+                enrichedAt: NOW - DAY,
+                model: "fixture",
+                remotePolicy: "Remote",
+                reportsTo: "CTO",
+                salary: { currency: "USD", max: 300_000, min: 250_000 },
+                seniority: "VicePresident",
+                teamSize: 40,
+              });
+              yield* store.saveEnrichment("gh-2", {
+                enrichedAt: NOW - DAY,
+                model: "fixture",
+                remotePolicy: null,
+                reportsTo: null,
+                salary: { currency: "USD", max: 180_000, min: 150_000 },
+                seniority: "Director",
+                teamSize: null,
+              });
+            })
+          );
+
+          yield* BillingStore.use((store) =>
+            store.applySubscription({
+              account: pro.id,
+              cancelAtPeriodEnd: false,
+              periodEnd: Number.MAX_SAFE_INTEGER,
+              plan: "Yearly",
+              status: "active",
+              subscriptionId: "sub_pro",
+              version: { created: 1, eventId: "evt_pro", rank: 0 },
+            })
+          );
+
+          const floored: JobQueryValue = {
+            ...everything,
+            salaryFloor: { amount: 250_000, currency: "USD" },
+          };
+
+          const vice: JobQueryValue = {
+            ...everything,
+            seniorities: ["VicePresident"],
+          };
+
+          const director: JobQueryValue = {
+            ...everything,
+            seniorities: ["Director"],
+          };
+
+          const [all, freeFloored, freeVice, proFloored, proVice, proDirector] =
+            yield* Effect.all([
+              rowsFor(Viewer.Member({ account: free }), everything),
+              rowsFor(Viewer.Member({ account: free }), floored),
+              rowsFor(Viewer.Anonymous(), vice),
+              rowsFor(Viewer.Member({ account: pro }), floored),
+              rowsFor(Viewer.Member({ account: pro }), vice),
+              rowsFor(Viewer.Member({ account: pro }), director),
+            ]);
+
+          expect(all.toSorted()).toEqual(board.map((job) => job.id).toSorted());
+          expect(freeFloored).toEqual(all);
+          expect(freeVice).toEqual(all);
+          expect(proFloored).toEqual(["gh-1"]);
+          expect(proVice).toEqual(["gh-1"]);
+          expect(proDirector).toEqual(["gh-2"]);
         })
       )
   );

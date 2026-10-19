@@ -256,11 +256,37 @@ describe("billing pages", () => {
           const text = textOf(html);
 
           expect(text).toContain(
-            "Salary filters come with Pro, so the list below still shows every role."
+            "Salary and level filters come with Pro, so the list below still shows every role."
           );
           expect(text).toContain("Upgrade");
         }
       )
+  );
+
+  it.effect.each(["/?pay=250000", "/?level=vice-president"])(
+    "offers Pro when a Free member opens %s",
+    (path) =>
+      Effect.map(
+        renderAs(
+          path,
+          SessionState.SignedIn({ account: ada }),
+          Option.some(free)
+        ),
+        (html) => {
+          expect(textOf(html)).toContain(
+            "Salary and level filters come with Pro"
+          );
+        }
+      )
+  );
+
+  it.effect("shows no Pro prompt on a Free member's unfiltered board", () =>
+    Effect.map(
+      renderAs("/", SessionState.SignedIn({ account: ada }), Option.some(free)),
+      (html) => {
+        expect(textOf(html)).not.toContain("come with Pro");
+      }
+    )
   );
 
   it.effect("badges a Pro member and drops the upgrade prompt", () =>
@@ -274,7 +300,7 @@ describe("billing pages", () => {
         const text = textOf(html);
 
         expect(html).toContain('aria-label="Your plan: Pro"');
-        expect(text).not.toContain("Salary filters come with Pro");
+        expect(text).not.toContain("come with Pro");
         expect(text).not.toContain("Upgrade");
       }
     )

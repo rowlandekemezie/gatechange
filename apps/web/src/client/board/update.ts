@@ -1,4 +1,4 @@
-import { roleLevels } from "@rat-stack/core/contracts";
+import { roleLevels, seniorities } from "@rat-stack/core/contracts";
 import { Array, Option, Schema, pipe } from "effect";
 import { Command, Update } from "foldkit";
 import { UrlRequest } from "foldkit/navigation";
@@ -36,6 +36,7 @@ import {
   WriteShortlist,
 } from "./command.js";
 import {
+  DEFAULT_PAY_CURRENCY,
   defaultFilters,
   Filters,
   hasNoSelection,
@@ -619,6 +620,25 @@ export const update = (
           ? { model }
           : sentChange(model, tracker, TrackerChange.Note({ jobId, notes }))
       ),
+    ChangedPayCurrency: ({ currency }) =>
+      model.filters.salaryFloor === null
+        ? { model }
+        : navigatedTo(model, {
+            ...model.filters,
+            salaryFloor: { ...model.filters.salaryFloor, currency },
+          }),
+    ChangedPayFloor: ({ amount }) =>
+      navigatedTo(model, {
+        ...model.filters,
+        salaryFloor:
+          amount === null
+            ? null
+            : {
+                amount,
+                currency:
+                  model.filters.salaryFloor?.currency ?? DEFAULT_PAY_CURRENCY,
+              },
+      }),
     ChangedSort: ({ sort }) => navigatedTo(model, { ...model.filters, sort }),
     ChangedStage: ({ jobId, stage }) =>
       withTrackedJob(model, jobId, (tracker, job) =>
@@ -633,6 +653,8 @@ export const update = (
             )
       ),
     ChangedUrl: ({ url }) => echoed(model, url),
+    ClickedAnySeniority: () =>
+      navigatedTo(model, { ...model.filters, seniorities: [] }),
     ClickedClearMark: ({ id }) => unmarked(model, id),
     ClickedKeepShortlist: () => ({
       model: withOffer(model, (offer) =>
@@ -853,6 +875,11 @@ export const update = (
       navigatedTo(model, {
         ...model.filters,
         salaryListed: !model.filters.salaryListed,
+      }),
+    ToggledSeniority: ({ seniority }) =>
+      navigatedTo(model, {
+        ...model.filters,
+        seniorities: toggled(seniorities, model.filters.seniorities, seniority),
       }),
     UpdatedDraftSearch: ({ value }) => ({
       model: modifyFields(model, { draftSearch: () => value }),
