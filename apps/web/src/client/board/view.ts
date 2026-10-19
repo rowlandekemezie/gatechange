@@ -9,6 +9,7 @@ import {
   confirmSignInPage,
   sessionLink,
 } from "../../features/account/view.js";
+import { agentTokensPanel } from "../../features/agent-tokens/view.js";
 import {
   boardMasthead,
   boardPage,
@@ -176,6 +177,17 @@ export const view = (model: ModelValue, h: H): Document =>
                         toParentMessage: (message) =>
                           Message.GotSavedSearchesMessage({ message }),
                         view: savedSearchesPanel,
+                      }),
+                      h.submodel({
+                        model: model.agentTokens,
+                        slotId: "agent-tokens",
+                        toParentMessage: (message) =>
+                          Message.GotAgentTokensMessage({ message }),
+                        view: agentTokensPanel,
+                        viewInputs: {
+                          membership: model.billing.membership,
+                          origin: model.origin,
+                        },
                       }),
                     ]
                   : []),
