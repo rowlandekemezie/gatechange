@@ -398,6 +398,7 @@ export type {
   HistoryRecord,
   IntelRoleValue,
   OpenRoleRecord,
+  Stint,
   TrendWeekValue,
   TypicalBandValue,
 } from "./company-intel.js";
