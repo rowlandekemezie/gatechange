@@ -22,6 +22,7 @@ import {
   signPayload,
   verifiedChange,
 } from "../src/index.js";
+import type { EventTerms, StripeEndpoint } from "../src/index.js";
 
 const Fixtures = Schema.fromJsonString(Schema.Array(Schema.Unknown));
 
@@ -32,6 +33,19 @@ const payloads = Schema.decodeUnknownSync(Fixtures)(
 const [checkout = "", created = "", cancelled = ""] = payloads;
 
 const secret = Redacted.make("whsec_test_fixture_secret");
+
+const SANDBOX_MONTHLY = "price_1USIFA0ZnafJYNlYo9bbbD97";
+
+const sandbox: EventTerms = {
+  livemode: false,
+  prices: {
+    Monthly: SANDBOX_MONTHLY,
+    Quarterly: "price_sandbox_quarterly",
+    Yearly: "price_sandbox_yearly",
+  },
+};
+
+const endpoint: StripeEndpoint = { ...sandbox, secret };
 
 class InvalidRequestError extends Data.TaggedError("InvalidRequestError")<{
   readonly message: string;
@@ -45,7 +59,8 @@ const signed = (payload: string, at = NOW, key = secret) =>
     Effect.map((signature) => signatureHeader(Math.floor(at / 1000), signature))
   );
 
-const changeOf = billingChangeOf;
+const changeOf = (payload: string, terms: EventTerms = sandbox) =>
+  billingChangeOf(terms, payload);
 
 const ada = Schema.decodeSync(Account)({
   email: "ada@example.com",
@@ -57,7 +72,7 @@ describe("Stripe webhook signature", () => {
   it.effect("accepts a payload signed with the endpoint secret", () =>
     Effect.gen(function* accepts() {
       const header = yield* signed(created);
-      const change = yield* verifiedChange(secret, created, header, NOW);
+      const change = yield* verifiedChange(endpoint, created, header, NOW);
 
       expect(change._tag).toBe("ApplySubscription");
     })
@@ -83,10 +98,10 @@ describe("Stripe webhook signature", () => {
         );
 
         const failures = yield* Effect.all([
-          Effect.flip(verifiedChange(secret, tampered, header, NOW)),
-          Effect.flip(verifiedChange(secret, created, foreign, NOW)),
-          Effect.flip(verifiedChange(secret, created, stale, NOW)),
-          Effect.flip(verifiedChange(secret, created, "", NOW)),
+          Effect.flip(verifiedChange(endpoint, tampered, header, NOW)),
+          Effect.flip(verifiedChange(endpoint, created, foreign, NOW)),
+          Effect.flip(verifiedChange(endpoint, created, stale, NOW)),
+          Effect.flip(verifiedChange(endpoint, created, "", NOW)),
         ]);
 
         expect(failures.map((failure) => failure.reason)).toEqual([
@@ -105,7 +120,7 @@ describe("Stripe webhook signature", () => {
       const current = yield* signPayload(secret, at, created);
 
       const change = yield* verifiedChange(
-        secret,
+        endpoint,
         created,
         `t=${at},v1=${old},v1=${current}`,
         NOW
@@ -195,14 +210,17 @@ describe("Stripe events to billing changes", () => {
   );
 
   it.effect(
-    "falls back to the price interval when the price has no plan metadata",
+    "reads the plan from the stage's price id, whatever the price metadata says",
     () =>
-      Effect.gen(function* interval() {
-        const quarterly = created
-          .replaceAll('"plan":"Monthly"', '"plan":"Unknown"')
-          .replaceAll('"interval_count":1', '"interval_count":3');
-
-        const change = yield* changeOf(quarterly);
+      Effect.gen(function* byPrice() {
+        const change = yield* changeOf(created, {
+          ...sandbox,
+          prices: {
+            Monthly: "price_sandbox_monthly",
+            Quarterly: SANDBOX_MONTHLY,
+            Yearly: "price_sandbox_yearly",
+          },
+        });
 
         expect(
           Predicate.isTagged(change, "ApplySubscription")
@@ -212,12 +230,65 @@ describe("Stripe events to billing changes", () => {
       })
   );
 
+  it.effect(
+    "ignores a subscription whose only price is not one of this stage's Pro prices",
+    () =>
+      Effect.gen(function* foreignPrice() {
+        const foreign = created.replaceAll(
+          SANDBOX_MONTHLY,
+          "price_other_product"
+        );
+
+        expect(yield* changeOf(foreign)).toEqual(
+          BillingChange.Ignore({ type: "customer.subscription.created" })
+        );
+      })
+  );
+
+  it.effect("reads a Pro price listed after another product's item", () =>
+    Effect.gen(function* secondItem() {
+      const twoItems = created.replace(
+        '"items":{"object":"list","data":[',
+        '"items":{"object":"list","data":[{"price":{"id":"price_other_product"}},'
+      );
+
+      const change = yield* changeOf(twoItems);
+
+      expect(change._tag).toBe("ApplySubscription");
+    })
+  );
+
+  it.effect(
+    "ignores a test-mode event on a live endpoint and a live event on a test endpoint",
+    () =>
+      Effect.gen(function* livemode() {
+        const envelopeMode = created.lastIndexOf('"livemode":false');
+
+        const live = `${created.slice(0, envelopeMode)}"livemode":true${created.slice(envelopeMode + '"livemode":false'.length)}`;
+
+        const outcomes = yield* Effect.all([
+          changeOf(created, { ...sandbox, livemode: true }),
+          changeOf(checkout, { ...sandbox, livemode: true }),
+          changeOf(live, sandbox),
+          changeOf(live, { ...sandbox, livemode: true }),
+        ]);
+
+        expect(outcomes.map((outcome) => outcome._tag)).toEqual([
+          "Ignore",
+          "Ignore",
+          "Ignore",
+          "ApplySubscription",
+        ]);
+      })
+  );
+
   it.effect("ignores event types it does not handle", () =>
     Effect.gen(function* ignores() {
       const invoice = JSON.stringify({
         created: 1,
         data: { object: { id: "in_1" } },
         id: "evt_invoice",
+        livemode: false,
         type: "invoice.paid",
       });
 
@@ -233,6 +304,7 @@ describe("Stripe events to billing changes", () => {
         created: 1,
         data: { object: { id: "sub_1" } },
         id: "evt_broken",
+        livemode: false,
         type: "customer.subscription.updated",
       });
 

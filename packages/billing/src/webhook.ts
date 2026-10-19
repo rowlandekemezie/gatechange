@@ -146,23 +146,17 @@ export const signatureHeader = (timestamp: number, signature: string) =>
 
 const Metadata = Schema.Record(Schema.String, Schema.String);
 
-const Recurring = Schema.Struct({
-  interval: Schema.String,
-  interval_count: Schema.Int,
-});
-
 const SubscriptionItem = Schema.Struct({
   current_period_end: Schema.optionalKey(Schema.Int),
-  price: Schema.Struct({
-    metadata: Metadata,
-    recurring: Schema.NullOr(Recurring),
-  }),
+  current_period_start: Schema.optionalKey(Schema.Int),
+  price: Schema.Struct({ id: Schema.NonEmptyString }),
 });
 
 const SubscriptionObject = Schema.Struct({
   cancel_at: Schema.optionalKey(Schema.NullOr(Schema.Int)),
   cancel_at_period_end: Schema.Boolean,
   current_period_end: Schema.optionalKey(Schema.Int),
+  current_period_start: Schema.optionalKey(Schema.Int),
   customer: Schema.NonEmptyString,
   id: Schema.NonEmptyString,
   items: Schema.Struct({ data: Schema.Array(SubscriptionItem) }),
@@ -179,6 +173,7 @@ const CheckoutSessionObject = Schema.Struct({
 const Envelope = Schema.Struct({
   created: Schema.Int,
   id: Schema.NonEmptyString,
+  livemode: Schema.Boolean,
   type: Schema.String,
 });
 
@@ -206,46 +201,42 @@ const decodeCheckout = Schema.decodeEffect(
   Schema.fromJsonString(CheckoutEvent)
 );
 
-const planOfRecurring = (
-  recurring: typeof Recurring.Type | null
-): Option.Option<PlanValue> => {
-  if (recurring === null) {
-    return Option.none();
-  }
+export interface StripeEndpoint {
+  readonly livemode: boolean;
+  readonly prices: Readonly<Record<PlanValue, string>>;
+  readonly secret: Redacted.Redacted;
+}
 
-  if (recurring.interval === "year" && recurring.interval_count === 1) {
-    return Option.some("Yearly");
-  }
+export type EventTerms = Pick<StripeEndpoint, "livemode" | "prices">;
 
-  if (recurring.interval === "month" && recurring.interval_count === 3) {
-    return Option.some("Quarterly");
-  }
-
-  return recurring.interval === "month" && recurring.interval_count === 1
-    ? Option.some("Monthly")
-    : Option.none();
-};
-
-const planOfItem = (item: typeof SubscriptionItem.Type) =>
-  Schema.decodeUnknownOption(Plan)(item.price.metadata.plan).pipe(
-    Option.orElse(() => planOfRecurring(item.price.recurring))
-  );
+const planOfPrice = (
+  prices: EventTerms["prices"],
+  price: string
+): Option.Option<PlanValue> =>
+  Array.findFirst(Plan.literals, (plan) => prices[plan] === price);
 
 const subscriptionChangeOf = (
+  terms: EventTerms,
   event: typeof SubscriptionEvent.Type
 ): BillingChangeValue => {
   const subscription = event.data.object;
-  const item = Array.head(subscription.items.data);
-  const plan = item.pipe(Option.flatMap(planOfItem));
+
+  const priced = Array.findFirst(subscription.items.data, (item) =>
+    planOfPrice(terms.prices, item.price.id).pipe(
+      Option.map((plan) => ({ item, plan }))
+    )
+  );
 
   const periodEnd = Option.fromNullishOr(
     subscription.current_period_end ??
-      Option.getOrUndefined(item)?.current_period_end
+      Option.getOrUndefined(priced)?.item.current_period_end
   );
 
-  if (Option.isNone(plan) || Option.isNone(periodEnd)) {
+  if (Option.isNone(priced) || Option.isNone(periodEnd)) {
     return BillingChange.Ignore({ type: event.type });
   }
+
+  const { plan } = priced.value;
 
   const cancelAt = subscription.cancel_at ?? null;
 
@@ -258,7 +249,7 @@ const subscriptionChangeOf = (
       cancelAtPeriodEnd: subscription.cancel_at_period_end || cancelAt !== null,
       periodEnd:
         Math.min(periodEnd.value, cancelAt ?? Number.POSITIVE_INFINITY) * 1000,
-      plan: plan.value,
+      plan,
       status: subscription.status,
       subscriptionId: subscription.id,
       version: {
@@ -291,10 +282,14 @@ const checkoutChangeOf = (
 };
 
 export const billingChangeOf = Effect.fn("billingChangeOf")(
-  function* billingChangeOf(payload: string) {
-    const { type } = yield* decodeEnvelope(payload).pipe(
+  function* billingChangeOf(terms: EventTerms, payload: string) {
+    const { livemode, type } = yield* decodeEnvelope(payload).pipe(
       Effect.mapError(malformed)
     );
+
+    if (livemode !== terms.livemode) {
+      return BillingChange.Ignore({ type });
+    }
 
     if (type === CHECKOUT_COMPLETED) {
       return checkoutChangeOf(
@@ -304,6 +299,7 @@ export const billingChangeOf = Effect.fn("billingChangeOf")(
 
     if (Schema.is(SubscriptionEventType)(type)) {
       return subscriptionChangeOf(
+        terms,
         yield* decodeSubscription(payload).pipe(Effect.mapError(malformed))
       );
     }
@@ -314,13 +310,13 @@ export const billingChangeOf = Effect.fn("billingChangeOf")(
 
 export const verifiedChange = Effect.fn("verifiedBillingChange")(
   function* verifiedChange(
-    secret: Redacted.Redacted,
+    endpoint: StripeEndpoint,
     payload: string,
     header: string,
     nowMillis: number
   ) {
-    yield* verifySignature(secret, payload, header, nowMillis);
+    yield* verifySignature(endpoint.secret, payload, header, nowMillis);
 
-    return yield* billingChangeOf(payload);
+    return yield* billingChangeOf(endpoint, payload);
   }
 );

@@ -67,8 +67,17 @@ const addMember = (id: AccountIdValue) =>
     ])
   );
 
+const sandbox = {
+  livemode: false,
+  prices: {
+    Monthly: "price_1USIFA0ZnafJYNlYo9bbbD97",
+    Quarterly: "price_sandbox_quarterly",
+    Yearly: "price_sandbox_yearly",
+  },
+};
+
 const deliver = (payload: string) =>
-  billingChangeOf(payload).pipe(Effect.flatMap(applyBillingChange));
+  billingChangeOf(sandbox, payload).pipe(Effect.flatMap(applyBillingChange));
 
 const entitlementAt = (now: number) =>
   BillingStore.use((store) => store.subscriptionsOf(ada)).pipe(

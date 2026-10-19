@@ -177,6 +177,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     );
 
     const stripe = yield* stripeBilling(
+      stage,
       billingEnabled ? publicOriginOf(stage, subdomain) : Option.none()
     );
 
@@ -346,10 +347,8 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       );
 
     const stripeWebhook = (request: HttpServerRequest.HttpServerRequest) =>
-      stripe.webhookSecret.pipe(
-        Effect.flatMap((webhookSecret) =>
-          stripeWebhookResponse(webhookSecret, request)
-        ),
+      stripe.endpoint.pipe(
+        Effect.flatMap((endpoint) => stripeWebhookResponse(endpoint, request)),
         Effect.provide(billingLayer)
       );
 

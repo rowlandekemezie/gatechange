@@ -21,3 +21,5 @@ export {
   verifySignature,
   WebhookRejected,
 } from "./webhook.js";
+
+export type { EventTerms, StripeEndpoint } from "./webhook.js";
