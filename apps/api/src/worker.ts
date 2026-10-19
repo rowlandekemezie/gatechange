@@ -3,6 +3,7 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
   authOptions,
   authSecret,
+  logSendFailure,
   magicLinkEmail,
   makeAccountStore,
 } from "@rat-stack/accounts";
@@ -255,7 +256,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           await runPromise(
             mailer
               .send(magicLinkEmail(MAGIC_LINK_SENDER, request))
-              .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom))
+              .pipe(
+                Effect.tapError(logSendFailure),
+                Effect.provide(RuntimeContext.RuntimeContext.phantom)
+              )
           );
         },
         social,

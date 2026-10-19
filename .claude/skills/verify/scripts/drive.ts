@@ -264,17 +264,28 @@ const send = async <S extends Schema.Decoder<unknown>>(
 
 const Ignored = Schema.Unknown;
 
+const isCancelledInterception = (error: Error) =>
+  error.message.includes("Invalid InterceptionId") ||
+  error.message ===
+    "Chrome closed the DevTools connection during Fetch.continueRequest";
+
 const continueWithClientIp = async ({ params }: typeof PausedRequest.Type) => {
-  await send(Ignored, "Fetch.continueRequest", {
-    headers: [
-      ...Object.entries(params.request.headers).map(([header, value]) => ({
-        name: header,
-        value,
-      })),
-      { name: "cf-connecting-ip", value: clientIp },
-    ],
-    requestId: params.requestId,
-  });
+  try {
+    await send(Ignored, "Fetch.continueRequest", {
+      headers: [
+        ...Object.entries(params.request.headers).map(([header, value]) => ({
+          name: header,
+          value,
+        })),
+        { name: "cf-connecting-ip", value: clientIp },
+      ],
+      requestId: params.requestId,
+    });
+  } catch (error) {
+    if (!(error instanceof Error && isCancelledInterception(error))) {
+      throw error;
+    }
+  }
 };
 
 socket.addEventListener("message", (event) => {
