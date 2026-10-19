@@ -25,7 +25,13 @@ import type {
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
-import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "../src/mcp.js";
+import {
+  mcpAppLayer,
+  recoveringSessions,
+  serveMcp,
+  serveMcpDiscovery,
+} from "../src/mcp.js";
+import type { McpWebHandler } from "../src/mcp.js";
 import { handleRoutes } from "../src/route.js";
 
 const ORIGIN = "https://jobs.example";
@@ -66,162 +72,188 @@ const job = (source: SourceNameValue, id: string): JobValue => ({
 
 const board = [job("Greenhouse", "g:1"), job("Remotive", "r:1")];
 
-const fixture = Effect.gen(function* fixture() {
-  const listedSources: (readonly SourceNameValue[])[] = [];
-  const savedBy: string[] = [];
+const fixtureOf = (isolates: number) =>
+  Effect.gen(function* fixture() {
+    const listedSources: (readonly SourceNameValue[])[] = [];
+    const savedBy: string[] = [];
 
-  const hashes = new Map<string, AccountValue>([
-    [yield* secretHashOf(PRO_SECRET), pro],
-    [yield* secretHashOf(FREE_SECRET), free],
-  ]);
+    const hashes = new Map<string, AccountValue>([
+      [yield* secretHashOf(PRO_SECRET), pro],
+      [yield* secretHashOf(FREE_SECRET), free],
+    ]);
 
-  const stores = Layer.mergeAll(
-    Layer.succeed(
-      JobStore,
-      JobStore.of({
-        claimIngest: unserved("claimIngest"),
-        feedStates: Effect.die("feedStates is not served here"),
-        find: (id) =>
-          Effect.succeed(
-            Option.fromNullishOr(board.find((row) => row.id === id))
-          ),
-        historyOf: unserved("historyOf"),
-        list: (_query, _now, sources) => {
-          listedSources.push(sources);
+    const stores = Layer.mergeAll(
+      Layer.succeed(
+        JobStore,
+        JobStore.of({
+          claimIngest: unserved("claimIngest"),
+          feedStates: Effect.die("feedStates is not served here"),
+          find: (id) =>
+            Effect.succeed(
+              Option.fromNullishOr(board.find((row) => row.id === id))
+            ),
+          historyOf: unserved("historyOf"),
+          list: (_query, _now, sources) => {
+            listedSources.push(sources);
 
-          const jobs = board.flatMap((row) =>
-            sources.includes(row.source)
-              ? [{ ...row, daysOpen: 0, reposts: 0 }]
-              : []
-          );
+            const jobs = board.flatMap((row) =>
+              sources.includes(row.source)
+                ? [{ ...row, daysOpen: 0, reposts: 0 }]
+                : []
+            );
 
-          return Effect.succeed({ jobs, total: jobs.length });
-        },
-        pruneOlderThan: unserved("pruneOlderThan"),
-        recordFeedFailure: unserved("recordFeedFailure"),
-        recordRun: unserved("recordRun"),
-        recordSightings: unserved("recordSightings"),
-        releaseIngest: unserved("releaseIngest"),
-        replaceFeed: unserved("replaceFeed"),
-        stats: unserved("stats"),
-      })
-    ),
-    Layer.succeed(
-      AlertStore,
-      AlertStore.of({
-        claimDigest: unserved("claimDigest"),
-        deleteSearch: unserved("deleteSearch"),
-        dueRecipients: unserved("dueRecipients"),
-        instantAlertsOf: unserved("instantAlertsOf"),
-        jobsSeenSince: unserved("jobsSeenSince"),
-        markSent: unserved("markSent"),
-        releaseDigest: unserved("releaseDigest"),
-        saveSearch: (owner, filters, createdAt) => {
-          savedBy.push(owner);
-
-          return Effect.succeed(
-            Option.some({
-              createdAt,
-              filters,
-              frequency: "Weekly" as const,
-              id: SavedSearchId.make("s1"),
-              owner,
-            })
-          );
-        },
-        searchesOf: unserved("searchesOf"),
-        sendsSince: unserved("sendsSince"),
-        setInstantAlerts: unserved("setInstantAlerts"),
-        unsubscribe: unserved("unsubscribe"),
-      })
-    ),
-    Layer.succeed(
-      TrackerStore,
-      TrackerStore.of({
-        importMissing: unserved("importMissing"),
-        list: unserved("list"),
-        note: unserved("note"),
-        track: unserved("track"),
-        untrack: unserved("untrack"),
-      })
-    ),
-    Layer.succeed(
-      BillingStore,
-      BillingStore.of({
-        accountOfCustomer: unserved("accountOfCustomer"),
-        applySubscription: unserved("applySubscription"),
-        customerOf: unserved("customerOf"),
-        linkCustomer: unserved("linkCustomer"),
-        subscriptionsOf: (account) =>
-          Effect.succeed(
-            account === pro.id
-              ? [
-                  {
-                    account,
-                    cancelAtPeriodEnd: false,
-                    periodEnd: Number.MAX_SAFE_INTEGER,
-                    plan: "Monthly",
-                    status: "active",
-                    subscriptionId: "sub_1",
-                    version: { created: 1, eventId: "evt_1", rank: 0 },
-                  } satisfies SubscriptionRecordValue,
-                ]
-              : []
-          ),
-      })
-    )
-  );
-
-  const tokens = Layer.succeed(
-    AgentTokenStore,
-    AgentTokenStore.of({
-      holderOf: (hash) =>
-        Effect.succeed(Option.fromNullishOr(hashes.get(hash))),
-      issue: unserved("issue"),
-      revoke: unserved("revoke"),
-      tokensOf: unserved("tokensOf"),
-    })
-  );
-
-  const mcpHttp = yield* HttpRouter.toHttpEffect(mcpAppLayer(stores));
-
-  const accountStore: AccountStore["Service"] = {
-    signInOptions: { socialProviders: [] },
-    viewerOf: () => Effect.succeed(Viewer.Anonymous()),
-  };
-
-  const handle = handleRoutes({
-    accountStore,
-    auth: Effect.succeed(HttpServerResponse.text("auth")),
-    mcp: (request) =>
-      serveMcp(Effect.scoped(mcpHttp))(request).pipe(
-        Effect.provide(Layer.mergeAll(tokens, stores))
+            return Effect.succeed({ jobs, total: jobs.length });
+          },
+          pruneOlderThan: unserved("pruneOlderThan"),
+          recordFeedFailure: unserved("recordFeedFailure"),
+          recordRun: unserved("recordRun"),
+          recordSightings: unserved("recordSightings"),
+          releaseIngest: unserved("releaseIngest"),
+          replaceFeed: unserved("replaceFeed"),
+          stats: unserved("stats"),
+        })
       ),
-    mcpDiscovery: serveMcpDiscovery,
-    rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
-    stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
-    unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsubscribe")),
-  });
+      Layer.succeed(
+        AlertStore,
+        AlertStore.of({
+          claimDigest: unserved("claimDigest"),
+          deleteSearch: unserved("deleteSearch"),
+          dueRecipients: unserved("dueRecipients"),
+          instantAlertsOf: unserved("instantAlertsOf"),
+          jobsSeenSince: unserved("jobsSeenSince"),
+          markSent: unserved("markSent"),
+          releaseDigest: unserved("releaseDigest"),
+          saveSearch: (owner, filters, createdAt) => {
+            savedBy.push(owner);
 
-  const webHandler = HttpEffect.toWebHandler(handle);
+            return Effect.succeed(
+              Option.some({
+                createdAt,
+                filters,
+                frequency: "Weekly" as const,
+                id: SavedSearchId.make("s1"),
+                owner,
+              })
+            );
+          },
+          searchesOf: unserved("searchesOf"),
+          sendsSince: unserved("sendsSince"),
+          setInstantAlerts: unserved("setInstantAlerts"),
+          unsubscribe: unserved("unsubscribe"),
+        })
+      ),
+      Layer.succeed(
+        TrackerStore,
+        TrackerStore.of({
+          importMissing: unserved("importMissing"),
+          list: unserved("list"),
+          note: unserved("note"),
+          track: unserved("track"),
+          untrack: unserved("untrack"),
+        })
+      ),
+      Layer.succeed(
+        BillingStore,
+        BillingStore.of({
+          accountOfCustomer: unserved("accountOfCustomer"),
+          applySubscription: unserved("applySubscription"),
+          customerOf: unserved("customerOf"),
+          linkCustomer: unserved("linkCustomer"),
+          subscriptionsOf: (account) =>
+            Effect.succeed(
+              account === pro.id
+                ? [
+                    {
+                      account,
+                      cancelAtPeriodEnd: false,
+                      periodEnd: Number.MAX_SAFE_INTEGER,
+                      plan: "Monthly",
+                      status: "active",
+                      subscriptionId: "sub_1",
+                      version: { created: 1, eventId: "evt_1", rank: 0 },
+                    } satisfies SubscriptionRecordValue,
+                  ]
+                : []
+            ),
+        })
+      )
+    );
 
-  const send = (path: string, init: RequestInit = {}) =>
-    Effect.gen(function* sent() {
-      const web = yield* Effect.promise(
-        // @effect-diagnostics-next-line asyncFunction:off -- The Web handler is Promise-based.
-        async () => await webHandler(new Request(`${ORIGIN}${path}`, init))
+    const tokens = Layer.succeed(
+      AgentTokenStore,
+      AgentTokenStore.of({
+        holderOf: (hash) =>
+          Effect.succeed(Option.fromNullishOr(hashes.get(hash))),
+        issue: unserved("issue"),
+        revoke: unserved("revoke"),
+        tokensOf: unserved("tokensOf"),
+      })
+    );
+
+    const servers: McpWebHandler[] = [];
+
+    for (let index = 0; index < isolates; index += 1) {
+      servers.push(
+        HttpEffect.toWebHandler(
+          yield* HttpRouter.toHttpEffect(mcpAppLayer(stores))
+        )
       );
+    }
 
-      const text = yield* Effect.promise(
-        // @effect-diagnostics-next-line asyncFunction:off -- Web Response bodies are Promise-based.
-        async () => await web.text()
-      );
+    let turn = 0;
 
-      return { headers: web.headers, status: web.status, text };
+    // @effect-diagnostics-next-line asyncFunction:off -- Stands in for the Promise-based web handler of one isolate.
+    const roundRobin: McpWebHandler = async (request, context) => {
+      const server = servers[turn % servers.length];
+
+      turn += 1;
+
+      return server === undefined
+        ? new Response(null, { status: 503 })
+        : await server(request, context);
+    };
+
+    const sessions = recoveringSessions(roundRobin);
+
+    const accountStore: AccountStore["Service"] = {
+      signInOptions: { socialProviders: [] },
+      viewerOf: () => Effect.succeed(Viewer.Anonymous()),
+    };
+
+    const handle = handleRoutes({
+      accountStore,
+      auth: Effect.succeed(HttpServerResponse.text("auth")),
+      mcp: (request) =>
+        serveMcp(sessions)(request).pipe(
+          Effect.provide(Layer.mergeAll(tokens, stores))
+        ),
+      mcpDiscovery: serveMcpDiscovery,
+      rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
+      stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
+      unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsubscribe")),
     });
 
-  return { listedSources, savedBy, send };
-});
+    const webHandler = HttpEffect.toWebHandler(handle);
+
+    const send = (path: string, init: RequestInit = {}) =>
+      Effect.gen(function* sent() {
+        const web = yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- The Web handler is Promise-based.
+          async () => await webHandler(new Request(`${ORIGIN}${path}`, init))
+        );
+
+        const text = yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- Web Response bodies are Promise-based.
+          async () => await web.text()
+        );
+
+        return { headers: web.headers, status: web.status, text };
+      });
+
+    return { listedSources, savedBy, send };
+  });
+
+const fixture = fixtureOf(1);
 
 type Send = Effect.Success<typeof fixture>["send"];
 
@@ -487,6 +519,33 @@ describe("board over MCP", () => {
 
       expect(response.status).toBe(403);
     }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "keeps a session working when its calls land on an isolate that never saw it",
+    () =>
+      Effect.gen(function* acrossIsolates() {
+        const { savedBy, send } = yield* fixtureOf(2);
+        const { tool } = yield* session(send, `Bearer ${PRO_SECRET}`);
+        const results = [];
+
+        for (let index = 0; index < 6; index += 1) {
+          results.push(
+            yield* tool("saveSearch", {
+              filters: {
+                regions: ["RemoteCanada"],
+                roles: ["Director"],
+                search: `run ${index}`,
+              },
+            })
+          );
+        }
+
+        expect(results.map(({ isError }) => isError)).toStrictEqual(
+          Array.from({ length: 6 }, () => false)
+        );
+        expect(savedBy).toHaveLength(6);
+      }).pipe(Effect.scoped)
   );
 
   it.effect(

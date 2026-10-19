@@ -47,11 +47,21 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import * as Stripe from "alchemy/Stripe";
 import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
-import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
+import {
+  FetchHttpClient,
+  HttpEffect,
+  HttpRouter,
+  HttpServerResponse,
+} from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
-import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
+import {
+  mcpAppLayer,
+  recoveringSessions,
+  serveMcp,
+  serveMcpDiscovery,
+} from "./mcp.js";
 import { handleRoutes } from "./route.js";
 import { stripeBilling } from "./stripe.js";
 
@@ -291,10 +301,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       billingLayer
     );
 
+    const mcpSessions = recoveringSessions(HttpEffect.toWebHandler(mcpHttp));
+
     const mcp = (request: HttpServerRequest.HttpServerRequest) =>
-      serveMcp(Effect.scoped(mcpHttp))(request).pipe(
-        Effect.provide(agentAccessLayer)
-      );
+      serveMcp(mcpSessions)(request).pipe(Effect.provide(agentAccessLayer));
 
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(

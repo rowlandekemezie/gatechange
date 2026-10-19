@@ -21,11 +21,11 @@ import type {
   JobStore,
   JobStoreUnavailable,
   TrackerStore,
+  ViewerValue,
 } from "@rat-stack/core";
-import { Data, Effect, Layer, Match, Option } from "effect";
+import { Context, Data, Effect, Layer, Match, Option } from "effect";
 import { McpProtocol, McpServer } from "effect/ai";
-import { HttpServerResponse } from "effect/http";
-import type { HttpServerRequest } from "effect/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 export const MCP_SERVER_NAME = "jobs-rowlandekemezie";
 
@@ -134,14 +134,146 @@ const refusalOf = (failure: AgentTokenRefused | JobStoreUnavailable) =>
       ),
   });
 
+const SESSION_HEADER = "mcp-session-id";
+
+const PROTOCOL_HEADER = "mcp-protocol-version";
+
+const MAX_RECOVERED_SESSIONS = 1000;
+
+export type McpWebHandler = (
+  request: Request,
+  context: Context.Context<never>
+) => Promise<Response>;
+
+type SessionHeader = { readonly drop: true } | { readonly id: string };
+
+const relayed = (
+  request: Request,
+  body: string,
+  session: SessionHeader | undefined
+) => {
+  const headers = new Headers(request.headers);
+
+  if (session !== undefined && "drop" in session) {
+    headers.delete(SESSION_HEADER);
+    headers.delete(PROTOCOL_HEADER);
+  }
+
+  if (session !== undefined && "id" in session) {
+    headers.set(SESSION_HEADER, session.id);
+  }
+
+  return new Request(request.url, { body, headers, method: request.method });
+};
+
+export const recoveringSessions = (handle: McpWebHandler) => {
+  const recovered = new Map<string, string>();
+
+  const send = (
+    request: Request,
+    body: string,
+    viewer: ViewerValue,
+    session?: SessionHeader
+  ) =>
+    Effect.promise(
+      // @effect-diagnostics-next-line asyncFunction:off -- The web handler is Promise-based.
+      async () =>
+        await handle(
+          relayed(request, body, session),
+          Context.make(CurrentViewer, viewer)
+        )
+    );
+
+  const reopen = (request: Request, viewer: ViewerValue) =>
+    Effect.gen(function* reopenSession() {
+      const opened = yield* send(
+        request,
+        JSON.stringify({
+          id: 0,
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            capabilities: {},
+            clientInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+            protocolVersion:
+              request.headers.get(PROTOCOL_HEADER) ??
+              McpProtocol.v2025_03_26.protocolVersion,
+          },
+        }),
+        viewer,
+        { drop: true }
+      );
+
+      const id = Option.fromNullishOr(opened.headers.get(SESSION_HEADER));
+
+      if (Option.isSome(id)) {
+        yield* send(
+          request,
+          JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/initialized",
+          }),
+          viewer,
+          { id: id.value }
+        );
+      }
+
+      return id;
+    });
+
+  return (request: Request, viewer: ViewerValue) =>
+    Effect.gen(function* recoveringSession() {
+      const body = yield* Effect.promise(
+        // @effect-diagnostics-next-line asyncFunction:off -- Request bodies are Promise-based.
+        async () => await request.text()
+      );
+
+      const session = request.headers.get(SESSION_HEADER);
+
+      if (session === null) {
+        return yield* send(request, body, viewer);
+      }
+
+      const first = yield* send(request, body, viewer, {
+        id: recovered.get(session) ?? session,
+      });
+
+      if (first.status !== 404) {
+        return first;
+      }
+
+      const reopened = yield* reopen(request, viewer);
+
+      if (Option.isNone(reopened)) {
+        return first;
+      }
+
+      if (recovered.size >= MAX_RECOVERED_SESSIONS) {
+        recovered.clear();
+      }
+
+      recovered.set(session, reopened.value);
+
+      return yield* send(request, body, viewer, { id: reopened.value });
+    });
+};
+
 export const serveMcp =
-  <E, R>(mcpHttp: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
+  (
+    handle: (request: Request, viewer: ViewerValue) => Effect.Effect<Response>
+  ) =>
   (request: HttpServerRequest.HttpServerRequest) =>
     agentViewerOf(request.headers.authorization).pipe(
       Effect.matchEffect({
         onFailure: (failure) => Effect.succeed(refusalOf(failure)),
         onSuccess: (viewer) =>
-          mcpHttp.pipe(Effect.provideService(CurrentViewer, viewer)),
+          HttpServerRequest.toWeb(request).pipe(
+            Effect.flatMap((web) => handle(web, viewer)),
+            Effect.map(HttpServerResponse.fromWeb),
+            Effect.orElseSucceed(() =>
+              jsonRpcError(400, "The request could not be read.")
+            )
+          ),
       })
     );
 
