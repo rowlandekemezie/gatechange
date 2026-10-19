@@ -1,6 +1,24 @@
-import { PostingGone, PostingTexts, PostingUnavailable } from "@rat-stack/core";
-import type { JobValue, PostingTextValue } from "@rat-stack/core";
-import { Array, Effect, Layer, Option, pipe, Predicate, Schema } from "effect";
+import {
+  annualSalaryBandOf,
+  PostingGone,
+  PostingTexts,
+  PostingUnavailable,
+} from "@rat-stack/core";
+import type {
+  JobValue,
+  PostingTextValue,
+  SalaryPeriodValue,
+} from "@rat-stack/core";
+import {
+  Array,
+  Effect,
+  Layer,
+  Match,
+  Option,
+  pipe,
+  Predicate,
+  Schema,
+} from "effect";
 import { HttpClient } from "effect/http";
 
 import { CompanyAts } from "./boards.js";
@@ -70,6 +88,16 @@ const SmartRecruitersSection = Schema.optional(
 );
 
 const SmartRecruitersDetail = Schema.Struct({
+  compensation: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        currency: Schema.String,
+        max: Schema.Finite,
+        min: Schema.Finite,
+        period: OptionalString,
+      })
+    )
+  ),
   jobAd: Schema.Struct({
     sections: Schema.Struct({
       additionalInformation: SmartRecruitersSection,
@@ -103,6 +131,7 @@ const greenhouseText = ({ externalId, slug }: PostingKey) =>
     GreenhouseDetail
   ).pipe(
     Effect.map(({ content, location }): PostingTextValue => ({
+      salary: null,
       text: nonEmpty([
         linesOfHtml(textOfHtml(content)),
         locationLine(location?.name),
@@ -117,6 +146,7 @@ const leverText = ({ externalId, slug }: PostingKey) =>
     LeverDetail
   ).pipe(
     Effect.map((posting): PostingTextValue => ({
+      salary: null,
       text: nonEmpty([
         posting.descriptionPlain,
         ...pipe(
@@ -181,6 +211,7 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
           ),
         onSome: (job) =>
           Effect.succeed<PostingTextValue>({
+            salary: null,
             text: nonEmpty([
               job.descriptionPlain,
               ashbyCompensation(job.compensation),
@@ -192,12 +223,38 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
     )
   );
 
+const smartRecruitersPeriodOf = (period: string | null | undefined) =>
+  Match.value(period).pipe(
+    Match.withReturnType<SalaryPeriodValue | null>(),
+    Match.when("HOURLY", () => "Hour"),
+    Match.when("MONTHLY", () => "Month"),
+    Match.when("YEARLY", () => "Year"),
+    Match.orElse(() => null)
+  );
+
+const smartRecruitersSalary = (
+  compensation: typeof SmartRecruitersDetail.Type.compensation
+) =>
+  pipe(
+    Option.fromNullishOr(compensation),
+    Option.flatMap((range) =>
+      pipe(
+        Option.fromNullishOr(smartRecruitersPeriodOf(range.period)),
+        Option.flatMap((period) =>
+          Option.fromNullishOr(annualSalaryBandOf(range, period))
+        )
+      )
+    ),
+    Option.getOrNull
+  );
+
 const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
   getJson(
     `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings/${encodeURIComponent(externalId)}`,
     SmartRecruitersDetail
   ).pipe(
-    Effect.map(({ jobAd: { sections } }): PostingTextValue => ({
+    Effect.map(({ compensation, jobAd: { sections } }): PostingTextValue => ({
+      salary: smartRecruitersSalary(compensation),
       text: nonEmpty(
         pipe(
           [
@@ -222,6 +279,7 @@ const workableText = ({ externalId, slug }: PostingKey) =>
     WorkableDetail
   ).pipe(
     Effect.map((job): PostingTextValue => ({
+      salary: null,
       text: nonEmpty(
         Array.map([job.description, job.requirements, job.benefits], (html) =>
           linesOfHtml(html ?? "")

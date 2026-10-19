@@ -242,6 +242,7 @@ export type {
 } from "./contracts.js";
 
 export {
+  annualSalaryBandOf,
   DEFAULT_DAILY_NEURONS,
   DEFAULT_ENRICHMENT_SWEEP_LIMIT,
   detailsOfAnswer,

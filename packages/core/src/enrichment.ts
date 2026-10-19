@@ -53,6 +53,7 @@ export type ModelAnswerValue = typeof ModelAnswer.Type;
 
 export interface PostingRequest {
   readonly company: string;
+  readonly salary: SalaryBandValue | null;
   readonly text: string;
   readonly title: string;
   readonly workplace: ArrangementValue;
@@ -132,6 +133,18 @@ const periodFactor: Record<SalaryPeriodValue, number> = {
   Month: 12,
   Year: 1,
 };
+
+export const annualSalaryBandOf = (
+  { currency, max, min }: { currency: string; max: number; min: number },
+  period: SalaryPeriodValue
+): SalaryBandValue | null =>
+  Option.getOrNull(
+    Schema.decodeUnknownOption(SalaryBand)({
+      currency,
+      max: Math.round(max * periodFactor[period]),
+      min: Math.round(min * periodFactor[period]),
+    })
+  );
 
 export interface MoneyRange {
   readonly amounts: readonly number[];
@@ -425,11 +438,16 @@ const salaryBandOf = (
         statesBand(stated, match.range.amounts) && isBasePay(text, match, title)
     ),
     Option.flatMap(({ range }) =>
-      Schema.decodeUnknownOption(SalaryBand)({
-        currency: range.currency,
-        max: Math.round(Math.max(...stated) * periodFactor[range.period]),
-        min: Math.round(Math.min(...stated) * periodFactor[range.period]),
-      })
+      Option.fromNullishOr(
+        annualSalaryBandOf(
+          {
+            currency: range.currency,
+            max: Math.max(...stated),
+            min: Math.min(...stated),
+          },
+          range.period
+        )
+      )
     ),
     Option.getOrNull
   );
@@ -836,7 +854,7 @@ export const detailsOfAnswer = (
   return {
     remotePolicy: remotePolicyOf(answer, searchable, posting.workplace),
     reportsTo: reportsToOf(answer, searchable, posting.title),
-    salary: salaryBandOf(answer, posting),
+    salary: posting.salary ?? salaryBandOf(answer, posting),
     seniority: seniorityOf(posting.title, answer.seniority),
     teamSize: teamSizeOf(answer, searchable),
   };
@@ -928,8 +946,9 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
           )
         )
     ),
-    Effect.map(({ text, workplace }): PostingRequest => ({
+    Effect.map(({ salary, text, workplace }): PostingRequest => ({
       company: job.company,
+      salary,
       text: text.trim().slice(0, MAX_POSTING_CHARS),
       title: job.title,
       workplace,

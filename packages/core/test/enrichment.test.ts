@@ -64,7 +64,7 @@ const MAX_NEURONS = 400;
 const posted = (
   text: string,
   workplace: ArrangementValue = "Unspecified"
-): PostingTextValue => ({ text, workplace });
+): PostingTextValue => ({ salary: null, text, workplace });
 
 const enricherOf = (
   extract: (
@@ -1199,6 +1199,35 @@ describe("enrichListing", () => {
   );
 
   it.effect.each([
+    ["no salary", null, null],
+    ["a different salary", 90_000, 120_000],
+  ] as const)(
+    "the ATS salary field wins over a model answer with %s",
+    ([, salaryMin, salaryMax]) =>
+      Effect.gen(function* structuredSalary() {
+        const salary = { currency: "USD", max: 236_500, min: 177_400 } as const;
+
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: { ...validAnswer, salaryMax, salaryMin },
+          }),
+          fetched: Effect.succeed({
+            salary,
+            text: "Lead the wafer fab equipment team. Pay $90,000 - $120,000 base salary.",
+            workplace: "Unspecified",
+          }),
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.salary)
+          )
+        ).toStrictEqual(Option.some(salary));
+      })
+  );
+
+  it.effect.each([
     [
       "remote monitoring software",
       null,
@@ -1645,6 +1674,7 @@ describe("enrichListing", () => {
       },
       {
         company: "Acme",
+        salary: null,
         text,
         title: "Engineering Manager",
         workplace: "Unspecified",
@@ -1672,7 +1702,13 @@ describe("enrichListing", () => {
 
       const details = detailsOfAnswer(
         { ...validAnswer, salaryMax: 120_000, salaryMin: 100_000 },
-        { company: "Acme", text, title: "Engineer", workplace: "Unspecified" }
+        {
+          company: "Acme",
+          salary: null,
+          text,
+          title: "Engineer",
+          workplace: "Unspecified",
+        }
       );
 
       expect(performance.now() - started).toBeLessThan(50);
@@ -1686,6 +1722,7 @@ describe("enrichListing", () => {
         { ...validAnswer, salaryMax: 50_000, salaryMin: 20_000 },
         {
           company: "Acme",
+          salary: null,
           text: "Paid in addition to base salary: $20,000 - $50,000 per year.",
           title: "Engineer",
           workplace: "Unspecified",
@@ -1700,6 +1737,7 @@ describe("enrichListing", () => {
         { ...validAnswer, remotePolicy: null, remotePolicyQuote: null },
         {
           company: "Acme",
+          salary: null,
           text: "This role is hybrid, on-site every Tuesday and Thursday. #LI-Hybrid",
           title: "Engineer",
           workplace: "Unspecified",
@@ -1719,6 +1757,7 @@ describe("enrichListing", () => {
         },
         {
           company: "Acme",
+          salary: null,
           text: "You will work with the Staff Engineering Manager, who reports to the VP of Engineering.",
           title: "Senior Engineering Manager",
           workplace: "Unspecified",

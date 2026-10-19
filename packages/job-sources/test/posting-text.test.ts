@@ -289,6 +289,7 @@ describe("posting texts", () => {
         const posting = yield* fetchPosting("ashby:baseten:hybrid");
 
         expect(posting).toStrictEqual({
+          salary: null,
           text: "Inference team.",
           workplace: "Hybrid",
         });
@@ -336,6 +337,51 @@ describe("posting texts", () => {
     }
   );
 
+  it.effect.each([
+    [
+      "a yearly range",
+      { currency: "USD", max: 236_500, min: 177_400, period: "YEARLY" },
+      { currency: "USD", max: 236_500, min: 177_400 },
+    ],
+    [
+      "an hourly range",
+      { currency: "USD", max: 60, min: 50, period: "HOURLY" },
+      { currency: "USD", max: 124_800, min: 104_000 },
+    ],
+    [
+      "a range in a currency the board does not show",
+      { currency: "JPY", max: 9_000_000, min: 7_000_000, period: "YEARLY" },
+      null,
+    ],
+    ["no compensation", null, null],
+  ] as const)(
+    "a SmartRecruiters posting with %s carries %j as its salary field",
+    ([, compensation, salary]) =>
+      Effect.gen(function* readSmartRecruitersSalary() {
+        const posting = yield* fetchPosting(
+          "smartrecruiters:WesternDigital:744000153582331"
+        );
+
+        expect(posting.salary).toStrictEqual(salary);
+        expect(posting.text).toBe("Lead the wafer fab equipment team.");
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              compensation,
+              jobAd: {
+                sections: {
+                  jobDescription: {
+                    text: "<p>Lead the wafer fab equipment team.</p>",
+                  },
+                },
+              },
+            })
+          ).layer
+        )
+      )
+  );
+
   it.effect(
     "a Workable job joins its description, requirements and benefits",
     () => {
@@ -368,6 +414,7 @@ describe("posting texts", () => {
         const posting = yield* fetchPosting("workable:upstream:0C4692F46C");
 
         expect(posting).toStrictEqual({
+          salary: null,
           text: "Field engineer.",
           workplace: expected,
         });
@@ -387,6 +434,7 @@ describe("posting texts", () => {
         const posting = yield* fetchPosting("greenhouse:acme:2");
 
         expect(posting).toStrictEqual({
+          salary: null,
           text: "Workplace type: Remote\nYou will work in our Austin office five days a week.",
           workplace: "Unspecified",
         });
@@ -471,7 +519,11 @@ describe("posting texts", () => {
       Effect.gen(function* readBlankPosting() {
         const posting = yield* fetchPosting("greenhouse:vercel:1");
 
-        expect(posting).toStrictEqual({ text: "", workplace: "Unspecified" });
+        expect(posting).toStrictEqual({
+          salary: null,
+          text: "",
+          workplace: "Unspecified",
+        });
       }).pipe(Effect.provide(serving(JSON.stringify({ content: "" })).layer))
   );
 
