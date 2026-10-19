@@ -5,7 +5,7 @@ import { Account, SignInOptions } from "./account.js";
 import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
 import { BillingUnavailable } from "./billing-unavailable.js";
-import { CompanyIntel, CompanySlug } from "./company-intel.js";
+import { CompanyIntel, CompanySlug, TREND_WEEKS } from "./company-intel.js";
 import { Membership, Plan } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
@@ -347,8 +347,7 @@ export const setInstantAlertsContract = defineContract("setInstantAlerts", {
 
 export const companyIntelContract = defineContract("companyIntel", {
   annotations: { idempotent: true, readOnly: true },
-  description:
-    "For a Pro member, report a company's open leadership roles with days open and reposts, its 90-day hiring trend, and typical salary bands",
+  description: `For a Pro member, report a company's open leadership roles with days open in the current stint and reposts, its ${TREND_WEEKS}-week hiring trend, and typical salary bands`,
   failure: Schema.Union([Unauthorized, JobStoreUnavailable, ProRequired]),
   input: Schema.Struct({ slug: CompanySlug }),
   output: CompanyIntel,
