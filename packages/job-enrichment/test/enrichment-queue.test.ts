@@ -2,7 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { EnrichmentQueue, EnrichmentQueueUnavailable } from "@rat-stack/core";
 import { Effect } from "effect";
 
-import { enrichmentQueueLayer } from "../src/index.js";
+import {
+  enrichmentQueueLayer,
+  loggedBody,
+  MAX_LOGGED_BODY_CHARS,
+} from "../src/index.js";
 import type { SendBatch } from "../src/index.js";
 
 const recording = (fails = false) => {
@@ -64,4 +68,14 @@ describe("enrichment queue", () => {
       );
     })
   );
+});
+
+describe("loggedBody", () => {
+  it.each([
+    ["a long body", JSON.stringify({ id: "x".repeat(10_000) }), 200],
+    ["a short body", JSON.stringify({ id: "greenhouse:acme:1" }), 26],
+  ] as const)("%s is logged in at most 200 characters", (_, body, length) => {
+    expect(loggedBody(body)).toHaveLength(length);
+    expect(MAX_LOGGED_BODY_CHARS).toBe(200);
+  });
 });

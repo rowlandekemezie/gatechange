@@ -606,3 +606,54 @@ describe("enrichment storage", () => {
       )
   );
 });
+
+describe("claimModelCall", () => {
+  it.effect(
+    "grants exactly the daily limit of model calls, starts again the next UTC day, and grants none at a limit of 0",
+    () =>
+      withStore(
+        Effect.gen(function* dailyCap() {
+          const store = yield* JobStore;
+          const today = Math.floor(NOW / DAY_MILLIS);
+
+          const claims = (day: number, limit: number, count: number) =>
+            Effect.forEach(Array.range(1, count), () =>
+              store.claimModelCall({ day, limit })
+            );
+
+          expect(yield* claims(today, 3, 5)).toStrictEqual([
+            true,
+            true,
+            true,
+            false,
+            false,
+          ]);
+          expect(yield* claims(today + 1, 3, 1)).toStrictEqual([true]);
+          expect(yield* claims(today + 2, 0, 2)).toStrictEqual([false, false]);
+          expect(yield* claims(today, 4, 2)).toStrictEqual([true, false]);
+        })
+      )
+  );
+
+  it.effect("pruning drops the counts of days older than the cutoff", () =>
+    withStore(
+      Effect.gen(function* pruneCounts() {
+        const store = yield* JobStore;
+        const sql = yield* SqlExecutor;
+        const today = Math.floor(NOW / DAY_MILLIS);
+
+        yield* store.claimModelCall({ day: today - 40, limit: 1 });
+        yield* store.claimModelCall({ day: today, limit: 1 });
+        yield* store.pruneOlderThan(NOW - 30 * DAY_MILLIS);
+
+        const days = yield* sql.all(
+          "modelCallDays",
+          statement("SELECT day FROM enrichment_model_calls ORDER BY day"),
+          Schema.Struct({ day: Schema.Number })
+        );
+
+        expect(days).toStrictEqual([{ day: today }]);
+      })
+    )
+  );
+});

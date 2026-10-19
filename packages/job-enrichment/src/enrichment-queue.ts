@@ -3,6 +3,11 @@ import { Array, Effect, Layer, pipe } from "effect";
 
 export const MAX_BATCH_MESSAGES = 100;
 
+export const MAX_LOGGED_BODY_CHARS = 200;
+
+export const loggedBody = (serialized: string) =>
+  serialized.slice(0, MAX_LOGGED_BODY_CHARS);
+
 export type SendBatch = (
   messages: readonly { readonly body: { readonly id: string } }[]
 ) => Effect.Effect<void, { readonly message: string }>;

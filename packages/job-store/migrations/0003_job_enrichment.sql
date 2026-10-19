@@ -20,6 +20,11 @@ CREATE INDEX job_enrichment_salary ON job_enrichment (salary_currency, salary_ma
 
 CREATE INDEX job_enrichment_seniority ON job_enrichment (seniority);
 
+CREATE TABLE enrichment_model_calls (
+  day INTEGER PRIMARY KEY NOT NULL,
+  calls INTEGER NOT NULL
+);
+
 CREATE TABLE job_enrichment_skip (
   job_id TEXT PRIMARY KEY NOT NULL,
   reason TEXT NOT NULL,

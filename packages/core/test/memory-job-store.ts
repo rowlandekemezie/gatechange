@@ -32,6 +32,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
   const lease = { heldUntil: 0, startedAt: 0 };
+  const modelCalls = new Map<number, number>();
 
   const successBefore = (feedKey: string, seenAt: number) => {
     const latest = states.get(feedKey)?.lastSuccessAt ?? null;
@@ -125,6 +126,18 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         lease.startedAt = startedAt;
         lease.heldUntil = heldUntil;
+
+        return true;
+      }),
+    claimModelCall: ({ day, limit }) =>
+      Effect.sync(() => {
+        const calls = modelCalls.get(day) ?? 0;
+
+        if (calls >= limit) {
+          return false;
+        }
+
+        modelCalls.set(day, calls + 1);
 
         return true;
       }),

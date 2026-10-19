@@ -11,9 +11,12 @@ import {
 } from "effect";
 import * as Arbitrary from "effect/Arbitrary";
 import { TestClock } from "effect/testing";
+import { vi } from "vitest";
 
 import {
   AnnualAmount,
+  DEFAULT_ENRICHMENT_SWEEP_LIMIT,
+  detailsOfAnswer,
   EnricherUnavailable,
   EnrichmentOutcome,
   EnrichmentQueue,
@@ -32,6 +35,7 @@ import {
   PostingUnavailable,
   runIngest,
   skipHandling,
+  sweepLimitOf,
 } from "../src/index.js";
 import type {
   EnrichmentOutcomeValue,
@@ -74,7 +78,7 @@ const aggregatorJob: JobValue = {
 };
 
 const statedPosting =
-  "You will lead a team of 24 engineers and report to the VP of Engineering. Base salary $180,000 - $220,000 per year, remote in Canada.";
+  "You will lead a team of 24 engineers and report to the VP of Engineering. Base salary US$180,000 - US$220,000 per year, remote in Canada.";
 
 const validAnswer: ModelAnswerValue = {
   remotePolicy: "RemoteInRegion",
@@ -109,6 +113,7 @@ const Answer = Data.taggedEnum<AnswerValue>();
 
 interface Scenario {
   readonly answer: AnswerValue;
+  readonly dailyModelCalls?: number;
   readonly enrichedBefore?: EnrichmentValue;
   readonly fetched?: Effect.Effect<string, PostingGone | PostingUnavailable>;
   readonly id?: string;
@@ -118,6 +123,7 @@ interface Scenario {
 
 const enrich = ({
   answer,
+  dailyModelCalls,
   enrichedBefore,
   fetched,
   id = boardJob.id,
@@ -159,7 +165,7 @@ const enrich = ({
       }
 
       const before = yield* store.find(id);
-      const outcome = yield* enrichListing(id);
+      const outcome = yield* enrichListing(id, dailyModelCalls);
       const after = yield* store.find(id);
 
       return {
@@ -455,6 +461,34 @@ describe("enrichListing", () => {
       null,
     ],
     [
+      "a bare dollar band in Canada",
+      "Location: Toronto, Canada\nSalary: $150,000 - $180,000 per year",
+      150_000,
+      180_000,
+      null,
+    ],
+    [
+      "a US dollar band in Canada",
+      "Location: Toronto, Canada\nSalary: US$150,000 - US$180,000 per year",
+      150_000,
+      180_000,
+      { currency: "USD", max: 180_000, min: 150_000 },
+    ],
+    [
+      "a band in two currencies",
+      "Base salary £80,000 - €95,000 per year.",
+      80_000,
+      95_000,
+      null,
+    ],
+    [
+      "a salary ceiling",
+      "Pay: up to $200,000 per year",
+      200_000,
+      200_000,
+      null,
+    ],
+    [
       "a band that starts from its low end",
       "Pay from €60,000 to €75,000 per year.",
       60_000,
@@ -518,6 +552,20 @@ describe("enrichListing", () => {
       "VP of Engineering",
     ],
     [
+      "a title outside the words the posting says",
+      null,
+      "The role reports to the CEO.",
+      "VP of Sales and the role reports to the CEO",
+      "VP of Sales",
+    ],
+    [
+      "a reworded opening",
+      "CEO",
+      "The role reports to the CEO.",
+      "VP of Sales and the role reports to the CEO",
+      "CEO",
+    ],
+    [
       "a partnership",
       null,
       "You will partner closely with the VP of Engineering.",
@@ -565,6 +613,8 @@ describe("enrichListing", () => {
       "Director",
     ],
     ["Head of Engineering, Office of the CTO", null, "Director"],
+    ["Staff Software Engineer", "VicePresident", null],
+    ["Software Engineer", "Manager", null],
   ] as const)(
     "%s with a model answer of %s is saved as %s, so seniority agrees with the title",
     ([title, answered, saved]) =>
@@ -724,6 +774,12 @@ describe("enrichListing", () => {
       null,
       "Location-based hybrid policy: Currently, we expect all staff to be in one of our offices at least 25% of the time.",
     ],
+    [
+      "a negated office share the model left out",
+      null,
+      null,
+      "This role is fully remote and is not subject to our hybrid policy.",
+    ],
   ] as const)(
     "a remote policy quoted from %s is saved as %s",
     ([, saved, answered, quote]) =>
@@ -737,6 +793,61 @@ describe("enrichListing", () => {
             },
           }),
           text: `${quote}\nBase salary $180,000 - $220,000 per year.`,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each([
+    [
+      "a travel requirement",
+      null,
+      "This role requires travel 25% of the time.",
+      "travel 25% of the time",
+    ],
+    [
+      "a weekday meeting",
+      null,
+      "Team planning happens on Mondays over video.",
+      "Team planning happens on Mondays",
+    ],
+    [
+      "office weekdays",
+      "Hybrid",
+      "You will work from our London office on Tuesdays and Thursdays.",
+      "work from our London office on Tuesdays and Thursdays",
+    ],
+    [
+      "a share of time in the office",
+      "Hybrid",
+      "We expect you in the office 40% of the time.",
+      "We expect you in the office 40% of the time",
+    ],
+    [
+      "only its last two words in the posting",
+      null,
+      "We build hybrid cloud tooling.",
+      "This role is hybrid cloud",
+    ],
+  ] as const)(
+    "a hybrid answer quoted from %s is saved as %s",
+    ([, saved, text, quote]) =>
+      Effect.gen(function* hybridFromPosting() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: "Hybrid",
+              remotePolicyQuote: quote,
+            },
+          }),
+          text,
         });
 
         expect(
@@ -893,6 +1004,403 @@ describe("enrichListing", () => {
           Option.some({ ...boardJob, enrichment: earlier })
         );
       })
+  );
+
+  it.effect.each([
+    [
+      "a weekday that is not an office day",
+      "Hybrid",
+      "Applications are reviewed on Mondays.",
+      "Applications are reviewed on Mondays",
+    ],
+    [
+      "an in-person interview",
+      "Onsite",
+      "The final round is an in-person interview.",
+      "an in-person interview",
+    ],
+    [
+      "remote teams the role works with",
+      "Remote",
+      "We partner with remote teams across the globe.",
+      "partner with remote teams",
+    ],
+    [
+      "remote work negated after the word",
+      "Remote",
+      "Remote work is not available for this role.",
+      "Remote work is not available",
+    ],
+  ] as const)("a %s does not make the posting %s", ([, claimed, text, quote]) =>
+    Effect.gen(function* decoyPolicy() {
+      const result = yield* enrich({
+        answer: Answer.Answers({
+          answer: {
+            ...validAnswer,
+            remotePolicy: claimed,
+            remotePolicyQuote: quote,
+          },
+        }),
+        text,
+      });
+
+      expect(
+        pipe(
+          result.after,
+          Option.map((found) => found.enrichment?.remotePolicy)
+        )
+      ).toStrictEqual(Option.some(null));
+    })
+  );
+
+  it.effect.each([
+    [
+      "a remote answer against an onsite Lever workplace type",
+      "Onsite",
+      "Remote",
+      "This role is fully remote.\n\nWorkplace type: onsite",
+    ],
+    [
+      "a hybrid answer against an onsite Ashby workplace type",
+      "Onsite",
+      "Hybrid",
+      "This role is hybrid, three days a week in the office.\n\nWorkplace type: OnSite",
+    ],
+    [
+      "a remote-in-region answer under a remote workplace type",
+      "RemoteInRegion",
+      "RemoteInRegion",
+      "This role is remote in Canada.\n\nWorkplace type: remote",
+    ],
+    [
+      "no answer under a hybrid workplace type",
+      "Hybrid",
+      null,
+      "We build developer tools.\n\nWorkplace type: hybrid",
+    ],
+  ] as const)(
+    "the ATS workplace type wins over %s, saved as %s",
+    ([, saved, claimed, text]) =>
+      Effect.gen(function* structuredPolicy() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: claimed,
+              remotePolicyQuote: text.split("\n")[0] ?? null,
+            },
+          }),
+          text,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each([
+    ["someone else's reporting line", null, "Our CTO reports to the CEO."],
+    ["the role's own reporting line", "CEO", "This role reports to the CEO."],
+  ] as const)("a reports-to quoted from %s is saved as %s", ([, saved, text]) =>
+    Effect.gen(function* reportingSubject() {
+      const result = yield* enrich({
+        answer: Answer.Answers({
+          answer: {
+            ...validAnswer,
+            reportsTo: "CEO",
+            reportsToQuote: text.slice(0, -1),
+          },
+        }),
+        text,
+      });
+
+      expect(
+        pipe(
+          result.after,
+          Option.map((found) => found.enrichment?.reportsTo)
+        )
+      ).toStrictEqual(Option.some(saved));
+    })
+  );
+
+  it.effect.each([
+    ["engineers the company has", null, "Our 12 engineers ship weekly."],
+    ["engineers the role manages", 12, "You will manage 12 engineers."],
+  ] as const)("a team size quoted from %s is saved as %s", ([, saved, text]) =>
+    Effect.gen(function* teamSubject() {
+      const result = yield* enrich({
+        answer: Answer.Answers({
+          answer: {
+            ...validAnswer,
+            teamSize: 12,
+            teamSizeQuote: text.slice(0, -1),
+          },
+        }),
+        text,
+      });
+
+      expect(
+        pipe(
+          result.after,
+          Option.map((found) => found.enrichment?.teamSize)
+        )
+      ).toStrictEqual(Option.some(saved));
+    })
+  );
+
+  it.effect.each([
+    [
+      "a stipend range",
+      "Base salary $150,000 - $180,000 per year.\n$20,000 - $50,000 learning stipend",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a stipend range on a line that names salary",
+      "Salary and perks: $20,000 - $50,000 learning stipend",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a range on a line that never names pay",
+      "Referral reward $20,000 - $50,000 per year.",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a range labelled as a stipend",
+      "Learning stipend: $20,000 - $50,000",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a bonus range after the base",
+      "Base salary $150,000 - $180,000 per year. Annual bonus $20,000 - $50,000.",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "one end of a wider band",
+      "Base salary $100,000 - $200,000 per year.",
+      200_000,
+      200_000,
+      null,
+    ],
+    [
+      "a base band followed by a bonus",
+      "Base salary $180,000 - $220,000 per year plus bonus and equity.",
+      180_000,
+      220_000,
+      { currency: "USD", max: 220_000, min: 180_000 },
+    ],
+    [
+      "a bare range under a salary heading",
+      "Annual Base Salary\n$142,800—$184,800 CAD",
+      142_800,
+      184_800,
+      { currency: "CAD", max: 184_800, min: 142_800 },
+    ],
+    [
+      "a bare range under a bonus heading",
+      "Annual Bonus\n$20,000—$50,000 USD",
+      20_000,
+      50_000,
+      null,
+    ],
+  ] as const)(
+    "pay from %s is saved as %j, so only base pay counts as salary",
+    ([, text, low, high, saved]) =>
+      Effect.gen(function* basePayOnly() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: { ...validAnswer, salaryMax: high, salaryMin: low },
+          }),
+          text,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.salary)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it("a 12,000-character posting with no sentence breaks and long fabricated quotes is checked in milliseconds and saves nothing it does not state", () => {
+    const text = "remote hybrid office mondays report to lead 12 engineers $1 "
+      .repeat(200)
+      .slice(0, 12_000);
+
+    const fabricated = Array.makeBy(
+      100,
+      (index) => `remote office hybrid report lead ${index}`
+    ).join(" ");
+
+    const started = performance.now();
+
+    const details = detailsOfAnswer(
+      {
+        ...validAnswer,
+        remotePolicy: "Hybrid",
+        remotePolicyQuote: fabricated,
+        reportsTo: "CEO",
+        reportsToQuote: fabricated,
+        teamSize: 12,
+        teamSizeQuote: fabricated,
+      },
+      { company: "Acme", text, title: "Engineering Manager" }
+    );
+
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(details).toStrictEqual({
+      remotePolicy: null,
+      reportsTo: null,
+      salary: null,
+      seniority: "Manager",
+      teamSize: null,
+    });
+  });
+
+  it.effect(
+    "a quote over 40 words is judged on its last 40, so a cue only in its opening is not enough",
+    () =>
+      Effect.gen(function* longQuote() {
+        const sentence = `Hybrid ${Array.makeBy(41, () => "teams").join(" ")}`;
+
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: "Hybrid",
+              remotePolicyQuote: sentence,
+            },
+          }),
+          text: `${sentence}.`,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(null));
+      })
+  );
+
+  it.effect(
+    "a defect in the guards records a final Malformed skip instead of failing the queue handler",
+    () =>
+      Effect.gen(function* guardDefect() {
+        const normalize = vi
+          .spyOn(String.prototype, "normalize")
+          .mockImplementation(() => {
+            throw new Error("guard defect");
+          });
+
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+        }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              normalize.mockRestore();
+            })
+          )
+        );
+
+        expect(reasonOf(result.outcome)).toBe("Malformed");
+        expect(skipHandling.Malformed).toBe("Final");
+        expect(result.enrichments).toBe(0);
+        expect(result.skipped).toStrictEqual(["Malformed"]);
+      })
+  );
+
+  it.effect(
+    "a spent daily cap skips as DailyCapReached, asks no model, and records the skip for a later sweep",
+    () =>
+      Effect.gen(function* capSpent() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          dailyModelCalls: 0,
+        });
+
+        expect(reasonOf(result.outcome)).toBe("DailyCapReached");
+        expect(skipHandling.DailyCapReached).toBe("Retry");
+        expect(result.requests).toStrictEqual([]);
+        expect(result.enrichments).toBe(0);
+        expect(result.skipped).toStrictEqual(["DailyCapReached"]);
+      })
+  );
+
+  it.effect(
+    "the daily cap counts every model call, so the call after the cap asks no model",
+    () =>
+      Effect.gen(function* capCounts() {
+        const memory = yield* makeMemoryJobStore;
+        const requests: string[] = [];
+        const second: JobValue = { ...boardJob, id: "greenhouse:acme:2" };
+
+        const outcomes = yield* Effect.gen(function* enrichTwo() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(boardJob.feed, [boardJob, second], 0);
+
+          return [
+            yield* enrichListing(boardJob.id, 1),
+            yield* enrichListing(second.id, 1),
+          ];
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              memory.layer,
+              Layer.succeed(
+                PostingTexts,
+                PostingTexts.of({ fetch: () => Effect.succeed(statedPosting) })
+              ),
+              Layer.succeed(
+                ListingEnricher,
+                ListingEnricher.of({
+                  extract: (request) => {
+                    requests.push(request.title);
+
+                    return Effect.succeed(validAnswer);
+                  },
+                  model: MODEL,
+                })
+              )
+            )
+          )
+        );
+
+        expect(outcomes.map((outcome) => reasonOf(outcome))).toStrictEqual([
+          "Enriched",
+          "DailyCapReached",
+        ]);
+        expect(requests).toHaveLength(1);
+      })
+  );
+});
+
+describe("sweepLimitOf", () => {
+  it.each([
+    ["prod", Option.none(), DEFAULT_ENRICHMENT_SWEEP_LIMIT],
+    ["verify-j6r10-cloud", Option.none(), 0],
+    ["verify-j6r10-cloud", Option.some(8), 8],
+    ["prod", Option.some(2), 2],
+  ] as const)(
+    "a %s stage configured with %s sweeps %s listings a run",
+    (stage, configured, limit) => {
+      expect(sweepLimitOf({ configured, stage })).toBe(limit);
+    }
   );
 });
 
@@ -1157,6 +1665,12 @@ describe("moneyRangesIn", () => {
       { amounts: [142_800, 184_800], currency: "USD", period: "Year" },
       { amounts: [196_800, 270_600], currency: "CAD", period: "Year" },
       { amounts: [40, 55], currency: "USD", period: "Hour" },
+    ]);
+  });
+
+  it("reads a k only as thousands when no letter follows it", () => {
+    expect(moneyRangesIn("A $150 Kubernetes budget.")).toStrictEqual([
+      { amounts: [150], currency: "USD", period: "Year" },
     ]);
   });
 });

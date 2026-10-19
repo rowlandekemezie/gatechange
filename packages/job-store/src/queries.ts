@@ -11,6 +11,7 @@ import type {
   IngestReceiptValue,
   JobQueryValue,
   JobValue,
+  ModelCallClaim,
   UnenrichedSweep,
 } from "@rat-stack/core";
 
@@ -361,6 +362,18 @@ export const claimIngestStatement = (startedAt: number, heldUntil: number) =>
     "UPDATE ingest_lease SET started_at = ?, held_until = ? WHERE id = 1 AND held_until <= ?",
     [startedAt, heldUntil, startedAt]
   );
+
+export const claimModelCallStatement = ({ day, limit }: ModelCallClaim) =>
+  statement(
+    `INSERT INTO enrichment_model_calls (day, calls) SELECT ?, 1 WHERE ? > 0
+ON CONFLICT (day) DO UPDATE SET calls = calls + 1 WHERE calls < ?`,
+    [day, limit, limit]
+  );
+
+export const pruneModelCallsStatement = (cutoff: number) =>
+  statement("DELETE FROM enrichment_model_calls WHERE day < ?", [
+    Math.floor(cutoff / DAY_MILLIS),
+  ]);
 
 export const releaseIngestStatement = (startedAt: number) =>
   statement(

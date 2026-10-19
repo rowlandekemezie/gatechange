@@ -28,6 +28,11 @@ export interface EnrichmentSkip {
   readonly skippedAt: number;
 }
 
+export interface ModelCallClaim {
+  readonly day: number;
+  readonly limit: number;
+}
+
 export interface UnenrichedSweep {
   readonly finalSkips: readonly SkipReasonValue[];
   readonly limit: number;
@@ -74,6 +79,9 @@ export class JobStore extends Context.Service<
     readonly claimIngest: (
       startedAt: number,
       heldUntil: number
+    ) => Effect.Effect<boolean, JobStoreUnavailable>;
+    readonly claimModelCall: (
+      claim: ModelCallClaim
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
     readonly feedStates: Effect.Effect<
       readonly FeedStateValue[],

@@ -23,6 +23,7 @@ import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 import {
   activeCountStatement,
   claimIngestStatement,
+  claimModelCallStatement,
   countJobsStatement,
   feedFailedStatement,
   feedHealthStatement,
@@ -34,6 +35,7 @@ import {
   listJobsStatement,
   newTodayStatement,
   pruneJobsStatement,
+  pruneModelCallsStatement,
   pruneOrphanEnrichmentStatement,
   pruneOrphanSkipStatement,
   pruneRunsStatement,
@@ -241,6 +243,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("claimIngest", [claimIngestStatement(startedAt, heldUntil)])
         .pipe(Effect.map(([claim]) => claim?.changes === 1)),
 
+    claimModelCall: (claim) =>
+      sql
+        .batch("claimModelCall", [claimModelCallStatement(claim)])
+        .pipe(Effect.map(([claimed]) => claimed?.changes === 1)),
+
     feedStates: sql
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
@@ -286,6 +293,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           pruneRunsStatement(cutoff),
           pruneOrphanEnrichmentStatement,
           pruneOrphanSkipStatement,
+          pruneModelCallsStatement(cutoff),
         ])
         .pipe(
           Effect.map((results) =>

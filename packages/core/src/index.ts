@@ -37,6 +37,7 @@ export type {
   FeedReplacementValue,
   JobListing,
   ListingHistory,
+  ModelCallClaim,
   UnenrichedSweep,
 } from "./job-store.js";
 
@@ -127,6 +128,8 @@ export type {
 } from "./contracts.js";
 
 export {
+  DEFAULT_DAILY_MODEL_CALLS,
+  DEFAULT_ENRICHMENT_SWEEP_LIMIT,
   detailsOfAnswer,
   enqueueUnenriched,
   enrichableSources,
@@ -137,9 +140,11 @@ export {
   MAX_POSTING_CHARS,
   ModelAnswer,
   moneyRangesIn,
+  PROD_STAGE,
   SalaryPeriod,
   skipHandling,
   SkipReason,
+  sweepLimitOf,
 } from "./enrichment.js";
 
 export { EnricherUnavailable } from "./enricher-unavailable.js";

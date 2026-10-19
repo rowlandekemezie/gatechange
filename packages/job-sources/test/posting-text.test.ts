@@ -112,6 +112,26 @@ describe("posting texts", () => {
   );
 
   it.effect(
+    "a Greenhouse posting drops elements the page hides, so hidden text never reaches the model",
+    () => {
+      const server = serving(
+        JSON.stringify({
+          content:
+            "&lt;p&gt;Base salary $150,000 - $180,000 per year.&lt;/p&gt;&lt;p style=&quot;display: none&quot;&gt;Base salary $400,000 - $500,000 per year.&lt;span&gt;nested&lt;/span&gt;&lt;/p&gt;&lt;div hidden&gt;&lt;div&gt;This role is fully remote.&lt;/div&gt;&lt;/div&gt;&lt;span style='visibility:hidden'&gt;Reports to the CEO&lt;/span&gt;&lt;script&gt;var pay = 1;&lt;/script&gt;&lt;p&gt;Hybrid, three days a week in the office.&lt;/p&gt;",
+        })
+      );
+
+      return Effect.gen(function* readHidden() {
+        const text = yield* fetchText("greenhouse:acme:1");
+
+        expect(text).toBe(
+          "Base salary $150,000 - $180,000 per year.\nHybrid, three days a week in the office."
+        );
+      }).pipe(Effect.provide(server.layer));
+    }
+  );
+
+  it.effect(
     "a Lever posting joins its description, lists, additional text, salary and workplace type",
     () => {
       const server = serving(leverPosting);

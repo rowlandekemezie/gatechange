@@ -1,6 +1,8 @@
 export {
   enrichmentQueueLayer,
+  loggedBody,
   MAX_BATCH_MESSAGES,
+  MAX_LOGGED_BODY_CHARS,
 } from "./enrichment-queue.js";
 
 export type { SendBatch } from "./enrichment-queue.js";

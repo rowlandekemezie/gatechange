@@ -113,8 +113,71 @@ const characterOf = (entity: string, code: number) =>
 const blockTag =
   /<\/?(?:p|div|li|ul|ol|br|h[1-6]|tr|table|section|article|blockquote|hr)\b[^>]*>/giu;
 
+const htmlTag = /<(?<closing>\/?)(?<name>[a-z][\w-]*)\b[^>]*>/giu;
+
+const hiddenByMarkup =
+  /\shidden(?:[\s=/>]|$)|\sstyle\s*=\s*["'][^"']*\b(?:display\s*:\s*none|visibility\s*:\s*hidden)/iu;
+
+const unreadTags: ReadonlySet<string> = new Set([
+  "noscript",
+  "script",
+  "style",
+  "template",
+]);
+
+const voidTags: ReadonlySet<string> = new Set([
+  "area",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+const opensHiddenElement = (tag: string, name: string) =>
+  !voidTags.has(name) &&
+  !tag.endsWith("/>") &&
+  (unreadTags.has(name) || hiddenByMarkup.test(tag));
+
+export const withoutHiddenElements = (html: string): string => {
+  const shown: string[] = [];
+  let shownFrom = 0;
+  let hidden: { depth: number; name: string } | null = null;
+
+  for (const tag of html.matchAll(htmlTag)) {
+    const name = (tag.groups?.name ?? "").toLowerCase();
+    const closing = tag.groups?.closing === "/";
+
+    if (hidden === null) {
+      if (!closing && opensHiddenElement(tag[0], name)) {
+        shown.push(html.slice(shownFrom, tag.index));
+        hidden = { depth: 1, name };
+      }
+    } else if (name === hidden.name) {
+      hidden.depth += closing ? -1 : 1;
+
+      if (hidden.depth === 0) {
+        shownFrom = tag.index + tag[0].length;
+        hidden = null;
+      }
+    }
+  }
+
+  if (hidden === null) {
+    shown.push(html.slice(shownFrom));
+  }
+
+  return shown.join(" ");
+};
+
 export const linesOfHtml = (html: string): string => {
-  let text = html
+  let text = withoutHiddenElements(html)
     .replaceAll(/\s+/gu, " ")
     .replaceAll(blockTag, "\n")
     .replaceAll(/<[^>]*>/gu, " ")

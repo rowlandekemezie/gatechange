@@ -85,14 +85,19 @@ export const seniorityOfTitle = (
 
 const headOf = /\bhead\s+of\b/iu;
 
+const headOfLevels: ReadonlySet<SeniorityValue | null> = new Set([
+  "Director",
+  "VicePresident",
+]);
+
 export const seniorityOf = (
   title: string,
   answered: SeniorityValue | null
 ): SeniorityValue | null =>
-  Option.getOrElse(seniorityOfTitle(title), () =>
-    headOf.test(title.replaceAll(someoneElse, " ")) &&
-    answered !== "Director" &&
-    answered !== "VicePresident"
-      ? "Director"
-      : answered
-  );
+  Option.getOrElse(seniorityOfTitle(title), () => {
+    if (!headOf.test(title.replaceAll(someoneElse, " "))) {
+      return null;
+    }
+
+    return headOfLevels.has(answered) ? answered : "Director";
+  });
