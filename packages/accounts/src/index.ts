@@ -4,6 +4,8 @@ export type { SessionLookup, SessionUser } from "./account-store.js";
 
 export { EMAIL_SEND_LIMIT } from "./email-send-limit.js";
 
+export { logSendFailure } from "./send-failure.js";
+
 export { magicLinkEmail } from "./magic-link-email.js";
 
 export type { MagicLinkEmail } from "./magic-link-email.js";
