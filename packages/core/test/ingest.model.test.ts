@@ -23,6 +23,7 @@ import {
   PostingFeeds,
   REPOST_GAP,
   runIngest,
+  SourceName,
 } from "../src/index.js";
 import type { FeedRef, JobQueryValue, PostingValue } from "../src/index.js";
 import { makeMemoryJobStore } from "./memory-job-store.js";
@@ -367,7 +368,7 @@ describe("ingest", () => {
 
           return {
             history: yield* store.historyOf(postingFor("a")),
-            page: yield* store.list(listAll, now),
+            page: yield* store.list(listAll, now, SourceName.literals),
           };
         }).pipe(Effect.provide(memory.layer));
 

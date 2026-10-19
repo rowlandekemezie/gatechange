@@ -107,12 +107,14 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     find: (id) => Effect.sync(() => Option.fromNullishOr(jobs.get(id))),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
-    list: (query, now) =>
+    list: (query, now, sources) =>
       Effect.sync(() => {
         const matching = pipe(
           [...jobs.values()],
           Array.filter(
-            (job) => job.postedAt >= now - query.maxAgeDays * 86_400_000
+            (job) =>
+              job.postedAt >= now - query.maxAgeDays * 86_400_000 &&
+              sources.includes(job.source)
           )
         );
 

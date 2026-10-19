@@ -1,5 +1,5 @@
 // @effect-diagnostics asyncFunction:off -- The fetch shim below must be a Promise-returning function because that is what `FetchHttpClient.Fetch` calls; everything around it is Effect.
-import { Effect, Layer, Logger, References } from "effect";
+import { Context, Effect, Layer, Logger, References } from "effect";
 import { McpProtocol, McpSchema, McpServer } from "effect/ai";
 import { constVoid } from "effect/Function";
 import {
@@ -24,7 +24,8 @@ export const serverLayer = McpServer.layerHttp({
 );
 
 export const makeMcpClient = Effect.fnUntraced(function* makeMcpClient<A, E>(
-  appLayer: Layer.Layer<A, E, HttpRouter.HttpRouter>
+  appLayer: Layer.Layer<A, E, HttpRouter.HttpRouter>,
+  requestContext: Context.Context<never> = Context.empty()
 ) {
   const { dispose, handler } = HttpRouter.toWebHandler(appLayer, {
     disableLogger: true,
@@ -52,7 +53,7 @@ export const makeMcpClient = Effect.fnUntraced(function* makeMcpClient<A, E>(
       request.headers.set("Mcp-Protocol-Version", protocolVersion);
     }
 
-    const response = await handler(request);
+    const response = await handler(request, requestContext);
     sessionId = response.headers.get("Mcp-Session-Id") ?? sessionId;
     protocolVersion =
       response.headers.get("Mcp-Protocol-Version") ?? protocolVersion;

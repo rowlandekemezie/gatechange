@@ -33,8 +33,8 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `@rat-stack/accounts` | `packages/accounts` | better-auth options (magic link, GitHub, Google), the `AccountStore` adapter that turns a session cookie into a `Viewer`, and the magic link email. Auth tables live in `packages/job-store/migrations/0004_accounts.sql` |
 | `@rat-stack/digest-mailer` | `packages/digest-mailer` | `DigestMailer` adapter over Cloudflare Email Sending: renders the weekly saved-search digest, signs the no-login unsubscribe token, and flags quota errors. Alert tables live in `packages/job-store/migrations/0006_alerts.sql` |
 | `@rat-stack/billing` | `packages/billing` | Pro on Stripe: the Product, Prices, billing portal configuration and webhook endpoint as Alchemy resources, checkout and portal sessions, and signed webhook events parsed into billing changes. `BILLING_ENABLED` turns it on per stage |
-| `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc`, runs `runIngest` on a 20 minute cron and `runDigests` hourly, and serves `/unsubscribe` |
-| `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc` and `/api/auth/*` to `JobsBackend` and serves assets |
+| `@rat-stack/api` | `apps/api` | `JobsBackend` RPC Worker: serves the capabilities over `/rpc` and the agent tools over MCP at `/mcp` (`src/mcp.ts`), runs `runIngest` on a 20 minute cron and `runDigests` hourly, and serves `/unsubscribe` |
+| `@rat-stack/web` | `apps/web` | Foldkit board UI and the edge entry `src/worker.ts`, which forwards `/rpc`, `/mcp` and `/api/auth/*` to `JobsBackend`, rate-limits `/mcp` per address, and serves assets |
 | `@rat-stack/infra` | `apps/infra` | Alchemy Stack: `JobsBackend`, D1, and the `Website` on `jobs.rowlandekemezie.com`. Only the `prod` stage attaches that domain (`src/site-routing.ts`); every other deployed stage serves on its `workers.dev` URL |
 
 ## Commands
@@ -126,7 +126,8 @@ cron (20 min) ─▶ JobsBackend.runIngest ─▶ PostingFeeds ─▶ public job
                          ▼
                       JobStore ─▶ D1 (jobs, feeds, ingest_runs, job_history)
                          ▲
-browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats / getJob
+browser ─▶ Website /rpc ─┤─▶ JobsBackend listJobs / boardStats / getJob
+agent ─▶ Website /mcp ───┘   (rate-limited at the edge, token-checked in JobsBackend)
 ```
 
 - `selectDueFeeds` picks the feeds that are due, oldest attempt first, with exponential backoff after failures.
@@ -139,6 +140,10 @@ browser ─▶ Website /rpc ─┴─▶ JobsBackend listJobs / boardStats / get
 - A job link is kept only when it is an absolute `http(s)` URL that resolves to the same address on its own and against one of our pages, whose host is a DNS name (only `a-z`, `0-9`, `.` and `-` after the URL parser lowercases it and applies punycode), never an IPv4 or bracketed IPv6 literal, and is not ours: not `rowlandekemezie.com` or a subdomain, `rowland-ekemezie.workers.dev` or a subdomain, or `localhost`. `offSiteHref` in `packages/core/src/site.ts` returns the parsed `href` for such a link. Ingest stores that `href`, never the raw input. A role whose link fails the check stays off the board, but ingest still records it as seen in `job_history`, so a link that fails for a day reads as neither a close nor a repost. Each feed logs a `feed` and `unlinked` count for those roles. The log is the only record of them. Every view that links a job or a shortlist mark renders `offSiteHref(url)` as the `href` and renders none when it is empty, so stored rows and old marks are checked again. Link any new job URL the same way. Spellings such as `https:/api/...` parse as host `api` on their own but resolve to our origin on our pages, which is why the check compares both.
 - The verify endpoint accepts only `Sec-Fetch-Site: same-origin`, which is what the `/account/confirm` form sends. Browsers that send no fetch metadata (Safari before 16.4, Firefox before 90) cannot finish a magic-link sign-in.
 - The edge Worker classifies every path with `edgeRouteOf` before anything else runs. `backend` paths go to `JobsBackend`. `private` paths (`/account/*`) get the static shell and are never server-rendered. Only `public` paths may be rendered or cached. Any `private` response, and any response that sets a cookie, leaves with `cache-control: private, no-store`. `apps/web/test/edge-routing.test.ts` fails if a merge drops one of these rules.
+- `/mcp` is an `agent` path. The edge counts each call against `MCP_ANONYMOUS_LIMIT` (no `Authorization` header) or `MCP_TOKEN_LIMIT`, keyed by host and `cf-connecting-ip`, and answers 429 with `retry-after` past the limit. `JobsBackend` ignores session cookies there: no `Authorization` header is an anonymous viewer, a token that names no holder is a 401, a holder who is no longer Pro is a 403, and a Pro holder is a `Member`. Browser requests that carry an `Origin` header are refused, so a page cannot drive a member's tools.
+- The MCP server is built once per isolate (`HttpRouter.toHttpEffect` in the Worker's init), and each request provides its own `CurrentViewer`. `toToolkit` merges a request's services over the ones its layer was built with, so never provide `CurrentViewer` to the `McpServer.toolkit` registration layer itself: registration services override the request's.
+- Agents get `freeAgentCapabilities` (`listJobs`, `boardStats`, `getJob`) and `proAgentCapabilities` (saved searches and the tracker). Token management (`agentTokens`, `issueAgentToken`, `revokeAgentToken`) is served over `/rpc` only, so a token can never mint a token. The MCP surface sets `ServedSources` to `agentSources()`, which drops every source whose `SourceTerms.agentAccess` is `Forbidden` (Remotive, Himalayas, Hacker News today).
+- An agent token is stored as the SHA-256 of its secret in `agent_tokens`; the secret is shown once. Revoking deletes the row.
 
 ## Web feature blueprint
 

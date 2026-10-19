@@ -36,6 +36,7 @@ import {
 } from "@rat-stack/digest-mailer";
 import { postingFeedsLayer } from "@rat-stack/job-sources";
 import {
+  d1AgentTokenStoreLayer,
   d1AlertStoreLayer,
   d1BillingStoreLayer,
   d1JobStoreLayer,
@@ -46,10 +47,11 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import * as Stripe from "alchemy/Stripe";
 import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
-import { FetchHttpClient, HttpServerResponse } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
+import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { handleRoutes } from "./route.js";
 import { stripeBilling } from "./stripe.js";
 
@@ -280,6 +282,20 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       }
     );
 
+    const mcpHttp = yield* HttpRouter.toHttpEffect(
+      mcpAppLayer(Layer.mergeAll(storeLayer, alertLayer, billingLayer))
+    ).pipe(Effect.orDie);
+
+    const agentAccessLayer = Layer.mergeAll(
+      d1AgentTokenStoreLayer(client),
+      billingLayer
+    );
+
+    const mcp = (request: HttpServerRequest.HttpServerRequest) =>
+      serveMcp(Effect.scoped(mcpHttp))(request).pipe(
+        Effect.provide(agentAccessLayer)
+      );
+
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(
         RpcServer.toHttpEffect(rpcProjection.group).pipe(
@@ -292,7 +308,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
                 Layer.mergeAll(
                   storeLayer,
                   alertLayer,
-                  billingLayer,
+                  agentAccessLayer,
                   Layer.succeed(AccountStore, accountStore),
                   Layer.succeed(CurrentViewer, viewer)
                 )
@@ -356,6 +372,8 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     const handle = handleRoutes({
       accountStore,
       auth: auth.fetch,
+      mcp,
+      mcpDiscovery: serveMcpDiscovery,
       rpc: serveRpc,
       stripeWebhook,
       unsubscribe,

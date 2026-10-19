@@ -6,6 +6,7 @@ import {
   JobStore,
   PostingFeeds,
   runIngest,
+  SourceName,
 } from "@rat-stack/core";
 import type {
   FeedRef,
@@ -244,7 +245,12 @@ describe("listing history through runIngest on the SQL store", () => {
           );
 
           const store = yield* JobStore;
-          const page = yield* store.list(listAll, NOW + 40 * DAY_MILLIS);
+
+          const page = yield* store.list(
+            listAll,
+            NOW + 40 * DAY_MILLIS,
+            SourceName.literals
+          );
 
           expect(Array.reduce(pruned, 0, (total, count) => total + count)).toBe(
             1
@@ -319,7 +325,12 @@ describe("listing history through runIngest on the SQL store", () => {
         yield* ingestAt(9, { "greenhouse:acme": "down" });
 
         const after = yield* Effect.forEach([role, other], store.historyOf);
-        const page = yield* store.list(listAll, NOW + 9 * DAY_MILLIS);
+
+        const page = yield* store.list(
+          listAll,
+          NOW + 9 * DAY_MILLIS,
+          SourceName.literals
+        );
 
         expect(after).toStrictEqual(before);
         expect(page.total).toBe(2);
@@ -337,7 +348,12 @@ describe("listing history through runIngest on the SQL store", () => {
           yield* ingestAt(8, { "greenhouse:acme": [posting("9")] });
 
           const store = yield* JobStore;
-          const page = yield* store.list(listAll, NOW + 8 * DAY_MILLIS);
+
+          const page = yield* store.list(
+            listAll,
+            NOW + 8 * DAY_MILLIS,
+            SourceName.literals
+          );
 
           expect(yield* historyOfRole).toStrictEqual(
             Option.some({
@@ -390,7 +406,12 @@ describe("listing history through runIngest on the SQL store", () => {
           yield* ingestAt(3, { "greenhouse:acme": [edited] });
 
           const store = yield* JobStore;
-          const page = yield* store.list(listAll, NOW + 3 * DAY_MILLIS);
+
+          const page = yield* store.list(
+            listAll,
+            NOW + 3 * DAY_MILLIS,
+            SourceName.literals
+          );
 
           expect(
             pipe(

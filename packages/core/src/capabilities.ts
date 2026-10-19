@@ -5,6 +5,12 @@ import type { Effect as EffectType } from "effect";
 import { AccountStore } from "./account-store.js";
 import { CurrentViewer, currentMember, Viewer } from "./account.js";
 import type { AccountIdValue } from "./account.js";
+import { AgentTokenLimit } from "./agent-token-limit.js";
+import {
+  AgentTokenStore,
+  MAX_AGENT_TOKENS,
+  mintAgentSecret,
+} from "./agent-token.js";
 import { AlertStore } from "./alert-store.js";
 import { MAX_SAVED_SEARCHES } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
@@ -12,13 +18,16 @@ import { BillingStore } from "./billing-store.js";
 import { Billing, entitlementOfAccount } from "./billing.js";
 import {
   accountContract,
+  agentTokensContract,
   boardStatsContract,
   deleteSearchContract,
   getJobContract,
   importShortlistContract,
+  issueAgentTokenContract,
   listJobsContract,
   membershipContract,
   openBillingPortalContract,
+  revokeAgentTokenContract,
   savedSearchesContract,
   saveSearchContract,
   noteTrackedJobContract,
@@ -36,6 +45,7 @@ import type { JobQueryValue } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
+import { ServedSources } from "./served-sources.js";
 import type { TrackerFull } from "./tracker-full.js";
 import { TrackerStore } from "./tracker.js";
 
@@ -61,7 +71,12 @@ export const listJobs = implement(listJobsContract, (query) =>
     const store = yield* JobStore;
     const served = yield* servedQuery(query);
     const generatedAt = yield* Clock.currentTimeMillis;
-    const listing = yield* store.list(served, generatedAt);
+
+    const listing = yield* store.list(
+      served,
+      generatedAt,
+      yield* ServedSources
+    );
 
     return { generatedAt, jobs: listing.jobs, total: listing.total };
   })
@@ -80,8 +95,10 @@ export const boardStats = implement(boardStatsContract, () =>
 export const getJob = implement(getJobContract, ({ id }) =>
   Effect.gen(function* getJobHandler() {
     const store = yield* JobStore;
+    const sources = yield* ServedSources;
+    const job = yield* store.find(id);
 
-    return yield* store.find(id);
+    return job.pipe(Option.filter(({ source }) => sources.includes(source)));
   })
 );
 
@@ -234,6 +251,62 @@ export const setInstantAlerts = implement(
     })
 );
 
+export const agentTokens = implement(agentTokensContract, () =>
+  Effect.gen(function* agentTokensHandler() {
+    const member = yield* currentMember;
+
+    return yield* AgentTokenStore.use((store) => store.tokensOf(member.id));
+  })
+);
+
+export const issueAgentToken = implement(issueAgentTokenContract, ({ label }) =>
+  Effect.gen(function* issueAgentTokenHandler() {
+    const member = yield* currentMember;
+
+    if (!isPro(yield* entitlementOfAccount(member.id))) {
+      return yield* new ProRequired();
+    }
+
+    const { id, secret, secretHash } = yield* mintAgentSecret;
+    const token = { createdAt: yield* Clock.currentTimeMillis, id, label };
+
+    const issued = yield* AgentTokenStore.use((store) =>
+      store.issue(member.id, token, secretHash, MAX_AGENT_TOKENS)
+    );
+
+    if (!issued) {
+      return yield* new AgentTokenLimit({ limit: MAX_AGENT_TOKENS });
+    }
+
+    return { secret, token };
+  })
+);
+
+export const revokeAgentToken = implement(revokeAgentTokenContract, ({ id }) =>
+  Effect.gen(function* revokeAgentTokenHandler() {
+    const member = yield* currentMember;
+
+    yield* AgentTokenStore.use((store) => store.revoke(member.id, id));
+  })
+);
+
+export const freeAgentCapabilities = [listJobs, boardStats, getJob] as const;
+
+export const proAgentCapabilities = [
+  saveSearch,
+  savedSearches,
+  deleteSearch,
+  trackedJobs,
+  trackJob,
+  noteTrackedJob,
+  untrackJob,
+] as const;
+
+export const agentCapabilities = [
+  ...freeAgentCapabilities,
+  ...proAgentCapabilities,
+] as const;
+
 export const capabilities = [
   listJobs,
   boardStats,
@@ -252,4 +325,7 @@ export const capabilities = [
   startCheckout,
   openBillingPortal,
   setInstantAlerts,
+  agentTokens,
+  issueAgentToken,
+  revokeAgentToken,
 ] as const;
