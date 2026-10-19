@@ -1,5 +1,6 @@
 import {
   digestSourceLabels,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
   isPro,
   PLAN_PRICES,
   plans,
@@ -75,7 +76,10 @@ const freeFeatures = [
 ];
 
 const proFeatures: readonly (readonly [string, boolean])[] = [
-  ["Instant alerts within 20 minutes of a new match", true],
+  [
+    `Instant alerts within 20 minutes of a new match, up to ${INSTANT_SENDS_PER_MEMBER_PER_DAY} emails a day`,
+    true,
+  ],
   ["Show only roles that state a salary", true],
   ["Salary floor and seniority filters", false],
   ["Company intel", false],
@@ -253,7 +257,7 @@ const instantToggle = (
         ],
         [membership.instantAlerts ? "Instant alerts on" : "Instant alerts off"]
       ),
-      " Email me within 20 minutes of a new match for my saved searches.",
+      ` Email me within 20 minutes of a new match for my saved searches, up to ${INSTANT_SENDS_PER_MEMBER_PER_DAY} times a day.`,
     ]
   );
 

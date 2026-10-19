@@ -37,6 +37,19 @@ export type CadenceValue = typeof Cadence.Type;
 
 export const INSTANT_WINDOW_MILLIS = 20 * 60 * 1000;
 
+export const INSTANT_SENDS_PER_MEMBER_PER_DAY = 6;
+
+export const INSTANT_SHARE_OF_DAILY_SENDS = 0.2;
+
+export const dailySendsFor = (
+  cadence: CadenceValue,
+  dailySendLimit: number
+) => {
+  const instant = Math.floor(dailySendLimit * INSTANT_SHARE_OF_DAILY_SENDS);
+
+  return cadence === "Instant" ? instant : dailySendLimit - instant;
+};
+
 export const SearchFilters = Schema.Struct({
   regions: Schema.NonEmptyArray(Region),
   roles: Schema.NonEmptyArray(RoleLevel),
@@ -234,11 +247,14 @@ const runAlerts = Effect.fn("runAlerts")(function* runAlerts(
 ) {
   const store = yield* AlertStore;
   const periodStart = periodOf(cadence, now);
-  const sentToday = yield* store.sendsSince(now - DAY_MILLIS);
+  const sentToday = yield* store.sendsSince(cadence, now - DAY_MILLIS);
 
   const budget = Math.max(
     0,
-    Math.min(plan.sendsPerRun, plan.dailySendLimit - sentToday)
+    Math.min(
+      plan.sendsPerRun,
+      dailySendsFor(cadence, plan.dailySendLimit) - sentToday
+    )
   );
 
   const recipients = yield* store.dueRecipients(cadence, periodStart, now);

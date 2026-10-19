@@ -5,6 +5,7 @@ import {
   BillingStore,
   DAY_MILLIS,
   DigestMailer,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
   INSTANT_WINDOW_MILLIS,
   JobStore,
   MAX_SAVED_SEARCHES,
@@ -195,7 +196,7 @@ describe("instant alerts", () => {
   );
 
   it.effect(
-    "counts instant sends against the shared daily email budget",
+    "counts instant sends in the instant budget and leaves the weekly budget untouched",
     () => {
       const sent: Digest[] = [];
 
@@ -205,10 +206,104 @@ describe("instant alerts", () => {
           yield* runInstantAlerts(PLAN, NOW);
 
           const counted = yield* AlertStore.use((store) =>
-            store.sendsSince(NOW - DAY_MILLIS)
+            Effect.all([
+              store.sendsSince("Instant", NOW - DAY_MILLIS),
+              store.sendsSince("Weekly", NOW - DAY_MILLIS),
+            ])
           );
 
-          expect(counted).toBe(1);
+          expect(counted).toEqual([1, 0]);
+        }),
+        sent
+      );
+    }
+  );
+
+  it.effect(
+    "sends instant alerts to no more members a day than the instant share of the daily limit",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* share() {
+          yield* setUp;
+
+          const others = Array.makeBy(4, (index) =>
+            AccountId.make(`user_pro${index}`)
+          );
+
+          for (const account of others) {
+            yield* addMember(account);
+            yield* subscribe(account, "active", NOW + 30 * DAY_MILLIS);
+            yield* AlertStore.use((store) =>
+              Effect.andThen(
+                store.saveSearch(
+                  account,
+                  {
+                    regions: ["RemoteCanada"],
+                    roles: ["Director"],
+                    search: "",
+                  },
+                  NOW - 2 * DAY_MILLIS,
+                  MAX_SAVED_SEARCHES
+                ),
+                store.setInstantAlerts(account, true, NOW - DAY_MILLIS)
+              )
+            );
+          }
+
+          const receipt = yield* runInstantAlerts(
+            { dailySendLimit: 10, sendsPerRun: 100 },
+            NOW
+          );
+
+          expect([receipt.due, receipt.sent]).toEqual([5, 2]);
+        }),
+        sent
+      );
+    }
+  );
+
+  it.effect(
+    "emails a Pro member at most six times in any 24 hours, then sends what waited",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* perMember() {
+          yield* setUp;
+
+          const windows = Array.makeBy(
+            INSTANT_SENDS_PER_MEMBER_PER_DAY + 2,
+            (index) => NOW + index * INSTANT_WINDOW_MILLIS
+          );
+
+          for (const [index, at] of windows.entries()) {
+            const live = windows.slice(0, index + 1).map((first) => ({
+              ...job(`at${first}`, first - 60_000),
+              lastSeenAt: at,
+            }));
+
+            yield* JobStore.use((store) =>
+              store.replaceFeed("jobicy:all", live, at)
+            );
+            yield* runInstantAlerts(PLAN, at);
+          }
+
+          const capped = sent.length;
+
+          yield* runInstantAlerts(
+            PLAN,
+            NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS
+          );
+
+          expect(capped).toBe(INSTANT_SENDS_PER_MEMBER_PER_DAY);
+          expect(sent.at(-1)?.jobs.map((listed) => listed.id)).toEqual(
+            windows
+              .slice(INSTANT_SENDS_PER_MEMBER_PER_DAY)
+              .map((at) => `at${at}`)
+              .toReversed()
+          );
         }),
         sent
       );

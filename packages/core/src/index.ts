@@ -82,9 +82,12 @@ export type {
 export {
   alertsAllowed,
   Cadence,
+  dailySendsFor,
   DigestFrequency,
   digestFor,
   digestSourceLabels,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+  INSTANT_SHARE_OF_DAILY_SENDS,
   INSTANT_WINDOW_MILLIS,
   matchesFilters,
   MAX_DIGEST_JOBS,
