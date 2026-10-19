@@ -1,12 +1,27 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  Account,
+  agentCapabilities,
+  AgentTokenStore,
+  AlertStore,
   BillingStore,
   freeAgentCapabilities,
   jobBoardContracts,
   JobStore,
+  proAgentCapabilities,
+  SavedSearchId,
+  secretHashOf,
+  TrackerStore,
+  UNAUTHORIZED_MESSAGE,
   Viewer,
 } from "@rat-stack/core";
-import type { AccountStore, JobValue, SourceNameValue } from "@rat-stack/core";
+import type {
+  AccountStore,
+  AccountValue,
+  JobValue,
+  SourceNameValue,
+  SubscriptionRecordValue,
+} from "@rat-stack/core";
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
@@ -18,6 +33,33 @@ const ORIGIN = "https://jobs.example";
 const NOW = 1_760_000_000_000;
 
 const PROTOCOL = "2026-07-28";
+
+const PRO_SECRET = "jobs_pat_pro";
+
+const OTHER_PRO_SECRET = "jobs_pat_other_pro";
+
+const FREE_SECRET = "jobs_pat_free";
+
+const accountOf = (id: string): AccountValue =>
+  Schema.decodeSync(Account)({ email: `${id}@example.com`, id, name: id });
+
+const pro = accountOf("user_pro");
+
+const otherPro = accountOf("user_other_pro");
+
+const free = accountOf("user_free");
+
+const activeSubscription = (
+  account: AccountValue["id"]
+): SubscriptionRecordValue => ({
+  account,
+  cancelAtPeriodEnd: false,
+  periodEnd: Number.MAX_SAFE_INTEGER,
+  plan: "Monthly",
+  status: "active",
+  subscriptionId: `sub_${account}`,
+  version: { created: 1, eventId: "evt_1", rank: 0 },
+});
 
 const unserved = (name: string) => () =>
   Effect.die(`${name} is not served here`);
@@ -48,6 +90,13 @@ const served = (sources: readonly SourceNameValue[]) =>
 const fixture = Effect.gen(function* fixture() {
   const listedSources: (readonly SourceNameValue[])[] = [];
   const countedSources: (readonly SourceNameValue[])[] = [];
+  const savedBy: string[] = [];
+
+  const hashes = new Map<string, AccountValue>([
+    [yield* secretHashOf(PRO_SECRET), pro],
+    [yield* secretHashOf(OTHER_PRO_SECRET), otherPro],
+    [yield* secretHashOf(FREE_SECRET), free],
+  ]);
 
   const stores = Layer.mergeAll(
     Layer.succeed(
@@ -99,9 +148,64 @@ const fixture = Effect.gen(function* fixture() {
         applySubscription: unserved("applySubscription"),
         customerOf: unserved("customerOf"),
         linkCustomer: unserved("linkCustomer"),
-        subscriptionsOf: unserved("subscriptionsOf"),
+        subscriptionsOf: (account) =>
+          Effect.succeed(
+            account === pro.id || account === otherPro.id
+              ? [activeSubscription(account)]
+              : []
+          ),
+      })
+    ),
+    Layer.succeed(
+      AlertStore,
+      AlertStore.of({
+        claimDigest: unserved("claimDigest"),
+        deleteSearch: unserved("deleteSearch"),
+        dueRecipients: unserved("dueRecipients"),
+        instantAlertsOf: unserved("instantAlertsOf"),
+        jobsSeenSince: unserved("jobsSeenSince"),
+        markSent: unserved("markSent"),
+        releaseDigest: unserved("releaseDigest"),
+        saveSearch: (owner, filters, createdAt) => {
+          savedBy.push(owner);
+
+          return Effect.succeed(
+            Option.some({
+              createdAt,
+              filters,
+              frequency: "Weekly" as const,
+              id: SavedSearchId.make("s1"),
+              owner,
+            })
+          );
+        },
+        searchesOf: unserved("searchesOf"),
+        sendsSince: unserved("sendsSince"),
+        setInstantAlerts: unserved("setInstantAlerts"),
+        unsubscribe: unserved("unsubscribe"),
+      })
+    ),
+    Layer.succeed(
+      TrackerStore,
+      TrackerStore.of({
+        importMissing: unserved("importMissing"),
+        list: unserved("list"),
+        note: unserved("note"),
+        track: unserved("track"),
+        untrack: unserved("untrack"),
       })
     )
+  );
+
+  const tokens = Layer.succeed(
+    AgentTokenStore,
+    AgentTokenStore.of({
+      holderOf: (hash) =>
+        Effect.succeed(Option.fromNullishOr(hashes.get(hash))),
+      issue: unserved("issue"),
+      revoke: unserved("revoke"),
+      tokensOf: unserved("tokensOf"),
+    })
   );
 
   const mcpHttp = yield* HttpRouter.toHttpEffect(mcpAppLayer(stores));
@@ -115,7 +219,10 @@ const fixture = Effect.gen(function* fixture() {
     handleRoutes({
       accountStore,
       auth: Effect.succeed(HttpServerResponse.text("auth")),
-      mcp: serveMcp(mcpHttp),
+      mcp: (request) =>
+        serveMcp(mcpHttp)(request).pipe(
+          Effect.provide(Layer.mergeAll(tokens, stores))
+        ),
       rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
       stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
       unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsubscribe")),
@@ -137,7 +244,7 @@ const fixture = Effect.gen(function* fixture() {
       return { headers: web.headers, status: web.status, text };
     });
 
-  return { countedSources, listedSources, send };
+  return { countedSources, listedSources, savedBy, send };
 });
 
 type Send = Effect.Success<typeof fixture>["send"];
@@ -248,7 +355,7 @@ const textOf = (result: typeof ToolResult.Type) =>
 
 describe("board over MCP", () => {
   it.effect(
-    "lists the board's read-only contracts as tools and nothing else",
+    "lists the board's free contracts plus the Pro tools and nothing else",
     () =>
       Effect.gen(function* toolList() {
         const { send } = yield* fixture;
@@ -264,11 +371,24 @@ describe("board over MCP", () => {
           jobBoardContracts.map(({ name }) => name)
         );
 
-        expect(names.toSorted()).toStrictEqual([
-          "boardStats",
-          "getJob",
-          "listJobs",
-        ]);
+        expect(names.toSorted()).toStrictEqual(
+          [
+            "boardStats",
+            "deleteSearch",
+            "getJob",
+            "listJobs",
+            "noteTrackedJob",
+            "saveSearch",
+            "savedSearches",
+            "trackJob",
+            "trackedJobs",
+            "untrackJob",
+          ].toSorted()
+        );
+        expect(names.toSorted()).toStrictEqual(
+          agentCapabilities.map(({ contract }) => contract.name).toSorted()
+        );
+        expect(proAgentCapabilities).toHaveLength(7);
         expect(names.every((name) => contractNames.has(name))).toBe(true);
         expect(
           freeAgentCapabilities.map(({ contract }) => contract.name)
@@ -423,6 +543,163 @@ describe("board over MCP", () => {
       });
 
       expect(response.status).toBe(403);
+    }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "answers a Pro tool without a token with a typed Unauthorized error",
+    () =>
+      Effect.gen(function* anonymousPro() {
+        const { savedBy, send } = yield* fixture;
+
+        const result = yield* client(send).tool("saveSearch", {
+          filters: {
+            regions: ["RemoteCanada"],
+            roles: ["Director"],
+            search: "",
+          },
+        });
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe(UNAUTHORIZED_MESSAGE);
+        expect(savedBy).toStrictEqual([]);
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect("saves a search for the Pro member who holds the token", () =>
+    Effect.gen(function* proSave() {
+      const { savedBy, send } = yield* fixture;
+
+      const result = yield* client(send, `Bearer ${PRO_SECRET}`).tool(
+        "saveSearch",
+        {
+          filters: {
+            regions: ["RemoteCanada"],
+            roles: ["Director"],
+            search: "",
+          },
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      expect(savedBy).toStrictEqual(["user_pro"]);
+    }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "takes the viewer from each request's token, never from an earlier request or a session id",
+    () =>
+      Effect.gen(function* perRequestViewer() {
+        const { savedBy, send } = yield* fixture;
+        const asPro = client(send, `Bearer ${PRO_SECRET}`);
+        const asOther = client(send, `Bearer ${OTHER_PRO_SECRET}`);
+        const anonymous = client(send);
+
+        yield* asPro.tool("saveSearch", {
+          filters: {
+            regions: ["RemoteCanada"],
+            roles: ["Director"],
+            search: "",
+          },
+        });
+        yield* asOther.tool("saveSearch", {
+          filters: {
+            regions: ["RemoteCanada"],
+            roles: ["Director"],
+            search: "",
+          },
+        });
+
+        const afterPro = yield* anonymous.tool("saveSearch", {
+          filters: {
+            regions: ["RemoteCanada"],
+            roles: ["Director"],
+            search: "",
+          },
+        });
+
+        const replayed = yield* send("/mcp", {
+          body: JSON.stringify({
+            id: 9,
+            jsonrpc: "2.0",
+            method: "initialize",
+            params: {
+              capabilities: {},
+              clientInfo: { name: "x", version: "0" },
+              protocolVersion: "2025-11-25",
+            },
+          }),
+          headers: { ...MCP_HEADERS, authorization: `Bearer ${PRO_SECRET}` },
+          method: "POST",
+        });
+
+        const withForeignSession = yield* send("/mcp", {
+          body: JSON.stringify({
+            id: 10,
+            jsonrpc: "2.0",
+            method: "tools/call",
+            params: {
+              _meta: requestMeta,
+              arguments: {
+                filters: {
+                  regions: ["RemoteCanada"],
+                  roles: ["Director"],
+                  search: "",
+                },
+              },
+              name: "saveSearch",
+            },
+          }),
+          headers: {
+            ...MCP_HEADERS,
+            "mcp-method": "tools/call",
+            "mcp-name": "saveSearch",
+            "mcp-protocol-version": PROTOCOL,
+            "mcp-session-id":
+              replayed.headers.get("mcp-session-id") ??
+              "a-session-from-user-pro",
+          },
+          method: "POST",
+        });
+
+        expect(savedBy).toStrictEqual(["user_pro", "user_other_pro"]);
+        expect(afterPro.isError).toBe(true);
+        expect(textOf(afterPro)).toBe(UNAUTHORIZED_MESSAGE);
+        expect(replayed.headers.get("mcp-session-id")).toBeNull();
+        expect(withForeignSession.text).toContain("Unauthorized:");
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "refuses an unknown or revoked token with 401 and a bearer challenge",
+    () =>
+      Effect.gen(function* revoked() {
+        const { send } = yield* fixture;
+
+        const refused = yield* client(send, "Bearer jobs_pat_revoked").call(
+          "tools/list",
+          {}
+        );
+
+        expect(refused.status).toBe(401);
+        expect(refused.headers.get("www-authenticate")).toBe(
+          'Bearer error="invalid_token"'
+        );
+        expect(refused.message.error?.message).toContain("unknown or revoked");
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect("refuses a token whose holder is no longer Pro with 403", () =>
+    Effect.gen(function* lapsed() {
+      const { send } = yield* fixture;
+
+      const refused = yield* client(send, `Bearer ${FREE_SECRET}`).call(
+        "tools/list",
+        {}
+      );
+
+      expect(refused.status).toBe(403);
+      expect(refused.message.error?.message).toContain("Pro has ended");
     }).pipe(Effect.scoped)
   );
 });
