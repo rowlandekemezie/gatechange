@@ -9,6 +9,7 @@ import type {
   JobValue,
   JobQueryValue,
   ListedJobValue,
+  SourceNameValue,
 } from "./job.js";
 import { DAY_MILLIS } from "./posting.js";
 
@@ -73,7 +74,8 @@ export class JobStore extends Context.Service<
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;
     readonly list: (
       query: JobQueryValue,
-      now: number
+      now: number,
+      sources: readonly SourceNameValue[]
     ) => Effect.Effect<JobListing, JobStoreUnavailable>;
     readonly pruneOlderThan: (
       cutoff: number

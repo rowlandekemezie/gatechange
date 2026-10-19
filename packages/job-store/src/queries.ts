@@ -5,12 +5,14 @@ import {
   paidFeatureSources,
   RECENCY_PENALTY_PER_DAY,
   REPOST_GAP,
+  SourceName,
 } from "@rat-stack/core";
 import type {
   IngestReceiptValue,
   JobQueryValue,
   JobValue,
   Sighted,
+  SourceNameValue,
 } from "@rat-stack/core";
 
 import { statement } from "./sql-executor.js";
@@ -55,9 +57,18 @@ const rankedColumns = jobColumnNames
   .map((column) => `ranked.${column}`)
   .join(", ");
 
-const filteredJobs = (query: JobQueryValue, now: number) => {
+const filteredJobs = (
+  query: JobQueryValue,
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
   const conditions = ["posted_at >= ?"];
   const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
+
+  if (SourceName.literals.some((source) => !sources.includes(source))) {
+    conditions.push(`source IN (${placeholders(sources.length)})`);
+    params.push(...sources);
+  }
 
   if (query.roles.length > 0) {
     conditions.push(`role IN (${placeholders(query.roles.length)})`);
@@ -70,12 +81,12 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
   }
 
   if (query.salaryListed) {
-    const sources = paidFeatureSources();
+    const paidSources = paidFeatureSources();
 
     conditions.push(
-      `salary IS NOT NULL AND source IN (${placeholders(sources.length)})`
+      `salary IS NOT NULL AND source IN (${placeholders(paidSources.length)})`
     );
-    params.push(...sources);
+    params.push(...paidSources);
   }
 
   const search = query.search.trim();
@@ -102,9 +113,10 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
 
 export const listJobsStatement = (
   query: JobQueryValue,
-  now: number
+  now: number,
+  sources: readonly SourceNameValue[]
 ): SqlStatement => {
-  const filtered = filteredJobs(query, now);
+  const filtered = filteredJobs(query, now, sources);
 
   const order =
     query.sort === "Newest"
@@ -134,9 +146,10 @@ export const findJobStatement = (id: string): SqlStatement =>
 
 export const countJobsStatement = (
   query: JobQueryValue,
-  now: number
+  now: number,
+  sources: readonly SourceNameValue[]
 ): SqlStatement => {
-  const filtered = filteredJobs(query, now);
+  const filtered = filteredJobs(query, now, sources);
 
   return statement(
     `${filtered.sql}

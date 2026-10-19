@@ -182,15 +182,19 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       sql
         .all("historyOf", historyStatement(job), HistoryRow)
         .pipe(Effect.map((rows) => Option.map(Array.head(rows), historyOfRow))),
-    list: (query, now) =>
+    list: (query, now, sources) =>
       Effect.all(
         {
           rows: sql.all(
             "listJobs",
-            listJobsStatement(query, now),
+            listJobsStatement(query, now, sources),
             ListedJobRow
           ),
-          total: sql.all("countJobs", countJobsStatement(query, now), TotalRow),
+          total: sql.all(
+            "countJobs",
+            countJobsStatement(query, now, sources),
+            TotalRow
+          ),
         },
         { concurrency: 2 }
       ).pipe(

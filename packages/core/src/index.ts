@@ -11,6 +11,14 @@ export {
 
 export { AccountStore } from "./account-store.js";
 
+export { MCP_PATH } from "./agent-access.js";
+
+export {
+  agentAccessAllowed,
+  agentSources,
+  ServedSources,
+} from "./served-sources.js";
+
 export { AlertStore } from "./alert-store.js";
 
 export { DigestMailer } from "./digest-mailer.js";
@@ -131,6 +139,7 @@ export {
   boardStats,
   capabilities,
   deleteSearch,
+  freeAgentCapabilities,
   getJob,
   importShortlist,
   listJobs,

@@ -36,6 +36,7 @@ import type { JobQueryValue } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
+import { ServedSources } from "./served-sources.js";
 import type { TrackerFull } from "./tracker-full.js";
 import { TrackerStore } from "./tracker.js";
 
@@ -61,7 +62,12 @@ export const listJobs = implement(listJobsContract, (query) =>
     const store = yield* JobStore;
     const served = yield* servedQuery(query);
     const generatedAt = yield* Clock.currentTimeMillis;
-    const listing = yield* store.list(served, generatedAt);
+
+    const listing = yield* store.list(
+      served,
+      generatedAt,
+      yield* ServedSources
+    );
 
     return { generatedAt, jobs: listing.jobs, total: listing.total };
   })
@@ -80,8 +86,10 @@ export const boardStats = implement(boardStatsContract, () =>
 export const getJob = implement(getJobContract, ({ id }) =>
   Effect.gen(function* getJobHandler() {
     const store = yield* JobStore;
+    const sources = yield* ServedSources;
+    const job = yield* store.find(id);
 
-    return yield* store.find(id);
+    return job.pipe(Option.filter(({ source }) => sources.includes(source)));
   })
 );
 
@@ -233,6 +241,8 @@ export const setInstantAlerts = implement(
       return yield* membershipOf(member.id);
     })
 );
+
+export const freeAgentCapabilities = [listJobs, boardStats, getJob] as const;
 
 export const capabilities = [
   listJobs,

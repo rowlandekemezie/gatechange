@@ -5,6 +5,7 @@ const routePrefixes: readonly (readonly [
   Exclude<EdgeRoute, "public">,
 ])[] = [
   ["/rpc", "backend"],
+  ["/mcp", "backend"],
   ["/api/auth", "backend"],
   ["/unsubscribe", "backend"],
   ["/webhooks/stripe", "backend"],

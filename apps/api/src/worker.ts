@@ -46,10 +46,16 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import * as Stripe from "alchemy/Stripe";
 import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
-import { FetchHttpClient, HttpServerResponse } from "effect/http";
+import {
+  FetchHttpClient,
+  HttpEffect,
+  HttpRouter,
+  HttpServerResponse,
+} from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
+import { mcpAppLayer, recoveringSessions, serveMcp } from "./mcp.js";
 import { handleRoutes } from "./route.js";
 import { stripeBilling } from "./stripe.js";
 
@@ -280,6 +286,12 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       }
     );
 
+    const mcpHttp = yield* HttpRouter.toHttpEffect(
+      mcpAppLayer(Layer.mergeAll(storeLayer, billingLayer))
+    ).pipe(Effect.orDie);
+
+    const mcp = serveMcp(recoveringSessions(HttpEffect.toWebHandler(mcpHttp)));
+
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(
         RpcServer.toHttpEffect(rpcProjection.group).pipe(
@@ -356,6 +368,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     const handle = handleRoutes({
       accountStore,
       auth: auth.fetch,
+      mcp,
       rpc: serveRpc,
       stripeWebhook,
       unsubscribe,
