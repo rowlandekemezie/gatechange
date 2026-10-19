@@ -7,30 +7,45 @@ import {
   logSendFailure,
   magicLinkEmail,
   makeAccountStore,
-  respondAsViewer,
 } from "@rat-stack/accounts";
 import type { SocialCredentials } from "@rat-stack/accounts";
 import { toRpc } from "@rat-stack/capability/rpc";
 import {
   AccountStore,
+  AlertStore,
   capabilities,
   CurrentViewer,
   DEFAULT_FEEDS_PER_RUN,
+  DigestMailer,
   INGEST_INTERVAL_MINUTES,
+  runDigests,
   runIngest,
   siteHostsOf,
+  SITE_ORIGIN,
   SocialProvider,
   WorkersSubdomain,
 } from "@rat-stack/core";
 import type { ViewerValue } from "@rat-stack/core";
+import {
+  makeDigestMailer,
+  unsubscribePage,
+  verifyUnsubscribeToken,
+} from "@rat-stack/digest-mailer";
 import { postingFeedsLayer } from "@rat-stack/job-sources";
-import { d1JobStoreLayer, JobsDatabase } from "@rat-stack/job-store/d1";
+import {
+  d1AlertStoreLayer,
+  d1JobStoreLayer,
+  JobsDatabase,
+} from "@rat-stack/job-store/d1";
 import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
-import { Config, Effect, Layer, Option, Record, Redacted } from "effect";
-import { FetchHttpClient, HttpServerRequest } from "effect/http";
+import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
+import { FetchHttpClient, HttpServerResponse } from "effect/http";
+import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
+
+import { handleRoutes } from "./route.js";
 
 export const rpcProjection = toRpc(capabilities);
 
@@ -39,6 +54,14 @@ export const INGEST_SCHEDULE = `*/${INGEST_INTERVAL_MINUTES} * * * *`;
 export const DEFAULT_FEED_CONCURRENCY = 6;
 
 export const MAGIC_LINK_SENDER = "sign-in@rowlandekemezie.com";
+
+export const DIGEST_SENDER = "digest@rowlandekemezie.com";
+
+export const DIGEST_SCHEDULE = "7 * * * *";
+
+export const DEFAULT_DIGEST_SENDS_PER_RUN = 25;
+
+export const DEFAULT_DIGEST_DAILY_SEND_LIMIT = 50;
 
 const currentStage = Effect.gen(function* currentStage() {
   const planned = yield* Effect.serviceOption(Stage);
@@ -91,6 +114,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     const database = yield* JobsDatabase;
     const client = yield* Cloudflare.D1.QueryDatabase(database);
     const storeLayer = d1JobStoreLayer(client);
+    const alertLayer = d1AlertStoreLayer(client);
 
     const feedsPerRun = yield* Config.Int("INGEST_FEEDS_PER_RUN").pipe(
       Config.withDefault(DEFAULT_FEEDS_PER_RUN)
@@ -139,8 +163,45 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
 
     const mailer = yield* Cloudflare.Email.Send(
       yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
-        allowedSenderAddresses: [MAGIC_LINK_SENDER],
+        allowedSenderAddresses: [MAGIC_LINK_SENDER, DIGEST_SENDER],
       })
+    );
+
+    const digestSiteOrigin = yield* Config.String("DIGEST_SITE_ORIGIN").pipe(
+      Config.withDefault(SITE_ORIGIN)
+    );
+
+    const digestPlan = {
+      dailySendLimit: yield* Config.Int("DIGEST_DAILY_SEND_LIMIT").pipe(
+        Config.withDefault(DEFAULT_DIGEST_DAILY_SEND_LIMIT)
+      ),
+      sendsPerRun: yield* Config.Int("DIGEST_SENDS_PER_RUN").pipe(
+        Config.withDefault(DEFAULT_DIGEST_SENDS_PER_RUN)
+      ),
+    };
+
+    const digestMailer = makeDigestMailer({
+      secret,
+      send: (email) =>
+        mailer
+          .send(email)
+          .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
+      sender: DIGEST_SENDER,
+      siteOrigin: digestSiteOrigin,
+    });
+
+    yield* Cloudflare.Workers.cron(DIGEST_SCHEDULE, (controller) =>
+      runDigests(digestPlan, controller.scheduledTime).pipe(
+        Effect.tap((receipt) => Effect.logInfo("digests finished", receipt)),
+        Effect.tapError((error) => Effect.logError("digests failed", error)),
+        Effect.annotateLogs({
+          cron: controller.cron,
+          scheduledTime: controller.scheduledTime,
+        }),
+        Effect.provide(
+          Layer.mergeAll(alertLayer, Layer.succeed(DigestMailer, digestMailer))
+        )
+      )
     );
 
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
@@ -188,6 +249,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
               Layer.provide(
                 Layer.mergeAll(
                   storeLayer,
+                  alertLayer,
                   Layer.succeed(AccountStore, accountStore),
                   Layer.succeed(CurrentViewer, viewer)
                 )
@@ -197,14 +259,54 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         )
       );
 
-    const handle = Effect.gen(function* handle() {
-      const request = yield* HttpServerRequest.HttpServerRequest;
+    const unsubscribe = (request: HttpServerRequest.HttpServerRequest) =>
+      Effect.gen(function* unsubscribeHandler() {
+        const token =
+          new URL(request.url, SITE_ORIGIN).searchParams.get("token") ?? "";
 
-      if (isAuthPath(request.url)) {
-        return yield* auth.fetch;
-      }
+        const account = yield* verifyUnsubscribeToken(secret, token);
 
-      return yield* respondAsViewer(accountStore, request.headers, serveRpc);
+        if (Option.isNone(account)) {
+          return unsubscribePage("Invalid", token);
+        }
+
+        if (request.method !== "POST") {
+          return unsubscribePage("Confirm", token);
+        }
+
+        const now = yield* Clock.currentTimeMillis;
+
+        return yield* AlertStore.use((store) =>
+          store.unsubscribe(account.value, now)
+        ).pipe(
+          Effect.provide(alertLayer),
+          Effect.as(unsubscribePage("Done", token)),
+          Effect.catchTag("JobStoreUnavailable", (failure) =>
+            Effect.logWarning("unsubscribe failed", failure).pipe(
+              Effect.as(unsubscribePage("Unavailable", token))
+            )
+          )
+        );
+      }).pipe(
+        Effect.map((page) =>
+          HttpServerResponse.text(page.html, {
+            contentType: "text/html; charset=utf-8",
+            headers: {
+              "cache-control": "private, no-store",
+              "content-security-policy":
+                "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+              "referrer-policy": "no-referrer",
+            },
+            status: page.status,
+          })
+        )
+      );
+
+    const handle = handleRoutes({
+      accountStore,
+      auth: auth.fetch,
+      rpc: serveRpc,
+      unsubscribe,
     });
 
     // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.

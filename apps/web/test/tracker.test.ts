@@ -289,6 +289,7 @@ const browserWith = (stored: string | null) => {
 
 const serverWith = (imports: unknown[]) =>
   JobQueries.of({
+    deleteSearch: () => Effect.die("unused"),
     getJob: () => Effect.die("unused"),
     importShortlist: (jobs) => {
       imports.push(jobs);
@@ -297,6 +298,8 @@ const serverWith = (imports: unknown[]) =>
     },
     listJobs: () => Effect.die("unused"),
     noteTrackedJob: () => Effect.die("unused"),
+    saveSearch: () => Effect.die("unused"),
+    savedSearches: Effect.die("unused"),
     signInOptions: Effect.die("unused"),
     stats: Effect.die("unused"),
     trackJob: () => Effect.die("unused"),
