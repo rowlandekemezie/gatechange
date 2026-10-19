@@ -1,5 +1,9 @@
 export { PRO_PRODUCT_NAME, ProCatalog } from "./catalog.js";
 
+export { stripeKeyRefusal, StripeKeyRefused, stripeModeOf } from "./keys.js";
+
+export type { StripeKeys, StripeMode } from "./keys.js";
+
 export { billingOff, checkoutSessionRequest, makeBilling } from "./live.js";
 
 export type {

@@ -93,6 +93,10 @@ const workersSubdomain = Config.option(
   Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
 );
 
+const restrictedStripeKey = Config.option(
+  Config.Redacted("STRIPE_RESTRICTED_KEY")
+).pipe(Config.map(Option.filter((key) => Redacted.value(key) !== "")));
+
 const socialCredentials = (prefix: string) =>
   Config.all({
     clientId: Config.String(`${prefix}_CLIENT_ID`).pipe(Config.withDefault("")),
@@ -176,10 +180,16 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       Config.withDefault(false)
     );
 
-    const stripe = yield* stripeBilling(
+    const stripe = yield* stripeBilling({
+      hostId: "JobsBackend",
+      restrictedKey: billingEnabled
+        ? yield* restrictedStripeKey
+        : Option.none(),
+      siteOrigin: billingEnabled
+        ? publicOriginOf(stage, subdomain)
+        : Option.none(),
       stage,
-      billingEnabled ? publicOriginOf(stage, subdomain) : Option.none()
-    );
+    });
 
     const billingLayer = Layer.mergeAll(
       d1BillingStoreLayer(client),
