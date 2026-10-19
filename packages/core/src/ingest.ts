@@ -1,8 +1,9 @@
-import { Array, Clock, Effect, pipe, Schema } from "effect";
+import { Array, Clock, Effect, Option, pipe, Result, Schema } from "effect";
 
 import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
 import { JobStore } from "./job-store.js";
+import type { Sighted } from "./job-store.js";
 import { MAX_AGE_DAYS } from "./job.js";
 import type { IngestReceiptValue, JobValue } from "./job.js";
 import { PostingFeeds } from "./posting-feeds.js";
@@ -23,18 +24,41 @@ export class IngestInProgress extends Schema.TaggedError<IngestInProgress>()(
 
 export const retentionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
 
-export const jobsFromPostings = (
+export interface FeedListings {
+  readonly jobs: readonly JobValue[];
+  readonly unlinked: readonly Sighted[];
+}
+
+export const listingsFromPostings = (
   feed: FeedRef,
   postings: readonly PostingValue[],
   seenAt: number
-): readonly JobValue[] =>
-  pipe(
+): FeedListings => {
+  const [jobs, unlinked] = pipe(
     postings,
     Array.map((posting) => normalizePosting(feed, posting, seenAt)),
     Array.getSomes,
-    Array.filter((job) => job.postedAt >= retentionCutoff(seenAt)),
-    Array.dedupeWith((left, right) => left.id === right.id)
+    Array.filter((listing) => listing.postedAt >= retentionCutoff(seenAt)),
+    Array.dedupeWith((left, right) => left.id === right.id),
+    Array.partition(({ url, ...listing }) =>
+      Option.match(url, {
+        onNone: () => Result.fail(listing),
+        onSome: (href) => Result.succeed({ ...listing, url: href }),
+      })
+    )
   );
+
+  return { jobs, unlinked };
+};
+
+const warnOfUnlinked = (feed: FeedRef, unlinked: readonly Sighted[]) =>
+  unlinked.length === 0
+    ? Effect.void
+    : Effect.logWarning(
+        "kept roles without an off-site web link off the board"
+      ).pipe(
+        Effect.annotateLogs({ feed: feed.key, unlinked: unlinked.length })
+      );
 
 const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
   feed: FeedRef,
@@ -55,22 +79,21 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
             upserted: 0,
           })
         ),
-      onSuccess: (postings) =>
-        store
-          .replaceFeed(
-            feed.key,
-            jobsFromPostings(feed, postings, seenAt),
-            seenAt
-          )
-          .pipe(
-            Effect.map((replacement): FeedOutcomeValue => ({
-              error: null,
-              key: feed.key,
-              pruned: replacement.removed,
-              source: feed.source,
-              upserted: replacement.upserted,
-            }))
-          ),
+      onSuccess: (postings) => {
+        const { jobs, unlinked } = listingsFromPostings(feed, postings, seenAt);
+
+        return store.recordSightings(unlinked, seenAt).pipe(
+          Effect.andThen(store.replaceFeed(feed.key, jobs, seenAt)),
+          Effect.tap(() => warnOfUnlinked(feed, unlinked)),
+          Effect.map((replacement): FeedOutcomeValue => ({
+            error: null,
+            key: feed.key,
+            pruned: replacement.removed,
+            source: feed.source,
+            upserted: replacement.upserted,
+          }))
+        );
+      },
     })
   );
 });

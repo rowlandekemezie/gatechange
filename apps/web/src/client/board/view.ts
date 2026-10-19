@@ -4,6 +4,12 @@ import { Option, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
 
 import {
+  accountTitle,
+  accountView,
+  confirmSignInPage,
+  sessionLink,
+} from "../../features/account/view.js";
+import {
   boardMasthead,
   boardPage,
   boardTitle,
@@ -12,6 +18,7 @@ import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
 import { shortlistPage } from "../../features/shortlist/view.js";
 import { boardUrl, canonicalPathOf, Route, shortlistRouter } from "../route.js";
+import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
 
@@ -42,6 +49,11 @@ const tabs = (model: ModelValue, h: H): Html =>
         shortlistRouter(),
         Schema.is(Route.Shortlist)(model.route),
         `Your shortlist (${model.marks.length})`
+      ),
+      sessionLink(
+        model.account.session,
+        Schema.is(Route.Account)(model.route),
+        h
       ),
     ]
   );
@@ -118,8 +130,18 @@ export const view = (model: ModelValue, h: H): Document =>
           : []),
         tabs(model, h),
         Route.match<Html>(model.route, {
+          Account: ({ notice }) =>
+            h.submodel({
+              model: model.account,
+              slotId: "account",
+              toParentMessage: (message) =>
+                Message.GotAccountMessage({ message }),
+              view: accountView,
+              viewInputs: { notice },
+            }),
           Board: () => boardPage(model, h),
           Company: () => listingPage(model, h),
+          ConfirmSignIn: ({ token }) => confirmSignInPage(token, h),
           Job: () => jobPage(model, h),
           NotFound: () => notFoundPage(model, h),
           Role: () => listingPage(model, h),
@@ -129,8 +151,10 @@ export const view = (model: ModelValue, h: H): Document =>
       ]
     ),
     title: Route.match<string>(model.route, {
+      Account: () => accountTitle(model.account.session),
       Board: () => boardTitle(model),
       Company: () => listingTitle(model),
+      ConfirmSignIn: () => "Finish signing in",
       Job: () => jobTitle(model),
       NotFound: () => "Page not found",
       Role: () => listingTitle(model),

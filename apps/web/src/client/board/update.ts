@@ -1,10 +1,14 @@
 import { roleLevels } from "@rat-stack/core/contracts";
 import { Array, Option, Schema, pipe } from "effect";
-import type { Update } from "foldkit";
+import { Command, Update } from "foldkit";
 import { UrlRequest } from "foldkit/navigation";
 import { modifyFields } from "foldkit/struct";
 import type { Url } from "foldkit/url";
 
+import type { AuthClient } from "../account/auth-client.js";
+import type { MessageValue as AccountMessageValue } from "../account/message.js";
+import type { ModelValue as AccountModelValue } from "../account/model.js";
+import * as Account from "../account/update.js";
 import type { ListingRouteValue } from "../listing.js";
 import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
 import type { RouteValue } from "../route.js";
@@ -14,6 +18,7 @@ import {
   FetchListing,
   FetchMoreJobs,
   FetchStats,
+  ForgetSignInToken,
   LoadUrl,
   PushUrl,
   ReadShortlist,
@@ -47,7 +52,29 @@ import type {
 } from "./model.js";
 import type { JobQueries } from "./queries.js";
 
-type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
+type UpdateReturn = Update.Return<
+  ModelValue,
+  MessageValue,
+  JobQueries | AuthClient
+>;
+
+const accountChild = {
+  read: (model: ModelValue) => Option.some(model.account),
+  toParentMessage: (message: AccountMessageValue) =>
+    Message.GotAccountMessage({ message }),
+  write: (model: ModelValue, account: AccountModelValue) =>
+    modifyFields(model, { account: () => account }),
+};
+
+const foldAccount = Update.foldChild({
+  ...accountChild,
+  update: Account.update,
+});
+
+const foldAccountEntered = Update.foldChildStep({
+  ...accountChild,
+  update: Account.entered,
+});
 
 const sameFilters = Schema.toEquivalence(Filters);
 
@@ -153,6 +180,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   const routed = modifyFields(model, { route: () => route });
 
   return Route.match<UpdateReturn>(route, {
+    Account: () => foldAccountEntered(routed),
     Board: ({ filters }) =>
       Schema.is(JobsState.NotAsked)(model.jobs) ||
       !sameFilters(filters, model.filters)
@@ -162,6 +190,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
           )
         : { model: routed },
     Company: (company) => enteredListing(routed, company),
+    ConfirmSignIn: () => ({ commands: [ForgetSignInToken()], model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
     Role: (role) => enteredListing(routed, role),
@@ -247,9 +276,12 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
 };
 
 export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
+  const account = Account.init();
+
   const routed = arrivedAt(
     preloaded(
       {
+        account: account.model,
         awaitingEcho: [],
         draftSearch: "",
         filters: defaultFilters,
@@ -269,7 +301,12 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   );
 
   return {
-    commands: [...(routed.commands ?? []), FetchStats(), ReadShortlist()],
+    commands: [
+      ...(routed.commands ?? []),
+      FetchStats(),
+      ReadShortlist(),
+      ...Command.mapMessages(account.commands, accountChild.toParentMessage),
+    ],
     model: routed.model,
   };
 };
@@ -346,6 +383,7 @@ export const update = (
       Schema.is(Route.Role)(model.route)
         ? enteredListing(model, model.route)
         : { model },
+    CompletedForgetSignInToken: () => ({ model }),
     CompletedNavigation: () => ({ model }),
     CompletedReadShortlist: ({ marks }) => ({
       model: modifyFields(model, { marks: () => marks }),
@@ -380,6 +418,8 @@ export const update = (
           : model,
     }),
     FailedFetchStats: () => ({ model }),
+    GotAccountMessage: ({ message: accountMessage }) =>
+      foldAccount(model, accountMessage),
     SubmittedSearch: () =>
       navigatedTo(model, { ...model.filters, search: model.draftSearch }),
     SucceededFetchJob: ({ id, job }) => ({

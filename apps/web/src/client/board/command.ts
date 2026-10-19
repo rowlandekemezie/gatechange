@@ -126,6 +126,15 @@ export const ReadShortlist = Command.define("ReadShortlist", {
   messages: [Message.CompletedReadShortlist],
 });
 
+export const ForgetSignInToken = Command.define("ForgetSignInToken", {
+  execute: Effect.sync(() => {
+    window.history.replaceState(window.history.state, "", "/account/confirm");
+
+    return Message.CompletedForgetSignInToken();
+  }),
+  messages: [Message.CompletedForgetSignInToken],
+});
+
 export const WriteShortlist = Command.define("WriteShortlist", {
   args: { marks: Shortlist },
   execute: ({ marks }) =>

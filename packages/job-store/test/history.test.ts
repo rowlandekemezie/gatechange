@@ -209,6 +209,29 @@ describe("listing history through runIngest on the SQL store", () => {
   );
 
   it.effect(
+    "a role still listed while its link fails the off-site check is neither closed nor reposted",
+    () =>
+      withSqlStore(
+        Effect.gen(function* unlinkableForADay() {
+          yield* ingestAt(0, { "greenhouse:acme": [role] });
+          yield* ingestAt(1, {
+            "greenhouse:acme": [{ ...role, url: "/careers/1" }],
+          });
+          yield* ingestAt(9, { "greenhouse:acme": [role] });
+
+          expect(yield* historyOfRole).toStrictEqual(
+            Option.some({
+              firstSeenAt: NOW,
+              lastSeenAt: NOW + 9 * DAY_MILLIS,
+              reposts: 0,
+              sightings: 3,
+            })
+          );
+        })
+      )
+  );
+
+  it.effect(
     "an undated role the feed keeps listing past the 30-day prune is never a repost",
     () =>
       withSqlStore(

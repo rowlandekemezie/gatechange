@@ -11,7 +11,10 @@ import {
 import type { Option } from "effect";
 import { FetchHttpClient } from "effect/http";
 
-import { jobsFromPostings, PostingFeeds } from "../packages/core/dist/index.js";
+import {
+  listingsFromPostings,
+  PostingFeeds,
+} from "../packages/core/dist/index.js";
 import type { CompanyBoardValue } from "../packages/job-sources/dist/boards.js";
 import {
   boardFeed,
@@ -74,7 +77,7 @@ const probe = (board: CompanyBoardValue) =>
         Probe.Live({
           board,
           listed: postings.length,
-          roles: jobsFromPostings(feed, postings, now).length,
+          roles: listingsFromPostings(feed, postings, now).jobs.length,
         })
       ),
       Effect.catch((error) =>

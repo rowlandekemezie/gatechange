@@ -2,6 +2,7 @@ import { BoardStats, EpochMillis, Job } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
+import { Model as AccountModel } from "../account/model.js";
 import { ListingRoute } from "../listing.js";
 import { Route } from "../route.js";
 import { Filters } from "./filters.js";
@@ -83,6 +84,7 @@ export type MarkedJobValue = typeof MarkedJob.Type;
 export const Shortlist = Schema.Array(MarkedJob);
 
 export const Model = Schema.Struct({
+  account: AccountModel,
   awaitingEcho: Schema.Array(Schema.String),
   draftSearch: Schema.String,
   filters: Filters,

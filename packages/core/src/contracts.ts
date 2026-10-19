@@ -1,8 +1,10 @@
 import { defineContract } from "@rat-stack/capability/contract";
 import { Schema } from "effect";
 
+import { Account, SignInOptions } from "./account.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, Job, JobPage, JobQuery } from "./job.js";
+import { Unauthorized } from "./unauthorized.js";
 
 export {
   Arrangement,
@@ -41,6 +43,25 @@ export type {
   SourceNameValue,
 } from "./job.js";
 
+export {
+  Account,
+  AccountId,
+  MAGIC_LINK_TTL_MINUTES,
+  SignInOptions,
+  SocialProvider,
+} from "./account.js";
+
+export { offSiteHref } from "./site.js";
+
+export { Unauthorized } from "./unauthorized.js";
+
+export type {
+  AccountIdValue,
+  AccountValue,
+  SignInOptionsValue,
+  SocialProviderValue,
+} from "./account.js";
+
 export { JobStoreUnavailable } from "./job-store-unavailable.js";
 
 export { Permission, SourceTerms } from "./source-terms.js";
@@ -74,8 +95,27 @@ export const getJobContract = defineContract("getJob", {
   output: Schema.OptionFromNullOr(Job),
 });
 
+export const accountContract = defineContract("account", {
+  annotations: { idempotent: true, readOnly: true },
+  description: "Return the signed-in member's account, or Unauthorized",
+  failure: Unauthorized,
+  input: Schema.Struct({}),
+  output: Account,
+});
+
+export const signInOptionsContract = defineContract("signInOptions", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "List the social providers a viewer can sign in with besides an emailed link",
+  failure: Schema.Never,
+  input: Schema.Struct({}),
+  output: SignInOptions,
+});
+
 export const jobBoardContracts = [
   listJobsContract,
   boardStatsContract,
   getJobContract,
+  accountContract,
+  signInOptionsContract,
 ] as const;

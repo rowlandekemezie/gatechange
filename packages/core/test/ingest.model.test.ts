@@ -4,8 +4,10 @@ import {
   Clock,
   Effect,
   Layer,
+  Logger,
   Option,
   Predicate,
+  References,
   Schema,
   pipe,
 } from "effect";
@@ -260,6 +262,8 @@ const replayHistory = (schedule: readonly ScheduledRun[]) =>
     }
   });
 
+const WEEKLY_LISTINGS_TIMEOUT_MILLIS = 30_000;
+
 describe("ingest", () => {
   it.effect.prop(
     "each feed holds exactly its last successful listing, and a feed that goes down keeps what it had",
@@ -337,7 +341,8 @@ describe("ingest", () => {
         expect(now - firstSeenAt).toBeGreaterThan(MAX_AGE_DAYS * DAY_MILLIS);
         expect(history?.firstSeenAt).toBe(firstSeenAt);
         expect(history?.reposts).toBe(0);
-      })
+      }),
+    WEEKLY_LISTINGS_TIMEOUT_MILLIS
   );
 
   it.effect(
@@ -406,6 +411,64 @@ describe("ingest", () => {
             Option.map((found) => found.reposts)
           )
         ).toStrictEqual(Option.some(0));
+      })
+  );
+
+  it.effect(
+    "keeps a role whose link points back at this site off the board and logs how many roles it kept off",
+    () =>
+      Effect.gen(function* skipOwnLinks() {
+        const memory = yield* makeMemoryJobStore;
+        const warnings: unknown[] = [];
+
+        const feeds = PostingFeeds.of({
+          catalog: [onlyFeed],
+          fetch: () =>
+            Effect.succeed([
+              postingFor("a"),
+              {
+                ...postingFor("b"),
+                url: "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=x",
+              },
+              {
+                ...postingFor("c"),
+                title: "Product Manager",
+                url: "/careers/c",
+              },
+            ]),
+        });
+
+        yield* runIngest({ feedConcurrency: 1, feedsPerRun: 1 }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              memory.layer,
+              Layer.succeed(PostingFeeds, feeds),
+              Logger.layer([
+                Logger.make(({ fiber, logLevel, message }) =>
+                  logLevel === "Warn"
+                    ? warnings.push({
+                        fields: fiber.getRef(References.CurrentLogAnnotations),
+                        message,
+                      })
+                    : 0
+                ),
+              ])
+            )
+          )
+        );
+
+        expect(
+          pipe(
+            memory.jobs(),
+            Array.map((job) => job.url)
+          )
+        ).toStrictEqual(["https://jobs.example/a"]);
+        expect(warnings).toStrictEqual([
+          {
+            fields: { feed: onlyFeed.key, unlinked: 1 },
+            message: ["kept roles without an off-site web link off the board"],
+          },
+        ]);
       })
   );
 
