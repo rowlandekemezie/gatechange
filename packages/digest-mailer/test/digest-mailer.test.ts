@@ -53,7 +53,7 @@ const capture = (outcome: Effect.Effect<unknown, SendFailure>) => {
     secret: SECRET,
     send: (email) =>
       Effect.sync(() => sent.push(email)).pipe(Effect.andThen(outcome)),
-    sender: "digest@rowlandekemezie.com",
+    sender: "digest@jobs.rowlandekemezie.com",
     siteOrigin: ORIGIN,
   });
 
