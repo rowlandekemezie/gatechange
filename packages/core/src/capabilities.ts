@@ -1,8 +1,10 @@
 import { implement } from "@rat-stack/capability/implement";
 import { Clock, Effect } from "effect";
+import type { Effect as EffectType } from "effect";
 
 import { AccountStore } from "./account-store.js";
 import { currentMember } from "./account.js";
+import type { AccountIdValue } from "./account.js";
 import { AlertStore } from "./alert-store.js";
 import { MAX_SAVED_SEARCHES } from "./alerts.js";
 import {
@@ -10,13 +12,21 @@ import {
   boardStatsContract,
   deleteSearchContract,
   getJobContract,
+  importShortlistContract,
   listJobsContract,
+  noteTrackedJobContract,
   savedSearchesContract,
   saveSearchContract,
   signInOptionsContract,
+  trackedJobsContract,
+  trackJobContract,
+  untrackJobContract,
 } from "./contracts.js";
+import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { JobStore } from "./job-store.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
+import type { TrackerFull } from "./tracker-full.js";
+import { TrackerStore } from "./tracker.js";
 
 export const listJobs = implement(listJobsContract, (query) =>
   Effect.gen(function* listJobsHandler() {
@@ -88,6 +98,45 @@ export const deleteSearch = implement(deleteSearchContract, ({ id }) =>
   })
 );
 
+const changeTracker = <E extends JobStoreUnavailable | TrackerFull>(
+  change: (
+    store: TrackerStore["Service"],
+    owner: AccountIdValue,
+    now: number
+  ) => EffectType.Effect<void, E>
+) =>
+  Effect.gen(function* changeTrackerHandler() {
+    const { id } = yield* currentMember;
+    const store = yield* TrackerStore;
+    const now = yield* Clock.currentTimeMillis;
+
+    yield* change(store, id, now);
+
+    return yield* store.list(id);
+  });
+
+export const trackedJobs = implement(trackedJobsContract, () =>
+  changeTracker(() => Effect.void)
+);
+
+export const trackJob = implement(trackJobContract, (job) =>
+  changeTracker((store, owner, now) => store.track(owner, job, now))
+);
+
+export const importShortlist = implement(importShortlistContract, ({ jobs }) =>
+  changeTracker((store, owner, now) => store.importMissing(owner, jobs, now))
+);
+
+export const noteTrackedJob = implement(
+  noteTrackedJobContract,
+  ({ jobId, notes }) =>
+    changeTracker((store, owner) => store.note(owner, jobId, notes))
+);
+
+export const untrackJob = implement(untrackJobContract, ({ jobId }) =>
+  changeTracker((store, owner) => store.untrack(owner, jobId))
+);
+
 export const capabilities = [
   listJobs,
   boardStats,
@@ -97,4 +146,9 @@ export const capabilities = [
   saveSearch,
   savedSearches,
   deleteSearch,
+  trackedJobs,
+  trackJob,
+  importShortlist,
+  noteTrackedJob,
+  untrackJob,
 ] as const;
