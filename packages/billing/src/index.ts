@@ -1,4 +1,8 @@
-export { PRO_PRODUCT_NAME, ProCatalog } from "./catalog.js";
+export {
+  PRO_PRODUCT_DESCRIPTION,
+  PRO_PRODUCT_NAME,
+  ProCatalog,
+} from "./catalog.js";
 
 export { stripeKeyRefusal, StripeKeyRefused, stripeModeOf } from "./keys.js";
 
