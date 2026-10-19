@@ -4,6 +4,7 @@ import {
   authOptions,
   authSecret,
   isAuthPath,
+  logSendFailure,
   magicLinkEmail,
   makeAccountStore,
   respondAsViewer,
@@ -152,7 +153,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           await runPromise(
             mailer
               .send(magicLinkEmail(MAGIC_LINK_SENDER, request))
-              .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom))
+              .pipe(
+                Effect.tapError(logSendFailure),
+                Effect.provide(RuntimeContext.RuntimeContext.phantom)
+              )
           );
         },
         social,
