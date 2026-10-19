@@ -13,7 +13,10 @@ export {
   enrichmentModel,
   listingEnricherLayer,
   MAX_ANSWER_TOKENS,
+  MAX_INPUT_TOKENS,
+  MAX_NEURONS,
   modelAnswerJsonSchema,
+  neuronsFor,
   SYSTEM_PROMPT,
 } from "./listing-enricher.js";
 

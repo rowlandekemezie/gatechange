@@ -23,7 +23,7 @@ import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 import {
   activeCountStatement,
   claimIngestStatement,
-  claimModelCallStatement,
+  claimNeuronsStatement,
   countJobsStatement,
   feedFailedStatement,
   feedHealthStatement,
@@ -35,10 +35,12 @@ import {
   listJobsStatement,
   newTodayStatement,
   pruneJobsStatement,
-  pruneModelCallsStatement,
+  neuronsClaimedStatement,
+  pruneNeuronsStatement,
   pruneOrphanEnrichmentStatement,
   pruneOrphanSkipStatement,
   pruneRunsStatement,
+  recordNeuronsUsedStatement,
   recordRunStatement,
   recordSkipStatement,
   regionCountsStatement,
@@ -243,9 +245,9 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("claimIngest", [claimIngestStatement(startedAt, heldUntil)])
         .pipe(Effect.map(([claim]) => claim?.changes === 1)),
 
-    claimModelCall: (claim) =>
+    claimNeurons: (claim) =>
       sql
-        .batch("claimModelCall", [claimModelCallStatement(claim)])
+        .batch("claimNeurons", [claimNeuronsStatement(claim)])
         .pipe(Effect.map(([claimed]) => claimed?.changes === 1)),
 
     feedStates: sql
@@ -286,6 +288,16 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         )
       ),
 
+    neuronsClaimed: (day) =>
+      sql.all("neuronsClaimed", neuronsClaimedStatement(day), TotalRow).pipe(
+        Effect.map((rows) =>
+          Option.match(Array.head(rows), {
+            onNone: () => 0,
+            onSome: (row) => row.total,
+          })
+        )
+      ),
+
     pruneOlderThan: (cutoff) =>
       sql
         .batch("pruneOlderThan", [
@@ -293,7 +305,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           pruneRunsStatement(cutoff),
           pruneOrphanEnrichmentStatement,
           pruneOrphanSkipStatement,
-          pruneModelCallsStatement(cutoff),
+          pruneNeuronsStatement(cutoff),
         ])
         .pipe(
           Effect.map((results) =>
@@ -309,6 +321,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("recordFeedFailure", [
           feedFailedStatement(feedKey, attemptedAt, message),
         ])
+        .pipe(Effect.asVoid),
+
+    recordNeuronsUsed: (usage) =>
+      sql
+        .batch("recordNeuronsUsed", [recordNeuronsUsedStatement(usage)])
         .pipe(Effect.asVoid),
 
     recordRun: (receipt) =>

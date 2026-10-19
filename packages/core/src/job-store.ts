@@ -28,9 +28,15 @@ export interface EnrichmentSkip {
   readonly skippedAt: number;
 }
 
-export interface ModelCallClaim {
+export interface NeuronClaim {
+  readonly budget: number;
   readonly day: number;
-  readonly limit: number;
+  readonly neurons: number;
+}
+
+export interface NeuronUsage {
+  readonly day: number;
+  readonly neurons: number;
 }
 
 export interface UnenrichedSweep {
@@ -82,8 +88,8 @@ export class JobStore extends Context.Service<
       startedAt: number,
       heldUntil: number
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
-    readonly claimModelCall: (
-      claim: ModelCallClaim
+    readonly claimNeurons: (
+      claim: NeuronClaim
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
     readonly feedStates: Effect.Effect<
       readonly FeedStateValue[],
@@ -99,6 +105,9 @@ export class JobStore extends Context.Service<
       query: JobQueryValue,
       now: number
     ) => Effect.Effect<JobListing, JobStoreUnavailable>;
+    readonly neuronsClaimed: (
+      day: number
+    ) => Effect.Effect<number, JobStoreUnavailable>;
     readonly pruneOlderThan: (
       cutoff: number
     ) => Effect.Effect<number, JobStoreUnavailable>;
@@ -110,6 +119,9 @@ export class JobStore extends Context.Service<
     readonly recordSkip: (
       id: string,
       skip: EnrichmentSkip
+    ) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly recordNeuronsUsed: (
+      usage: NeuronUsage
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly recordRun: (
       receipt: IngestReceiptValue

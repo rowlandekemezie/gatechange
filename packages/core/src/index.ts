@@ -71,7 +71,8 @@ export type {
   FeedReplacementValue,
   JobListing,
   ListingHistory,
-  ModelCallClaim,
+  NeuronClaim,
+  NeuronUsage,
   Sighted,
   UnenrichedSweep,
 } from "./job-store.js";
@@ -165,7 +166,7 @@ export type {
 } from "./contracts.js";
 
 export {
-  DEFAULT_DAILY_MODEL_CALLS,
+  DEFAULT_DAILY_NEURONS,
   DEFAULT_ENRICHMENT_SWEEP_LIMIT,
   detailsOfAnswer,
   enqueueUnenriched,
@@ -191,6 +192,8 @@ export { EnrichmentQueueUnavailable } from "./enrichment-queue-unavailable.js";
 
 export { PostingTexts } from "./posting-texts.js";
 
+export type { PostingTextValue } from "./posting-texts.js";
+
 export { PostingGone } from "./posting-gone.js";
 
 export { PostingUnavailable } from "./posting-unavailable.js";
@@ -198,6 +201,7 @@ export { PostingUnavailable } from "./posting-unavailable.js";
 export type {
   EnrichmentOutcomeValue,
   ModelAnswerValue,
+  ModelReply,
   MoneyRange,
   PostingRequest,
   SalaryPeriodValue,

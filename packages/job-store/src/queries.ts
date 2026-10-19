@@ -11,7 +11,8 @@ import type {
   IngestReceiptValue,
   JobQueryValue,
   JobValue,
-  ModelCallClaim,
+  NeuronClaim,
+  NeuronUsage,
   Sighted,
   UnenrichedSweep,
 } from "@rat-stack/core";
@@ -361,15 +362,27 @@ export const claimIngestStatement = (startedAt: number, heldUntil: number) =>
     [startedAt, heldUntil, startedAt]
   );
 
-export const claimModelCallStatement = ({ day, limit }: ModelCallClaim) =>
+export const claimNeuronsStatement = ({ budget, day, neurons }: NeuronClaim) =>
   statement(
-    `INSERT INTO enrichment_model_calls (day, calls) SELECT ?, 1 WHERE ? > 0
-ON CONFLICT (day) DO UPDATE SET calls = calls + 1 WHERE calls < ?`,
-    [day, limit, limit]
+    `INSERT INTO enrichment_neurons (day, claimed) SELECT ?, ? WHERE ? <= ?
+ON CONFLICT (day) DO UPDATE SET claimed = claimed + excluded.claimed WHERE claimed + excluded.claimed <= ?`,
+    [day, neurons, neurons, budget, budget]
   );
 
-export const pruneModelCallsStatement = (cutoff: number) =>
-  statement("DELETE FROM enrichment_model_calls WHERE day < ?", [
+export const neuronsClaimedStatement = (day: number) =>
+  statement(
+    "SELECT COALESCE(SUM(claimed), 0) AS total FROM enrichment_neurons WHERE day = ?",
+    [day]
+  );
+
+export const recordNeuronsUsedStatement = ({ day, neurons }: NeuronUsage) =>
+  statement("UPDATE enrichment_neurons SET used = used + ? WHERE day = ?", [
+    neurons,
+    day,
+  ]);
+
+export const pruneNeuronsStatement = (cutoff: number) =>
+  statement("DELETE FROM enrichment_neurons WHERE day < ?", [
     Math.floor(cutoff / DAY_MILLIS),
   ]);
 

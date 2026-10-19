@@ -607,48 +607,79 @@ describe("enrichment storage", () => {
   );
 });
 
-describe("claimModelCall", () => {
+describe("claimNeurons", () => {
   it.effect(
-    "grants exactly the daily limit of model calls, starts again the next UTC day, and grants none at a limit of 0",
+    "grants claims while the day's total stays within the budget, starts again the next UTC day, and refuses any claim over a budget of 0",
     () =>
       withStore(
-        Effect.gen(function* dailyCap() {
+        Effect.gen(function* dailyBudget() {
           const store = yield* JobStore;
           const today = Math.floor(NOW / DAY_MILLIS);
 
-          const claims = (day: number, limit: number, count: number) =>
-            Effect.forEach(Array.range(1, count), () =>
-              store.claimModelCall({ day, limit })
-            );
+          const claim = (day: number, neurons: number, budget: number) =>
+            store.claimNeurons({ budget, day, neurons });
 
-          expect(yield* claims(today, 3, 5)).toStrictEqual([
-            true,
-            true,
-            true,
-            false,
-            false,
-          ]);
-          expect(yield* claims(today + 1, 3, 1)).toStrictEqual([true]);
-          expect(yield* claims(today + 2, 0, 2)).toStrictEqual([false, false]);
-          expect(yield* claims(today, 4, 2)).toStrictEqual([true, false]);
+          expect([
+            yield* claim(today, 400, 1000),
+            yield* claim(today, 400, 1000),
+            yield* claim(today, 300, 1000),
+            yield* claim(today, 200, 1000),
+          ]).toStrictEqual([true, true, false, true]);
+          expect(yield* store.neuronsClaimed(today)).toBe(1000);
+          expect(yield* claim(today, 1, 1000)).toBe(false);
+          expect(yield* claim(today + 1, 1000, 1000)).toBe(true);
+          expect(yield* claim(today + 2, 1, 0)).toBe(false);
+          expect(yield* store.neuronsClaimed(today + 2)).toBe(0);
+          expect(yield* claim(today + 3, 1001, 1000)).toBe(false);
+          expect(yield* store.neuronsClaimed(today + 3)).toBe(0);
         })
       )
   );
 
-  it.effect("pruning drops the counts of days older than the cutoff", () =>
+  it.effect(
+    "records the neurons a model reports against the day it claimed",
+    () =>
+      withStore(
+        Effect.gen(function* reportedUsage() {
+          const store = yield* JobStore;
+          const sql = yield* SqlExecutor;
+          const today = Math.floor(NOW / DAY_MILLIS);
+
+          yield* store.claimNeurons({ budget: 1000, day: today, neurons: 400 });
+          yield* store.recordNeuronsUsed({ day: today, neurons: 70 });
+          yield* store.recordNeuronsUsed({ day: today, neurons: 30 });
+
+          const ledger = yield* sql.all(
+            "neuronLedger",
+            statement("SELECT day, claimed, used FROM enrichment_neurons"),
+            Schema.Struct({
+              claimed: Schema.Number,
+              day: Schema.Number,
+              used: Schema.Number,
+            })
+          );
+
+          expect(ledger).toStrictEqual([
+            { claimed: 400, day: today, used: 100 },
+          ]);
+        })
+      )
+  );
+
+  it.effect("pruning drops the ledger rows of days older than the cutoff", () =>
     withStore(
-      Effect.gen(function* pruneCounts() {
+      Effect.gen(function* pruneLedger() {
         const store = yield* JobStore;
         const sql = yield* SqlExecutor;
         const today = Math.floor(NOW / DAY_MILLIS);
 
-        yield* store.claimModelCall({ day: today - 40, limit: 1 });
-        yield* store.claimModelCall({ day: today, limit: 1 });
+        yield* store.claimNeurons({ budget: 10, day: today - 40, neurons: 1 });
+        yield* store.claimNeurons({ budget: 10, day: today, neurons: 1 });
         yield* store.pruneOlderThan(NOW - 30 * DAY_MILLIS);
 
         const days = yield* sql.all(
-          "modelCallDays",
-          statement("SELECT day FROM enrichment_model_calls ORDER BY day"),
+          "neuronDays",
+          statement("SELECT day FROM enrichment_neurons ORDER BY day"),
           Schema.Struct({ day: Schema.Number })
         );
 

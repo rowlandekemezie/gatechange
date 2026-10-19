@@ -1,11 +1,11 @@
 import { PostingGone, PostingTexts, PostingUnavailable } from "@rat-stack/core";
-import type { JobValue } from "@rat-stack/core";
+import type { JobValue, PostingTextValue } from "@rat-stack/core";
 import { Array, Effect, Layer, Option, pipe, Predicate, Schema } from "effect";
 import { HttpClient } from "effect/http";
 
 import { CompanyAts } from "./boards.js";
 import { getJson } from "./http.js";
-import { linesOfHtml, nonEmpty, textOfHtml } from "./parse.js";
+import { linesOfHtml, nonEmpty, textOfHtml, workplaceOf } from "./parse.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
@@ -84,12 +84,8 @@ const WorkableDetail = Schema.Struct({
   benefits: OptionalString,
   description: OptionalString,
   requirements: OptionalString,
+  workplace: OptionalString,
 });
-
-const workplaceLine = (workplaceType: string | null | undefined) =>
-  workplaceType === null || workplaceType === undefined
-    ? null
-    : `Workplace type: ${workplaceType}`;
 
 const locationLine = (location: string | null | undefined) =>
   location === null || location === undefined ? null : `Location: ${location}`;
@@ -106,12 +102,13 @@ const greenhouseText = ({ externalId, slug }: PostingKey) =>
     `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
     GreenhouseDetail
   ).pipe(
-    Effect.map(({ content, location }) =>
-      nonEmpty([
+    Effect.map(({ content, location }): PostingTextValue => ({
+      text: nonEmpty([
         linesOfHtml(textOfHtml(content)),
         locationLine(location?.name),
-      ]).join("\n\n")
-    )
+      ]).join("\n\n"),
+      workplace: "Unspecified",
+    }))
   );
 
 const leverText = ({ externalId, slug }: PostingKey) =>
@@ -119,8 +116,8 @@ const leverText = ({ externalId, slug }: PostingKey) =>
     `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}/${encodeURIComponent(externalId)}`,
     LeverDetail
   ).pipe(
-    Effect.map((posting) =>
-      nonEmpty([
+    Effect.map((posting): PostingTextValue => ({
+      text: nonEmpty([
         posting.descriptionPlain,
         ...pipe(
           posting.lists ?? [],
@@ -129,9 +126,9 @@ const leverText = ({ externalId, slug }: PostingKey) =>
         posting.additionalPlain,
         posting.salaryDescriptionPlain,
         leverSalaryLine(posting.salaryRange),
-        workplaceLine(posting.workplaceType),
-      ]).join("\n\n")
-    )
+      ]).join("\n\n"),
+      workplace: workplaceOf(posting.workplaceType),
+    }))
   );
 
 const ashbyCompensation = (
@@ -183,14 +180,14 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
             })
           ),
         onSome: (job) =>
-          Effect.succeed(
-            nonEmpty([
+          Effect.succeed<PostingTextValue>({
+            text: nonEmpty([
               job.descriptionPlain,
               ashbyCompensation(job.compensation),
               locationLine(job.location),
-              workplaceLine(job.workplaceType),
-            ]).join("\n\n")
-          ),
+            ]).join("\n\n"),
+            workplace: workplaceOf(job.workplaceType),
+          }),
       })
     )
   );
@@ -200,8 +197,8 @@ const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
     `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings/${encodeURIComponent(externalId)}`,
     SmartRecruitersDetail
   ).pipe(
-    Effect.map(({ jobAd: { sections } }) =>
-      nonEmpty(
+    Effect.map(({ jobAd: { sections } }): PostingTextValue => ({
+      text: nonEmpty(
         pipe(
           [
             sections.companyDescription,
@@ -214,8 +211,9 @@ const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
             linesOfHtml(section?.text ?? ""),
           ])
         )
-      ).join("\n\n")
-    )
+      ).join("\n\n"),
+      workplace: "Unspecified",
+    }))
   );
 
 const workableText = ({ externalId, slug }: PostingKey) =>
@@ -223,13 +221,14 @@ const workableText = ({ externalId, slug }: PostingKey) =>
     `https://apply.workable.com/api/v2/accounts/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
     WorkableDetail
   ).pipe(
-    Effect.map((job) =>
-      nonEmpty(
+    Effect.map((job): PostingTextValue => ({
+      text: nonEmpty(
         Array.map([job.description, job.requirements, job.benefits], (html) =>
           linesOfHtml(html ?? "")
         )
-      ).join("\n\n")
-    )
+      ).join("\n\n"),
+      workplace: workplaceOf(job.workplace),
+    }))
   );
 
 type ReadFailure = Effect.Error<ReturnType<typeof getJson>>;
@@ -238,7 +237,11 @@ const textOfAts: Record<
   typeof CompanyAts.Type,
   (
     key: PostingKey
-  ) => Effect.Effect<string, PostingGone | ReadFailure, HttpClient.HttpClient>
+  ) => Effect.Effect<
+    PostingTextValue,
+    PostingGone | ReadFailure,
+    HttpClient.HttpClient
+  >
 > = {
   ashby: ashbyText,
   greenhouse: greenhouseText,

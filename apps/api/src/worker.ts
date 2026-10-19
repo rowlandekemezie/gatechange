@@ -14,7 +14,7 @@ import {
   AccountStore,
   capabilities,
   CurrentViewer,
-  DEFAULT_DAILY_MODEL_CALLS,
+  DEFAULT_DAILY_NEURONS,
   DEFAULT_FEEDS_PER_RUN,
   enqueueUnenriched,
   enrichListing,
@@ -74,14 +74,14 @@ export const EnrichmentQueue = Cloudflare.Queues.Queue("EnrichmentQueue");
 const EnrichmentMessage = Schema.Struct({ id: Schema.NonEmptyString });
 
 const enrichMessage =
-  (dailyModelCalls: number) => (message: Cloudflare.Queues.Message) =>
+  (dailyNeurons: number) => (message: Cloudflare.Queues.Message) =>
     Option.match(Schema.decodeUnknownOption(EnrichmentMessage)(message.body), {
       onNone: () =>
         Effect.logWarning(
           `enrichment message dropped: no listing id, body=${loggedBody(JSON.stringify(message.body ?? null))}`
         ),
       onSome: ({ id }) =>
-        enrichListing(id, dailyModelCalls).pipe(
+        enrichListing(id, dailyNeurons).pipe(
           Effect.flatMap(
             EnrichmentOutcome.$match({
               Enriched: ({ enrichment }) =>
@@ -176,9 +176,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       stage: deployedStage,
     });
 
-    const dailyModelCalls = yield* Config.Int(
-      "ENRICHMENT_DAILY_MODEL_CALLS"
-    ).pipe(Config.withDefault(DEFAULT_DAILY_MODEL_CALLS));
+    const dailyNeurons = yield* Config.Int("ENRICHMENT_DAILY_NEURONS").pipe(
+      Config.withDefault(DEFAULT_DAILY_NEURONS)
+    );
 
     const sweepHours = yield* Config.Int("ENRICHMENT_SWEEP_HOURS").pipe(
       Config.withDefault(DEFAULT_ENRICHMENT_SWEEP_HOURS)
@@ -270,7 +270,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       },
       (messages) =>
         messages.pipe(
-          Stream.mapEffect(enrichMessage(dailyModelCalls), {
+          Stream.mapEffect(enrichMessage(dailyNeurons), {
             concurrency: ENRICHMENT_BATCH_SIZE,
             unordered: true,
           }),

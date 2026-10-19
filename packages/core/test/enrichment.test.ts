@@ -39,17 +39,42 @@ import {
 } from "../src/index.js";
 import type {
   EnrichmentOutcomeValue,
+  ArrangementValue,
   EnrichmentValue,
   FeedRef,
   JobQueryValue,
   JobStoreUnavailable,
   JobValue,
   ModelAnswerValue,
+  ModelReply,
+  PostingRequest,
+  PostingTextValue,
   PostingValue,
 } from "../src/index.js";
 import { makeMemoryJobStore } from "./memory-job-store.js";
 
 const MODEL = "test-model";
+
+const NEURONS_PER_CALL = 100;
+
+const MAX_NEURONS = 400;
+
+const posted = (
+  text: string,
+  workplace: ArrangementValue = "Unspecified"
+): PostingTextValue => ({ text, workplace });
+
+const enricherOf = (
+  extract: (
+    request: PostingRequest
+  ) => Effect.Effect<ModelReply, EnricherUnavailable>
+) =>
+  ListingEnricher.of({
+    extract,
+    maxNeurons: MAX_NEURONS,
+    model: MODEL,
+    neuronsFor: () => NEURONS_PER_CALL,
+  });
 
 const boardJob: JobValue = {
   arrangement: "Remote",
@@ -113,42 +138,52 @@ const Answer = Data.taggedEnum<AnswerValue>();
 
 interface Scenario {
   readonly answer: AnswerValue;
-  readonly dailyModelCalls?: number;
+  readonly dailyNeurons?: number;
   readonly enrichedBefore?: EnrichmentValue;
-  readonly fetched?: Effect.Effect<string, PostingGone | PostingUnavailable>;
+  readonly fetched?: Effect.Effect<
+    PostingTextValue,
+    PostingGone | PostingUnavailable
+  >;
   readonly id?: string;
   readonly jobs?: readonly JobValue[];
+  readonly reportedNeurons?: number | null;
   readonly text?: string;
+  readonly workplace?: ArrangementValue;
 }
 
 const enrich = ({
   answer,
-  dailyModelCalls,
+  dailyNeurons,
   enrichedBefore,
   fetched,
   id = boardJob.id,
   jobs = [boardJob],
+  reportedNeurons = null,
   text = statedPosting,
+  workplace = "Unspecified",
 }: Scenario) =>
   Effect.gen(function* enrichScenario() {
     const memory = yield* makeMemoryJobStore;
-    const requests: string[] = [];
+    const requests: PostingRequest[] = [];
+    let fetches = 0;
 
     const texts = PostingTexts.of({
-      fetch: () => fetched ?? Effect.succeed(text),
+      fetch: () => {
+        fetches += 1;
+
+        return fetched ?? Effect.succeed(posted(text, workplace));
+      },
     });
 
-    const enricher = ListingEnricher.of({
-      extract: (request) => {
-        requests.push(request.title);
+    const enricher = enricherOf((request) => {
+      requests.push(request);
 
-        return Answer.$match(answer, {
-          Answers: ({ answer: raw }) => Effect.succeed(raw),
-          Unavailable: () =>
-            Effect.fail(new EnricherUnavailable({ message: "model down" })),
-        });
-      },
-      model: MODEL,
+      return Answer.$match(answer, {
+        Answers: ({ answer: raw }) =>
+          Effect.succeed({ answer: raw, neurons: reportedNeurons }),
+        Unavailable: () =>
+          Effect.fail(new EnricherUnavailable({ message: "model down" })),
+      });
     });
 
     return yield* Effect.gen(function* runEnrichment() {
@@ -165,15 +200,22 @@ const enrich = ({
       }
 
       const before = yield* store.find(id);
-      const outcome = yield* enrichListing(id, dailyModelCalls);
+      const outcome = yield* enrichListing(id, dailyNeurons);
       const after = yield* store.find(id);
 
       return {
         after,
         before,
         enrichments: memory.enrichments().size,
+        fetches,
+        neurons: memory.neurons(),
+        neuronsUsed: memory.neuronsUsed(),
         outcome,
-        requests,
+        requests: pipe(
+          requests,
+          Array.map((request) => request.title)
+        ),
+        sent: requests,
         skipped: pipe(
           [...memory.skips().values()],
           Array.map((recorded) => recorded.reason)
@@ -292,14 +334,15 @@ describe("enrichListing", () => {
               memory.layer,
               Layer.succeed(
                 PostingTexts,
-                PostingTexts.of({ fetch: () => Effect.succeed(statedPosting) })
+                PostingTexts.of({
+                  fetch: () => Effect.succeed(posted(statedPosting)),
+                })
               ),
               Layer.succeed(
                 ListingEnricher,
-                ListingEnricher.of({
-                  extract: () => Effect.succeed(validAnswer),
-                  model: MODEL,
-                })
+                enricherOf(() =>
+                  Effect.succeed({ answer: validAnswer, neurons: null })
+                )
               )
             )
           )
@@ -572,6 +615,34 @@ describe("enrichListing", () => {
       "partner closely with the VP of Engineering",
       "VP of Engineering",
     ],
+    [
+      "a relative clause about another person",
+      null,
+      "This role partners with the Product Manager, who reports to the CPO.",
+      "the Product Manager, who reports to the CPO",
+      "CPO",
+    ],
+    [
+      "a relative clause about a colleague",
+      null,
+      "You will work with the CFO who reports to the CEO.",
+      "work with the CFO who reports to the CEO",
+      "CEO",
+    ],
+    [
+      "a relative clause about the role's own title",
+      "CTO",
+      "We are hiring a Director of Engineering who reports to the CTO.",
+      "a Director of Engineering who reports to the CTO",
+      "CTO",
+    ],
+    [
+      "a role that will be reporting",
+      "Head of Engineering",
+      "You'll be reporting directly to our Head of Engineering.",
+      "be reporting directly to our Head of Engineering",
+      "Head of Engineering",
+    ],
   ] as const)(
     "a reports-to quoted from %s is saved as %s",
     ([, saved, text, quote, answered]) =>
@@ -694,6 +765,20 @@ describe("enrichListing", () => {
       "Direct Reports: 8-12",
       8,
     ],
+    [
+      "the role's own team",
+      8,
+      "Your team of 8 engineers owns payments.",
+      "Your team of 8 engineers owns payments",
+      8,
+    ],
+    [
+      "a size the team grows to later",
+      null,
+      "You will lead the team as it grows to 20 engineers.",
+      "lead the team as it grows to 20 engineers",
+      20,
+    ],
   ] as const)(
     "a team size quoted from %s is saved as %s",
     ([, saved, text, quote, answered]) =>
@@ -767,7 +852,7 @@ describe("enrichListing", () => {
       "Onsite",
       "You will be expected to work in the office 1-2 times/month and therefore can be situated anywhere in the country.",
     ],
-    ["a board's workplace type", "Hybrid", "Hybrid", "Workplace type: Hybrid"],
+    ["a hybrid label line", "Hybrid", "Hybrid", "Workplace type: Hybrid"],
     [
       "an office share the model left out",
       "Hybrid",
@@ -1055,39 +1140,114 @@ describe("enrichListing", () => {
 
   it.effect.each([
     [
-      "a remote answer against an onsite Lever workplace type",
+      "a remote answer against an onsite workplace type",
       "Onsite",
       "Remote",
-      "This role is fully remote.\n\nWorkplace type: onsite",
+      "This role is fully remote.",
+      "Onsite",
     ],
     [
-      "a hybrid answer against an onsite Ashby workplace type",
+      "a hybrid answer against an onsite workplace type",
       "Onsite",
       "Hybrid",
-      "This role is hybrid, three days a week in the office.\n\nWorkplace type: OnSite",
+      "This role is hybrid, three days a week in the office.",
+      "Onsite",
     ],
     [
       "a remote-in-region answer under a remote workplace type",
       "RemoteInRegion",
       "RemoteInRegion",
-      "This role is remote in Canada.\n\nWorkplace type: remote",
+      "This role is remote in Canada.",
+      "Remote",
     ],
     [
       "no answer under a hybrid workplace type",
       "Hybrid",
       null,
-      "We build developer tools.\n\nWorkplace type: hybrid",
+      "We build developer tools.",
+      "Hybrid",
     ],
   ] as const)(
     "the ATS workplace type wins over %s, saved as %s",
-    ([, saved, claimed, text]) =>
+    ([, saved, claimed, text, workplace]) =>
       Effect.gen(function* structuredPolicy() {
         const result = yield* enrich({
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
               remotePolicy: claimed,
-              remotePolicyQuote: text.split("\n")[0] ?? null,
+              remotePolicyQuote: text,
+            },
+          }),
+          text,
+          workplace,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(saved));
+        expect(result.sent.map((request) => request.workplace)).toStrictEqual([
+          workplace,
+        ]);
+      })
+  );
+
+  it.effect.each([
+    [
+      "remote monitoring software",
+      null,
+      "Remote",
+      "We sell remote monitoring software to hospitals",
+      "We sell remote monitoring software to hospitals. You will work in our Boston office every day.",
+    ],
+    [
+      "a remote-first company with an on-site role",
+      null,
+      "Remote",
+      "We are a remote-first company",
+      "We are a remote-first company. This role is on-site in our Austin office every day.",
+    ],
+    [
+      "a remote-first company with no other policy",
+      "Remote",
+      "Remote",
+      "We are a remote-first company",
+      "We are a remote-first company with teammates in 12 countries.",
+    ],
+    [
+      "an on-site gym",
+      null,
+      "Onsite",
+      "Perks include an on-site gym open to everyone",
+      "Perks include an on-site gym open to everyone. This role is fully remote.",
+    ],
+    [
+      "a full-time on-site requirement",
+      "Onsite",
+      "Onsite",
+      "requires being onsite full-time",
+      "This position is based in Hawthorne, CA and requires being onsite full-time.",
+    ],
+    [
+      "in-person interviews on a weekday",
+      null,
+      "Hybrid",
+      "Final rounds are in-person interviews on Mondays",
+      "Final rounds are in-person interviews on Mondays.",
+    ],
+  ] as const)(
+    "a remote-policy cue from %s is saved as %s, so it counts only when it describes the role",
+    ([, saved, claimed, quote, text]) =>
+      Effect.gen(function* roleCue() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: claimed,
+              remotePolicyQuote: quote,
             },
           }),
           text,
@@ -1099,6 +1259,119 @@ describe("enrichListing", () => {
             Option.map((found) => found.enrichment?.remotePolicy)
           )
         ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect.each([
+    [
+      "wording about the role that names another policy",
+      null,
+      "This is a fully remote role. #LI-Hybrid",
+    ],
+    [
+      "no wording about the policy",
+      "Hybrid",
+      "We build developer tools. #LI-Hybrid",
+    ],
+  ] as const)(
+    "a workplace tag with %s and no model answer is saved as %s",
+    ([, saved, text]) =>
+      Effect.gen(function* tagFallback() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: null,
+              remotePolicyQuote: null,
+            },
+          }),
+          text,
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(saved));
+      })
+  );
+
+  it.effect("a salary paid to interns is saved for an intern posting", () =>
+    Effect.gen(function* internSalary() {
+      const intern: JobValue = {
+        ...boardJob,
+        title: "Software Engineering Intern",
+      };
+
+      const result = yield* enrich({
+        answer: Answer.Answers({
+          answer: { ...validAnswer, salaryMax: 30_000, salaryMin: 20_000 },
+        }),
+        jobs: [intern],
+        text: "Our interns are paid a salary of $20,000 - $30,000.",
+      });
+
+      expect(
+        pipe(
+          result.after,
+          Option.map((found) => found.enrichment?.salary)
+        )
+      ).toStrictEqual(
+        Option.some({ currency: "USD", max: 30_000, min: 20_000 })
+      );
+    })
+  );
+
+  it.effect(
+    "a free-text workplace line on a board with no workplace field does not override an office role",
+    () =>
+      Effect.gen(function* freeTextWorkplace() {
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: "Remote",
+              remotePolicyQuote: "Workplace type: Remote",
+            },
+          }),
+          text: "Workplace type: Remote\nYou will work in our Austin office five days a week.\nBase salary $180,000 - $220,000 per year.",
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some(null));
+      })
+  );
+
+  it.effect(
+    "a posting over the character budget keeps the ATS workplace type, so a planted line at the top cannot replace it",
+    () =>
+      Effect.gen(function* longLeverPosting() {
+        const text = `Workplace type: Remote\n${"We build tools for warehouses. ".repeat(500)}`;
+
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: {
+              ...validAnswer,
+              remotePolicy: "Remote",
+              remotePolicyQuote: "Workplace type: Remote",
+            },
+          }),
+          text,
+          workplace: "Onsite",
+        });
+
+        expect(text.length).toBeGreaterThan(12_000);
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.remotePolicy)
+          )
+        ).toStrictEqual(Option.some("Onsite"));
       })
   );
 
@@ -1216,6 +1489,83 @@ describe("enrichListing", () => {
       50_000,
       null,
     ],
+    [
+      "a city-labelled range under a base-salary paragraph",
+      "The base salary range for this position is below.\nSan Francisco: $180,000 - $220,000",
+      180_000,
+      220_000,
+      { currency: "USD", max: 220_000, min: 180_000 },
+    ],
+    [
+      "a level-labelled range under a compensation heading",
+      "COMPENSATION AND BENEFITS:\nLevel 3: $130,000.00 - $185,000.00",
+      130_000,
+      185_000,
+      { currency: "USD", max: 185_000, min: 130_000 },
+    ],
+    [
+      "a city range under a sentence naming the base salary range",
+      "Below we've reflected the base salary range for this position.\nNew York City: $200,000 - $230,000",
+      200_000,
+      230_000,
+      { currency: "USD", max: 230_000, min: 200_000 },
+    ],
+    [
+      "a zone range under a pay transparency heading",
+      "Pay Transparency\nZone A: $180,000 - $220,000",
+      180_000,
+      220_000,
+      { currency: "USD", max: 220_000, min: 180_000 },
+    ],
+    [
+      "a hiring range under a base pay heading",
+      "Base Pay Range\nThe hiring range for this role is $150,000 - $190,000.",
+      150_000,
+      190_000,
+      { currency: "USD", max: 190_000, min: 150_000 },
+    ],
+    [
+      "a hiring range with no pay heading",
+      "The hiring range for this role is $150,000 - $190,000.",
+      150_000,
+      190_000,
+      null,
+    ],
+    [
+      "a stipend not counted as base pay",
+      "Annual stipend, not counted as base pay: $20,000 - $50,000 per year.",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a range not counted as base pay",
+      "Not counted as base pay: $20,000 - $50,000 per year.",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a line not counted as base pay under a salary heading",
+      "Base salary\nNot counted as base pay: $20,000 - $50,000 per year.",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a heading kept separate from base pay",
+      "Learning stipend (separate from base pay)\n$20,000 - $50,000",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a salary paid to interns",
+      "Our interns are paid a salary of $20,000 - $30,000.",
+      20_000,
+      30_000,
+      null,
+    ],
   ] as const)(
     "pay from %s is saved as %j, so only base pay counts as salary",
     ([, text, low, high, saved]) =>
@@ -1258,7 +1608,12 @@ describe("enrichListing", () => {
         teamSize: 12,
         teamSizeQuote: fabricated,
       },
-      { company: "Acme", text, title: "Engineering Manager" }
+      {
+        company: "Acme",
+        text,
+        title: "Engineering Manager",
+        workplace: "Unspecified",
+      }
     );
 
     expect(performance.now() - started).toBeLessThan(50);
@@ -1325,16 +1680,17 @@ describe("enrichListing", () => {
   );
 
   it.effect(
-    "a spent daily cap skips as DailyCapReached, asks no model, and records the skip for a later sweep",
+    "a budget without room for the costliest call skips as DailyCapReached before fetching the posting, and records the skip for a later sweep",
     () =>
-      Effect.gen(function* capSpent() {
+      Effect.gen(function* budgetSpent() {
         const result = yield* enrich({
           answer: Answer.Answers({ answer: validAnswer }),
-          dailyModelCalls: 0,
+          dailyNeurons: MAX_NEURONS - 1,
         });
 
         expect(reasonOf(result.outcome)).toBe("DailyCapReached");
         expect(skipHandling.DailyCapReached).toBe("Retry");
+        expect(result.fetches).toBe(0);
         expect(result.requests).toStrictEqual([]);
         expect(result.enrichments).toBe(0);
         expect(result.skipped).toStrictEqual(["DailyCapReached"]);
@@ -1342,50 +1698,70 @@ describe("enrichListing", () => {
   );
 
   it.effect(
-    "the daily cap counts every model call, so the call after the cap asks no model",
+    "a call claims its estimated neurons before it runs and records the neurons the model reports",
     () =>
-      Effect.gen(function* capCounts() {
+      Effect.gen(function* neuronLedger() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          reportedNeurons: 42,
+        });
+
+        expect(reasonOf(result.outcome)).toBe("Enriched");
+        expect([...result.neurons]).toStrictEqual([[0, NEURONS_PER_CALL]]);
+        expect([...result.neuronsUsed]).toStrictEqual([[0, 42]]);
+      })
+  );
+
+  it.effect(
+    "concurrent consumers never claim past the daily budget, so the calls beyond it ask no model",
+    () =>
+      Effect.gen(function* concurrentBudget() {
         const memory = yield* makeMemoryJobStore;
         const requests: string[] = [];
-        const second: JobValue = { ...boardJob, id: "greenhouse:acme:2" };
 
-        const outcomes = yield* Effect.gen(function* enrichTwo() {
+        const listings = Array.makeBy(10, (index) => ({
+          ...boardJob,
+          id: `greenhouse:acme:${index}`,
+        }));
+
+        const outcomes = yield* Effect.gen(function* enrichAll() {
           const store = yield* JobStore;
 
-          yield* store.replaceFeed(boardJob.feed, [boardJob, second], 0);
+          yield* store.replaceFeed(boardJob.feed, listings, 0);
 
-          return [
-            yield* enrichListing(boardJob.id, 1),
-            yield* enrichListing(second.id, 1),
-          ];
+          return yield* Effect.forEach(
+            listings,
+            (listing) => enrichListing(listing.id, MAX_NEURONS),
+            { concurrency: "unbounded" }
+          );
         }).pipe(
           Effect.provide(
             Layer.mergeAll(
               memory.layer,
               Layer.succeed(
                 PostingTexts,
-                PostingTexts.of({ fetch: () => Effect.succeed(statedPosting) })
+                PostingTexts.of({
+                  fetch: () =>
+                    Effect.yieldNow.pipe(Effect.as(posted(statedPosting))),
+                })
               ),
               Layer.succeed(
                 ListingEnricher,
-                ListingEnricher.of({
-                  extract: (request) => {
-                    requests.push(request.title);
+                enricherOf((request) => {
+                  requests.push(request.title);
 
-                    return Effect.succeed(validAnswer);
-                  },
-                  model: MODEL,
+                  return Effect.succeed({ answer: validAnswer, neurons: null });
                 })
               )
             )
           )
         );
 
-        expect(outcomes.map((outcome) => reasonOf(outcome))).toStrictEqual([
-          "Enriched",
-          "DailyCapReached",
-        ]);
-        expect(requests).toHaveLength(1);
+        expect(
+          outcomes.filter((outcome) => reasonOf(outcome) === "Enriched")
+        ).toHaveLength(MAX_NEURONS / NEURONS_PER_CALL);
+        expect(requests).toHaveLength(MAX_NEURONS / NEURONS_PER_CALL);
+        expect(memory.neurons().get(0)).toBe(MAX_NEURONS);
       })
   );
 });

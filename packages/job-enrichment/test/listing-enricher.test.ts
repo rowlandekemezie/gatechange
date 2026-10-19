@@ -1,23 +1,43 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  DEFAULT_DAILY_NEURONS,
   EnricherUnavailable,
   ListingEnricher,
   ModelAnswer,
 } from "@rat-stack/core";
+import type { PostingRequest } from "@rat-stack/core";
 import { ConfigProvider, Effect, Schema } from "effect";
 
 import {
+  chatRequestOf,
   DEFAULT_ENRICHMENT_MODEL,
   enrichmentModel,
   listingEnricherLayer,
+  MAX_INPUT_TOKENS,
+  MAX_NEURONS,
   modelAnswerJsonSchema,
+  neuronsFor,
+  SYSTEM_PROMPT,
 } from "../src/index.js";
 import type { ChatRequest, RunModel } from "../src/index.js";
 
-const posting = {
+const posting: PostingRequest = {
   company: "Acme",
   text: "Lead a team of 8. Salary $200,000 - $240,000 USD per year.",
   title: "Engineering Manager",
+  workplace: "Remote",
+};
+
+const utf8Bytes = (text: string) => new TextEncoder().encode(text).length;
+
+const inputBytesOf = (request: PostingRequest) => {
+  const chat = chatRequestOf(request);
+
+  return (
+    utf8Bytes(SYSTEM_PROMPT) +
+    utf8Bytes(chat.messages[1]?.content ?? "") +
+    utf8Bytes(JSON.stringify(chat.response_format))
+  );
 };
 
 const answer = {
@@ -85,7 +105,7 @@ describe("listing enricher", () => {
         const result = yield* extractWith(fake.run);
         const [call] = fake.calls;
 
-        expect(result).toStrictEqual(answer);
+        expect(result).toStrictEqual({ answer, neurons: null });
         expect(call?.model).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
         expect(call?.request.temperature).toBe(0);
         expect(call?.request.response_format).toStrictEqual({
@@ -96,7 +116,7 @@ describe("listing enricher", () => {
         expect(call?.request.messages[0]?.content).toContain("null");
         expect(call?.request.messages[0]?.content).toContain("Never estimate");
         expect(call?.request.messages[1]).toStrictEqual({
-          content: `Company: Acme\nTitle: Engineering Manager\n\n${posting.text}`,
+          content: `Company: Acme\nTitle: Engineering Manager\nWorkplace type: Remote\n\n${posting.text}`,
           role: "user",
         });
       });
@@ -110,7 +130,7 @@ describe("listing enricher", () => {
       );
 
       expect(
-        yield* Schema.decodeUnknownEffect(ModelAnswer)(result)
+        yield* Schema.decodeUnknownEffect(ModelAnswer)(result.answer)
       ).toStrictEqual(answer);
     })
   );
@@ -123,10 +143,68 @@ describe("listing enricher", () => {
           recording(Effect.succeed({ response: "I cannot help with that" })).run
         );
 
-        expect(result).toBe("I cannot help with that");
-        expect(Schema.is(ModelAnswer)(result)).toBe(false);
+        expect(result.answer).toBe("I cannot help with that");
+        expect(Schema.is(ModelAnswer)(result.answer)).toBe(false);
       })
   );
+
+  it.effect(
+    "turns the token usage Workers AI reports into neurons, and reports none when usage is missing",
+    () =>
+      Effect.gen(function* reportedUsage() {
+        const reported = yield* extractWith(
+          recording(
+            Effect.succeed({
+              response: answer,
+              usage: {
+                completion_tokens: 100,
+                prompt_tokens: 1000,
+                total_tokens: 1100,
+              },
+            })
+          ).run
+        );
+
+        expect(reported.neurons).toBe(48);
+      })
+  );
+
+  it("names the ATS workplace type to the model only when the board states one", () => {
+    expect(
+      chatRequestOf({ ...posting, workplace: "Unspecified" }).messages[1]
+        ?.content
+    ).toBe(`Company: Acme\nTitle: Engineering Manager\n\n${posting.text}`);
+  });
+
+  it.each([
+    ["a short English posting", posting.text],
+    ["1 MB of English", "Lead the platform team. ".repeat(44_000)],
+    ["1 MB of Chinese", "负责平台团队。".repeat(150_000)],
+    ["1 MB of emoji", "🚀".repeat(250_000)],
+  ])(
+    "bounds %s to the input token budget, so its claimed neurons never exceed the per-call ceiling",
+    (_label, text) => {
+      const request = { ...posting, text };
+      const content = chatRequestOf(request).messages[1]?.content ?? "";
+
+      expect(inputBytesOf(request)).toBeLessThanOrEqual(MAX_INPUT_TOKENS);
+      expect(neuronsFor(request)).toBeLessThanOrEqual(MAX_NEURONS);
+      expect(
+        content.startsWith("Company: Acme\nTitle: Engineering Manager")
+      ).toBe(true);
+      expect(content).not.toMatch(/\p{Cs}/u);
+    }
+  );
+
+  it("claims fewer neurons for a short posting than the per-call ceiling", () => {
+    expect(neuronsFor(posting)).toBeLessThan(MAX_NEURONS);
+  });
+
+  it("keeps a month at the default daily budget under $10 after the 10,000 free neurons a day", () => {
+    expect(((DEFAULT_DAILY_NEURONS - 10_000) * 30 * 0.011) / 1000).toBeLessThan(
+      10
+    );
+  });
 
   it.effect("reports a Workers AI failure as EnricherUnavailable", () =>
     Effect.gen(function* failRun() {

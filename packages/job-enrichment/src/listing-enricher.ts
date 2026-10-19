@@ -3,7 +3,7 @@ import {
   ListingEnricher,
   ModelAnswer,
 } from "@rat-stack/core";
-import type { PostingRequest } from "@rat-stack/core";
+import type { ModelReply, PostingRequest } from "@rat-stack/core";
 import { Config, Effect, Layer, Schema } from "effect";
 
 export const DEFAULT_ENRICHMENT_MODEL =
@@ -14,6 +14,14 @@ export const enrichmentModel = Config.String("ENRICHMENT_MODEL").pipe(
 );
 
 export const MAX_ANSWER_TOKENS = 256;
+
+export const MAX_INPUT_TOKENS = 16_000;
+
+export const NEURONS_PER_INPUT_TOKEN = 26_668 / 1_000_000;
+
+export const NEURONS_PER_OUTPUT_TOKEN = 204_805 / 1_000_000;
+
+export const CHAT_TEMPLATE_TOKENS = 64;
 
 export const modelAnswerJsonSchema = Schema.toJsonSchemaDocument(ModelAnswer, {
   onExcessProperty: "error",
@@ -52,24 +60,76 @@ export type RunModel = (
   request: ChatRequest
 ) => Effect.Effect<unknown, { readonly message: string }>;
 
+const utf8 = new TextEncoder();
+
+const bytesOf = (text: string) => utf8.encode(text).length;
+
+const withinBytes = (text: string, budget: number) =>
+  text.slice(
+    0,
+    utf8.encodeInto(text, new Uint8Array(Math.max(0, budget))).read
+  );
+
+const responseFormat = {
+  json_schema: modelAnswerJsonSchema,
+  type: "json_schema",
+} as const;
+
+const fixedInputTokens =
+  bytesOf(SYSTEM_PROMPT) +
+  bytesOf(JSON.stringify(responseFormat)) +
+  CHAT_TEMPLATE_TOKENS;
+
+const inputTokensOf = (request: ChatRequest) =>
+  fixedInputTokens + bytesOf(request.messages[1]?.content ?? "");
+
+const neuronsOf = (inputTokens: number, outputTokens: number) =>
+  Math.ceil(
+    inputTokens * NEURONS_PER_INPUT_TOKEN +
+      outputTokens * NEURONS_PER_OUTPUT_TOKEN
+  );
+
+const headerOf = (posting: PostingRequest) =>
+  [
+    `Company: ${posting.company}`,
+    `Title: ${posting.title}`,
+    ...(posting.workplace === "Unspecified"
+      ? []
+      : [`Workplace type: ${posting.workplace}`]),
+  ].join("\n");
+
 export const chatRequestOf = (posting: PostingRequest): ChatRequest => ({
   max_tokens: MAX_ANSWER_TOKENS,
   messages: [
     { content: SYSTEM_PROMPT, role: "system" },
     {
-      content: `Company: ${posting.company}\nTitle: ${posting.title}\n\n${posting.text}`,
+      content: withinBytes(
+        `${headerOf(posting)}\n\n${posting.text}`,
+        MAX_INPUT_TOKENS - fixedInputTokens
+      ),
       role: "user",
     },
   ],
-  response_format: { json_schema: modelAnswerJsonSchema, type: "json_schema" },
+  response_format: responseFormat,
   temperature: 0,
 });
+
+export const neuronsFor = (posting: PostingRequest) =>
+  neuronsOf(inputTokensOf(chatRequestOf(posting)), MAX_ANSWER_TOKENS);
+
+export const MAX_NEURONS = neuronsOf(MAX_INPUT_TOKENS, MAX_ANSWER_TOKENS);
 
 const ModelOutput = Schema.Struct({
   response: Schema.Union([
     Schema.fromJsonString(Schema.Unknown),
     Schema.Unknown,
   ]),
+  usage: Schema.optional(
+    Schema.Struct({
+      completion_tokens: Schema.Finite,
+      prompt_tokens: Schema.Finite,
+    })
+  ),
 });
 
 export const listingEnricherLayer = (options: {
@@ -89,11 +149,22 @@ export const listingEnricherLayer = (options: {
           ),
           Effect.flatMap((output) =>
             Schema.decodeUnknownEffect(ModelOutput)(output).pipe(
-              Effect.map(({ response }) => response),
-              Effect.orElseSucceed(() => null)
+              Effect.map(({ response, usage }): ModelReply => ({
+                answer: response,
+                neurons:
+                  usage === undefined
+                    ? null
+                    : neuronsOf(usage.prompt_tokens, usage.completion_tokens),
+              })),
+              Effect.orElseSucceed((): ModelReply => ({
+                answer: null,
+                neurons: null,
+              }))
             )
           )
         ),
+      maxNeurons: MAX_NEURONS,
       model: options.model,
+      neuronsFor,
     })
   );

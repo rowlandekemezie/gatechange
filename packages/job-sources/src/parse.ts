@@ -110,13 +110,29 @@ const entities: readonly (readonly [RegExp, string])[] = [
 const characterOf = (entity: string, code: number) =>
   code <= 0x10_ff_ff ? String.fromCodePoint(code) : entity;
 
+export const MAX_HTML_CHARS = 200_000;
+
 const blockTag =
-  /<\/?(?:p|div|li|ul|ol|br|h[1-6]|tr|table|section|article|blockquote|hr)\b[^>]*>/giu;
+  /<\/?(?:p|div|li|ul|ol|br|h[1-6]|tr|table|section|article|blockquote|hr)\b[^<>]*>/giu;
 
-const htmlTag = /<(?<closing>\/?)(?<name>[a-z][\w-]*)\b[^>]*>/giu;
+const htmlTag = /<(?<closing>\/?)(?<name>[a-z][\w-]*)\b[^<>]*>/giu;
 
-const hiddenByMarkup =
-  /\shidden(?:[\s=/>]|$)|\sstyle\s*=\s*["'][^"']*\b(?:display\s*:\s*none|visibility\s*:\s*hidden)/iu;
+const hiddenAttribute = /\shidden(?:[\s=/>]|$)/iu;
+
+const styleAttribute =
+  /\sstyle\s*=\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)'|(?<bare>[^\s"'>]+))/iu;
+
+const hiddenStyle =
+  /\b(?:display\s*:\s*none|visibility\s*:\s*hidden|(?:font-size|opacity)\s*:\s*0*\.?0+[a-z%]*\s*(?:[;!]|$))/iu;
+
+const hiddenByMarkup = (tag: string) => {
+  const style = styleAttribute.exec(tag)?.groups;
+
+  return (
+    hiddenAttribute.test(tag) ||
+    hiddenStyle.test(style?.double ?? style?.single ?? style?.bare ?? "")
+  );
+};
 
 const unreadTags: ReadonlySet<string> = new Set([
   "noscript",
@@ -143,7 +159,7 @@ const voidTags: ReadonlySet<string> = new Set([
 const opensHiddenElement = (tag: string, name: string) =>
   !voidTags.has(name) &&
   !tag.endsWith("/>") &&
-  (unreadTags.has(name) || hiddenByMarkup.test(tag));
+  (unreadTags.has(name) || hiddenByMarkup(tag));
 
 export const withoutHiddenElements = (html: string): string => {
   const shown: string[] = [];
@@ -177,10 +193,10 @@ export const withoutHiddenElements = (html: string): string => {
 };
 
 export const linesOfHtml = (html: string): string => {
-  let text = withoutHiddenElements(html)
+  let text = withoutHiddenElements(html.slice(0, MAX_HTML_CHARS))
     .replaceAll(/\s+/gu, " ")
     .replaceAll(blockTag, "\n")
-    .replaceAll(/<[^>]*>/gu, " ")
+    .replaceAll(/<[^<>]*>/gu, " ")
     .replaceAll(/&#x(?<hex>[\da-f]+);/giu, (entity, hex: string) =>
       characterOf(entity, Number.parseInt(hex, 16))
     )

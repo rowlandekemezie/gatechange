@@ -22,6 +22,7 @@ import {
   SourceName,
 } from "./job.js";
 import type {
+  ArrangementValue,
   EnrichmentValue,
   ListingDetailsValue,
   RemotePolicyValue,
@@ -54,6 +55,12 @@ export interface PostingRequest {
   readonly company: string;
   readonly text: string;
   readonly title: string;
+  readonly workplace: ArrangementValue;
+}
+
+export interface ModelReply {
+  readonly answer: unknown;
+  readonly neurons: number | null;
 }
 
 export class ListingEnricher extends Context.Service<
@@ -61,8 +68,10 @@ export class ListingEnricher extends Context.Service<
   {
     readonly extract: (
       request: PostingRequest
-    ) => Effect.Effect<unknown, EnricherUnavailable>;
+    ) => Effect.Effect<ModelReply, EnricherUnavailable>;
+    readonly maxNeurons: number;
     readonly model: string;
+    readonly neuronsFor: (request: PostingRequest) => number;
   }
 >()("@rat-stack/core/ListingEnricher") {}
 
@@ -305,10 +314,19 @@ const moneyMatchesIn = (text: string): readonly MoneyMatch[] => {
 export const moneyRangesIn = (text: string): readonly MoneyRange[] =>
   Array.map(moneyMatchesIn(text), ({ range }) => range);
 
-const basePayCue =
-  /\b(?:salary|salaries|base|compensation|pay|wages?|ote|remuneration|earnings)\b/giu;
+const basePayWord = String.raw`(?:salary|salaries|base|compensation|pay|wages?|ote|remuneration|earnings)`;
 
-const otherPayCue = String.raw`\b(?:stipends?|bonus(?:es)?|allowances?|equity|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|budgets?)\b`;
+const payNegation = String.raw`\b(?:not(?:\s+(?:counted|included|part))?(?:\s+(?:as|in|of))?|separate\s+from|in\s+addition\s+to|on\s+top\s+of|excluding|outside(?:\s+of)?)\s+(?:(?:the|your|our|any)\s+)?`;
+
+const basePayCue = new RegExp(
+  String.raw`(?<!${payNegation}(?:base\s+)?)\b${basePayWord}\b`,
+  "giu"
+);
+
+const otherPayCue = String.raw`(?:\b(?:stipends?|bonus(?:es)?|allowances?|equity|401\s?\(?k\)?|signing|sign-on|relocation|reimburse\w*|budgets?)\b|${payNegation}(?=(?:base\s+)?${basePayWord}\b))`;
+
+const otherPopulation =
+  /\b(?:interns?|internships?|apprentices?|apprenticeships?|contractors?|students?|co-?ops?)\b/iu;
 
 const otherPayCues = new RegExp(otherPayCue, "giu");
 
@@ -341,10 +359,18 @@ const headingAbove = (text: string, { start }: Span) => {
     : lineAround(text, { end: lineStart, start: lineStart }).before;
 };
 
-const isBasePay = (text: string, span: Span) => {
+const isBasePay = (text: string, span: Span, title: string) => {
   const { after, before, line } = lineAround(text, span);
 
-  if (rangeOnly.test(`${before} ${after}`)) {
+  if (otherPopulation.test(before) && !otherPopulation.test(title)) {
+    return false;
+  }
+
+  if (
+    rangeOnly.test(`${before} ${after}`) ||
+    (lastIndexOf(basePayCue, line) === -1 &&
+      lastIndexOf(otherPayCues, line) === -1)
+  ) {
     return namesBasePay(headingAbove(text, span));
   }
 
@@ -361,7 +387,7 @@ const statesBand = (stated: readonly number[], amounts: readonly number[]) =>
 
 const salaryBandOf = (
   answer: ModelAnswerValue,
-  text: string
+  { text, title }: PostingRequest
 ): SalaryBandValue | null => {
   const { salaryMax, salaryMin } = answer;
 
@@ -375,7 +401,7 @@ const salaryBandOf = (
     moneyMatchesIn(text),
     Array.findFirst(
       (match) =>
-        statesBand(stated, match.range.amounts) && isBasePay(text, match)
+        statesBand(stated, match.range.amounts) && isBasePay(text, match, title)
     ),
     Option.flatMap(({ range }) =>
       Schema.decodeUnknownOption(SalaryBand)({
@@ -500,6 +526,11 @@ const leadsTeam =
 
 const directReports = /\breports?\b/iu;
 
+const ownTeam = /\byour\s+(?:[\p{L}-]+\s+)?$/u;
+
+const futureSize =
+  /\b(?:grows?|growing|scal(?:e|es|ing)|expands?|expanding|doubl(?:e|es|ing))\s+(?:[\p{L}-]+\s+){0,2}?(?:to|into)\s+(?:about\s+|around\s+|over\s+|~)?$/u;
+
 const teamSizeOf = (answer: ModelAnswerValue, posting: SearchableText) => {
   if (answer.teamSize === null) {
     return null;
@@ -513,11 +544,16 @@ const teamSizeOf = (answer: ModelAnswerValue, posting: SearchableText) => {
     Option.filter(({ sentence }) =>
       pipe(
         Option.fromNullishOr(counted.exec(sentence)),
-        Option.exists(
-          (count) =>
-            directReports.test(count[0]) ||
-            leadsTeam.test(sentence.slice(0, count.index))
-        )
+        Option.exists((count) => {
+          const before = sentence.slice(0, count.index);
+
+          return (
+            !futureSize.test(before) &&
+            (directReports.test(count[0]) ||
+              leadsTeam.test(before) ||
+              ownTeam.test(before))
+          );
+        })
       )
     ),
     Option.flatMap(() => decodeTeamSize(size)),
@@ -527,8 +563,27 @@ const teamSizeOf = (answer: ModelAnswerValue, posting: SearchableText) => {
 
 const notWorkplace = String.raw`(?![\s-]+(?:interviews?|meetings?|events?|offsites?|onsites?|visits?|gatherings?|meetups?|onboarding|training|summits?|retreats?)\b)`;
 
-const remoteWork =
-  /\bremote\b(?![\s-]+(?:teams?|employees|workers|colleagues|staff|collaboration|tools?|companies|interviews?|onboarding)\b)|\bwork from (?:home|anywhere)\b/iu;
+const describesTheRole = (word: string, roleWords: string) =>
+  String.raw`\b${word}\b(?=$|\s*[^\p{L}\p{N}\s-]|\s*-\s|\s+(?:${roleWords})\b)`;
+
+const roleRemote = new RegExp(
+  String.raw`${describesTheRole("remote", "roles?|positions?|jobs?|opportunit(?:y|ies)|work(?:ing)?|basis|options?|eligible|in|within|from|across|anywhere|only|or|and|for|with|us|usa|uk|eu|emea|apac|latam|canada|europe|worldwide|globally")}|\bwork(?:ing)? remotely\b|\bwork from (?:home|anywhere)\b`,
+  "iu"
+);
+
+const companyRemote = /\bremote-(?:first|friendly)\b/iu;
+
+const remoteWork = new RegExp(
+  `${roleRemote.source}|${companyRemote.source}`,
+  "iu"
+);
+
+const roleSubject = /\b(?:you|your|role|position|job|candidate)\b/u;
+
+const onsiteWork = describesTheRole(
+  "on-?site",
+  "roles?|positions?|jobs?|work(?:ing)?|full[- ]time|every|five|5|in|at|from|only|basis|presence|requirement|and|or|with|for"
+);
 
 const officeAttendance = String.raw`\b(?:offices?|on-?site|in[- ]person|hq|headquarters|campus)\b${notWorkplace}`;
 
@@ -540,7 +595,7 @@ const remotePolicyCues: Record<RemotePolicyValue, RegExp> = {
     "iu"
   ),
   Onsite: new RegExp(
-    String.raw`(?:\bon-?site\b|\bin[- ](?:the )?office\b|\bin[- ]person\b)${notWorkplace}|\b5 days (?:a|per) week\b`,
+    String.raw`${onsiteWork}|(?:\bin[- ](?:the )?office\b|\bin[- ]person\b)${notWorkplace}|\b5 days (?:a|per) week\b`,
     "iu"
   ),
   Remote: remoteWork,
@@ -566,25 +621,38 @@ const workplaceTags: readonly (readonly [RemotePolicyValue, RegExp])[] = [
   ["Onsite", /#LI-On-?site\b/iu],
 ];
 
-const WORKPLACE_LINE = "workplace type:";
+const policyStatements: Record<RemotePolicyValue, RegExp> = {
+  Hybrid: remotePolicyCues.Hybrid,
+  Onsite: new RegExp(
+    String.raw`${onsiteWork}|\b(?:5|five) days (?:a|per) week\b`,
+    "iu"
+  ),
+  Remote: roleRemote,
+  RemoteInRegion: roleRemote,
+};
 
-const workplaceTypes = new Map<string, RemotePolicyValue>([
-  ["hybrid", "Hybrid"],
-  ["inoffice", "Onsite"],
-  ["inperson", "Onsite"],
-  ["onsite", "Onsite"],
-  ["remote", "Remote"],
-]);
-
-const statedWorkplace = (posting: SearchableText) =>
-  pipe(
-    posting.lines.split("\n"),
-    Array.findLast((line) => line.startsWith(WORKPLACE_LINE)),
-    Option.flatMapNullishOr((line) =>
-      workplaceTypes.get(
-        line.slice(WORKPLACE_LINE.length).replaceAll(/[\s_-]/gu, "")
+const roleStatesOtherPolicy = (
+  posting: SearchableText,
+  claimed: RemotePolicyValue
+) =>
+  Array.some(
+    posting.lines.split(/[\n.!?;]/u),
+    (sentence) =>
+      roleSubject.test(sentence) &&
+      !remotePolicyCues[claimed].test(sentence) &&
+      RemotePolicy.literals.some(
+        (policy) =>
+          policyStatements[policy] !== policyStatements[claimed] &&
+          policyStatements[policy].test(sentence)
       )
-    )
+  );
+
+const taggedPolicy = (posting: SearchableText) =>
+  pipe(
+    workplaceTags,
+    Array.findFirst(([, tag]) => tag.test(posting.flat)),
+    Option.map(([tagged]) => tagged),
+    Option.filter((tagged) => !roleStatesOtherPolicy(posting, tagged))
   );
 
 const quotedPolicy = (answer: ModelAnswerValue, posting: SearchableText) =>
@@ -597,11 +665,11 @@ const quotedPolicy = (answer: ModelAnswerValue, posting: SearchableText) =>
           answer.remotePolicyQuote,
           remotePolicyCues[claimed]
         ),
-        Option.exists(
-          ({ sentence }) =>
-            claimed === "Remote" ||
-            claimed === "RemoteInRegion" ||
-            !occasionalVisits.test(sentence)
+        Option.exists(({ quoted, sentence }) =>
+          claimed === "Remote" || claimed === "RemoteInRegion"
+            ? (roleRemote.test(quoted) && roleSubject.test(sentence)) ||
+              !roleStatesOtherPolicy(posting, claimed)
+            : !occasionalVisits.test(sentence)
         )
       )
     )
@@ -609,12 +677,13 @@ const quotedPolicy = (answer: ModelAnswerValue, posting: SearchableText) =>
 
 const remotePolicyOf = (
   answer: ModelAnswerValue,
-  posting: SearchableText
+  posting: SearchableText,
+  workplace: ArrangementValue
 ): RemotePolicyValue | null => {
   const quoted = quotedPolicy(answer, posting);
 
   return pipe(
-    statedWorkplace(posting),
+    workplace === "Unspecified" ? Option.none() : Option.some(workplace),
     Option.map((stated) =>
       stated === "Remote" &&
       Option.exists(quoted, (policy) => policy === "RemoteInRegion")
@@ -627,13 +696,7 @@ const remotePolicyOf = (
         ? Option.some("Hybrid" as const)
         : Option.none()
     ),
-    Option.orElse(() =>
-      pipe(
-        workplaceTags,
-        Array.findFirst(([, tag]) => tag.test(posting.flat)),
-        Option.map(([tagged]) => tagged)
-      )
-    ),
+    Option.orElse(() => taggedPolicy(posting)),
     Option.getOrNull
   );
 };
@@ -652,9 +715,12 @@ const titleWords = (title: string) =>
 
 const auxiliaries: ReadonlySet<string> = new Set([
   "also",
+  "are",
+  "be",
   "currently",
   "d",
   "directly",
+  "is",
   "ll",
   "shall",
   "will",
@@ -674,15 +740,19 @@ const roleSubjects: ReadonlySet<string> = new Set([
   "your",
 ]);
 
-const clauseLinks: ReadonlySet<string> = new Set([
-  "and",
-  "or",
-  "that",
-  "then",
-  "to",
-  "which",
-  "who",
-]);
+const clauseLinks: ReadonlySet<string> = new Set(["and", "or", "then", "to"]);
+
+const relativePronouns: ReadonlySet<string> = new Set(["that", "which", "who"]);
+
+const namesTheRole = (words: readonly string[], postingTitle: string) => {
+  const title = titleWords(postingTitle).slice(-2);
+  const named = titleWords(words.join(" ")).slice(-title.length);
+
+  return (
+    roleSubjects.has(words.at(-1) ?? "") ||
+    (title.length > 0 && named.join(" ") === title.join(" "))
+  );
+};
 
 const reportsAsRole = (sentence: string, postingTitle: string) => {
   const line = reportingLine.exec(sentence);
@@ -701,9 +771,16 @@ const reportsAsRole = (sentence: string, postingTitle: string) => {
 
   return Option.match(Array.last(words), {
     onNone: () => true,
-    onSome: (subject) =>
-      isRole(subject) ||
-      (clauseLinks.has(subject) && words.some((word) => isRole(word))),
+    onSome: (subject) => {
+      if (relativePronouns.has(subject)) {
+        return namesTheRole(words.slice(0, -1), postingTitle);
+      }
+
+      return (
+        isRole(subject) ||
+        (clauseLinks.has(subject) && words.some((word) => isRole(word)))
+      );
+    },
   });
 };
 
@@ -736,9 +813,9 @@ export const detailsOfAnswer = (
   const searchable = searchableOf(posting.text);
 
   return {
-    remotePolicy: remotePolicyOf(answer, searchable),
+    remotePolicy: remotePolicyOf(answer, searchable, posting.workplace),
     reportsTo: reportsToOf(answer, searchable, posting.title),
-    salary: salaryBandOf(answer, posting.text),
+    salary: salaryBandOf(answer, posting),
     seniority: seniorityOf(posting.title, answer.seniority),
     teamSize: teamSizeOf(answer, searchable),
   };
@@ -748,7 +825,7 @@ const HOUR_MILLIS = 3_600_000;
 
 export const DEFAULT_ENRICHMENT_SWEEP_LIMIT = 8;
 
-export const DEFAULT_DAILY_MODEL_CALLS = 576;
+export const DEFAULT_DAILY_NEURONS = 40_000;
 
 export const sweepLimitOf = (deploy: {
   readonly configured: Option.Option<number>;
@@ -782,11 +859,12 @@ export const enqueueUnenriched = Effect.fn("enqueueUnenriched")(
 
 export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
   id: string,
-  dailyModelCalls: number = DEFAULT_DAILY_MODEL_CALLS
+  dailyNeurons: number = DEFAULT_DAILY_NEURONS
 ) {
   const store = yield* JobStore;
   const texts = yield* PostingTexts;
   const enricher = yield* ListingEnricher;
+  const day = Math.floor((yield* Clock.currentTimeMillis) / DAY_MILLIS);
 
   const skip = (reason: SkipReasonValue, detail: string) =>
     EnrichmentOutcome.Skipped({ detail: detail.slice(0, 300), id, reason });
@@ -807,47 +885,59 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
     return skip("Unsupported", `${job.source} is not a company board`);
   }
 
-  const claimModelCall = Effect.gen(function* claimModelCall() {
-    const now = yield* Clock.currentTimeMillis;
+  const budgetSpent = () =>
+    skip("DailyCapReached", `the ${dailyNeurons} neurons for today are spent`);
 
-    return yield* store.claimModelCall({
-      day: Math.floor(now / DAY_MILLIS),
-      limit: dailyModelCalls,
-    });
-  });
-
-  const details = texts.fetch(job).pipe(
-    Effect.mapError((failure) =>
-      skip(
-        Predicate.isTagged(failure, "PostingGone")
-          ? "Gone"
-          : "PostingUnavailable",
-        failure.message
-      )
-    ),
-    Effect.map((text) => text.trim().slice(0, MAX_POSTING_CHARS)),
+  const details = store.neuronsClaimed(day).pipe(
     Effect.filterOrFail(
-      (text) => text.length > 0,
+      (claimed) => claimed + enricher.maxNeurons <= dailyNeurons,
+      budgetSpent
+    ),
+    Effect.flatMap(() =>
+      texts
+        .fetch(job)
+        .pipe(
+          Effect.mapError((failure) =>
+            skip(
+              Predicate.isTagged(failure, "PostingGone")
+                ? "Gone"
+                : "PostingUnavailable",
+              failure.message
+            )
+          )
+        )
+    ),
+    Effect.map(({ text, workplace }): PostingRequest => ({
+      company: job.company,
+      text: text.trim().slice(0, MAX_POSTING_CHARS),
+      title: job.title,
+      workplace,
+    })),
+    Effect.filterOrFail(
+      (posting) => posting.text.length > 0,
       () => skip("EmptyPosting", "the posting has no text")
     ),
-    Effect.map((text) => ({ company: job.company, text, title: job.title })),
     Effect.flatMap((posting) =>
-      claimModelCall.pipe(
-        Effect.filterOrFail(
-          (claimed) => claimed,
-          () =>
-            skip(
-              "DailyCapReached",
-              `the ${dailyModelCalls} model calls for today are spent`
-            )
-        ),
-        Effect.as(posting)
-      )
+      store
+        .claimNeurons({
+          budget: dailyNeurons,
+          day,
+          neurons: enricher.neuronsFor(posting),
+        })
+        .pipe(
+          Effect.filterOrFail((claimed) => claimed, budgetSpent),
+          Effect.as(posting)
+        )
     ),
     Effect.flatMap((posting) =>
       enricher.extract(posting).pipe(
         Effect.mapError((failure) => skip("ModelUnavailable", failure.message)),
-        Effect.flatMap((answer) =>
+        Effect.tap(({ neurons }) =>
+          neurons === null
+            ? Effect.void
+            : store.recordNeuronsUsed({ day, neurons })
+        ),
+        Effect.flatMap(({ answer }) =>
           Schema.decodeUnknownEffect(ModelAnswer)(answer).pipe(
             Effect.mapError((failure) => skip("Malformed", failure.message))
           )

@@ -5,6 +5,7 @@ import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { postingTextsLayer } from "../src/index.js";
+import { linesOfHtml, MAX_HTML_CHARS, textOfHtml } from "../src/parse.js";
 import ashbyFixture from "./fixtures/ashby-board.json" with { type: "json" };
 import greenhouseFixture from "./fixtures/greenhouse-job.json" with { type: "json" };
 import leverFixture from "./fixtures/lever-posting.json" with { type: "json" };
@@ -64,11 +65,14 @@ const jobWithId = (id: string): JobValue => ({
   url: "https://example.com/job",
 });
 
-const fetchText = Effect.fnUntraced(function* fetchText(id: string) {
+const fetchPosting = Effect.fnUntraced(function* fetchPosting(id: string) {
   const texts = yield* PostingTexts;
 
   return yield* texts.fetch(jobWithId(id));
 });
+
+const fetchText = (id: string) =>
+  fetchPosting(id).pipe(Effect.map((posting) => posting.text));
 
 describe("posting texts", () => {
   it.effect(
@@ -132,12 +136,12 @@ describe("posting texts", () => {
   );
 
   it.effect(
-    "a Lever posting joins its description, lists, additional text, salary and workplace type",
+    "a Lever posting joins its description, lists, additional text and salary, and carries its workplace type as a field",
     () => {
       const server = serving(leverPosting);
 
       return Effect.gen(function* readLever() {
-        const text = yield* fetchText(
+        const { text, workplace } = yield* fetchPosting(
           "lever:outreach:5becd4e1-3474-4f36-b5dd-4b2cd0eb1179"
         );
 
@@ -151,7 +155,8 @@ describe("posting texts", () => {
         );
         expect(text).toContain("Why You’ll Love It Here");
         expect(text).toContain("$70,000-$110,000 USD");
-        expect(text.endsWith("Workplace type: remote")).toBe(true);
+        expect(workplace).toBe("Remote");
+        expect(text).not.toContain("Workplace type");
         expect(text).not.toContain("<li>");
         expect(moneyRangesIn(text)).toContainEqual({
           amounts: [70_000, 110_000],
@@ -198,12 +203,12 @@ describe("posting texts", () => {
   );
 
   it.effect(
-    "an Ashby posting is picked from its board with the compensation summary, location and workplace type",
+    "an Ashby posting is picked from its board with the compensation summary and location, and carries its workplace type as a field",
     () => {
       const server = serving(ashbyBoard);
 
       return Effect.gen(function* readAshby() {
-        const text = yield* fetchText(
+        const { text, workplace } = yield* fetchPosting(
           "ashby:clickup:abcd8589-5341-4890-99bb-3dcfc93246a9"
         );
 
@@ -215,9 +220,10 @@ describe("posting texts", () => {
         expect(text).toContain("please contact us at AskPeople@ClickUp.com.");
         expect(
           text.endsWith(
-            "Compensation: $200K – $250K USD per 1 YEAR\n\nLocation: United States\n\nWorkplace type: Remote"
+            "Compensation: $200K – $250K USD per 1 YEAR\n\nLocation: United States"
           )
         ).toBe(true);
+        expect(workplace).toBe("Remote");
         expect(moneyRangesIn(text)).toContainEqual({
           amounts: [200_000, 250_000],
           currency: "USD",
@@ -280,9 +286,12 @@ describe("posting texts", () => {
     "an Ashby hybrid posting flagged isRemote keeps its Hybrid workplace type",
     () =>
       Effect.gen(function* readAshbyHybrid() {
-        const text = yield* fetchText("ashby:baseten:hybrid");
+        const posting = yield* fetchPosting("ashby:baseten:hybrid");
 
-        expect(text).toBe("Inference team.\n\nWorkplace type: Hybrid");
+        expect(posting).toStrictEqual({
+          text: "Inference team.",
+          workplace: "Hybrid",
+        });
       }).pipe(
         Effect.provide(
           serving(
@@ -347,6 +356,72 @@ describe("posting texts", () => {
     }
   );
 
+  it.effect.each([
+    ["on_site", "Onsite"],
+    ["hybrid", "Hybrid"],
+    ["remote", "Remote"],
+    [null, "Unspecified"],
+  ] as const)(
+    "a Workable job with workplace %j carries %s as its workplace type",
+    ([workplace, expected]) =>
+      Effect.gen(function* readWorkableWorkplace() {
+        const posting = yield* fetchPosting("workable:upstream:0C4692F46C");
+
+        expect(posting).toStrictEqual({
+          text: "Field engineer.",
+          workplace: expected,
+        });
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({ description: "<p>Field engineer.</p>", workplace })
+          ).layer
+        )
+      )
+  );
+
+  it.effect(
+    "a Greenhouse posting has no workplace field, so a workplace line in its text stays text",
+    () =>
+      Effect.gen(function* readGreenhouseWorkplaceLine() {
+        const posting = yield* fetchPosting("greenhouse:acme:2");
+
+        expect(posting).toStrictEqual({
+          text: "Workplace type: Remote\nYou will work in our Austin office five days a week.",
+          workplace: "Unspecified",
+        });
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              content:
+                "&lt;p&gt;Workplace type: Remote&lt;/p&gt;&lt;p&gt;You will work in our Austin office five days a week.&lt;/p&gt;",
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect(
+    "a Lever posting longer than the model's character budget still carries its workplace type",
+    () =>
+      Effect.gen(function* readLongLever() {
+        const posting = yield* fetchPosting("lever:acme:long");
+
+        expect(posting.text.length).toBeGreaterThan(12_000);
+        expect(posting.workplace).toBe("Onsite");
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              descriptionPlain: `Workplace type: Remote\n${"We build tools for warehouses. ".repeat(500)}`,
+              workplaceType: "onsite",
+            })
+          ).layer
+        )
+      )
+  );
+
   it.effect("an Ashby posting missing from its board is gone", () =>
     Effect.gen(function* readMissingAshby() {
       const failure = yield* Effect.flip(fetchText("ashby:clickup:gone"));
@@ -394,9 +469,9 @@ describe("posting texts", () => {
     "a posting with empty content is read as empty text for core to skip, not as unavailable",
     () =>
       Effect.gen(function* readBlankPosting() {
-        const text = yield* fetchText("greenhouse:vercel:1");
+        const posting = yield* fetchPosting("greenhouse:vercel:1");
 
-        expect(text).toBe("");
+        expect(posting).toStrictEqual({ text: "", workplace: "Unspecified" });
       }).pipe(Effect.provide(serving(JSON.stringify({ content: "" })).layer))
   );
 
@@ -415,4 +490,42 @@ describe("posting texts", () => {
       }).pipe(Effect.provide(server.layer));
     }
   );
+});
+
+describe("linesOfHtml", () => {
+  it.each([
+    ["unclosed anchor tags", "<a".repeat(500_000)],
+    ["unclosed paragraph tags", "<p".repeat(500_000)],
+  ])("1 MB of %s parses in under 100 ms", (_label, html) => {
+    const started = performance.now();
+
+    linesOfHtml(html);
+
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  it("1 MB of escaped unclosed tags in Greenhouse content parses in under 100 ms", () => {
+    const started = performance.now();
+
+    linesOfHtml(textOfHtml("&lt;a".repeat(250_000)));
+
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  it("reads only the first 200,000 characters of raw HTML", () => {
+    const text = linesOfHtml(
+      `<p>${"word ".repeat(MAX_HTML_CHARS / 5)}</p><p>Base salary $400,000 - $500,000.</p>`
+    );
+
+    expect(MAX_HTML_CHARS).toBe(200_000);
+    expect(text).not.toContain("Base salary");
+  });
+
+  it("drops text hidden by zero size, zero opacity, an unquoted style or a quoted font before display none", () => {
+    expect(
+      linesOfHtml(
+        `<p>Shown.</p><p style="font-size:0">Base salary $400,000 - $500,000.</p><p style="opacity: 0">This role is fully remote.</p><p style=display:none>Reports to the CEO.</p><p style="font-family:'Arial';display:none">Lead a team of 40.</p><p style="font-size:14px;opacity:0.5">Visible.</p>`
+      )
+    ).toBe("Shown.\nVisible.");
+  });
 });

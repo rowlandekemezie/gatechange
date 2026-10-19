@@ -18,6 +18,8 @@ export interface MemoryJobStore {
   readonly history: () => ReadonlyMap<string, ListingHistory>;
   readonly jobs: () => readonly JobValue[];
   readonly layer: Layer.Layer<JobStore>;
+  readonly neurons: () => ReadonlyMap<number, number>;
+  readonly neuronsUsed: () => ReadonlyMap<number, number>;
   readonly runs: () => readonly IngestReceiptValue[];
   readonly skips: () => ReadonlyMap<string, EnrichmentSkip>;
 }
@@ -33,7 +35,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const lastSeenFeeds = new Map<string, string>();
   const previousSuccesses = new Map<string, number | null>();
   const lease = { heldUntil: 0, startedAt: 0 };
-  const modelCalls = new Map<number, number>();
+  const neurons = new Map<number, number>();
+  const neuronsUsed = new Map<number, number>();
 
   const successBefore = (feedKey: string, seenAt: number) => {
     const latest = states.get(feedKey)?.lastSuccessAt ?? null;
@@ -130,15 +133,15 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         return true;
       }),
-    claimModelCall: ({ day, limit }) =>
+    claimNeurons: (claim) =>
       Effect.sync(() => {
-        const calls = modelCalls.get(day) ?? 0;
+        const claimed = neurons.get(claim.day) ?? 0;
 
-        if (calls >= limit) {
+        if (claimed + claim.neurons > claim.budget) {
           return false;
         }
 
-        modelCalls.set(day, calls + 1);
+        neurons.set(claim.day, claimed + claim.neurons);
 
         return true;
       }),
@@ -179,6 +182,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           total: matching.length,
         };
       }),
+    neuronsClaimed: (day) => Effect.sync(() => neurons.get(day) ?? 0),
     pruneOlderThan: (cutoff) =>
       Effect.sync(() => {
         const expired = pipe(
@@ -210,6 +214,13 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           lastAttemptAt: Math.max(previous.lastAttemptAt ?? 0, attemptedAt),
           lastError: message,
         });
+      }),
+    recordNeuronsUsed: (usage) =>
+      Effect.sync(() => {
+        neuronsUsed.set(
+          usage.day,
+          (neuronsUsed.get(usage.day) ?? 0) + usage.neurons
+        );
       }),
     recordRun: (receipt) =>
       Effect.sync(() => {
@@ -342,6 +353,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     history: () => history,
     jobs: () => [...jobs.values()],
     layer: Layer.succeed(JobStore, store),
+    neurons: () => neurons,
+    neuronsUsed: () => neuronsUsed,
     runs: () => runs,
     skips: () => skips,
   };
