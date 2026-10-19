@@ -113,6 +113,14 @@ export { NoBillingAccount } from "./no-billing-account.js";
 export { ProRequired } from "./pro-required.js";
 
 export {
+  CompanySummary,
+  companySlugOf,
+  companySummaryOf,
+} from "./company-intel.js";
+
+export type { CompanySummaryValue } from "./company-intel.js";
+
+export {
   Entitlement,
   FREE,
   FreeEntitlement,

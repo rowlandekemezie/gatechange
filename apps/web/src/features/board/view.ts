@@ -5,12 +5,15 @@ import {
   seniorities,
   usesProFilters,
 } from "@rat-stack/core/contracts";
-import type { ListedJobValue, RoleLevelValue } from "@rat-stack/core/contracts";
-import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
+import type {
+  JobDetailValue,
+  ListedJobValue,
+  RoleLevelValue,
+} from "@rat-stack/core/contracts";
+import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
-import { SessionState } from "../../client/account/model.js";
-import { isProMember, MembershipState } from "../../client/billing/model.js";
+import { isFreeViewer } from "../../client/billing/model.js";
 import {
   ageChip,
   bandLabel,
@@ -274,15 +277,6 @@ const searchView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
     ]
   );
 
-const isFreeViewer = (model: ModelValue) =>
-  SessionState.match<boolean>(model.account.session, {
-    Checking: () => false,
-    SignedIn: () =>
-      Schema.is(MembershipState.Loaded)(model.billing.membership) &&
-      !isProMember(model.billing),
-    SignedOut: () => true,
-  });
-
 const proFilterView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.div(
     [h.Class("pro-filters")],
@@ -294,7 +288,8 @@ const proFilterView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
         Message.ToggledSalaryListed()
       ),
       h.span([h.Class("pro-badge")], ["Pro"]),
-      ...(usesProFilters(queryOf(model.filters, 0)) && isFreeViewer(model)
+      ...(usesProFilters(queryOf(model.filters, 0)) &&
+      isFreeViewer(model.account.session, model.billing)
         ? [
             h.p(
               [h.Class("upgrade-prompt"), h.Role("status")],
@@ -354,7 +349,7 @@ export const boardMasthead = (
 export const jobRow = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
-  job: ListedJobValue,
+  job: JobDetailValue,
   now: number
 ): Html => {
   const isApplied = Option.exists(

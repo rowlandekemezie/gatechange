@@ -1,5 +1,6 @@
 import {
   BoardStats,
+  CompanySummary,
   EpochMillis,
   JobDetail,
   ListedJob,
@@ -40,8 +41,9 @@ export const ListingState = defineTaggedUnion({
   Failed: { message: Schema.String, route: ListingRoute },
   Loaded: {
     generatedAt: EpochMillis,
-    jobs: Schema.Array(ListedJob),
+    jobs: Schema.Array(JobDetail),
     route: ListingRoute,
+    summary: Schema.NullOr(CompanySummary),
     total: Schema.Finite,
   },
   Loading: { route: ListingRoute },
@@ -53,7 +55,8 @@ export const Preload = defineTaggedUnion({
   JobMissing: {},
   Listing: {
     generatedAt: EpochMillis,
-    jobs: Schema.Array(ListedJob),
+    jobs: Schema.Array(JobDetail),
+    summary: Schema.NullOr(CompanySummary),
     total: Schema.Finite,
   },
   Nothing: {},

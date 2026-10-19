@@ -158,6 +158,18 @@ afterAll(async () => {
   await backend.dispose();
 });
 
+describe("company pages", () => {
+  it("serve the free intel summary and leave each role's days open and reposts out of the HTML", async () => {
+    const page = await edge(indexHtml).get(`${ORIGIN}/companies/acme`);
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain("Director of Engineering");
+    expect(page.html).toContain("1 open leadership role, listed for 2 days.");
+    expect(page.html).not.toContain("daysOpen");
+    expect(page.html).not.toContain("reposts");
+  });
+});
+
 describe("rendered page cache", () => {
   it("serves a repeat request from the cache without the backend", async () => {
     const site = edge(indexHtml);

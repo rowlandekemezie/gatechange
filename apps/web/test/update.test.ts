@@ -326,6 +326,7 @@ describe("server-rendered pages", () => {
       Preload.Listing({
         generatedAt: 1_760_000_000_000,
         jobs: [listed],
+        summary: null,
         total: 1,
       })
     );
@@ -349,7 +350,7 @@ describe("server-rendered pages", () => {
     const late = sent(
       left,
       Message.SucceededFetchListing({
-        listing: { generatedAt: 1, jobs: [listed], total: 1 },
+        listing: { generatedAt: 1, jobs: [listed], summary: null, total: 1 },
         route,
       })
     );
