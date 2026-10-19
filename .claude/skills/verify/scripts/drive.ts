@@ -62,6 +62,8 @@ const scenarios = [
   "tracker-remove",
   "tracker-closed",
   "tracker-isolation",
+  "pricing",
+  "free-gate",
 ] as const;
 
 type Scenario = (typeof scenarios)[number];
@@ -1146,6 +1148,55 @@ const run = async () => {
         );
       }
     },
+    "free-gate": async () => {
+      await signIn();
+      await goTo(url);
+
+      const before = await waitForRows(
+        `at least ${minRows} job rows`,
+        (state) => state.rows >= minRows
+      );
+
+      await waitFor("the salary filter chip", async () =>
+        (await clickButton("button.phrase", "Only roles that state a salary"))
+          ? true
+          : undefined
+      );
+
+      const prompt = await waitFor("the upgrade prompt", async () => {
+        const text = await evaluate(
+          Schema.String,
+          'document.querySelector(".upgrade-prompt")?.textContent ?? ""'
+        );
+
+        return text.length > 0 ? text : undefined;
+      });
+
+      await sleep(1500);
+
+      const after = await waitForRows(
+        "the board after the salary filter",
+        (state) => state.rows > 0
+      );
+
+      const query = await evaluate(Schema.String, "location.search");
+
+      steps.push(
+        { step: "board before the salary filter", ...before },
+        {
+          detail: prompt,
+          step: "turned on the salary filter as Free",
+          ...after,
+          query,
+        }
+      );
+
+      if (after.count !== before.count || after.rows !== before.rows) {
+        throw new Error(
+          `a Free member lost listings: ${before.count} became ${after.count}`
+        );
+      }
+    },
     "link-reuse": async () => {
       const link = await signIn();
 
@@ -1161,6 +1212,34 @@ const run = async () => {
 
       if (refused.header !== "Sign in") {
         throw new Error("a used link signed the viewer in again");
+      }
+    },
+    pricing: async () => {
+      await goTo(new URL("/pricing", url).href);
+
+      const plans = await waitFor("three plan cards", async () => {
+        const found = await evaluate(
+          Schema.Struct({
+            names: Schema.Array(Schema.String),
+            overflow: Schema.Finite,
+            prices: Schema.Array(Schema.String),
+          }),
+          `({
+            names: [...document.querySelectorAll("li.plan .plan-name")].map((node) => node.textContent),
+            overflow: document.documentElement.scrollWidth - window.innerWidth,
+            prices: [...document.querySelectorAll("li.plan .plan-price")].map((node) => node.textContent),
+          })`
+        );
+
+        return found.names.length === 3 ? found : undefined;
+      });
+
+      steps.push({ step: "opened the pricing page", ...plans });
+
+      if (plans.overflow > 0) {
+        throw new Error(
+          `the pricing page scrolls sideways by ${plans.overflow}px`
+        );
       }
     },
     search: async () => {

@@ -87,6 +87,9 @@ Scenarios:
 - `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
 - `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. It then reads the session cookie over the DevTools protocol and replays it from Node: a `trackJob` with `sec-fetch-site: cross-site` and a foreign `Origin` must answer 403, and a `trackedJobs` with the same cookie and same-origin headers must answer as a member, which proves the refusal came from the cross-site guard. Read the victim's row from the local D1 afterwards to prove it did not change.
 
+- `pricing` opens `/pricing` and requires three plan cards with their prices and no sideways scroll. Add `--mobile` for the phone check.
+- `free-gate` signs in as a Free member, turns on `Only roles that state a salary`, and requires the upgrade prompt with the same row count and count line as before, so a Free member never loses listings.
+
 Saved-search digest scenarios take `--backend "$(cat /tmp/verify-jobs/<stage>/backend-url)"` and `--log /tmp/verify-jobs/<stage>/dev.log`. They sign in as `--email` first, so give each run its own address: a member gets at most one digest a week, and a second run with the same address sends nothing. The digest cron is fired through the backend's `/cdn-cgi/handler/scheduled?cron=7+*+*+*+*&time=<ms>` route, and a digest counts when `dev.log` shows `alchemy dev` handing one to `--email`.
 
 - `save-search` presses `Email me new matches weekly` under the board search (after typing `--search` when given), waits for the saved notice, and requires the search on `/account`.
