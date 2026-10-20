@@ -2,6 +2,7 @@ import { Context, Schema } from "effect";
 import type { Effect, Option } from "effect";
 
 import type { CompanyRecords } from "./company-intel.js";
+import type { CompanyJobsValue } from "./company-jobs.js";
 import type { SkipReasonValue } from "./enrichment.js";
 import type { FeedStateValue } from "./feed.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
@@ -93,6 +94,13 @@ export class JobStore extends Context.Service<
     readonly claimNeurons: (
       claim: NeuronClaim
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
+    readonly companyJobs: (
+      slug: string,
+      now: number
+    ) => Effect.Effect<
+      Omit<CompanyJobsValue, "generatedAt">,
+      JobStoreUnavailable
+    >;
     readonly companyRecords: (
       slug: string,
       now: number
@@ -151,7 +159,8 @@ export class JobStore extends Context.Service<
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly stats: (
       now: number,
-      sources: readonly SourceNameValue[]
+      sources: readonly SourceNameValue[],
+      catalogKeys: readonly string[]
     ) => Effect.Effect<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable

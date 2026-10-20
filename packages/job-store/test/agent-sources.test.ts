@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { toRpc } from "@rat-stack/capability/rpc";
 import {
   agentSources,
   boardStats,
@@ -6,6 +7,7 @@ import {
   getJob,
   JobStore,
   listJobs,
+  PostingFeeds,
   ServedSources,
   Viewer,
 } from "@rat-stack/core";
@@ -16,6 +18,7 @@ import type {
   BillingStore,
 } from "@rat-stack/core";
 import { Effect, Layer, Option } from "effect";
+import { RpcTest } from "effect/rpc";
 
 import { billingStoreLayer } from "../src/index.js";
 import { sqlJsJobStore } from "./sqljs-executor.js";
@@ -114,11 +117,31 @@ describe("agent sources", () => {
             true
           );
 
+          yield* store.recordFeedFailure("Greenhouse:removed", NOW, "removed");
+          yield* store.recordFeedFailure("Remotive:all", NOW, "timeout");
+
+          const catalog = seeded.map((row) => ({
+            company: Option.some(row.company),
+            key: row.feed,
+            minIntervalMinutes: 60,
+            source: row.source,
+          }));
+
+          const feeds = PostingFeeds.of({
+            catalog,
+            fetch: () => Effect.die("boardStats must not fetch listings"),
+          });
+
           const agentStats = yield* boardStats
             .handler({})
-            .pipe(Effect.provideService(ServedSources, agentSources()));
+            .pipe(
+              Effect.provideService(ServedSources, agentSources()),
+              Effect.provideService(PostingFeeds, feeds)
+            );
 
-          const boardWide = yield* boardStats.handler({});
+          const boardWide = yield* boardStats
+            .handler({})
+            .pipe(Effect.provideService(PostingFeeds, feeds));
 
           expect(agentStats.activeJobs).toBe(agents.total);
           expect(agentStats.regions).toStrictEqual([
@@ -127,7 +150,35 @@ describe("agent sources", () => {
           expect(agentStats.roles).toStrictEqual([
             { count: 2, role: "Director" },
           ]);
+
+          const projection = toRpc([boardStats]);
+
+          const rpcStats = yield* Effect.scoped(
+            Effect.gen(function* callBoardStatsRpc() {
+              const client = yield* RpcTest.makeClient(projection.group).pipe(
+                Effect.provide(projection.layer),
+                Effect.provideService(JobStore, store),
+                Effect.provideService(PostingFeeds, feeds)
+              );
+
+              return yield* client.boardStats({});
+            })
+          );
+
+          expect(rpcStats).toStrictEqual(boardWide);
           expect(boardWide.activeJobs).toBe(board.total);
+          expect([
+            agentStats.feedsTotal,
+            agentStats.feedsFailing,
+          ]).toStrictEqual([5, 1]);
+          expect([boardWide.feedsTotal, boardWide.feedsFailing]).toStrictEqual([
+            5, 1,
+          ]);
+          expect(
+            (yield* store.feedStates).some(
+              (state) => state.key === "Greenhouse:removed"
+            )
+          ).toBe(true);
         }).pipe(as(Viewer.Anonymous()))
       )
   );

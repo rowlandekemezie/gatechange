@@ -13,6 +13,7 @@ import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
 import { BillingUnavailable } from "./billing-unavailable.js";
 import { CompanyIntel, CompanySlug, TREND_WEEKS } from "./company-intel.js";
+import { CompanyJobs } from "./company-jobs.js";
 import { Membership, Plan } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
@@ -235,6 +236,19 @@ export const listJobsContract = defineContract("listJobs", {
   output: JobPage,
 });
 
+export { CompanyJobs, COMPANY_LISTING_ROWS } from "./company-jobs.js";
+
+export type { CompanyJobsValue } from "./company-jobs.js";
+
+export const companyJobsContract = defineContract("companyJobs", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "List the latest public leadership roles for an exact company slug and summarize all its current roles",
+  failure: JobStoreUnavailable,
+  input: Schema.Struct({ slug: CompanySlug }),
+  output: CompanyJobs,
+});
+
 export const boardStatsContract = defineContract("boardStats", {
   annotations: { idempotent: true, readOnly: true },
   description:
@@ -439,6 +453,7 @@ export const companyIntelContract = defineContract("companyIntel", {
 
 export const jobBoardContracts = [
   listJobsContract,
+  companyJobsContract,
   boardStatsContract,
   getJobContract,
   accountContract,

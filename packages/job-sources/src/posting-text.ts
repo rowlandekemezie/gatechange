@@ -1,6 +1,7 @@
 import {
   annualSalaryBandOf,
   namesVariablePay,
+  salaryDisagreesWithText,
   PostingGone,
   PostingTexts,
   PostingUnavailable,
@@ -8,7 +9,6 @@ import {
 import type {
   JobValue,
   PostingTextValue,
-  SalaryBandValue,
   SalaryPeriodValue,
 } from "@rat-stack/core";
 import {
@@ -391,8 +391,9 @@ const labelsVariablePay = (
 
 const ashbySalary = (
   { compensationTiers }: AshbyCompensationValue,
-  places: readonly PlaceName[]
-): SalaryBandValue | null =>
+  places: readonly PlaceName[],
+  title: string
+): Pick<PostingTextValue, "salary" | "salaryUncertain"> =>
   pipe(
     ashbyTierFor(
       Option.getOrElse(decodeList(compensationTiers), () => []),
@@ -406,27 +407,29 @@ const ashbySalary = (
         Option.filter(({ summary }) => !labelsVariablePay(tier, summary))
       )
     ),
-    Option.flatMap((salary) =>
+    Option.flatMap((component) =>
       pipe(
-        Option.fromNullishOr(ashbyPeriodOf(salary.interval)),
-        Option.flatMap((period) =>
-          Option.fromNullishOr(
-            annualSalaryBandOf(
-              {
-                currency: salary.currencyCode,
-                max: salary.maxValue,
-                min: salary.minValue,
-              },
-              period
-            )
-          )
-        )
+        Option.fromNullishOr(ashbyPeriodOf(component.interval)),
+        Option.map((period) => {
+          const range = {
+            currency: component.currencyCode,
+            max: component.maxValue,
+            min: component.minValue,
+          };
+
+          const salary = annualSalaryBandOf(range, period);
+          const eligible = annualSalaryBandOf(range, period, title);
+
+          return salary !== null && eligible === null
+            ? { salary: null, salaryUncertain: true as const }
+            : { salary };
+        })
       )
     ),
-    Option.getOrNull
+    Option.getOrElse(() => ({ salary: null }))
   );
 
-const ashbyText = ({ externalId, id, slug }: PostingKey) =>
+const ashbyText = ({ externalId, id, slug, title }: PostingKey) =>
   getJson(
     `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}?includeCompensation=true`,
     AshbyBoard
@@ -454,18 +457,33 @@ const ashbyText = ({ externalId, id, slug }: PostingKey) =>
             Option.getOrElse(() => ({}))
           );
 
-          return Effect.succeed<PostingTextValue>({
-            salary: ashbySalary(
-              compensation,
-              placesOf(job.location, decodeAshbyAddress(job.address))
-            ),
+          const evidence = ashbySalary(
+            compensation,
+            placesOf(job.location, decodeAshbyAddress(job.address)),
+            title
+          );
+
+          const salaryUncertain =
+            evidence.salary !== null &&
+            salaryDisagreesWithText(
+              evidence.salary,
+              job.descriptionPlain ?? "",
+              title
+            );
+
+          const posting: PostingTextValue = {
+            ...evidence,
             text: nonEmpty([
               job.descriptionPlain,
               ashbyCompensation(compensation),
               locationLine(job.location),
             ]).join("\n\n"),
             workplace: workplaceOf(job.workplaceType),
-          });
+          };
+
+          return Effect.succeed<PostingTextValue>(
+            salaryUncertain ? { ...posting, salaryUncertain: true } : posting
+          );
         },
       })
     )
@@ -570,7 +588,10 @@ const JobKey = Schema.Struct({
   slug: Schema.NonEmptyString,
 });
 
-type PostingKey = typeof JobKey.Type & { readonly id: string };
+type PostingKey = typeof JobKey.Type & {
+  readonly id: string;
+  readonly title: string;
+};
 
 const jobKeyPattern = /^(?<ats>[^:]+):(?<slug>[^:]+):(?<externalId>.+)$/u;
 
@@ -588,7 +609,11 @@ const postingText = Effect.fnUntraced(function* postingText(job: JobValue) {
     });
   }
 
-  return yield* textOfAts[key.value.ats]({ ...key.value, id: job.id }).pipe(
+  return yield* textOfAts[key.value.ats]({
+    ...key.value,
+    id: job.id,
+    title: job.title,
+  }).pipe(
     Effect.mapError((failure) => {
       if (Predicate.isTagged(failure, "PostingGone")) {
         return failure;

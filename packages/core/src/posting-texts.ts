@@ -7,6 +7,7 @@ import type { PostingUnavailable } from "./posting-unavailable.js";
 
 export interface PostingTextValue {
   readonly salary: SalaryBandValue | null;
+  readonly salaryUncertain?: true;
   readonly text: string;
   readonly workplace: ArrangementValue;
 }

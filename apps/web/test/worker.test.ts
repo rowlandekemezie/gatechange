@@ -58,6 +58,13 @@ const backend = HttpRouter.toWebHandler(
         agentTokens: () => Effect.die("agent tokens are not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         companyIntel: () => Effect.die("company intel is not served here"),
+        companyJobs: ({ slug }) =>
+          Effect.succeed({
+            generatedAt: 1_760_500_000_000,
+            jobs: slug === "acme" ? [director] : [],
+            summary: { longestOpenDays: 2, openRoles: slug === "acme" ? 1 : 0 },
+            total: slug === "acme" ? 1 : 0,
+          }),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
         getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
