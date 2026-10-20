@@ -63,6 +63,7 @@ export class AlertStore extends Context.Service<
       at: number
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly sendsSince: (
+      cadence: CadenceValue,
       since: number
     ) => Effect.Effect<number, JobStoreUnavailable>;
     readonly unsubscribe: (

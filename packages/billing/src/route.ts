@@ -1,10 +1,10 @@
 import { applyBillingChange } from "@rat-stack/core";
 import { Clock, Effect, Option } from "effect";
-import type { Redacted } from "effect";
 import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 
 import { verifiedChange } from "./webhook.js";
+import type { StripeEndpoint } from "./webhook.js";
 
 const reply = (status: number, body: string) =>
   HttpServerResponse.text(body, {
@@ -13,7 +13,7 @@ const reply = (status: number, body: string) =>
   });
 
 export const stripeWebhookResponse = (
-  secret: Option.Option<Redacted.Redacted>,
+  endpoint: Option.Option<StripeEndpoint>,
   request: HttpServerRequest.HttpServerRequest
 ) =>
   Effect.gen(function* stripeWebhook() {
@@ -21,7 +21,7 @@ export const stripeWebhookResponse = (
       return reply(405, "method not allowed");
     }
 
-    if (Option.isNone(secret)) {
+    if (Option.isNone(endpoint)) {
       return reply(503, "billing is off");
     }
 
@@ -30,7 +30,7 @@ export const stripeWebhookResponse = (
     const header = request.headers["stripe-signature"] ?? "";
     const now = yield* Clock.currentTimeMillis;
 
-    return yield* verifiedChange(secret.value, payload, header, now).pipe(
+    return yield* verifiedChange(endpoint.value, payload, header, now).pipe(
       Effect.flatMap(applyBillingChange),
       Effect.map((outcome) =>
         reply(outcome === "Unmatched" ? 409 : 200, outcome)

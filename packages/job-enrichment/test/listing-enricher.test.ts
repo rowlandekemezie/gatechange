@@ -25,6 +25,7 @@ import type { ChatRequest, RunModel } from "../src/index.js";
 
 const posting: PostingRequest = {
   company: "Acme",
+  salary: null,
   text: "Lead a team of 8. Salary $200,000 - $240,000 USD per year.",
   title: "Engineering Manager",
   workplace: "Remote",

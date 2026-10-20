@@ -55,6 +55,7 @@ import type {
   PostingValue,
 } from "../src/index.js";
 import { makeMemoryJobStore } from "./memory-job-store.js";
+import { salaryLabelCases } from "./salary-label-cases.js";
 
 const MODEL = "test-model";
 
@@ -67,7 +68,7 @@ const MAX_NEURONS = 400;
 const posted = (
   text: string,
   workplace: ArrangementValue = "Unspecified"
-): PostingTextValue => ({ text, workplace });
+): PostingTextValue => ({ salary: null, text, workplace });
 
 const enricherOf = (
   extract: (
@@ -135,22 +136,6 @@ const listAll: JobQueryValue = {
   seniorities: [],
   sort: "Newest",
 };
-
-const unusedBilling = () => Effect.die("an anonymous viewer reads no billing");
-
-const anonymousViewer = Layer.mergeAll(
-  Layer.succeed(CurrentViewer, Viewer.Anonymous()),
-  Layer.succeed(
-    BillingStore,
-    BillingStore.of({
-      accountOfCustomer: unusedBilling,
-      applySubscription: unusedBilling,
-      customerOf: unusedBilling,
-      linkCustomer: unusedBilling,
-      subscriptionsOf: unusedBilling,
-    })
-  )
-);
 
 type AnswerValue = Data.TaggedEnum<{
   Answers: { readonly answer: unknown };
@@ -347,11 +332,7 @@ describe("enrichListing", () => {
           yield* store.replaceFeed(boardJob.feed, [boardJob], 0);
 
           const outcome = yield* enrichListing(boardJob.id);
-
-          const page = yield* listJobs
-            .handler(listAll)
-            .pipe(Effect.provide(anonymousViewer));
-
+          const page = yield* listJobs.handler(listAll);
           const found = yield* store.find(boardJob.id);
 
           return { found, outcome, page };
@@ -359,6 +340,17 @@ describe("enrichListing", () => {
           Effect.provide(
             Layer.mergeAll(
               memory.layer,
+              Layer.succeed(CurrentViewer, Viewer.Anonymous()),
+              Layer.succeed(
+                BillingStore,
+                BillingStore.of({
+                  accountOfCustomer: () => Effect.die("unused"),
+                  applySubscription: () => Effect.die("unused"),
+                  customerOf: () => Effect.die("unused"),
+                  linkCustomer: () => Effect.die("unused"),
+                  subscriptionsOf: () => Effect.die("unused"),
+                })
+              ),
               Layer.succeed(
                 PostingTexts,
                 PostingTexts.of({
@@ -1223,6 +1215,35 @@ describe("enrichListing", () => {
   );
 
   it.effect.each([
+    ["no salary", null, null],
+    ["a different salary", 90_000, 120_000],
+  ] as const)(
+    "the ATS salary field wins over a model answer with %s",
+    ([, salaryMin, salaryMax]) =>
+      Effect.gen(function* structuredSalary() {
+        const salary = { currency: "USD", max: 236_500, min: 177_400 } as const;
+
+        const result = yield* enrich({
+          answer: Answer.Answers({
+            answer: { ...validAnswer, salaryMax, salaryMin },
+          }),
+          fetched: Effect.succeed({
+            salary,
+            text: "Lead the wafer fab equipment team. Pay $90,000 - $120,000 base salary.",
+            workplace: "Unspecified",
+          }),
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.salary)
+          )
+        ).toStrictEqual(Option.some(salary));
+      })
+  );
+
+  it.effect.each([
     [
       "remote monitoring software",
       null,
@@ -1517,6 +1538,134 @@ describe("enrichListing", () => {
       null,
     ],
     [
+      "a Greenhouse pay range under its location title and a benefits line",
+      "At Pinterest we believe the workplace should be equitable, inclusive, and inspiring for every employee. In an effort to provide greater transparency, we are sharing the base salary range for this position. The position is also eligible for equity. Final salary is based on a number of factors including location, travel, relevant prior experience, or particular skills and expertise.\nInformation regarding the culture at Pinterest and benefits available for this position can be found here .\nUS based applicants only\n$177,185—$364,795 USD",
+      177_185,
+      364_795,
+      { currency: "USD", max: 364_795, min: 177_185 },
+    ],
+    [
+      "a pay range under its location title, a bonus heading and a salary heading",
+      "Base Salary\nAnnual Bonus\nUS based applicants only\n$20,000—$50,000 USD",
+      20_000,
+      50_000,
+      null,
+    ],
+    [
+      "a pay range three eligibility lines below the base salary sentence",
+      "We are sharing the base salary range for this position.\nUS based applicants only\nCandidates must be authorized to work in the US.\nMore details can be found here.\n$177,185—$364,795 USD",
+      177_185,
+      364_795,
+      null,
+    ],
+    [
+      "a contractor hourly range under a full-time base range",
+      "Compensation\nFull-time employees: $150,000 - $180,000\nContractors (hourly):\n$70 - $90 per hour",
+      70,
+      90,
+      null,
+    ],
+    [
+      "a commission target under a base salary",
+      "Base salary: $120,000\nCommission\nTarget:\n$40,000 - $60,000",
+      40_000,
+      60_000,
+      null,
+    ],
+    [
+      "a variable incentive range under a salary range",
+      "Salary\n$150k - $180k\nVariable incentive\n$30k - $50k",
+      30_000,
+      50_000,
+      null,
+    ],
+    [
+      "an RSU grant range under a salary range",
+      "Salary\n$150,000 - $180,000\nAnnual RSU grant\n$60,000 - $90,000",
+      60_000,
+      90_000,
+      null,
+    ],
+    [
+      "a stock option range under a compensation heading",
+      "Compensation\nStock options (4-year vest):\n$100,000 - $200,000",
+      100_000,
+      200_000,
+      null,
+    ],
+    [
+      "a contract hourly range under a base pay heading",
+      "Base pay range\nContract role, hourly:\n$60 - $80/hr",
+      60,
+      80,
+      null,
+    ],
+    [
+      "an intern program range under a salary heading",
+      "Salary\nSummer program\nfor interns and students\n$40,000 - $50,000",
+      40_000,
+      50_000,
+      null,
+    ],
+    [
+      "a second country's range under a base salary range",
+      "Base salary range\nUnited States: $180,000 - $220,000 USD\nCanada\n$150,000 - $190,000 CAD",
+      150_000,
+      190_000,
+      null,
+    ],
+    ...Array.map(
+      [
+        "Commission",
+        "Incentive",
+        "Variable",
+        "RSU",
+        "Stock",
+        "Options",
+        "Equity",
+      ],
+      (kind) =>
+        [
+          `a range under a ${kind} compensation heading`,
+          `${kind} compensation\n$30,000 - $50,000`,
+          30_000,
+          50_000,
+          null,
+        ] as const
+    ),
+    [
+      "a range under a student eligibility line",
+      "Base salary range\nStudent applicants only\n$40,000 - $50,000",
+      40_000,
+      50_000,
+      null,
+    ],
+    [
+      "a range under an eligibility line naming commission",
+      "Base salary range\nCandidates on the sales commission plan\n$40,000 - $60,000",
+      40_000,
+      60_000,
+      null,
+    ],
+    [
+      "an intern salary heading for a non-intern role",
+      "Intern salary\n$40,000 - $50,000",
+      40_000,
+      50_000,
+      null,
+    ],
+    ...Array.map(
+      ["-", "‐", "‑", "‒", "–", "—", "―", "−", " to "],
+      (dash) =>
+        [
+          `a base salary range joined by ${JSON.stringify(dash)}`,
+          `Base salary $150,000${dash}$180,000 per year.`,
+          150_000,
+          180_000,
+          { currency: "USD", max: 180_000, min: 150_000 },
+        ] as const
+    ),
+    [
       "a city-labelled range under a base-salary paragraph",
       "The base salary range for this position is below.\nSan Francisco: $180,000 - $220,000",
       180_000,
@@ -1637,6 +1786,7 @@ describe("enrichListing", () => {
       },
       {
         company: "Acme",
+        salary: null,
         text,
         title: "Engineering Manager",
         workplace: "Unspecified",
@@ -1664,7 +1814,13 @@ describe("enrichListing", () => {
 
       const details = detailsOfAnswer(
         { ...validAnswer, salaryMax: 120_000, salaryMin: 100_000 },
-        { company: "Acme", text, title: "Engineer", workplace: "Unspecified" }
+        {
+          company: "Acme",
+          salary: null,
+          text,
+          title: "Engineer",
+          workplace: "Unspecified",
+        }
       );
 
       expect(performance.now() - started).toBeLessThan(50);
@@ -1672,12 +1828,62 @@ describe("enrichListing", () => {
     }
   );
 
+  it.each(salaryLabelCases)(
+    "salary label case %s",
+    (_name, text, low, high, saved, title) => {
+      const { salary } = detailsOfAnswer(
+        { ...validAnswer, salaryMax: high, salaryMin: low },
+        { company: "Acme", salary: null, text, title, workplace: "Unspecified" }
+      );
+
+      expect(salary !== null).toBe(saved);
+    }
+  );
+
+  it("a stated band read as hourly by an aside falls through to a later yearly line that states it", () => {
+    const text =
+      "The base salary range (or hourly wage range, if applicable) that we reasonably expect to pay for this position is $200,000 to $270,000. A successful candidate's actual base salary (or hourly wage) amount will be determined by location.\nCompensation: $200K – $270K • Offers Equity • Plus up to 15% bonus USD per 1 YEAR";
+
+    expect(
+      detailsOfAnswer(
+        { ...validAnswer, salaryMax: 270_000, salaryMin: 200_000 },
+        {
+          company: "Acme",
+          salary: null,
+          text,
+          title: "Engineer",
+          workplace: "Unspecified",
+        }
+      ).salary
+    ).toStrictEqual({ currency: "USD", max: 270_000, min: 200_000 });
+  });
+
+  it("12,000 characters of range lines that all state the band are checked in milliseconds", () => {
+    const text = "$1 - $2\n".repeat(1500).slice(0, 12_000);
+    const started = performance.now();
+
+    const details = detailsOfAnswer(
+      { ...validAnswer, salaryMax: 2, salaryMin: 1 },
+      {
+        company: "Acme",
+        salary: null,
+        text,
+        title: "Engineer",
+        workplace: "Unspecified",
+      }
+    );
+
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(details.salary).toBeNull();
+  });
+
   it("a range paid in addition to base salary is not saved as salary", () => {
     expect(
       detailsOfAnswer(
         { ...validAnswer, salaryMax: 50_000, salaryMin: 20_000 },
         {
           company: "Acme",
+          salary: null,
           text: "Paid in addition to base salary: $20,000 - $50,000 per year.",
           title: "Engineer",
           workplace: "Unspecified",
@@ -1686,12 +1892,141 @@ describe("enrichListing", () => {
     ).toBeNull();
   });
 
+  it.each([
+    ["its own workplace tag", "Remote", "Great team. #LI-Hybrid", "Hybrid"],
+    [
+      "a work arrangement line",
+      "Remote",
+      "Benefits: Work Arrangement: Hybrid. #LI-Onsite",
+      "Hybrid",
+    ],
+    [
+      "a work arrangement label after benefits prose",
+      "Remote",
+      "Great compensation package and bonus plan Work Arrangement: Hybrid.",
+      "Hybrid",
+    ],
+    [
+      "a role declaration after its location requirement",
+      "Remote",
+      "Must live in Washington DC or Sacramento as this is a hybrid role.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement offered for this role",
+      "Remote",
+      "This role has a hybrid work arrangement.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement offered by the employer",
+      "Remote",
+      "We offer a hybrid work arrangement.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement described with office attendance",
+      "Remote",
+      "Our hybrid work arrangement gives employees three days in the office.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement improving employee experience",
+      "Remote",
+      "We offer a hybrid work arrangement to improve the employee experience.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement label improving employee experience",
+      "Remote",
+      "Work Arrangement: Hybrid to improve the employee experience.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement denied with a contraction",
+      "Remote",
+      "We don't offer a hybrid work arrangement.",
+      "Remote",
+    ],
+    [
+      "an arrangement named before the word",
+      "Remote",
+      "Hybrid work arrangement: home and office.",
+      "Hybrid",
+    ],
+    [
+      "a statement that this is the role's policy",
+      "Hybrid",
+      "This is an on-site role in Austin.",
+      "Onsite",
+    ],
+    ["only a model answer", "Hybrid", "This role is fully remote.", "Hybrid"],
+    ["a negated statement", "Hybrid", "This is not a remote role.", "Hybrid"],
+    [
+      "a negated arrangement beside a remote tag",
+      "Remote",
+      "This is not a hybrid work arrangement. #LI-Remote",
+      "Remote",
+    ],
+    [
+      "a remote role beside a separately negated arrangement",
+      "Remote",
+      "This is a remote role. We do not offer a hybrid work arrangement.",
+      "Remote",
+    ],
+    [
+      "experience in another arrangement",
+      "Remote",
+      "Experience working in a hybrid work arrangement is required. This is a remote role.",
+      "Remote",
+    ],
+    [
+      "an arrangement offered in the past",
+      "Remote",
+      "We previously offered a hybrid work arrangement. This is a remote role.",
+      "Remote",
+    ],
+    [
+      "an arrangement phrase split across sentences",
+      "Remote",
+      "Experience with hybrid\nwork arrangement: leadership across distributed teams.",
+      "Remote",
+    ],
+    [
+      "a negated arrangement label",
+      "Remote",
+      "Work arrangement: hybrid is not available.",
+      "Remote",
+    ],
+    [
+      "an affirmative remote role declaration",
+      "Hybrid",
+      "This is a remote role. #LI-Hybrid",
+      "Remote",
+    ],
+  ] as const)(
+    "a listed workplace beside %s saves the policy the posting states",
+    (_name, workplace, text, saved) => {
+      expect(
+        detailsOfAnswer(
+          {
+            ...validAnswer,
+            remotePolicy: "Remote",
+            remotePolicyQuote: "This role is fully remote.",
+          },
+          { company: "Acme", salary: null, text, title: "Engineer", workplace }
+        ).remotePolicy
+      ).toBe(saved);
+    }
+  );
+
   it("a role sentence that restates the tagged policy beside another keeps the tag", () => {
     expect(
       detailsOfAnswer(
         { ...validAnswer, remotePolicy: null, remotePolicyQuote: null },
         {
           company: "Acme",
+          salary: null,
           text: "This role is hybrid, on-site every Tuesday and Thursday. #LI-Hybrid",
           title: "Engineer",
           workplace: "Unspecified",
@@ -1711,6 +2046,7 @@ describe("enrichListing", () => {
         },
         {
           company: "Acme",
+          salary: null,
           text: "You will work with the Staff Engineering Manager, who reports to the VP of Engineering.",
           title: "Senior Engineering Manager",
           workplace: "Unspecified",
@@ -1882,6 +2218,17 @@ describe("enrichListing", () => {
           Effect.provide(
             Layer.mergeAll(
               memory.layer,
+              Layer.succeed(CurrentViewer, Viewer.Anonymous()),
+              Layer.succeed(
+                BillingStore,
+                BillingStore.of({
+                  accountOfCustomer: () => Effect.die("unused"),
+                  applySubscription: () => Effect.die("unused"),
+                  customerOf: () => Effect.die("unused"),
+                  linkCustomer: () => Effect.die("unused"),
+                  subscriptionsOf: () => Effect.die("unused"),
+                })
+              ),
               Layer.succeed(
                 PostingTexts,
                 PostingTexts.of({
