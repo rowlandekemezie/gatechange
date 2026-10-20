@@ -1,6 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- The test applies the checked-in migration SQL to a throwaway database before any Effect runs.
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { format } from "node:util";
 
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import {
@@ -30,6 +31,7 @@ import {
   viewerOfRequest,
 } from "../src/index.js";
 import type { AuthSettings, MagicLinkRequest } from "../src/index.js";
+import { SendEmailError } from "./fixtures/send-email-error.js";
 
 const ORIGIN = "http://localhost:1337";
 
@@ -235,6 +237,7 @@ const T0 = Date.UTC(2026, 9, 17, 12);
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("auth schema", () => {
@@ -258,6 +261,44 @@ describe("auth schema", () => {
 });
 
 describe("magic link sign-in", () => {
+  it.effect(
+    "keeps a failed send's recipient out of better-auth's logs while retaining its tag and provider code",
+    () =>
+      Effect.gen(function* privateFailure() {
+        const recipient = "private.recipient+signin@example.com";
+
+        const errorLog = vi
+          .spyOn(console, "error")
+          .mockImplementation(() => {});
+
+        const { auth } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () =>
+            new SendEmailError({
+              cause: Object.assign(
+                new Error(`email to ${recipient} not allowed`),
+                {
+                  code: "E_RECIPIENT_SUPPRESSED",
+                }
+              ),
+              message: "send_email failed",
+            })
+        );
+
+        expect(yield* statusOf(requestLink(auth, recipient))).toBe(500);
+
+        const logged = errorLog.mock.calls
+          .map((args) => format(...args))
+          .join("\n");
+
+        expect(logged).toContain("SendEmailError");
+        expect(logged).toContain("E_RECIPIENT_SUPPRESSED");
+        expect(logged).not.toContain(recipient);
+        expect(logged).not.toContain("email to");
+      })
+  );
+
   it.effect(
     "emails one link, signs the viewer in once, and refuses the same link again",
     () =>
