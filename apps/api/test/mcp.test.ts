@@ -281,7 +281,7 @@ const legacyRequest = (
   }).pipe(Effect.scoped);
 
 describe("board over MCP", () => {
-  for (const version of ["2025-11-25", "2025-06-18", "2025-03-26"]) {
+  for (const version of ["2025-11-25", "2025-06-18"]) {
     it.effect(
       `serves the ${version} lifecycle across fresh runtimes without sessions`,
       () =>
@@ -383,6 +383,7 @@ describe("board over MCP", () => {
       Effect.gen(function* contradictoryRequests() {
         for (const [version, headers, params] of [
           ["2099-01-01", {}, {}],
+          ["2025-03-26", {}, {}],
           ["2025-11-25", { "mcp-method": "tools/call" }, {}],
           ["2025-11-25", { "mcp-name": "listJobs" }, {}],
           ["2025-11-25", { "mcp-session-id": "invented-session" }, {}],
@@ -413,6 +414,11 @@ describe("board over MCP", () => {
           expect(rpcResultOf(response.text).error).toBeDefined();
           expect(response.listedSources).toStrictEqual([]);
         }
+
+        const noVersion = yield* legacyRequest("tools/list", {}, null);
+
+        expect(noVersion.status).toBe(400);
+        expect(noVersion.listedSources).toStrictEqual([]);
 
         const mismatch = yield* legacyRequest(
           "tools/call",
@@ -456,6 +462,7 @@ describe("board over MCP", () => {
           "[]",
           "null",
           '{"jsonrpc":"2.0","id":null,"method":"tools/list"}',
+          '{"jsonrpc":"2.0","id":1.5,"method":"ping"}',
           '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":[]}',
         ]) {
           const response = yield* send("/mcp", {
