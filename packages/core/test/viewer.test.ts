@@ -10,6 +10,7 @@ import {
   CurrentViewer,
   signInOptions,
   Unauthorized,
+  UNAUTHORIZED_MESSAGE,
   Viewer,
 } from "../src/index.js";
 import type { ViewerValue } from "../src/index.js";
@@ -49,7 +50,7 @@ describe("viewer", () => {
         const failure = yield* Effect.flip(client.account({}));
 
         expect(failure).toStrictEqual(
-          new Unauthorized({ message: "Sign in to see your account." })
+          new Unauthorized({ message: UNAUTHORIZED_MESSAGE })
         );
       })
   );

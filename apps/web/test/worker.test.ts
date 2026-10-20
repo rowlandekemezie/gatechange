@@ -46,16 +46,22 @@ const director: ListedJobValue = {
 
 const { group } = toRpcGroup(jobBoardContracts);
 
+const unlimited = {
+  limit: async () => await Promise.resolve({ success: true }),
+};
+
 const backend = HttpRouter.toWebHandler(
   RpcServer.layerHttp({ group, path: "/rpc", protocol: "http" }).pipe(
     Layer.provide([
       group.toLayer({
         account: () => Effect.die("account is not served here"),
+        agentTokens: () => Effect.die("agent tokens are not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         companyIntel: () => Effect.die("company intel is not served here"),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
         getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
+        issueAgentToken: () => Effect.die("agent tokens are not served here"),
         listJobs: () =>
           Effect.succeed({
             generatedAt: 1_760_500_000_000,
@@ -65,6 +71,7 @@ const backend = HttpRouter.toWebHandler(
         membership: () => Effect.die("billing is not served here"),
         noteTrackedJob: () => Effect.die("the tracker is not served here"),
         openBillingPortal: () => Effect.die("billing is not served here"),
+        revokeAgentToken: () => Effect.die("agent tokens are not served here"),
         saveSearch: () => Effect.die("saveSearch is not served here"),
         savedSearches: () => Effect.die("savedSearches is not served here"),
         setInstantAlerts: () => Effect.die("billing is not served here"),
@@ -107,6 +114,8 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
           : new Response("down", { status: backendStatus });
       },
     },
+    MCP_ANONYMOUS_LIMIT: unlimited,
+    MCP_TOKEN_LIMIT: unlimited,
     SITE_INDEXING: options.indexing ?? "index",
   };
 
