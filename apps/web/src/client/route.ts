@@ -129,16 +129,6 @@ const slugSegment = <A extends string>(
     )
   );
 
-export const companySlugOf = (company: string): Option.Option<string> =>
-  Option.liftPredicate(
-    company
-      .toLowerCase()
-      .split(/[^a-z0-9]+/u)
-      .filter((word) => word.length > 0)
-      .join("-"),
-    (slug) => slug.length > 0
-  );
-
 const SALARY_LISTED = "listed";
 
 const CHECKOUT_DONE = "done";

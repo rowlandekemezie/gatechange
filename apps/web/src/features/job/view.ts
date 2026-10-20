@@ -1,4 +1,4 @@
-import { offSiteHref } from "@rat-stack/core/contracts";
+import { companySlugOf, offSiteHref } from "@rat-stack/core/contracts";
 import type {
   EnrichmentValue,
   JobDetailValue,
@@ -20,7 +20,7 @@ import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { boardUrl, companyRouter, companySlugOf } from "../../client/route.js";
+import { boardUrl, companyRouter } from "../../client/route.js";
 
 const backLink = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.a(

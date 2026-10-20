@@ -156,6 +156,7 @@ const signedIn = SessionState.SignedIn({ account: ada });
 const refusingWith = (failure: AgentTokenLimit | ProRequired) =>
   JobQueries.of({
     agentTokens: Effect.die("unused"),
+    companyIntel: () => Effect.die("unused"),
     deleteSearch: () => Effect.die("unused"),
     getJob: () => Effect.die("unused"),
     importShortlist: () => Effect.die("unused"),

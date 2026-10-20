@@ -179,6 +179,7 @@ export {
   savedSearches,
   saveSearch,
   noteTrackedJob,
+  companyIntel,
   setInstantAlerts,
   signInOptions,
   startCheckout,
@@ -310,6 +311,7 @@ export {
   MAX_AGE_DAYS,
   membershipContract,
   openBillingPortalContract,
+  companyIntelContract,
   setInstantAlertsContract,
   startCheckoutContract,
   MAX_PAGE_SIZE,
@@ -416,3 +418,33 @@ export {
 } from "./site.js";
 
 export type { SiteHosts, StageHosts } from "./site.js";
+
+export {
+  CompanyIntel,
+  companyIntelOf,
+  CompanySlug,
+  companySlugOf,
+  CompanySummary,
+  companySummaryOf,
+  HiringTrend,
+  MIN_TREND_ROLES,
+  MIN_TREND_WEEKS,
+  ShownTrend,
+  sourceOfFeedKey,
+  ThinTrend,
+  TREND_WEEKS,
+  TREND_WINDOW_MILLIS,
+} from "./company-intel.js";
+
+export type {
+  CompanyIntelValue,
+  CompanyRecords,
+  CompanySummaryValue,
+  HiringTrendValue,
+  HistoryRecord,
+  IntelRoleValue,
+  OpenRoleRecord,
+  Stint,
+  TrendWeekValue,
+  TypicalBandValue,
+} from "./company-intel.js";
