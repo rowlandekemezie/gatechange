@@ -24,7 +24,6 @@ const GreenhouseJob = Schema.Struct({
     Schema.NullOr(Schema.Struct({ name: OptionalString }))
   ),
   title: Schema.String,
-  updated_at: OptionalString,
 });
 
 export const greenhousePostings = (feed: string, slug: string) =>
@@ -42,7 +41,7 @@ export const greenhousePostings = (feed: string, slug: string) =>
           company: "",
           externalId: String(job.id),
           location: job.location?.name ?? "",
-          postedAt: epochMillisOf(job.first_published ?? job.updated_at),
+          postedAt: epochMillisOf(job.first_published),
           salary: null,
           title: job.title,
           url: job.absolute_url,
