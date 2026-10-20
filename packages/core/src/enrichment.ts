@@ -54,6 +54,7 @@ export type ModelAnswerValue = typeof ModelAnswer.Type;
 export interface PostingRequest {
   readonly company: string;
   readonly salary: SalaryBandValue | null;
+  readonly salaryUncertain?: true;
   readonly text: string;
   readonly title: string;
   readonly workplace: ArrangementValue;
@@ -134,17 +135,24 @@ const periodFactor: Record<SalaryPeriodValue, number> = {
   Year: 1,
 };
 
+const populationWord = String.raw`(?:interns?|internships?|apprentices?|apprenticeships?|contractors?|contracts?|students?|co-?ops?)`;
+
+const populationInTitle = new RegExp(String.raw`\b${populationWord}\b`, "iu");
+
 export const annualSalaryBandOf = (
   { currency, max, min }: { currency: string; max: number; min: number },
-  period: SalaryPeriodValue
+  period: SalaryPeriodValue,
+  title = ""
 ): SalaryBandValue | null =>
-  Option.getOrNull(
-    Schema.decodeUnknownOption(SalaryBand)({
-      currency,
-      max: Math.round(max * periodFactor[period]),
-      min: Math.round(min * periodFactor[period]),
-    })
-  );
+  period === "Hour" && populationInTitle.test(title)
+    ? null
+    : Option.getOrNull(
+        Schema.decodeUnknownOption(SalaryBand)({
+          currency,
+          max: Math.round(max * periodFactor[period]),
+          min: Math.round(min * periodFactor[period]),
+        })
+      );
 
 export interface MoneyRange {
   readonly amounts: readonly number[];
@@ -226,10 +234,8 @@ const currencyOfMarkers = (
 };
 
 const amountOf = (digits: string | undefined, thousands: string | undefined) =>
-  Math.round(
-    Number((digits ?? "").replaceAll(",", "")) *
-      (thousands === undefined ? 1 : 1000)
-  );
+  Number((digits ?? "").replaceAll(",", "")) *
+  (thousands === undefined ? 1 : 1000);
 
 const LINE_CONTEXT_CHARS = 200;
 
@@ -286,6 +292,7 @@ const periodAround = (text: string, span: Span): SalaryPeriodValue => {
 
 interface MoneyMatch extends Span {
   readonly range: MoneyRange;
+  readonly unroundedAmounts: readonly number[];
 }
 
 const moneyMatchesIn = (text: string): readonly MoneyMatch[] => {
@@ -307,18 +314,21 @@ const moneyMatchesIn = (text: string): readonly MoneyMatch[] => {
 
     const span = { end: match.index + match[0].length, start: match.index };
 
+    const unroundedAmounts = [
+      amountOf(groups.low, groups.lowK),
+      ...(groups.high === undefined
+        ? []
+        : [amountOf(groups.high, groups.highK)]),
+    ];
+
     return Result.succeed({
       ...span,
       range: {
-        amounts: [
-          amountOf(groups.low, groups.lowK),
-          ...(groups.high === undefined
-            ? []
-            : [amountOf(groups.high, groups.highK)]),
-        ],
+        amounts: unroundedAmounts.map(Math.round),
         currency,
         period: periodAround(text, span),
       },
+      unroundedAmounts,
     });
   });
 };
@@ -368,17 +378,13 @@ const looseLabel = new RegExp(
   "iu"
 );
 
-const populationWord = String.raw`(?:interns?|internships?|apprentices?|apprenticeships?|contractors?|students?|co-?ops?)`;
-
-const populationInTitle = new RegExp(String.raw`\b${populationWord}\b`, "iu");
-
 const otherPopulation = new RegExp(
   String.raw`\b(?:(?:for|our)\s+(?:the\s+)?${populationWord}\b|${populationWord}(?=[\s(]+(?:applicants?|candidates?|roles?|positions?|rates?|program|pay|salary|salaries|wages?|compensation|hourly|only)\b))|^\W*${populationWord}\W*$`,
   "iu"
 );
 
 const otherPayNext = new RegExp(
-  String.raw`^\s*(?!(?:plus|and|with|or)\b)(?:[\p{L}-]+\s+){0,2}?${otherPayCue}`,
+  String.raw`^[\s•·*,:;–—-]*(?!(?:plus|and|with|or)\b)(?:[\p{L}-]+\s+){0,2}?${otherPayCue}`,
   "iu"
 );
 
@@ -544,6 +550,93 @@ const labelAbove = (
   return nearestRow ?? "";
 };
 
+const zoneRow = /^\W*Zone\s+\d+\b/iu;
+
+const zoneHeading =
+  /\b(?:geographic\s+)?pay\s+zones?\b|\bgeographic\s+zones?\b/iu;
+
+const inclusiveBonus =
+  /\b(?:inclusive\s+of|including|includes?)\b[^.\n]*\b(?:bonus|ote|on[\s-]target)\b/iu;
+
+const zoneFootnoteIncludesOtherPay = (
+  text: string,
+  span: Span,
+  end: number
+) => {
+  const below = text
+    .slice(end === -1 ? text.length : end + 1, span.end + LABEL_WINDOW_CHARS)
+    .split("\n");
+
+  for (const raw of below) {
+    if (raw.trim() === "" || (zoneRow.test(raw) && carriesRange(raw))) {
+      continue;
+    }
+
+    if (inclusiveBonus.test(raw) && !asideNegation.test(raw)) {
+      return true;
+    }
+
+    break;
+  }
+
+  return false;
+};
+
+const zoneIncludesOtherPay = (text: string, span: Span) => {
+  const from = text.lastIndexOf("\n", span.start - 1) + 1;
+  const end = text.indexOf("\n", span.end);
+
+  if (!zoneRow.test(text.slice(from, span.start))) {
+    return false;
+  }
+
+  if (zoneFootnoteIncludesOtherPay(text, span, end)) {
+    return true;
+  }
+
+  const above = text
+    .slice(Math.max(0, from - LABEL_WINDOW_CHARS), from)
+    .split("\n")
+    .toReversed();
+
+  let heading = false;
+  let bridge = 0;
+
+  for (const raw of above) {
+    if (raw.trim() === "" || (zoneRow.test(raw) && carriesRange(raw))) {
+      continue;
+    }
+
+    const variable = variablePay.exec(raw);
+
+    if (
+      heading &&
+      variable !== null &&
+      !asideNegation.test(raw.slice(0, variable.index))
+    ) {
+      return true;
+    }
+
+    if (namesBasePay(raw) && /\bbase\b/iu.test(raw)) {
+      return false;
+    }
+
+    if (zoneHeading.test(raw)) {
+      heading = true;
+    } else if (
+      !heading ||
+      carriesRange(raw) ||
+      bridge >= MAX_UNLABELLED_LINES_ABOVE
+    ) {
+      return false;
+    } else {
+      bridge += 1;
+    }
+  }
+
+  return false;
+};
+
 const isBasePay = (lines: PostingLines, span: Span, title: string) => {
   const { text } = lines;
   const around = lineAround(text, span);
@@ -554,7 +647,11 @@ const isBasePay = (lines: PostingLines, span: Span, title: string) => {
   const forOtherPopulation = (label: string) =>
     otherPopulation.test(label) && !populationInTitle.test(title);
 
-  if (forOtherPopulation(before) || totalHeading.test(before)) {
+  if (
+    forOtherPopulation(before) ||
+    totalHeading.test(before) ||
+    zoneIncludesOtherPay(text, span)
+  ) {
     return false;
   }
 
@@ -569,7 +666,8 @@ const isBasePay = (lines: PostingLines, span: Span, title: string) => {
   return (
     lastIndexOf(basePayCue, line) !== -1 &&
     lastIndexOf(otherPayCues, before) <= lastIndexOf(basePayCue, before) &&
-    !otherPayNext.test(after)
+    !otherPayNext.test(after) &&
+    !/^\s*(?:total\s+cash|equity\s+value)\b/iu.test(after)
   );
 };
 
@@ -607,6 +705,43 @@ const salaryBandOf = (
         : Option.none()
     ),
     Option.getOrNull
+  );
+};
+
+export const salaryDisagreesWithText = (
+  salary: SalaryBandValue,
+  rawText: string,
+  title: string
+) => {
+  const text = rawText.trim().slice(0, MAX_POSTING_CHARS);
+  const lines: PostingLines = { judgedByStart: new Map(), text };
+
+  const bands = moneyMatchesIn(text).flatMap((match) => {
+    if (match.range.amounts.length !== 2 || !isBasePay(lines, match, title)) {
+      return [];
+    }
+
+    const band = annualSalaryBandOf(
+      {
+        currency: match.range.currency,
+        max: Math.max(...match.unroundedAmounts),
+        min: Math.min(...match.unroundedAmounts),
+      },
+      match.range.period,
+      title
+    );
+
+    return band === null ? [] : [band];
+  });
+
+  return (
+    bands.length > 0 &&
+    !bands.some(
+      (band) =>
+        band.currency === salary.currency &&
+        band.min === salary.min &&
+        band.max === salary.max
+    )
   );
 };
 
@@ -1053,7 +1188,10 @@ export const detailsOfAnswer = (
   return {
     remotePolicy: remotePolicyOf(answer, searchable, posting.workplace),
     reportsTo: reportsToOf(answer, searchable, posting.title),
-    salary: posting.salary ?? salaryBandOf(answer, posting),
+    salary:
+      posting.salaryUncertain === true
+        ? null
+        : (posting.salary ?? salaryBandOf(answer, posting)),
     seniority: seniorityOf(posting.title, answer.seniority),
     teamSize: teamSizeOf(answer, searchable),
   };
@@ -1145,13 +1283,21 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
           )
         )
     ),
-    Effect.map(({ salary, text, workplace }): PostingRequest => ({
-      company: job.company,
-      salary,
-      text: text.trim().slice(0, MAX_POSTING_CHARS),
-      title: job.title,
-      workplace,
-    })),
+    Effect.map(
+      ({ salary, salaryUncertain, text, workplace }): PostingRequest => {
+        const posting = {
+          company: job.company,
+          salary,
+          text: text.trim().slice(0, MAX_POSTING_CHARS),
+          title: job.title,
+          workplace,
+        };
+
+        return salaryUncertain === true
+          ? { ...posting, salaryUncertain }
+          : posting;
+      }
+    ),
     Effect.filterOrFail(
       (posting) => posting.text.length > 0,
       () => skip("EmptyPosting", "the posting has no text")

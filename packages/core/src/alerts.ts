@@ -188,17 +188,51 @@ export interface DigestReceipt {
 type SendOutcome = "Sent" | "Skipped" | "Failed" | "QuotaExhausted";
 
 const deliver = Effect.fn("deliverDigest")(function* deliverDigest(
-  digest: Digest,
-  now: number
+  selected: Digest,
+  jobs: readonly JobValue[],
+  now: number,
+  dailyLimit: number
 ) {
   const store = yield* AlertStore;
   const mailer = yield* DigestMailer;
+
+  const current = yield* store.dueRecipients(
+    selected.cadence,
+    selected.periodStart,
+    now,
+    selected.account
+  );
+
+  const recipient = current.find(
+    (candidate) => candidate.account === selected.account
+  );
+
+  if (recipient === undefined) {
+    const skipped: SendOutcome = "Skipped";
+
+    return skipped;
+  }
+
+  const digest = digestFor(
+    recipient,
+    selected.periodStart,
+    jobs,
+    SourceTerms,
+    selected.cadence
+  );
+
+  if (digest.total === 0) {
+    const skipped: SendOutcome = "Skipped";
+
+    return skipped;
+  }
 
   const claimed = yield* store.claimDigest(
     digest.cadence,
     digest.account,
     digest.periodStart,
-    now
+    now,
+    dailyLimit
   );
 
   if (!claimed) {
@@ -210,19 +244,24 @@ const deliver = Effect.fn("deliverDigest")(function* deliverDigest(
   return yield* mailer.send(digest).pipe(
     Effect.matchEffect({
       onFailure: (failure) =>
-        store
-          .releaseDigest(digest.cadence, digest.account, digest.periodStart)
-          .pipe(
-            Effect.tap(() =>
-              Effect.logWarning("digest send failed", {
-                account: digest.account,
-                message: failure.message,
-              })
-            ),
-            Effect.as<SendOutcome>(
-              failure.quotaExhausted ? "QuotaExhausted" : "Failed"
+        (failure.quotaExhausted
+          ? store.releaseDigest(
+              digest.cadence,
+              digest.account,
+              digest.periodStart
             )
+          : Effect.void
+        ).pipe(
+          Effect.tap(() =>
+            Effect.logWarning("digest send failed", {
+              account: digest.account,
+              message: failure.message,
+            })
           ),
+          Effect.as<SendOutcome>(
+            failure.quotaExhausted ? "QuotaExhausted" : "Failed"
+          )
+        ),
       onSuccess: () =>
         store
           .markSent(
@@ -273,7 +312,12 @@ const runAlerts = Effect.fn("runAlerts")(function* runAlerts(
   const outcomes: SendOutcome[] = [];
 
   for (const digest of Array.take(withMatches, budget)) {
-    const outcome = yield* deliver(digest, now);
+    const outcome = yield* deliver(
+      digest,
+      jobs,
+      now,
+      dailySendsFor(cadence, plan.dailySendLimit)
+    );
 
     outcomes.push(outcome);
 
