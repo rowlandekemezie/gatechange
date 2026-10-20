@@ -149,7 +149,8 @@ export class JobStore extends Context.Service<
       enrichment: EnrichmentValue
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly stats: (
-      now: number
+      now: number,
+      catalogKeys: readonly string[]
     ) => Effect.Effect<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable

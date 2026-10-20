@@ -564,9 +564,11 @@ export const roleCountsStatement = (now: number) =>
     [now - MAX_AGE_DAYS * DAY_MILLIS]
   );
 
-export const feedHealthStatement = statement(
-  "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN consecutive_failures > 0 THEN 1 ELSE 0 END), 0) AS failing FROM feeds"
-);
+export const feedHealthStatement = (catalogKeys: readonly string[]) =>
+  statement(
+    "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN consecutive_failures > 0 THEN 1 ELSE 0 END), 0) AS failing FROM feeds WHERE key IN (SELECT value FROM json_each(?))",
+    [JSON.stringify(catalogKeys)]
+  );
 
 export const lastRunStatement = statement(
   `SELECT started_at, finished_at, feeds_attempted, feeds_failed, jobs_upserted, jobs_pruned, outcome

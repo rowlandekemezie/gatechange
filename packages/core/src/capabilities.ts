@@ -36,6 +36,7 @@ import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { JobStore } from "./job-store.js";
 import type { JobQueryValue } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
+import { PostingFeeds } from "./posting-feeds.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
 import type { TrackerFull } from "./tracker-full.js";
@@ -73,7 +74,12 @@ export const boardStats = implement(boardStatsContract, () =>
   Effect.gen(function* boardStatsHandler() {
     const store = yield* JobStore;
     const generatedAt = yield* Clock.currentTimeMillis;
-    const stats = yield* store.stats(generatedAt);
+    const feeds = yield* PostingFeeds;
+
+    const stats = yield* store.stats(
+      generatedAt,
+      feeds.catalog.map((feed) => feed.key)
+    );
 
     return { ...stats, generatedAt };
   })

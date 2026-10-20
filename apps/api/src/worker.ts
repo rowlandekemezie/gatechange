@@ -237,11 +237,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
     });
 
-    const ingestLayer = Layer.mergeAll(
-      storeLayer,
-      queueLayer,
-      postingFeedsLayer().pipe(Layer.provide(FetchHttpClient.layer))
+    const feedsLayer = postingFeedsLayer().pipe(
+      Layer.provide(FetchHttpClient.layer)
     );
+
+    const ingestLayer = Layer.mergeAll(storeLayer, queueLayer, feedsLayer);
 
     const enrichmentLayer = Layer.mergeAll(
       storeLayer,
@@ -454,6 +454,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
               Layer.provide(
                 Layer.mergeAll(
                   storeLayer,
+                  feedsLayer,
                   alertLayer,
                   billingLayer,
                   Layer.succeed(AccountStore, accountStore),
