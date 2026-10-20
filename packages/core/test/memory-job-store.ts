@@ -2,6 +2,7 @@ import { Array, Effect, Layer, Option, pipe } from "effect";
 
 import {
   companySlugOf,
+  COMPANY_LISTING_ROWS,
   daysOpen,
   fingerprintOf,
   isRepost,
@@ -222,6 +223,51 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         return true;
       }),
+    companyJobs: (slug, now) =>
+      Effect.sync(() => {
+        const matching = [...jobs.values()]
+          .flatMap((job) =>
+            Option.contains(companySlugOf(job.company), slug) &&
+            job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
+              ? [
+                  {
+                    ...job,
+                    daysOpen: daysOpen(
+                      history.get(fingerprintOf(job))?.firstSeenAt ??
+                        job.firstSeenAt,
+                      now
+                    ),
+                    enrichment: enrichmentOf(job.id),
+                    reposts: history.get(fingerprintOf(job))?.reposts ?? 0,
+                  },
+                ]
+              : []
+          )
+          .toSorted(
+            (left, right) =>
+              right.postedAt - left.postedAt || left.id.localeCompare(right.id)
+          );
+
+        let longestOpenDays = 0;
+
+        for (const job of matching) {
+          longestOpenDays = Math.max(longestOpenDays, job.daysOpen);
+        }
+
+        return {
+          jobs: matching
+            .slice(0, COMPANY_LISTING_ROWS)
+            .map(
+              ({ daysOpen: _daysOpen, reposts: _reposts, ...detail }) => detail
+            ),
+          summary: {
+            longestOpenDays,
+            openRoles: matching.length,
+          },
+          total: matching.length,
+        };
+      }),
+
     companyRecords: (slug, now) =>
       Effect.sync(() => ({
         history: [...intel.values()].flatMap((found) =>

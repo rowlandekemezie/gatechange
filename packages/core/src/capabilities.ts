@@ -15,6 +15,7 @@ import {
   accountContract,
   boardStatsContract,
   companyIntelContract,
+  companyJobsContract,
   deleteSearchContract,
   getJobContract,
   importShortlistContract,
@@ -66,6 +67,16 @@ export const listJobs = implement(listJobsContract, (query) =>
     const listing = yield* store.list(served, generatedAt);
 
     return { generatedAt, jobs: listing.jobs, total: listing.total };
+  })
+);
+
+export const companyJobs = implement(companyJobsContract, ({ slug }) =>
+  Effect.gen(function* companyJobsHandler() {
+    const store = yield* JobStore;
+    const generatedAt = yield* Clock.currentTimeMillis;
+    const listing = yield* store.companyJobs(slug, generatedAt);
+
+    return { ...listing, generatedAt };
   })
 );
 
@@ -277,6 +288,7 @@ export const companyIntel = implement(companyIntelContract, ({ slug }) =>
 
 export const capabilities = [
   listJobs,
+  companyJobs,
   boardStats,
   getJob,
   account,

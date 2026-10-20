@@ -20,7 +20,6 @@ import {
   toggled,
 } from "../src/client/board/filters.js";
 import type { FiltersValue } from "../src/client/board/filters.js";
-import { longestWord } from "../src/client/listing.js";
 import {
   boardUrl,
   companyRouter,
@@ -391,7 +390,6 @@ describe("company and role routes", () => {
         expect(routeAt(companyRouter({ slug }))).toStrictEqual(
           Route.Company({ slug })
         );
-        expect(company.toLowerCase()).toContain(longestWord(slug));
       }
     }
   );

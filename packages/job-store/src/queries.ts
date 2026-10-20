@@ -1,5 +1,6 @@
 import {
   companySlugOf,
+  COMPANY_LISTING_ROWS,
   DAY_MILLIS,
   fingerprintOf,
   MAX_AGE_DAYS,
@@ -81,9 +82,18 @@ const rankedColumns = [...jobColumnNames, ...enrichmentColumnNames]
   .map((column) => `ranked.${column}`)
   .join(", ");
 
-const filteredJobs = (query: JobQueryValue, now: number) => {
+const filteredJobs = (
+  query: JobQueryValue,
+  now: number,
+  companySlug?: string
+) => {
   const conditions = ["posted_at >= ?"];
   const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
+
+  if (companySlug !== undefined) {
+    conditions.push("jobs.company_slug = ?");
+    params.push(companySlug);
+  }
 
   if (query.roles.length > 0) {
     conditions.push(`role IN (${placeholders(query.roles.length)})`);
@@ -138,9 +148,10 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
 
 export const listJobsStatement = (
   query: JobQueryValue,
-  now: number
+  now: number,
+  companySlug?: string
 ): SqlStatement => {
-  const filtered = filteredJobs(query, now);
+  const filtered = filteredJobs(query, now, companySlug);
 
   const order =
     query.sort === "Newest"
@@ -162,6 +173,34 @@ LIMIT ? OFFSET ?`,
       query.limit,
       query.offset,
     ]
+  );
+};
+
+const companyQuery: JobQueryValue = {
+  limit: COMPANY_LISTING_ROWS,
+  maxAgeDays: MAX_AGE_DAYS,
+  offset: 0,
+  regions: [],
+  roles: [],
+  salaryFloor: null,
+  salaryListed: false,
+  search: "",
+  seniorities: [],
+  sort: "Newest",
+};
+
+export const companyJobsStatement = (slug: string, now: number) =>
+  listJobsStatement(companyQuery, now, slug);
+
+export const companySummaryStatement = (slug: string, now: number) => {
+  const filtered = filteredJobs(companyQuery, now, slug);
+
+  return statement(
+    `${filtered.sql}
+SELECT COUNT(*) AS total, MIN(COALESCE(history.first_seen_at, ranked.first_seen_at)) AS opened_at
+FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
+WHERE duplicate_rank = 1`,
+    filtered.params
   );
 };
 

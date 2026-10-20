@@ -82,7 +82,10 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
 
       if (isListingRoute(route)) {
         const listing = yield* collectListing(
-          (query) => client.listJobs(query),
+          {
+            companyJobs: (slug) => client.companyJobs({ slug }),
+            listJobs: (query) => client.listJobs(query),
+          },
           route
         );
 

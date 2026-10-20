@@ -1,7 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DAY_MILLIS, JobStore } from "@rat-stack/core";
+import {
+  companyJobs,
+  companyJobsContract,
+  DAY_MILLIS,
+  JobStore,
+} from "@rat-stack/core";
 import type { JobQueryValue, JobValue } from "@rat-stack/core";
-import { Array, Effect, Option, pipe } from "effect";
+import { Array, Effect, Option, pipe, Schema } from "effect";
+import { TestClock } from "effect/testing";
 
 import { seededSqlJsJobStore, sqlJsJobStore } from "./sqljs-executor.js";
 
@@ -61,6 +67,142 @@ const ids = (jobs: readonly JobValue[]) =>
   ).toSorted();
 
 describe("D1 job store queries", () => {
+  it.effect(
+    "exact public company lookup is bounded and counts every matching role beyond 500",
+    () =>
+      withStore(
+        Effect.gen(function* exactCompany() {
+          const store = yield* JobStore;
+
+          const rows = Array.makeBy(510, (index) =>
+            job({
+              company: "Remote",
+              feed: "greenhouse:remote",
+              firstSeenAt:
+                index === 509 ? NOW - 29 * DAY_MILLIS : NOW - index * 1000,
+              id: `remote:${index}`,
+              postedAt: NOW - index * 1000,
+              title: `Engineering Manager ${index}`,
+            })
+          );
+
+          yield* store.replaceFeed(
+            "greenhouse:remote",
+            [Array.getUnsafe(rows, 509)],
+            NOW - 29 * DAY_MILLIS
+          );
+          yield* store.replaceFeed("greenhouse:remote", rows, NOW);
+          yield* store.replaceFeed(
+            "remotive:all",
+            [
+              job({
+                company: "Remote",
+                feed: "remotive:all",
+                id: "remotive:remote",
+                source: "Remotive",
+                title: rows[0]?.title ?? "Engineering Manager 0",
+              }),
+              job({
+                company: "Remote",
+                feed: "remotive:all",
+                id: "remotive:unique",
+                source: "Remotive",
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "greenhouse:other",
+            [
+              job({
+                company: "Other",
+                feed: "greenhouse:other",
+                id: "other:remote",
+                location: "Remote",
+              }),
+              job({
+                company: "Remote",
+                feed: "greenhouse:other",
+                id: "expired",
+                postedAt: NOW - 31 * DAY_MILLIS,
+              }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "greenhouse:collision",
+            [
+              job({
+                company: "A+B",
+                feed: "greenhouse:collision",
+                id: "collision:1",
+              }),
+              job({
+                company: "A-B",
+                feed: "greenhouse:collision",
+                id: "collision:2",
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW
+          );
+          yield* TestClock.setTime(NOW);
+          const found = yield* companyJobs.handler({ slug: "remote" });
+          const collision = yield* companyJobs.handler({ slug: "a-b" });
+          const missing = yield* companyJobs.handler({ slug: "e-1" });
+          const listed = yield* store.list(query({ search: "Remote" }), NOW);
+
+          const encoded = yield* Schema.encodeEffect(
+            companyJobsContract.output
+          )(found);
+
+          expect(found.total).toBe(511);
+          expect(found.summary).toStrictEqual({
+            longestOpenDays: 29,
+            openRoles: 511,
+          });
+          expect(found.jobs).toHaveLength(12);
+          expect(found.jobs.every((row) => row.company === "Remote")).toBe(
+            true
+          );
+          expect(found.jobs.map((row) => row.id)).not.toContain(
+            "remotive:remote"
+          );
+          expect(found.jobs.map((row) => row.id)).toContain("remotive:unique");
+          expect(encoded.jobs).toHaveLength(12);
+          expect(JSON.stringify(found.jobs)).not.toContain("daysOpen");
+          expect(JSON.stringify(found.jobs)).not.toContain("reposts");
+          expect(JSON.stringify(encoded.jobs)).not.toContain("daysOpen");
+          expect(JSON.stringify(encoded.jobs)).not.toContain("reposts");
+          expect(
+            Schema.is(companyJobsContract.output)({
+              ...found,
+              jobs: [...found.jobs, ...found.jobs],
+            })
+          ).toBe(false);
+          expect(
+            Schema.is(companyJobsContract.input)({ slug: "remote%" })
+          ).toBe(false);
+          expect(collision.total).toBe(2);
+          expect(
+            collision.jobs.map((row) => row.company).toSorted()
+          ).toStrictEqual(["A+B", "A-B"]);
+          expect(missing).toStrictEqual({
+            generatedAt: NOW,
+            jobs: [],
+            summary: { longestOpenDays: 0, openRoles: 0 },
+            total: 0,
+          });
+          expect(listed.total).toBe(514);
+          expect(companyJobsContract.annotations).toMatchObject({
+            idempotent: true,
+            readOnly: true,
+          });
+        })
+      )
+  );
+
   it.effect(
     "replacing a feed keeps listed jobs, drops unlisted ones, and leaves other feeds alone",
     () =>

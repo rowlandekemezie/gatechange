@@ -614,56 +614,60 @@ const pageOf = (
 });
 
 describe("listing queries", () => {
-  it.effect(
-    "a company listing keeps only exact company matches across every page",
-    () =>
-      Effect.gen(function* companyListing() {
-        const decoys = Array.from({ length: 150 }, (_, index) =>
-          jobFrom("Ashby", `ashby:decoy/${index}`, {
-            company: index % 2 === 0 ? "Acme Robotics Labs" : "Other",
-            title: "Robotics director",
-          })
-        );
+  it.effect.each(["remote", "e-1", "acme-robotics"])(
+    "a company listing asks once for its exact slug %s without text-search paging",
+    (slug) =>
+      Effect.gen(function* exactCompany() {
+        const calls: string[] = [];
+        const target = jobFrom("Ashby", "remote:1", { company: "Remote" });
 
-        const target = jobFrom("Ashby", "ashby:acme/last", {
-          company: "ACME, Robotics!",
-        });
-
-        const queries: JobQueryValue[] = [];
+        const expected = {
+          generatedAt: 1_760_500_000_000,
+          jobs: slug === "remote" ? [target] : [],
+          summary: { longestOpenDays: 0, openRoles: slug === "remote" ? 1 : 0 },
+          total: slug === "remote" ? 1 : 0,
+        };
 
         const listing = yield* collectListing(
-          (query) => {
-            queries.push(query);
+          {
+            companyJobs: (key) => {
+              calls.push(key);
 
-            return Effect.succeed(pageOf([...decoys, target], query));
+              return Effect.succeed(expected);
+            },
+            listJobs: () =>
+              Effect.die("company pages must not search all listings"),
           },
-          Route.Company({ slug: "acme-robotics" })
+          Route.Company({ slug })
         );
 
-        expect(listing.jobs.map((job) => job.id)).toEqual(["ashby:acme/last"]);
-        expect(listing.total).toBe(1);
-        expect(queries.map((query) => query.search)).toEqual([
-          "robotics",
-          "robotics",
-        ]);
+        expect(calls).toStrictEqual([slug]);
+        expect(listing).toStrictEqual(expected);
       })
   );
 
   it.effect(
-    "a company listing keeps the first page of rows and counts the rest",
+    "a company listing preserves the full summary beyond the displayed rows",
     () =>
-      Effect.gen(function* cappedCompany() {
-        const jobs = Array.from({ length: 30 }, (_, index) =>
-          jobFrom("Ashby", `ashby:acme/${index}`)
-        );
+      Effect.gen(function* summaryCounts() {
+        const expected = {
+          generatedAt: 1_760_500_000_000,
+          jobs: Array.from({ length: LISTING_ROWS }, (_, index) =>
+            jobFrom("Ashby", `acme:${index}`)
+          ),
+          summary: { longestOpenDays: 29, openRoles: 600 },
+          total: 600,
+        };
 
         const listing = yield* collectListing(
-          (query) => Effect.succeed(pageOf(jobs, query)),
+          {
+            companyJobs: () => Effect.succeed(expected),
+            listJobs: () => Effect.die("unused"),
+          },
           Route.Company({ slug: "acme-robotics" })
         );
 
-        expect(listing.jobs).toHaveLength(LISTING_ROWS);
-        expect(listing.total).toBe(30);
+        expect(listing).toStrictEqual(expected);
       })
   );
 
@@ -672,12 +676,15 @@ describe("listing queries", () => {
     () =>
       Effect.gen(function* roleListing() {
         const queries: JobQueryValue[] = [];
-
         yield* collectListing(
-          (query) => {
-            queries.push(query);
+          {
+            companyJobs: () =>
+              Effect.die("role pages must not look up a company"),
+            listJobs: (query) => {
+              queries.push(query);
 
-            return Effect.succeed(pageOf([], query));
+              return Effect.succeed(pageOf([], query));
+            },
           },
           Route.Role({ place: "RemoteCanada", role: "Director" })
         );

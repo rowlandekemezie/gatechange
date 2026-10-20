@@ -290,6 +290,7 @@ const browserWith = (stored: string | null) => {
 const serverWith = (imports: unknown[]) =>
   JobQueries.of({
     companyIntel: () => Effect.die("unused"),
+    companyJobs: () => Effect.die("unused"),
     deleteSearch: () => Effect.die("unused"),
     getJob: () => Effect.die("unused"),
     importShortlist: (jobs) => {

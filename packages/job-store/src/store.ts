@@ -30,6 +30,8 @@ import {
   claimNeuronsStatement,
   clearSkipStatement,
   companyHistoryStatement,
+  companyJobsStatement,
+  companySummaryStatement,
   companyOpenRolesStatement,
   countJobsStatement,
   feedFailedStatement,
@@ -82,6 +84,11 @@ export const JobRow = Schema.Struct({
   source: SourceName,
   title: Schema.String,
   url: Schema.String,
+});
+
+const CompanySummaryRow = Schema.Struct({
+  opened_at: Schema.NullOr(Count),
+  total: Count,
 });
 
 const EnrichedJobRow = Schema.Struct({
@@ -315,6 +322,41 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       sql
         .batch("claimNeurons", [claimNeuronsStatement(claim)])
         .pipe(Effect.map(([claimed]) => claimed?.changes === 1)),
+
+    companyJobs: (slug, now) =>
+      Effect.all(
+        {
+          rows: sql.all(
+            "companyJobs",
+            companyJobsStatement(slug, now),
+            ListedJobRow
+          ),
+          totals: sql.all(
+            "companySummary",
+            companySummaryStatement(slug, now),
+            CompanySummaryRow
+          ),
+        },
+        { concurrency: 2 }
+      ).pipe(
+        Effect.flatMap(({ rows, totals }) =>
+          Effect.all(rows.map(jobDetailOfRow("companyJobs"))).pipe(
+            Effect.map((jobs) => {
+              const total = totals[0]?.total ?? 0;
+              const openedAt = totals[0]?.opened_at ?? now;
+
+              return {
+                jobs,
+                summary: {
+                  longestOpenDays: daysOpen(openedAt, now),
+                  openRoles: total,
+                },
+                total,
+              };
+            })
+          )
+        )
+      ),
 
     companyRecords: (slug, now) =>
       Effect.all(
