@@ -1,5 +1,6 @@
 import {
   BoardStats,
+  CompanyIntel,
   JobDetail,
   ListedJob,
   Stage,
@@ -41,6 +42,16 @@ export const ListingState = defineTaggedUnion({
   Loading: { route: ListingRoute },
   NotAsked: {},
 });
+
+export const IntelState = defineTaggedUnion({
+  Failed: { slug: Schema.String },
+  Loaded: { intel: CompanyIntel, slug: Schema.String },
+  Loading: { slug: Schema.String },
+  Locked: { slug: Schema.String },
+  NotAsked: {},
+});
+
+export type IntelStateValue = typeof IntelState.Type;
 
 export const Preload = defineTaggedUnion({
   Job: { job: JobDetail },
@@ -130,6 +141,7 @@ export const Model = Schema.Struct({
   draftSearch: Schema.String,
   filters: Filters,
   generation: Schema.Finite,
+  intel: IntelState,
   job: JobState,
   jobs: JobsState,
   listing: ListingState,

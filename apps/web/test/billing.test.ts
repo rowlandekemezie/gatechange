@@ -318,7 +318,8 @@ describe("billing pages", () => {
           expect(text).not.toContain(
             "Salary floor and seniority filters coming soon"
           );
-          expect(text).toContain("Company intel coming soon");
+          expect(text).toContain("Company intel");
+          expect(text).not.toContain("Company intel coming soon");
           expect(text.match(/Sign in to upgrade/gu)?.length).toBe(3);
         }
       )

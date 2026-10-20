@@ -82,7 +82,7 @@ const proFeatures: readonly (readonly [string, boolean])[] = [
   ],
   ["Show only roles that state a salary", true],
   ["Salary floor and seniority filters", true],
-  ["Company intel", false],
+  ["Company intel", true],
 ];
 
 const featureList = (h: HtmlBuilder<MessageValue>, items: readonly Html[]) =>

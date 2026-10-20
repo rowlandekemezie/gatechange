@@ -114,13 +114,25 @@ export { NoBillingAccount } from "./no-billing-account.js";
 export { ProRequired } from "./pro-required.js";
 
 export {
+  CompanyIntel,
+  CompanySlug,
   CompanySummary,
   companySlugOf,
   companySummaryOf,
+  HiringTrend,
+  ShownTrend,
+  ThinTrend,
   TREND_WEEKS,
 } from "./company-intel.js";
 
-export type { CompanySummaryValue } from "./company-intel.js";
+export type {
+  CompanyIntelValue,
+  CompanySummaryValue,
+  HiringTrendValue,
+  IntelRoleValue,
+  TrendWeekValue,
+  TypicalBandValue,
+} from "./company-intel.js";
 
 export {
   Entitlement,
@@ -131,6 +143,7 @@ export {
   Plan,
   PLAN_PRICES,
   plans,
+  paidFeaturesAllowed,
   ProEntitlement,
 } from "./entitlement.js";
 
