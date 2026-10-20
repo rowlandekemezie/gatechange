@@ -23,6 +23,20 @@ const leadershipTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["Manager II, Engineering", "EngineeringManager"],
   ["Software Development Manager", "EngineeringManager"],
   ["Manager, Site Reliability Engineering", "EngineeringManager"],
+  ["Application Development Manager", "EngineeringManager"],
+  ["Systems Development Manager", "EngineeringManager"],
+  ["Director of Product Engineering, AI Growth", "Director"],
+  ["Director, Product Security, AI", "Director"],
+  ["VP, Product Security", "VicePresident"],
+  ["Engineering Manager, Product Infrastructure", "EngineeringManager"],
+  ["Senior Manager, Security Engineering", "EngineeringManager"],
+  ["Director, Physical Security Engineering", "Director"],
+  ["Engineering Manager, Physical Security Systems", "EngineeringManager"],
+  ["Head of AI Engineering", "HeadOfEngineering"],
+  ["Director, Platform Engineering", "Director"],
+  ["Head of Product Engineering", "HeadOfEngineering"],
+  ["EM", "EngineeringManager"],
+  ["Senior EM, Infrastructure", "EngineeringManager"],
 ];
 
 const titleSeniorities: readonly (readonly [string, SeniorityValue])[] = [
@@ -43,6 +57,10 @@ const titleSeniorities: readonly (readonly [string, SeniorityValue])[] = [
 ];
 
 const otherTitles = [
+  "Director of Product, AI Growth",
+  "Senior Manager, Physical Security & Safety",
+  "VP Product, Cloud & Inference",
+  "Director, Physical Security",
   "Product Manager, Platform",
   "Technical Program Manager",
   "Sales Engineering Manager",
@@ -51,6 +69,12 @@ const otherTitles = [
   "Director of Data Science",
   "Staff Software Engineer",
   "Engineering Lead",
+  "Sr. Business Development Manager",
+  "Real Estate Development Manager",
+  "Corporate Development Manager",
+  "Analista de Dados em Finanças Sênior",
+  "Especialista em Desenvolvimento de Negócios",
+  "ESPECIALISTA EM DESENVOLVIMENTO DE NEGÓCIOS",
 ];
 
 const placements: readonly (readonly [
