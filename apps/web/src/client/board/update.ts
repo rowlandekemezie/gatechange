@@ -10,9 +10,13 @@ import type { MessageValue as AccountMessageValue } from "../account/message.js"
 import { SessionState } from "../account/model.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
+import type { MessageValue as BillingMessageValue } from "../billing/message.js";
+import { isProMember, MembershipState } from "../billing/model.js";
+import type { ModelValue as BillingModelValue } from "../billing/model.js";
+import * as Billing from "../billing/update.js";
 import type { ListingRouteValue } from "../listing.js";
 import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
-import type { RouteValue } from "../route.js";
+import type { AccountNoticeValue, RouteValue } from "../route.js";
 import type { MessageValue as SavedSearchesMessageValue } from "../saved-searches/message.js";
 import type { ModelValue as SavedSearchesModelValue } from "../saved-searches/model.js";
 import * as SavedSearches from "../saved-searches/update.js";
@@ -116,15 +120,56 @@ const foldSavedSearchesEntered = Update.foldChildStep({
   update: SavedSearches.entered,
 });
 
-const enteredAccount = (model: ModelValue): UpdateReturn => {
-  const account = foldAccountEntered(model);
-  const searches = foldSavedSearchesEntered(account.model);
+const billingChild = {
+  read: (model: ModelValue) => Option.some(model.billing),
+  toParentMessage: (message: BillingMessageValue) =>
+    Message.GotBillingMessage({ message }),
+  write: (model: ModelValue, billing: BillingModelValue) =>
+    modifyFields(model, { billing: () => billing }),
+};
+
+const foldBilling = Update.foldChild({
+  ...billingChild,
+  update: Billing.update,
+});
+
+const foldBillingStep = (
+  step: (
+    billing: BillingModelValue
+  ) => Update.Return<BillingModelValue, BillingMessageValue, JobQueries>
+) =>
+  Update.foldChildStep({
+    ...billingChild,
+    update: step,
+  });
+
+const isSignedIn = (model: ModelValue) =>
+  Schema.is(SessionState.SignedIn)(model.account.session);
+
+const enteredBilling = (model: ModelValue, afterCheckout: boolean) =>
+  foldBillingStep((billing) =>
+    Billing.entered(billing, { afterCheckout, isSignedIn: isSignedIn(model) })
+  )(model);
+
+const joined = (
+  first: UpdateReturn,
+  andThen: (model: ModelValue) => UpdateReturn
+) => {
+  const second = andThen(first.model);
 
   return {
-    commands: [...(account.commands ?? []), ...(searches.commands ?? [])],
-    model: searches.model,
+    commands: [...(first.commands ?? []), ...(second.commands ?? [])],
+    model: second.model,
   };
 };
+
+const enteredAccount = (
+  model: ModelValue,
+  notice: AccountNoticeValue
+): UpdateReturn =>
+  joined(joined(foldAccountEntered(model), foldSavedSearchesEntered), (next) =>
+    enteredBilling(next, notice === "CheckoutDone")
+  );
 
 const sameFilters = Schema.toEquivalence(Filters);
 
@@ -176,6 +221,30 @@ const navigatedTo = (model: ModelValue, filters: FiltersValue): UpdateReturn =>
       : PushUrl,
     boardUrl(filters)
   );
+
+const followedEntitlement = (
+  previous: ModelValue,
+  step: UpdateReturn
+): UpdateReturn =>
+  isProMember(previous.billing) &&
+  (Schema.is(SessionState.SignedOut)(step.model.account.session) ||
+    (Schema.is(MembershipState.Loaded)(step.model.billing.membership) &&
+      !isProMember(step.model.billing)))
+    ? joined(step, (next) => {
+        const filters = {
+          ...next.filters,
+          salaryFloor: null,
+          salaryListed: false,
+          seniorities: [],
+        };
+
+        const reset = withFilters(next, filters);
+
+        return Schema.is(Route.Board)(next.route)
+          ? visiting(reset, ReplaceUrl, boardUrl(filters))
+          : reset;
+      })
+    : step;
 
 const listedJob = (model: ModelValue, id: string) =>
   Schema.is(JobsState.Loaded)(model.jobs)
@@ -231,7 +300,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   const routed = modifyFields(model, { route: () => route });
 
   return Route.match<UpdateReturn>(route, {
-    Account: () => enteredAccount(routed),
+    Account: ({ notice }) => enteredAccount(routed, notice),
     Board: ({ filters }) =>
       Schema.is(JobsState.NotAsked)(model.jobs) ||
       !sameFilters(filters, model.filters)
@@ -244,6 +313,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
     ConfirmSignIn: () => ({ commands: [ForgetSignInToken()], model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
+    Pricing: () => enteredBilling(routed, false),
     Role: (role) => enteredListing(routed, role),
     Shortlist: () => ({ model: routed }),
   });
@@ -453,7 +523,18 @@ const movedShortlist = (model: ModelValue): UpdateReturn =>
     })
   );
 
-const followedSession = (step: UpdateReturn): UpdateReturn => {
+const followedBilling = (step: UpdateReturn): UpdateReturn =>
+  SessionState.match<UpdateReturn>(step.model.account.session, {
+    Checking: () => step,
+    SignedIn: () => joined(step, foldBillingStep(Billing.signedIn)),
+    SignedOut: () => ({
+      ...step,
+      model: modifyFields(step.model, { billing: Billing.signedOut }),
+    }),
+  });
+
+const followedSession = (taken: UpdateReturn): UpdateReturn => {
+  const step = followedBilling(taken);
   const { account, tracker } = step.model;
   const isLocal = Schema.is(TrackerState.Local)(tracker);
 
@@ -511,6 +592,7 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
 
 export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   const account = Account.init();
+  const billing = Billing.init();
   const savedSearches = SavedSearches.init();
 
   const routed = arrivedAt(
@@ -518,6 +600,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
       {
         account: account.model,
         awaitingEcho: [],
+        billing: billing.model,
         draftSearch: "",
         filters: defaultFilters,
         generation: 0,
@@ -727,7 +810,12 @@ export const update = (
         : { model: flagged };
     },
     GotAccountMessage: ({ message: accountMessage }) =>
-      followedSession(foldAccount(model, accountMessage)),
+      followedEntitlement(
+        model,
+        followedSession(foldAccount(model, accountMessage))
+      ),
+    GotBillingMessage: ({ message: billingMessage }) =>
+      followedEntitlement(model, foldBilling(model, billingMessage)),
     GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>
       foldSavedSearches(model, savedSearchesMessage),
     SubmittedSearch: () =>
@@ -810,6 +898,11 @@ export const update = (
       navigatedTo(model, {
         ...model.filters,
         roles: toggled(roleLevels, model.filters.roles, role),
+      }),
+    ToggledSalaryListed: () =>
+      navigatedTo(model, {
+        ...model.filters,
+        salaryListed: !model.filters.salaryListed,
       }),
     ToggledSeniority: ({ seniority }) =>
       navigatedTo(model, {

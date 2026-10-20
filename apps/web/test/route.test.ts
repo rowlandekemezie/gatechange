@@ -199,6 +199,7 @@ describe("board query", () => {
       ],
       roles: defaultFilters.roles,
       salaryFloor: null,
+      salaryListed: false,
       search: "",
       seniorities: [],
       sort: "Relevance",

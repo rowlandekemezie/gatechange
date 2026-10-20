@@ -167,6 +167,7 @@ const listAll: JobQueryValue = {
   regions: [],
   roles: [],
   salaryFloor: null,
+  salaryListed: false,
   search: "",
   seniorities: [],
   sort: "Newest",

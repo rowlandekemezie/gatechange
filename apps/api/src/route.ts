@@ -1,10 +1,11 @@
 import { isAuthPath, respondAsViewer } from "@rat-stack/accounts";
+import { STRIPE_WEBHOOK_PATH } from "@rat-stack/billing";
 import { SITE_ORIGIN } from "@rat-stack/core";
 import type { AccountStore, ViewerValue } from "@rat-stack/core";
 import { UNSUBSCRIBE_PATH } from "@rat-stack/digest-mailer";
 import { Effect } from "effect";
-import { HttpServerRequest } from "effect/http";
 import type { HttpServerResponse } from "effect/http";
+import { HttpServerRequest } from "effect/http";
 
 const pathOf = (url: string) => new URL(url, SITE_ORIGIN).pathname;
 
@@ -17,6 +18,9 @@ export interface Routes<Error, Context> {
   >;
   readonly rpc: (
     viewer: ViewerValue
+  ) => Effect.Effect<HttpServerResponse.HttpServerResponse, Error, Context>;
+  readonly stripeWebhook: (
+    request: HttpServerRequest.HttpServerRequest
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse, Error, Context>;
   readonly unsubscribe: (
     request: HttpServerRequest.HttpServerRequest
@@ -31,8 +35,14 @@ export const handleRoutes = <Error, Context>(routes: Routes<Error, Context>) =>
       return yield* routes.auth;
     }
 
-    if (pathOf(request.url) === UNSUBSCRIBE_PATH) {
+    const path = pathOf(request.url);
+
+    if (path === UNSUBSCRIBE_PATH) {
       return yield* routes.unsubscribe(request);
+    }
+
+    if (path === STRIPE_WEBHOOK_PATH) {
+      return yield* routes.stripeWebhook(request);
     }
 
     return yield* respondAsViewer(

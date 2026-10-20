@@ -1,7 +1,10 @@
 import {
   AccountId,
   AlertStore,
+  DAY_MILLIS,
   DigestFrequency,
+  GRANTING_STATUSES,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
   RECIPIENT_SENDS_PER_WEEK,
   Region,
   regions,
@@ -18,9 +21,14 @@ import type {
 } from "@rat-stack/core";
 import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
-import { jobColumns } from "./queries.js";
+import { jobColumns, placeholders } from "./queries.js";
 import { SqlExecutor, statement } from "./sql-executor.js";
 import { JobRow, jobOfRow } from "./store.js";
+
+const sends = {
+  Instant: { period: "window_start", table: "instant_sends" },
+  Weekly: { period: "period_start", table: "alert_sends" },
+} as const;
 
 const searchColumns =
   "id, account_id, roles, regions, search, frequency, created_at";
@@ -95,23 +103,38 @@ export const makeAlertStore = Effect.gen(function* makeAlertStore() {
       .pipe(Effect.map(Array.map(searchOfRow)));
 
   return AlertStore.of({
-    claimDigest: (account, periodStart, now) =>
+    claimDigest: (cadence, account, periodStart, now) =>
       sql
         .batch("claimDigest", [
-          statement(
-            `INSERT INTO alert_sends (account_id, period_start, status, claimed_at)
+          cadence === "Instant"
+            ? statement(
+                `INSERT INTO instant_sends (account_id, window_start, status, claimed_at)
+SELECT ?, ?, 'Claimed', ?
+WHERE (SELECT COUNT(*) FROM instant_sends WHERE account_id = ? AND claimed_at > ?) < ?
+ON CONFLICT (account_id, window_start) DO NOTHING`,
+                [
+                  account,
+                  periodStart,
+                  now,
+                  account,
+                  now - DAY_MILLIS,
+                  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+                ]
+              )
+            : statement(
+                `INSERT INTO alert_sends (account_id, period_start, status, claimed_at)
 SELECT ?, ?, 'Claimed', ?
 WHERE (SELECT COUNT(*) FROM alert_sends WHERE account_id = ? AND claimed_at > ?) < ?
 ON CONFLICT (account_id, period_start) DO NOTHING`,
-            [
-              account,
-              periodStart,
-              now,
-              account,
-              now - WEEK_MILLIS,
-              RECIPIENT_SENDS_PER_WEEK,
-            ]
-          ),
+                [
+                  account,
+                  periodStart,
+                  now,
+                  account,
+                  now - WEEK_MILLIS,
+                  RECIPIENT_SENDS_PER_WEEK,
+                ]
+              ),
         ])
         .pipe(Effect.map(([claim]) => claim?.changes === 1)),
 
@@ -125,23 +148,56 @@ ON CONFLICT (account_id, period_start) DO NOTHING`,
         ])
         .pipe(Effect.asVoid),
 
-    dueRecipients: (periodStart, now) =>
+    dueRecipients: (cadence, periodStart, now) =>
       sql
         .all(
           "dueRecipients",
-          statement(
-            `SELECT s.id, s.account_id, s.roles, s.regions, s.search, s.frequency, s.created_at, u.email,
+          cadence === "Instant"
+            ? statement(
+                `SELECT s.id, s.account_id, s.roles, s.regions, s.search, s.frequency, s.created_at, u.email,
+  MAX(i.enabled_at, COALESCE((SELECT MAX(a.sent_at) FROM instant_sends AS a WHERE a.account_id = s.account_id AND a.status = 'Sent'), 0)) AS last_sent_at
+FROM saved_searches AS s
+JOIN "user" AS u ON u.id = s.account_id
+JOIN instant_alerts AS i ON i.account_id = s.account_id
+WHERE u.emailVerified = 1
+  AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes AS x WHERE x.account_id = s.account_id)
+  AND NOT EXISTS (SELECT 1 FROM instant_sends AS a WHERE a.account_id = s.account_id AND a.window_start = ?)
+  AND (SELECT COUNT(*) FROM instant_sends AS c WHERE c.account_id = s.account_id AND c.claimed_at > ?) < ?
+  AND EXISTS (SELECT 1 FROM subscriptions AS b WHERE b.account_id = s.account_id AND b.period_end > ? AND b.status IN (${placeholders(GRANTING_STATUSES.length)}))
+ORDER BY s.account_id, s.created_at`,
+                [
+                  periodStart,
+                  now - DAY_MILLIS,
+                  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+                  now,
+                  ...GRANTING_STATUSES,
+                ]
+              )
+            : statement(
+                `SELECT s.id, s.account_id, s.roles, s.regions, s.search, s.frequency, s.created_at, u.email,
   (SELECT MAX(a.sent_at) FROM alert_sends AS a WHERE a.account_id = s.account_id AND a.status = 'Sent') AS last_sent_at
 FROM saved_searches AS s JOIN "user" AS u ON u.id = s.account_id
 WHERE u.emailVerified = 1
   AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes AS x WHERE x.account_id = s.account_id)
   AND NOT EXISTS (SELECT 1 FROM alert_sends AS a WHERE a.account_id = s.account_id AND a.period_start = ?)
 ORDER BY s.account_id, s.created_at`,
-            [periodStart]
-          ),
+                [periodStart]
+              ),
           RecipientRow
         )
         .pipe(Effect.map((rows) => recipientsOf(rows, now))),
+
+    instantAlertsOf: (account) =>
+      sql
+        .all(
+          "instantAlertsOf",
+          statement(
+            "SELECT COUNT(*) AS total FROM instant_alerts WHERE account_id = ?",
+            [account]
+          ),
+          TotalRow
+        )
+        .pipe(Effect.map((rows) => rows.some((row) => row.total > 0))),
 
     jobsSeenSince: (since) =>
       sql
@@ -154,21 +210,21 @@ ORDER BY s.account_id, s.created_at`,
         )
         .pipe(Effect.map(Array.map(jobOfRow))),
 
-    markSent: (account, periodStart, sentAt, jobs) =>
+    markSent: (cadence, account, periodStart, sentAt, jobs) =>
       sql
         .batch("markSent", [
           statement(
-            "UPDATE alert_sends SET status = 'Sent', sent_at = ?, jobs = ? WHERE account_id = ? AND period_start = ?",
+            `UPDATE ${sends[cadence].table} SET status = 'Sent', sent_at = ?, jobs = ? WHERE account_id = ? AND ${sends[cadence].period} = ?`,
             [sentAt, jobs, account, periodStart]
           ),
         ])
         .pipe(Effect.asVoid),
 
-    releaseDigest: (account, periodStart) =>
+    releaseDigest: (cadence, account, periodStart) =>
       sql
         .batch("releaseDigest", [
           statement(
-            "DELETE FROM alert_sends WHERE account_id = ? AND period_start = ? AND status = 'Claimed'",
+            `DELETE FROM ${sends[cadence].table} WHERE account_id = ? AND ${sends[cadence].period} = ? AND status = 'Claimed'`,
             [account, periodStart]
           ),
         ])
@@ -225,12 +281,12 @@ RETURNING ${searchColumns}`,
 
     searchesOf,
 
-    sendsSince: (since) =>
+    sendsSince: (cadence, since) =>
       sql
         .all(
           "sendsSince",
           statement(
-            "SELECT COUNT(*) AS total FROM alert_sends WHERE claimed_at >= ?",
+            `SELECT COUNT(*) AS total FROM ${sends[cadence].table} WHERE claimed_at >= ?`,
             [since]
           ),
           TotalRow
@@ -243,6 +299,22 @@ RETURNING ${searchColumns}`,
             })
           )
         ),
+
+    setInstantAlerts: (account, enabled, at) =>
+      sql
+        .batch("setInstantAlerts", [
+          enabled
+            ? statement(
+                `INSERT INTO instant_alerts (account_id, enabled_at)
+SELECT id, ? FROM "user" WHERE id = ?
+ON CONFLICT (account_id) DO NOTHING`,
+                [at, account]
+              )
+            : statement("DELETE FROM instant_alerts WHERE account_id = ?", [
+                account,
+              ]),
+        ])
+        .pipe(Effect.asVoid),
 
     unsubscribe: (account, at) =>
       sql

@@ -38,8 +38,13 @@ const job = (id: string, overrides: Partial<JobValue> = {}): JobValue => ({
   ...overrides,
 });
 
-const digest = (jobs: readonly JobValue[], total = jobs.length): Digest => ({
+const digest = (
+  jobs: readonly JobValue[],
+  total = jobs.length,
+  cadence: Digest["cadence"] = "Weekly"
+): Digest => ({
   account: ada,
+  cadence,
   jobs,
   periodStart: 0,
   to: "ada@example.com",
@@ -173,6 +178,24 @@ describe("digest email", () => {
         `Showing the newest ${MAX_DIGEST_JOBS} of ${MAX_DIGEST_JOBS + 7}.`
       );
     })
+  );
+
+  it.effect(
+    "names the first new role and says why an instant alert arrived",
+    () =>
+      Effect.gen(function* instant() {
+        const { mailer, sent } = capture(Effect.void);
+
+        yield* mailer.send(digest([job("first"), job("second")], 2, "Instant"));
+
+        expect(sent[0]?.subject).toBe(
+          "New match: Engineering Manager and 1 more"
+        );
+        expect(sent[0]?.text).toContain(
+          "You get this within 20 minutes of a new match because you turned on instant alerts for your saved searches."
+        );
+        expect(sent[0]?.text).not.toContain("You get this weekly");
+      })
   );
 
   it.effect("reports quota errors from Email Sending so the run can stop", () =>

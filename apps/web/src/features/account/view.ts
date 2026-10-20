@@ -20,7 +20,7 @@ interface AccountViewInputs {
 
 const AUTH_RETURN_PATH = "/account";
 
-const noticeText: Record<Exclude<AccountNoticeValue, "None">, string> = {
+const noticeText: Partial<Record<AccountNoticeValue, string>> = {
   LinkRefused:
     "That sign-in link has expired or was already used. Ask for a new one below.",
   SignInFailed: "Sign-in did not finish. Try again below.",
@@ -165,14 +165,13 @@ const noticeNote = (
   model: ModelValue,
   notice: AccountNoticeValue
 ): readonly Html[] =>
-  notice === "None" || !Schema.is(SignInState.Editing)(model.signIn)
-    ? []
-    : [
-        h.p(
-          [h.Class("sign-in-problem"), h.Role("alert")],
-          [noticeText[notice]]
-        ),
-      ];
+  Option.match(Option.fromNullishOr(noticeText[notice]), {
+    onNone: () => [],
+    onSome: (text) =>
+      Schema.is(SignInState.Editing)(model.signIn)
+        ? [h.p([h.Class("sign-in-problem"), h.Role("alert")], [text])]
+        : [],
+  });
 
 export const confirmSignInPage = <M>(token: string, h: HtmlBuilder<M>): Html =>
   h.div(

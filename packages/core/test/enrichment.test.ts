@@ -15,6 +15,8 @@ import { vi } from "vitest";
 
 import {
   AnnualAmount,
+  BillingStore,
+  CurrentViewer,
   DEFAULT_ENRICHMENT_SWEEP_LIMIT,
   detailsOfAnswer,
   EnricherUnavailable,
@@ -36,6 +38,7 @@ import {
   runIngest,
   skipHandling,
   sweepLimitOf,
+  Viewer,
 } from "../src/index.js";
 import type {
   EnrichmentOutcomeValue,
@@ -128,6 +131,7 @@ const listAll: JobQueryValue = {
   regions: [],
   roles: [],
   salaryFloor: null,
+  salaryListed: false,
   search: "",
   seniorities: [],
   sort: "Newest",
@@ -336,6 +340,17 @@ describe("enrichListing", () => {
           Effect.provide(
             Layer.mergeAll(
               memory.layer,
+              Layer.succeed(CurrentViewer, Viewer.Anonymous()),
+              Layer.succeed(
+                BillingStore,
+                BillingStore.of({
+                  accountOfCustomer: () => Effect.die("unused"),
+                  applySubscription: () => Effect.die("unused"),
+                  customerOf: () => Effect.die("unused"),
+                  linkCustomer: () => Effect.die("unused"),
+                  subscriptionsOf: () => Effect.die("unused"),
+                })
+              ),
               Layer.succeed(
                 PostingTexts,
                 PostingTexts.of({
@@ -2203,6 +2218,17 @@ describe("enrichListing", () => {
           Effect.provide(
             Layer.mergeAll(
               memory.layer,
+              Layer.succeed(CurrentViewer, Viewer.Anonymous()),
+              Layer.succeed(
+                BillingStore,
+                BillingStore.of({
+                  accountOfCustomer: () => Effect.die("unused"),
+                  applySubscription: () => Effect.die("unused"),
+                  customerOf: () => Effect.die("unused"),
+                  linkCustomer: () => Effect.die("unused"),
+                  subscriptionsOf: () => Effect.die("unused"),
+                })
+              ),
               Layer.succeed(
                 PostingTexts,
                 PostingTexts.of({

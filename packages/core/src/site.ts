@@ -55,6 +55,19 @@ export const WorkersSubdomain = Schema.String.check(
 export const previewWorkerName = (stage: string) =>
   `jobs-${stage.toLowerCase()}`;
 
+export const publicOriginOf = (
+  stage: string,
+  workersSubdomain: Option.Option<string>
+): Option.Option<string> =>
+  stage === PROD_STAGE
+    ? Option.some(SITE_ORIGIN)
+    : workersSubdomain.pipe(
+        Option.map(
+          (subdomain) =>
+            `https://${previewWorkerName(stage)}.${subdomain}.workers.dev`
+        )
+      );
+
 export interface SiteHosts {
   readonly allowedHosts: readonly string[];
   readonly fallbackOrigin: Option.Option<string>;

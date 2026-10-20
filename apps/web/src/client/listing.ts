@@ -49,6 +49,7 @@ const baseQuery = {
   maxAgeDays: MAX_AGE_DAYS,
   offset: 0,
   salaryFloor: null,
+  salaryListed: false,
   seniorities: [],
 } as const;
 

@@ -3,6 +3,7 @@ import type { Effect, Option } from "effect";
 
 import type { AccountIdValue } from "./account.js";
 import type {
+  CadenceValue,
   DigestRecipient,
   SavedSearchIdValue,
   SavedSearchValue,
@@ -15,6 +16,7 @@ export class AlertStore extends Context.Service<
   AlertStore,
   {
     readonly claimDigest: (
+      cadence: CadenceValue,
       account: AccountIdValue,
       periodStart: number,
       now: number
@@ -24,19 +26,25 @@ export class AlertStore extends Context.Service<
       id: SavedSearchIdValue
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly dueRecipients: (
+      cadence: CadenceValue,
       periodStart: number,
       now: number
     ) => Effect.Effect<readonly DigestRecipient[], JobStoreUnavailable>;
     readonly jobsSeenSince: (
       since: number
     ) => Effect.Effect<readonly JobValue[], JobStoreUnavailable>;
+    readonly instantAlertsOf: (
+      account: AccountIdValue
+    ) => Effect.Effect<boolean, JobStoreUnavailable>;
     readonly markSent: (
+      cadence: CadenceValue,
       account: AccountIdValue,
       periodStart: number,
       sentAt: number,
       jobs: number
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly releaseDigest: (
+      cadence: CadenceValue,
       account: AccountIdValue,
       periodStart: number
     ) => Effect.Effect<void, JobStoreUnavailable>;
@@ -49,7 +57,13 @@ export class AlertStore extends Context.Service<
     readonly searchesOf: (
       owner: AccountIdValue
     ) => Effect.Effect<readonly SavedSearchValue[], JobStoreUnavailable>;
+    readonly setInstantAlerts: (
+      account: AccountIdValue,
+      enabled: boolean,
+      at: number
+    ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly sendsSince: (
+      cadence: CadenceValue,
       since: number
     ) => Effect.Effect<number, JobStoreUnavailable>;
     readonly unsubscribe: (

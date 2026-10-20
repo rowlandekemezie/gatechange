@@ -1,5 +1,7 @@
 export { alertStoreLayer, makeAlertStore } from "./alert-store.js";
 
+export { billingStoreLayer, makeBillingStore } from "./billing-store.js";
+
 export {
   countJobsStatement,
   feedFailedStatement,

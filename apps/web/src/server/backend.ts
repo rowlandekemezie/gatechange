@@ -54,6 +54,7 @@ export const listedJobs = (backend: ServiceBinding) =>
           regions: [],
           roles: [],
           salaryFloor: null,
+          salaryListed: false,
           search: "",
           seniorities: [],
           sort: "Newest",

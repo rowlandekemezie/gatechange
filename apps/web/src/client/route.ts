@@ -47,6 +47,7 @@ export const AccountNotice = Schema.Literals([
   "None",
   "LinkRefused",
   "SignInFailed",
+  "CheckoutDone",
 ]);
 
 export type AccountNoticeValue = typeof AccountNotice.Type;
@@ -62,6 +63,7 @@ export const Route = defineRouteUnion({
   ConfirmSignIn: { token: Schema.String },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
+  Pricing: {},
   Role: { place: RegionGroup, role: RoleLevel },
   Shortlist: {},
 });
@@ -137,6 +139,10 @@ export const companySlugOf = (company: string): Option.Option<string> =>
     (slug) => slug.length > 0
   );
 
+const SALARY_LISTED = "listed";
+
+const CHECKOUT_DONE = "done";
+
 const BoardQuery = Schema.Struct({
   age: Schema.optionalKey(Schema.String),
   currency: Schema.optionalKey(Schema.String),
@@ -145,6 +151,7 @@ const BoardQuery = Schema.Struct({
   place: Schema.optionalKey(Schema.String),
   q: Schema.optionalKey(Schema.String),
   role: Schema.optionalKey(Schema.String),
+  salary: Schema.optionalKey(Schema.String),
   sort: Schema.optionalKey(Schema.String),
 });
 
@@ -173,6 +180,7 @@ const filtersOfQuery = (params: BoardQueryValue): FiltersValue => ({
   ),
   roles: listParam(roleLevels, defaultFilters.roles, params.role),
   salaryFloor: payFloorOf(params),
+  salaryListed: params.salary === SALARY_LISTED,
   search: params.q ?? defaultFilters.search,
   seniorities: listParam(seniorities, defaultFilters.seniorities, params.level),
   sort: oneParam(Sort.literals, defaultFilters.sort, params.sort),
@@ -207,6 +215,10 @@ const queryOfFilters = (filters: FiltersValue): BoardQueryValue => {
 
   if (!sameList(filters.roles, defaultFilters.roles)) {
     params.role = filters.roles.map(slugOf).join(",");
+  }
+
+  if (filters.salaryListed) {
+    params.salary = SALARY_LISTED;
   }
 
   if (filters.sort !== defaultFilters.sort) {
@@ -260,28 +272,36 @@ const refusedLinkErrors = new Set([
   "ATTEMPTS_EXCEEDED",
 ]);
 
-const noticeOfError = (error: string | undefined): AccountNoticeValue => {
-  if (error === undefined) {
-    return "None";
+const noticeOfParams = ({
+  checkout,
+  error,
+}: {
+  readonly checkout?: string;
+  readonly error?: string;
+}): AccountNoticeValue => {
+  if (error !== undefined) {
+    return refusedLinkErrors.has(error) ? "LinkRefused" : "SignInFailed";
   }
 
-  return refusedLinkErrors.has(error) ? "LinkRefused" : "SignInFailed";
+  return checkout === CHECKOUT_DONE ? "CheckoutDone" : "None";
 };
 
-const errorOfNotice = {
+const paramsOfNotice = {
+  CheckoutDone: { checkout: CHECKOUT_DONE },
   LinkRefused: { error: "INVALID_TOKEN" },
   None: {},
   SignInFailed: { error: "SIGN_IN_FAILED" },
 } as const;
 
 const AccountParams = Schema.Struct({
+  checkout: Schema.optionalKey(Schema.String),
   error: Schema.optionalKey(Schema.String),
 }).pipe(
   Schema.decodeTo(
     Schema.Struct({ notice: AccountNotice }),
     SchemaTransformation.transform({
-      decode: ({ error }) => ({ notice: noticeOfError(error) }),
-      encode: ({ notice }) => errorOfNotice[notice],
+      decode: (params) => ({ notice: noticeOfParams(params) }),
+      encode: ({ notice }) => paramsOfNotice[notice],
     })
   )
 );
@@ -298,6 +318,8 @@ export const confirmSignInRouter = pipe(
   query(Schema.Struct({ token: Schema.String })),
   mapTo(Route.ConfirmSignIn)
 );
+
+export const pricingRouter = pipe(literal("pricing"), mapTo(Route.Pricing));
 
 export const shortlistRouter = pipe(
   literal("shortlist"),
@@ -328,6 +350,7 @@ export const routeOfUrl = parseUrlWithFallback(
     jobRouter,
     companyRouter,
     roleRouter,
+    pricingRouter,
     shortlistRouter,
     confirmSignInRouter,
     accountRouter,
@@ -346,6 +369,7 @@ export const canonicalPathOf = (route: RouteValue) =>
     ConfirmSignIn: () => Option.none(),
     Job: ({ id }) => Option.some(jobRouter({ id })),
     NotFound: () => Option.none(),
+    Pricing: () => Option.some(pricingRouter()),
     Role: ({ place, role }) => Option.some(roleRouter({ place, role })),
     Shortlist: () => Option.none(),
   });

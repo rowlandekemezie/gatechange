@@ -8,10 +8,12 @@ import {
   makeAccountStore,
 } from "@rat-stack/accounts";
 import type { SocialCredentials } from "@rat-stack/accounts";
+import { stripeWebhookResponse } from "@rat-stack/billing";
 import { toRpc } from "@rat-stack/capability/rpc";
 import {
   AccountStore,
   AlertStore,
+  Billing,
   capabilities,
   CurrentViewer,
   DEFAULT_DAILY_NEURONS,
@@ -21,8 +23,10 @@ import {
   enrichListing,
   EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
+  publicOriginOf,
   runDigests,
   runIngest,
+  runInstantAlerts,
   skipHandling,
   sweepLimitOf,
   siteHostsOf,
@@ -45,6 +49,7 @@ import {
 import { postingFeedsLayer, postingTextsLayer } from "@rat-stack/job-sources";
 import {
   d1AlertStoreLayer,
+  d1BillingStoreLayer,
   d1JobStoreLayer,
   JobsDatabase,
 } from "@rat-stack/job-store/d1";
@@ -52,6 +57,7 @@ import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
 import * as RuntimeContext from "alchemy/RuntimeContext";
+import * as Stripe from "alchemy/Stripe";
 import {
   Clock,
   Config,
@@ -68,6 +74,7 @@ import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import { handleRoutes } from "./route.js";
+import { stripeBilling } from "./stripe.js";
 
 export const rpcProjection = toRpc(capabilities);
 
@@ -124,6 +131,8 @@ export const DEFAULT_DIGEST_SENDS_PER_RUN = 25;
 
 export const DEFAULT_DIGEST_DAILY_SEND_LIMIT = 50;
 
+export const INSTANT_ALERT_SCHEDULE = "10,30,50 * * * *";
+
 const currentStage = Effect.gen(function* currentStage() {
   const planned = yield* Effect.serviceOption(Stage);
 
@@ -145,6 +154,10 @@ const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
 const workersSubdomain = Config.option(
   Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
 );
+
+const restrictedStripeKey = Config.option(
+  Config.Redacted("STRIPE_RESTRICTED_KEY")
+).pipe(Config.map(Option.filter((key) => Redacted.value(key) !== "")));
 
 const socialCredentials = (prefix: string) =>
   Config.all({
@@ -307,10 +320,33 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       google: yield* socialCredentials("GOOGLE"),
     });
 
-    const hosts = siteHostsOf(yield* currentStage, {
+    const stage = yield* currentStage;
+    const subdomain = yield* workersSubdomain;
+
+    const hosts = siteHostsOf(stage, {
       localHosts: yield* localAuthHosts,
-      workersSubdomain: yield* workersSubdomain,
+      workersSubdomain: subdomain,
     });
+
+    const billingEnabled = yield* Config.Boolean("BILLING_ENABLED").pipe(
+      Config.withDefault(false)
+    );
+
+    const stripe = yield* stripeBilling({
+      hostId: "JobsBackend",
+      restrictedKey: billingEnabled
+        ? yield* restrictedStripeKey
+        : Option.none(),
+      siteOrigin: billingEnabled
+        ? publicOriginOf(stage, subdomain)
+        : Option.none(),
+      stage,
+    });
+
+    const billingLayer = Layer.mergeAll(
+      d1BillingStoreLayer(client),
+      Layer.succeed(Billing, stripe.billing)
+    );
 
     const mailer = yield* Cloudflare.Email.Send(
       yield* Cloudflare.Email.SendEmail("MagicLinkEmail", {
@@ -345,6 +381,24 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       runDigests(digestPlan, controller.scheduledTime).pipe(
         Effect.tap((receipt) => Effect.logInfo("digests finished", receipt)),
         Effect.tapError((error) => Effect.logError("digests failed", error)),
+        Effect.annotateLogs({
+          cron: controller.cron,
+          scheduledTime: controller.scheduledTime,
+        }),
+        Effect.provide(
+          Layer.mergeAll(alertLayer, Layer.succeed(DigestMailer, digestMailer))
+        )
+      )
+    );
+
+    yield* Cloudflare.Workers.cron(INSTANT_ALERT_SCHEDULE, (controller) =>
+      runInstantAlerts(digestPlan, controller.scheduledTime).pipe(
+        Effect.tap((receipt) =>
+          Effect.logInfo("instant alerts finished", receipt)
+        ),
+        Effect.tapError((error) =>
+          Effect.logError("instant alerts failed", error)
+        ),
         Effect.annotateLogs({
           cron: controller.cron,
           scheduledTime: controller.scheduledTime,
@@ -401,6 +455,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
                 Layer.mergeAll(
                   storeLayer,
                   alertLayer,
+                  billingLayer,
                   Layer.succeed(AccountStore, accountStore),
                   Layer.succeed(CurrentViewer, viewer)
                 )
@@ -453,10 +508,17 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         )
       );
 
+    const stripeWebhook = (request: HttpServerRequest.HttpServerRequest) =>
+      stripe.endpoint.pipe(
+        Effect.flatMap((endpoint) => stripeWebhookResponse(endpoint, request)),
+        Effect.provide(billingLayer)
+      );
+
     const handle = handleRoutes({
       accountStore,
       auth: auth.fetch,
       rpc: serveRpc,
+      stripeWebhook,
       unsubscribe,
     });
 
@@ -471,7 +533,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         Cloudflare.Queues.EventSourceLive,
         Cloudflare.Workers.AIBinding,
         Cloudflare.Email.SendBinding,
-        CloudflareD1(JobsDatabase)
+        CloudflareD1(JobsDatabase),
+        Stripe.CreateCheckoutSessionHttp,
+        Stripe.CreateCustomerHttp,
+        Stripe.CreateBillingPortalSessionHttp
       )
     )
   )

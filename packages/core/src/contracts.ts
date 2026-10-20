@@ -3,8 +3,13 @@ import { Schema } from "effect";
 
 import { Account, SignInOptions } from "./account.js";
 import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
+import { AlreadyPro } from "./already-pro.js";
+import { BillingUnavailable } from "./billing-unavailable.js";
+import { Membership, Plan } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
+import { NoBillingAccount } from "./no-billing-account.js";
+import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
 import { TrackerFull } from "./tracker-full.js";
 import {
@@ -86,6 +91,7 @@ export { Unauthorized } from "./unauthorized.js";
 export {
   DigestFrequency,
   digestSourceLabels,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
   MAX_SAVED_SEARCHES,
   SavedSearch,
   SavedSearchId,
@@ -93,6 +99,37 @@ export {
 } from "./alerts.js";
 
 export { SavedSearchLimit } from "./saved-search-limit.js";
+
+export { AlreadyPro } from "./already-pro.js";
+
+export { BillingFailure } from "./billing-errors.js";
+
+export type { BillingFailureValue } from "./billing-errors.js";
+
+export { BillingUnavailable } from "./billing-unavailable.js";
+
+export { NoBillingAccount } from "./no-billing-account.js";
+
+export { ProRequired } from "./pro-required.js";
+
+export {
+  Entitlement,
+  FREE,
+  FreeEntitlement,
+  isPro,
+  Membership,
+  Plan,
+  PLAN_PRICES,
+  plans,
+  ProEntitlement,
+} from "./entitlement.js";
+
+export type {
+  EntitlementValue,
+  MembershipValue,
+  PlanPrice,
+  PlanValue,
+} from "./entitlement.js";
 
 export type {
   DigestFrequencyValue,
@@ -261,6 +298,52 @@ export const untrackJobContract = defineContract("untrackJob", {
   output: TrackedJobs,
 });
 
+const BillingLink = Schema.Struct({ url: Schema.NonEmptyString });
+
+export const membershipContract = defineContract("membership", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "Return the signed-in member's plan, Free or Pro with its period end, and whether instant alerts are on",
+  failure: MemberStoreFailure,
+  input: Schema.Struct({}),
+  output: Membership,
+});
+
+export const startCheckoutContract = defineContract("startCheckout", {
+  description:
+    "Start a Stripe Checkout for Pro on the monthly, quarterly, or yearly plan and return the hosted payment page URL",
+  failure: Schema.Union([
+    Unauthorized,
+    JobStoreUnavailable,
+    BillingUnavailable,
+    AlreadyPro,
+  ]),
+  input: Schema.Struct({ plan: Plan }),
+  output: BillingLink,
+});
+
+export const openBillingPortalContract = defineContract("openBillingPortal", {
+  description:
+    "Return a Stripe billing portal URL where the signed-in member can change or cancel Pro",
+  failure: Schema.Union([
+    Unauthorized,
+    JobStoreUnavailable,
+    BillingUnavailable,
+    NoBillingAccount,
+  ]),
+  input: Schema.Struct({}),
+  output: BillingLink,
+});
+
+export const setInstantAlertsContract = defineContract("setInstantAlerts", {
+  annotations: { idempotent: true },
+  description:
+    "Turn instant alerts on or off for a Pro member's saved searches and return the membership",
+  failure: Schema.Union([Unauthorized, JobStoreUnavailable, ProRequired]),
+  input: Schema.Struct({ enabled: Schema.Boolean }),
+  output: Membership,
+});
+
 export const jobBoardContracts = [
   listJobsContract,
   boardStatsContract,
@@ -275,4 +358,8 @@ export const jobBoardContracts = [
   importShortlistContract,
   noteTrackedJobContract,
   untrackJobContract,
+  membershipContract,
+  startCheckoutContract,
+  openBillingPortalContract,
+  setInstantAlertsContract,
 ] as const;

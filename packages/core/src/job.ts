@@ -175,6 +175,9 @@ export const JobQuery = Schema.Struct({
   salaryFloor: Schema.NullOr(SalaryFloor).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null))
   ),
+  salaryListed: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
   search: Schema.String.check(Schema.isMaxLength(80)),
   seniorities: Schema.Array(Seniority).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed([]))

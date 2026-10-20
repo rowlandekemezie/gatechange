@@ -2,7 +2,7 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type { ListedJobValue } from "@rat-stack/core/contracts";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 import {
@@ -53,7 +53,7 @@ const backend = HttpRouter.toWebHandler(
         account: () => Effect.die("account is not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
-        getJob: () => Effect.succeed(Option.none()),
+        getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
         listJobs: () =>
           Effect.succeed({
@@ -61,10 +61,14 @@ const backend = HttpRouter.toWebHandler(
             jobs: [director],
             total: 1,
           }),
+        membership: () => Effect.die("billing is not served here"),
         noteTrackedJob: () => Effect.die("the tracker is not served here"),
+        openBillingPortal: () => Effect.die("billing is not served here"),
         saveSearch: () => Effect.die("saveSearch is not served here"),
         savedSearches: () => Effect.die("savedSearches is not served here"),
+        setInstantAlerts: () => Effect.die("billing is not served here"),
         signInOptions: () => Effect.succeed({ socialProviders: [] }),
+        startCheckout: () => Effect.die("billing is not served here"),
         trackJob: () => Effect.die("the tracker is not served here"),
         trackedJobs: () => Effect.die("the tracker is not served here"),
         untrackJob: () => Effect.die("the tracker is not served here"),

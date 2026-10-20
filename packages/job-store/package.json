@@ -37,6 +37,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260917.1",
     "@effect/vitest": "4.0.0",
+    "@rat-stack/billing": "workspace:*",
+    "@rat-stack/capability": "workspace:*",
     "@types/node": "24.13.6",
     "@types/sql.js": "1.4.11",
     "sql.js": "1.14.2",

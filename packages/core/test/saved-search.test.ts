@@ -49,6 +49,7 @@ const storeWith = (
           }
         }),
       dueRecipients: () => Effect.die("unused"),
+      instantAlertsOf: () => Effect.die("unused"),
       jobsSeenSince: () => Effect.die("unused"),
       markSent: () => Effect.die("unused"),
       releaseDigest: () => Effect.die("unused"),
@@ -75,6 +76,7 @@ const storeWith = (
           [...saved.values()].filter((search) => search.owner === owner)
         ),
       sendsSince: () => Effect.die("unused"),
+      setInstantAlerts: () => Effect.die("unused"),
       unsubscribe: () => Effect.die("unused"),
     })
   );
