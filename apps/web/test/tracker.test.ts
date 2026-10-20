@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import { Account, TrackerFull } from "@rat-stack/core/contracts";
+import {
+  Account,
+  JobStoreUnavailable,
+  TrackerFull,
+} from "@rat-stack/core/contracts";
 import type { JobValue, TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Effect, Option, pipe, Schema } from "effect";
 import { fromString } from "foldkit/url";
@@ -379,6 +383,152 @@ describe("first sign-in import", () => {
       })
   );
 
+  it.effect(
+    "a later refused import reports confirmed and unconfirmed jobs and keeps retry input",
+    () =>
+      Effect.gen(function* partialImport() {
+        const marks = Array.makeBy(401, (index) => ({
+          company: job.company,
+          id: `g:${index}`,
+          kind: "Saved",
+          location: job.location,
+          title: job.title,
+          url: job.url,
+        }));
+
+        const original = JSON.stringify(marks);
+        const storage = browserWith(original);
+        const attempts: unknown[] = [];
+
+        const queries = JobQueries.of({
+          ...serverWith([]),
+          importShortlist: (jobs) => {
+            attempts.push(jobs);
+
+            return attempts.length === 2
+              ? Effect.fail(new TrackerFull({ limit: 500 }))
+              : Effect.succeed([trackedAs("Saved")]);
+          },
+        });
+
+        const reply = yield* ImportStoredShortlist({ revision: 2 }).effect.pipe(
+          Effect.provideService(JobQueries, queries)
+        );
+
+        expect(attempts).toHaveLength(2);
+        expect(storage.get(SHORTLIST_KEY)).toBe(original);
+        expect(Schema.is(Message.FailedSyncTracker)(reply)).toBe(true);
+
+        if (Schema.is(Message.FailedSyncTracker)(reply)) {
+          expect(reply.message).toContain("Confirmed 200 of 401 browser jobs");
+          expect(reply.message).toContain("201 remain unconfirmed");
+        }
+      })
+  );
+
+  it.effect(
+    "retrying after a lost import response confirms existing jobs without losing browser input",
+    () =>
+      Effect.gen(function* uncertainImport() {
+        const marks = Array.makeBy(401, (index) => ({
+          company: job.company,
+          id: `g:${index}`,
+          kind: "Saved",
+          location: job.location,
+          title: job.title,
+          url: job.url,
+        }));
+
+        const original = JSON.stringify(marks);
+        const storage = browserWith(original);
+        const committed = new Set<string>();
+        let attempts = 0;
+
+        const queries = JobQueries.of({
+          ...serverWith([]),
+          importShortlist: (jobs) =>
+            Effect.suspend(() => {
+              attempts += 1;
+
+              for (const request of jobs) {
+                committed.add(request.jobId);
+              }
+
+              return attempts === 2
+                ? Effect.fail(
+                    new JobStoreUnavailable({
+                      message: "fixture",
+                      operation: "fixture lost response",
+                    })
+                  )
+                : Effect.succeed([trackedAs("Saved")]);
+            }),
+        });
+
+        const first = yield* ImportStoredShortlist({ revision: 2 }).effect.pipe(
+          Effect.provideService(JobQueries, queries)
+        );
+
+        expect(committed.size).toBe(400);
+        expect(storage.get(SHORTLIST_KEY)).toBe(original);
+        expect(Schema.is(Message.FailedSyncTracker)(first)).toBe(true);
+
+        if (Schema.is(Message.FailedSyncTracker)(first)) {
+          expect(first.message).toContain("Confirmed 200 of 401 browser jobs");
+          expect(first.message).toContain("201 remain unconfirmed");
+        }
+
+        const retry = yield* ImportStoredShortlist({ revision: 3 }).effect.pipe(
+          Effect.provideService(JobQueries, queries)
+        );
+
+        expect(committed.size).toBe(401);
+        expect(attempts).toBe(5);
+        expect(storage.has(SHORTLIST_KEY)).toBe(false);
+        expect(Schema.is(Message.CompletedSyncTracker)(retry)).toBe(true);
+      })
+  );
+
+  it.effect(
+    "legacy long-ID stage moves pass the browser command schema and reach the existing action",
+    () =>
+      Effect.gen(function* legacyMoveCommand() {
+        const legacyId = "i".repeat(1000);
+
+        const change = yield* Schema.decodeEffect(TrackerChange)(
+          TrackerChange.Track({
+            job: {
+              jobId: legacyId,
+              snapshot: trackedAs("Saved").snapshot,
+              stage: "Interviewing",
+            },
+          })
+        );
+
+        const sent: string[] = [];
+
+        const reply = yield* SendTrackerChange({
+          change,
+          revision: 4,
+        }).effect.pipe(
+          Effect.provideService(
+            JobQueries,
+            JobQueries.of({
+              ...serverWith([]),
+              trackJob: (request) => {
+                sent.push(request.jobId);
+
+                return Effect.succeed([trackedAs("Interviewing")]);
+              },
+            })
+          )
+        );
+
+        expect(sent).toStrictEqual([legacyId]);
+        expect(Schema.is(Message.SucceededTrackerChange)(reply)).toBe(true);
+      })
+  );
+
   it("signing in with a browser shortlist asks first and imports nothing", () => {
     const asked = withLocalList();
 
@@ -479,7 +629,7 @@ describe("tracker cap", () => {
       expect(reply).toStrictEqual(
         Message.FailedTrackerChange({
           message:
-            "Your tracker holds 500 jobs, the most it can. Remove a job you no longer need, then add this one.",
+            "Your tracker can hold up to 500 jobs. Remove jobs you no longer need, then try again.",
           revision: 4,
         })
       );

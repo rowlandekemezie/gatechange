@@ -202,19 +202,27 @@ export {
   Stage,
   stages,
   TRACKER_LIMIT,
+  TRACKER_BYTE_LIMIT,
+  MAX_NEW_TRACKED_JOB_ID_BYTES,
   TrackedJob,
   TrackedJobs,
   TrackerStore,
   TrackRequest,
+  TrackOrMoveRequest,
 } from "./tracker.js";
 
 export { TrackerFull } from "./tracker-full.js";
+
+export { TrackerJobIdTooLong } from "./tracker-job-id-too-long.js";
+
+export { TrackerStorageFull } from "./tracker-storage-full.js";
 
 export type {
   JobSnapshotValue,
   StageValue,
   TrackedJobValue,
   TrackRequestValue,
+  TrackOrMoveRequestValue,
 } from "./tracker.js";
 
 export {

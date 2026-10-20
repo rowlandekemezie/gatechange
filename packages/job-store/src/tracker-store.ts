@@ -1,13 +1,17 @@
 import {
   Stage,
   TRACKER_LIMIT,
+  TRACKER_BYTE_LIMIT,
+  TrackerStorageFull,
+  TrackerJobIdTooLong,
+  MAX_NEW_TRACKED_JOB_ID_BYTES,
   TrackerFull,
   TrackerStore,
 } from "@rat-stack/core";
 import type {
   AccountIdValue,
   JobStoreUnavailable,
-  TrackRequestValue,
+  TrackOrMoveRequestValue,
 } from "@rat-stack/core";
 import { Array, Effect, Layer, pipe, Schema } from "effect";
 
@@ -28,7 +32,7 @@ const TrackedJobRow = Schema.Struct({
 
 const insertTracked = (
   owner: AccountIdValue,
-  { jobId, snapshot, stage }: TrackRequestValue,
+  { jobId, snapshot, stage }: TrackOrMoveRequestValue,
   now: number,
   onConflict: string
 ) =>
@@ -61,12 +65,31 @@ const MOVE_TRACKED = `UPDATE SET
 
 const TRACKER_FULL_SIGNAL = "tracker_full";
 
-const refusedWhenFull = <A>(write: Effect.Effect<A, JobStoreUnavailable>) =>
+const refusedWhenStorageFull = <A>(
+  write: Effect.Effect<A, JobStoreUnavailable>
+) =>
   write.pipe(
     Effect.catchIf(
-      (failure) => failure.message.includes(TRACKER_FULL_SIGNAL),
-      () => Effect.fail(new TrackerFull({ limit: TRACKER_LIMIT }))
+      (failure) => failure.message.includes("tracker_storage_full"),
+      () => Effect.fail(new TrackerStorageFull({ limit: TRACKER_BYTE_LIMIT }))
     )
+  );
+
+const refusedWhenFull = <A>(write: Effect.Effect<A, JobStoreUnavailable>) =>
+  write.pipe(
+    Effect.mapError((failure) => {
+      if (failure.message.includes("tracker_job_id_too_long")) {
+        return new TrackerJobIdTooLong({ limit: MAX_NEW_TRACKED_JOB_ID_BYTES });
+      }
+
+      if (failure.message.includes(TRACKER_FULL_SIGNAL)) {
+        return new TrackerFull({ limit: TRACKER_LIMIT });
+      }
+
+      return failure.message.includes("tracker_storage_full")
+        ? new TrackerStorageFull({ limit: TRACKER_BYTE_LIMIT })
+        : failure;
+    })
   );
 
 export const makeTrackerStore = Effect.gen(function* makeTrackerStore() {
@@ -124,7 +147,7 @@ export const makeTrackerStore = Effect.gen(function* makeTrackerStore() {
             [notes, owner, jobId]
           ),
         ])
-        .pipe(Effect.asVoid),
+        .pipe(refusedWhenStorageFull, Effect.asVoid),
     track: (owner, job, now) =>
       sql
         .batch("track a job", [insertTracked(owner, job, now, MOVE_TRACKED)])
