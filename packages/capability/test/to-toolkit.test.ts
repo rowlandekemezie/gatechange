@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { McpServer } from "effect/ai";
 
 import { Approval, toToolkit } from "../src/index.js";
@@ -18,6 +18,11 @@ const projection = toToolkit([echo, greet]);
 const appLayer = McpServer.toolkit(projection.toolkit).pipe(
   Layer.provideMerge(projection.layer),
   Layer.provide(Greeter.layer),
+  Layer.provide(serverLayer)
+);
+
+const requestScopedAppLayer = McpServer.toolkit(projection.toolkit).pipe(
+  Layer.provideMerge(projection.layer.pipe(Layer.provide(Greeter.layer))),
   Layer.provide(serverLayer)
 );
 
@@ -147,6 +152,29 @@ describe("toToolkit", () => {
       expect(result.isError).toBeFalsy();
       expect(result.structuredContent).toEqual({ greeting: "hello rat" });
     })
+  );
+
+  it.effect(
+    "hands a handler the service its request provides over the one its layer was built with",
+    () =>
+      Effect.gen(function* requestScoped() {
+        const client = yield* makeMcpClient(
+          requestScopedAppLayer,
+          Context.make(
+            Greeter,
+            Greeter.of({
+              greet: (name: string) => Effect.succeed(`howdy ${name}`),
+            })
+          )
+        );
+
+        const result = yield* client["tools/call"]({
+          arguments: { name: "rat" },
+          name: "greet",
+        });
+
+        expect(result.structuredContent).toEqual({ greeting: "howdy rat" });
+      })
   );
 
   it.effect("returns a declared failure as a tool error, not a crash", () =>

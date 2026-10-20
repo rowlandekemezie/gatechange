@@ -15,6 +15,7 @@ import {
   JobStore,
   listJobs,
   ProEntitlement,
+  ServedSources,
   Viewer,
 } from "@rat-stack/core";
 import type {
@@ -356,6 +357,19 @@ describe("listJobs for Free and Pro viewers", () => {
           expect(publicFiltered).toEqual(anonymous);
           expect(freeFiltered).toEqual(anonymous);
           expect(proFiltered.toSorted()).toEqual(["gh-1", "gh-2", "jb-1"]);
+
+          const proViewer = Viewer.Member({ account: pro });
+
+          const servedSalaries = yield* rowsFor(proViewer, salaried).pipe(
+            Effect.provideService(ServedSources, ["Greenhouse"])
+          );
+
+          const forbiddenSalaries = yield* rowsFor(proViewer, salaried).pipe(
+            Effect.provideService(ServedSources, ["Remotive"])
+          );
+
+          expect(servedSalaries.toSorted()).toEqual(["gh-1", "gh-2"]);
+          expect(forbiddenSalaries).toEqual([]);
 
           const enrichmentFilters: readonly JobQueryValue[] = [
             {

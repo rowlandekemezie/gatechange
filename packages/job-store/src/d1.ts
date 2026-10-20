@@ -3,6 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import { Array, Effect, Layer, Schema, pipe } from "effect";
 
+import { agentTokenStoreLayer } from "./agent-token-store.js";
 import { alertStoreLayer } from "./alert-store.js";
 import { billingStoreLayer } from "./billing-store.js";
 import { jobStoreMigrationDirectory } from "./migrations.js";
@@ -60,6 +61,13 @@ export const JobsDatabase = Cloudflare.D1.Database("JobsDatabase", {
 
 export const d1JobStoreLayer = (client: Cloudflare.D1.QueryDatabaseClient) =>
   Layer.mergeAll(jobStoreLayer, trackerStoreLayer).pipe(
+    Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
+  );
+
+export const d1AgentTokenStoreLayer = (
+  client: Cloudflare.D1.QueryDatabaseClient
+) =>
+  agentTokenStoreLayer.pipe(
     Layer.provide(Layer.succeed(SqlExecutor, d1Executor(client)))
   );
 
