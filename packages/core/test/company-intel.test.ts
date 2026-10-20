@@ -1,11 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Option } from "effect";
+import { Effect, Option } from "effect";
 
 import {
   companyIntelOf,
+  companySlugOf,
   companySummaryOf,
-  fingerprintOf,
-  historyRangeOf,
+  JobStore,
   ShownTrend,
   SourceName,
   sourceOfFeedKey,
@@ -16,6 +16,7 @@ import type {
   HistoryRecord,
   OpenRoleRecord,
 } from "../src/index.js";
+import { makeMemoryJobStore } from "./memory-job-store.js";
 
 const DAY = 86_400_000;
 
@@ -261,20 +262,14 @@ describe("companyIntelOf", () => {
 });
 
 describe("company keys", () => {
-  it("finds a company's history by its slug and no other company's", () => {
-    const { from, until } = historyRangeOf("acme-cloud");
-
-    const inRange = (company: string, title: string) => {
-      const fingerprint = fingerprintOf({ company, title });
-
-      return fingerprint >= from && fingerprint < until;
-    };
-
-    expect(inRange("Acme Cloud", "VP, Engineering")).toBe(true);
-    expect(inRange("ACME cloud", "Director | Platform")).toBe(true);
-    expect(inRange("Acme Cloudy", "VP Engineering")).toBe(false);
-    expect(inRange("Acme", "Cloud Director")).toBe(false);
-    expect(inRange("Acme Clou", "d VP")).toBe(false);
+  it("uses exact company slugs while retaining punctuation and case aliases", () => {
+    expect(companySlugOf("Acme Cloud")).toStrictEqual(
+      Option.some("acme-cloud")
+    );
+    expect(companySlugOf(" ACME---Cloud ")).toStrictEqual(
+      Option.some("acme-cloud")
+    );
+    expect(companySlugOf("AcmeCloud")).toStrictEqual(Option.some("acmecloud"));
   });
 
   it("reads the source back from every source's feed key prefix", () => {
@@ -297,3 +292,57 @@ describe("company keys", () => {
     });
   });
 });
+
+it.effect(
+  "memory intel partitions collisions while retaining canonical company aliases",
+  () =>
+    Effect.gen(function* memoryCompanyIdentity() {
+      const memory = yield* makeMemoryJobStore;
+      yield* Effect.gen(function* recordCompanies() {
+        const store = yield* JobStore;
+        yield* store.recordSightings(
+          [
+            {
+              company: "Acme Cloud",
+              feed: "greenhouse:acme",
+              title: "VP Engineering",
+            },
+          ],
+          NOW - 20 * DAY
+        );
+        yield* store.recordSightings(
+          [
+            {
+              company: "AcmeCloud",
+              feed: "lever:other",
+              title: "VP Engineering",
+            },
+          ],
+          NOW
+        );
+        yield* store.recordSightings(
+          [
+            {
+              company: "ACME--Cloud",
+              feed: "ashby:alias",
+              title: "VP Engineering",
+            },
+          ],
+          NOW
+        );
+        const a = yield* store.companyRecords("acme-cloud", NOW);
+        const b = yield* store.companyRecords("acmecloud", NOW);
+        expect(a.history).toHaveLength(1);
+        expect(a.history[0]?.stints).toStrictEqual([
+          { from: NOW - 20 * DAY, until: NOW },
+        ]);
+        expect(b.history).toStrictEqual([
+          {
+            company: "AcmeCloud",
+            feed: "lever:other",
+            stints: [{ from: NOW, until: NOW }],
+          },
+        ]);
+      }).pipe(Effect.provide(memory.layer));
+    })
+);
