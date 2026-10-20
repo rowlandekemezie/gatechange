@@ -213,13 +213,13 @@ describe("listing history through runIngest on the SQL store", () => {
   );
 
   it.effect(
-    "a role still listed while its link fails the off-site check is neither closed nor reposted",
+    "a catalog-bound role whose link fails the off-site check is neither closed nor reposted",
     () =>
       withSqlStore(
         Effect.gen(function* unlinkableForADay() {
           yield* ingestAt(0, { "greenhouse:acme": [role] });
           yield* ingestAt(1, {
-            "greenhouse:acme": [{ ...role, url: "/careers/1" }],
+            "greenhouse:acme": [{ ...role, company: "", url: "/careers/1" }],
           });
           yield* ingestAt(9, { "greenhouse:acme": [role] });
 
