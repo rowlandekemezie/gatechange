@@ -185,7 +185,7 @@ describe("company intel on a company page", () => {
   );
 
   it.effect(
-    "shows a Pro member days open, reposts, a labelled trend chart with a text summary, bands, and the source note",
+    "shows a Pro member days open, reposts, a trend chart with one accessible text summary, bands, and the source note",
     () =>
       Effect.map(
         renderAs(
@@ -199,7 +199,11 @@ describe("company intel on a company page", () => {
           expect(text).toContain(
             "VP Engineering Open 45 days, reposted 2 times"
           );
-          expect(html).toContain("<svg");
+          expect(html).toMatch(/<svg[^>]*aria-hidden="true"/u);
+          expect(html.match(/Open leadership roles went from/gu)).toHaveLength(
+            1
+          );
+          expect(text).toContain("13-week hiring trend");
           expect(text).toContain("Open roles");
           expect(text).toContain("Week ending");
           expect(text).toContain("This week");
@@ -230,6 +234,7 @@ describe("company intel on a company page", () => {
       ),
       (html) => {
         expect(html).not.toContain("<svg");
+        expect(textOf(html)).toContain("13-week hiring trend");
         expect(textOf(html)).toContain(
           "Not enough history for a trend yet. A trend needs at least 3 roles over 4 weeks, and this company has 1 role over 13 weeks."
         );

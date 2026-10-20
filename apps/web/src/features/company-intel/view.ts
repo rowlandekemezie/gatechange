@@ -114,8 +114,7 @@ const trendChart = (h: H, weeks: readonly TrendWeekValue[]): Html => {
         [
           h.Class("trend-chart"),
           h.ViewBox(`0 0 ${WIDTH} 160`),
-          h.Role("img"),
-          h.AriaLabel(summary),
+          h.AriaHidden(true),
         ],
         [
           ...weeks.map((week, index) =>
@@ -185,13 +184,13 @@ const trendView = (h: H, intel: CompanyIntelValue): Html =>
     Shown: ({ weeks }) =>
       h.section(
         [h.Class("intel-block")],
-        [h.h3([], ["90-day hiring trend"]), trendChart(h, weeks)]
+        [h.h3([], ["13-week hiring trend"]), trendChart(h, weeks)]
       ),
     Thin: ({ roles, weeks }) =>
       h.section(
         [h.Class("intel-block")],
         [
-          h.h3([], ["90-day hiring trend"]),
+          h.h3([], ["13-week hiring trend"]),
           h.p(
             [h.Class("trend-thin")],
             [
