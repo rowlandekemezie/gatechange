@@ -126,12 +126,16 @@ const cloudflareSendError = (code: string) =>
 const makeAuth = (
   hosts: SiteHosts = LOCAL_HOSTS,
   database: DatabaseSync = migratedDatabase(),
-  mailer: Mailer = () => true
+  mailer: Mailer = () => true,
+  magicLinkDailySendLimit = 900
 ) => {
   const sent: MagicLinkRequest[] = [];
 
   const auth = betterAuth({
-    ...authOptions(settings(sent, hosts, mailer)),
+    ...authOptions({
+      ...settings(sent, hosts, mailer),
+      magicLinkDailySendLimit,
+    }),
     database,
     secret: "test-secret-test-secret-test-secret-0",
   });
@@ -448,6 +452,7 @@ describe("magic link storage and lifetime", () => {
         "203.0.113.7|/sign-in/magic-link",
         "magic-link-attempt:ada@example.com",
         "magic-link-email:ada@example.com",
+        "magic-link-global",
       ]);
     })
   );
@@ -493,6 +498,103 @@ describe("per-email send limit", () => {
         );
 
         expect(later.status).toBe(200);
+      })
+  );
+
+  it.effect(
+    "atomically caps sign-in sends across different addresses and IPs without extending refusals",
+    () =>
+      Effect.gen(function* globalBudget() {
+        travelTo(T0);
+
+        const { auth, database, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          3
+        );
+
+        const responses = yield* Effect.forEach(
+          Array.from({ length: 12 }, (_, index) => index),
+          (index) =>
+            requestLink(
+              auth,
+              `member${index}@example.com`,
+              `2001:db8:${index}::1`
+            ),
+          { concurrency: 4 }
+        );
+
+        expect(
+          responses.filter((response) => response.status === 200)
+        ).toHaveLength(3);
+        expect(
+          responses.filter((response) => response.status === 429)
+        ).toHaveLength(9);
+        expect(sent).toHaveLength(3);
+
+        const before = database
+          .prepare('SELECT count, lastRequest FROM "rateLimit" WHERE key = ?')
+          .get("magic-link-global");
+
+        travelTo(T0 + 23 * 60 * MINUTE);
+        expect(
+          (yield* requestLink(auth, "late@example.com", "2001:db8:ff::1"))
+            .status
+        ).toBe(429);
+        expect(
+          database
+            .prepare('SELECT count, lastRequest FROM "rateLimit" WHERE key = ?')
+            .get("magic-link-global")
+        ).toEqual(before);
+        travelTo(T0 + 24 * 60 * MINUTE + 1);
+        expect(
+          (yield* requestLink(auth, "next@example.com", "2001:db8:fe::1"))
+            .status
+        ).toBe(200);
+        expect(sent).toHaveLength(4);
+      })
+  );
+
+  it.effect.each([
+    "E_DAILY_LIMIT_EXCEEDED",
+    "E_RATE_LIMIT_EXCEEDED",
+    "E_INTERNAL_SERVER_ERROR",
+    "Unknown",
+  ])(
+    "global send claims distinguish refusal from uncertain acceptance for %s",
+    (code) =>
+      Effect.gen(function* globalRefund() {
+        travelTo(T0);
+        let unavailable = true;
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () =>
+            unavailable
+              ? new Error("provider failed", { cause: { code } })
+              : true,
+          1
+        );
+
+        expect(
+          (yield* requestLink(auth, "first@example.com", "2001:db8:1::1"))
+            .status
+        ).toBe(500);
+        unavailable = false;
+
+        const recovered = yield* requestLink(
+          auth,
+          "second@example.com",
+          "2001:db8:2::1"
+        );
+
+        const refused =
+          code === "E_DAILY_LIMIT_EXCEEDED" || code === "E_RATE_LIMIT_EXCEEDED";
+
+        expect(recovered.status).toBe(refused ? 200 : 429);
+        expect(sent).toHaveLength(refused ? 1 : 0);
       })
   );
 
@@ -878,6 +980,7 @@ describe("per-email send limit", () => {
         expect(counts).toStrictEqual([
           { count: 2, key: RACED_KEY, racer: 1 },
           { count: 1, key: "magic-link-email:victim@example.com", racer: 0 },
+          { count: 1, key: "magic-link-global", racer: 0 },
         ]);
       })
   );

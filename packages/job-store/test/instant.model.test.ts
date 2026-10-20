@@ -5,6 +5,7 @@ import {
   BillingStore,
   DAY_MILLIS,
   DigestMailer,
+  DigestMailerUnavailable,
   INSTANT_SENDS_PER_MEMBER_PER_DAY,
   INSTANT_WINDOW_MILLIS,
   JobStore,
@@ -220,6 +221,66 @@ describe("instant alerts", () => {
     }
   );
 
+  it.effect.each([false, true])(
+    "a next cron window preserves unknown delivery and retries only a proven quota refusal (%s)",
+    (quotaExhausted) => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* nextWindow() {
+          yield* setUp;
+
+          const mailer = DigestMailer.of({
+            send: (digest) =>
+              Effect.gen(function* uncertainAcceptance() {
+                if (!quotaExhausted) {
+                  sent.push(digest);
+                }
+
+                return yield* new DigestMailerUnavailable({
+                  message: "send failed",
+                  quotaExhausted,
+                });
+              }),
+          });
+
+          const first = yield* runInstantAlerts(PLAN, NOW).pipe(
+            Effect.provideService(DigestMailer, mailer)
+          );
+
+          const next = yield* runInstantAlerts(
+            PLAN,
+            NOW + INSTANT_WINDOW_MILLIS
+          );
+
+          expect([first.failed, next.sent]).toEqual([
+            1,
+            quotaExhausted ? 1 : 0,
+          ]);
+          expect(
+            sent.map((digest) => digest.jobs.map((listed) => listed.id))
+          ).toEqual([["new"]]);
+
+          yield* JobStore.use((store) =>
+            store.replaceFeed(
+              "jobicy:all",
+              [
+                job("new", NOW - 5 * 60_000),
+                job("fresh", NOW + INSTANT_WINDOW_MILLIS + 60_000),
+              ],
+              NOW + INSTANT_WINDOW_MILLIS + 60_000
+            )
+          );
+          yield* runInstantAlerts(PLAN, NOW + 2 * INSTANT_WINDOW_MILLIS);
+          expect(
+            sent.map((digest) => digest.jobs.map((listed) => listed.id))
+          ).toEqual([["new"], ["fresh"]]);
+        }),
+        sent
+      );
+    }
+  );
+
   it.effect(
     "sends instant alerts to no more members a day than the instant share of the daily limit",
     () => {
@@ -278,7 +339,8 @@ describe("instant alerts", () => {
                 "Instant",
                 pro,
                 windowStartOf(NOW) + index * INSTANT_WINDOW_MILLIS,
-                NOW + index * INSTANT_WINDOW_MILLIS
+                NOW + index * INSTANT_WINDOW_MILLIS,
+                1000
               )
             )
           );
@@ -288,7 +350,8 @@ describe("instant alerts", () => {
               "Instant",
               pro,
               windowStartOf(NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS),
-              NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS
+              NOW + DAY_MILLIS + INSTANT_WINDOW_MILLIS,
+              1000
             )
           );
 

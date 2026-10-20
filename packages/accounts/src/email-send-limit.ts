@@ -13,6 +13,19 @@ export const EMAIL_SEND_LIMIT = {
 
 const WINDOW_MILLIS = EMAIL_SEND_LIMIT.windowSeconds * 1000;
 
+export const DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT = 900;
+
+const GLOBAL_WINDOW_MILLIS = 24 * 60 * 60 * 1000;
+
+const GLOBAL_KEY = "magic-link-global";
+
+const REJECTED_SEND_CODES: ReadonlySet<string> = new Set([
+  "E_DAILY_LIMIT_EXCEEDED",
+  "E_RATE_LIMIT_EXCEEDED",
+  "E_SENDER_DOMAIN_NOT_AVAILABLE",
+  "E_SENDER_NOT_VERIFIED",
+]);
+
 const RACE_RETRIES = 3;
 
 const MAX_ADDRESS_LENGTH = 254;
@@ -82,8 +95,13 @@ const consume = async (
   key: string,
   max: number,
   now: number,
+  windowMillis = WINDOW_MILLIS,
   retries = RACE_RETRIES
 ): Promise<boolean> => {
+  if (max <= 0) {
+    return false;
+  }
+
   const keyIs: Where = { field: "key", value: key };
 
   const row = await adapter.findOne<RateLimitRow>({
@@ -91,14 +109,14 @@ const consume = async (
     where: [keyIs],
   });
 
-  if (row !== null && now - Number(row.lastRequest) < WINDOW_MILLIS) {
+  if (row !== null && now - Number(row.lastRequest) < windowMillis) {
     const counted = await adapter.incrementOne({
       increment: { count: 1 },
       model: MODEL,
       set: { lastRequest: now },
       where: [
         keyIs,
-        { field: "lastRequest", operator: "gt", value: now - WINDOW_MILLIS },
+        { field: "lastRequest", operator: "gt", value: now - windowMillis },
         { field: "count", operator: "lt", value: max },
       ],
     });
@@ -125,7 +143,7 @@ const consume = async (
 
   return claimed || retries === 0
     ? claimed
-    : await consume(adapter, key, max, now, retries - 1);
+    : await consume(adapter, key, max, now, windowMillis, retries - 1);
 };
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
@@ -143,7 +161,7 @@ const refund = async (adapter: DBAdapter, key: string) => {
 const keepSendRowsForTheWindow = {
   max: EMAIL_SEND_LIMIT.max,
   pathMatcher: () => false,
-  window: EMAIL_SEND_LIMIT.windowSeconds,
+  window: GLOBAL_WINDOW_MILLIS / 1000,
 };
 
 export const emailSendLimit = (): BetterAuthPlugin => ({
@@ -153,7 +171,8 @@ export const emailSendLimit = (): BetterAuthPlugin => ({
 
 export const limitSends =
   (
-    send: (request: MagicLinkRequest) => Promise<void>
+    send: (request: MagicLinkRequest) => Promise<void>,
+    dailySendLimit = DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT
   ): MagicLinkOptions["sendMagicLink"] =>
   // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
   async ({ email, url }, ctx) => {
@@ -184,10 +203,35 @@ export const limitSends =
       });
     }
 
+    if (
+      !(await consume(
+        adapter,
+        GLOBAL_KEY,
+        dailySendLimit,
+        now,
+        GLOBAL_WINDOW_MILLIS
+      ))
+    ) {
+      await refund(adapter, sendKey);
+      await refund(adapter, attemptKey);
+
+      throw new APIError("TOO_MANY_REQUESTS", {
+        message:
+          "Sign-in email capacity is temporarily unavailable. Please try again later.",
+      });
+    }
+
     try {
       await send({ email, url });
     } catch (error) {
       await refund(adapter, sendKey);
+
+      if (
+        Schema.is(CodedSendError)(error) &&
+        REJECTED_SEND_CODES.has(error.cause.code)
+      ) {
+        await refund(adapter, GLOBAL_KEY);
+      }
 
       if (
         Schema.is(CodedSendError)(error) &&

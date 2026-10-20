@@ -29,6 +29,7 @@ export interface MagicLinkRequest {
 
 export interface AuthSettings {
   readonly hosts: SiteHosts;
+  readonly magicLinkDailySendLimit?: number;
   readonly sendMagicLink: (request: MagicLinkRequest) => Promise<void>;
   readonly social: Partial<Record<SocialProviderValue, SocialCredentials>>;
 }
@@ -52,7 +53,10 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
   plugins: [
     magicLink({
       expiresIn: MAGIC_LINK_TTL_MINUTES * 60,
-      sendMagicLink: limitSends(settings.sendMagicLink),
+      sendMagicLink: limitSends(
+        settings.sendMagicLink,
+        settings.magicLinkDailySendLimit
+      ),
       storeToken: "hashed",
     }),
     emailSendLimit(),
