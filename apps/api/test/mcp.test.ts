@@ -9,6 +9,7 @@ import {
   jobBoardContracts,
   JobStore,
   proAgentCapabilities,
+  PostingFeeds,
   SavedSearchId,
   secretHashOf,
   TrackerStore,
@@ -90,6 +91,14 @@ const served = (sources: readonly SourceNameValue[]) =>
 const fixture = Effect.gen(function* fixture() {
   const listedSources: (readonly SourceNameValue[])[] = [];
   const countedSources: (readonly SourceNameValue[])[] = [];
+  const countedCatalogs: (readonly string[])[] = [];
+
+  const attempted = [
+    { failing: false, key: "Greenhouse:all" },
+    { failing: true, key: "Remotive:all" },
+    { failing: true, key: "Greenhouse:removed" },
+  ];
+
   const savedBy: string[] = [];
 
   const hashes = new Map<string, AccountValue>([
@@ -99,6 +108,23 @@ const fixture = Effect.gen(function* fixture() {
   ]);
 
   const stores = Layer.mergeAll(
+    Layer.succeed(PostingFeeds, {
+      catalog: [
+        ...board.map((row) => ({
+          company: Option.some(row.company),
+          key: row.feed,
+          minIntervalMinutes: 60,
+          source: row.source,
+        })),
+        {
+          company: Option.none(),
+          key: "Greenhouse:unattempted",
+          minIntervalMinutes: 60,
+          source: "Greenhouse" as const,
+        },
+      ],
+      fetch: () => Effect.die("MCP stats must not fetch postings"),
+    }),
     Layer.succeed(
       JobStore,
       JobStore.of({
@@ -136,13 +162,19 @@ const fixture = Effect.gen(function* fixture() {
         releaseIngest: unserved("releaseIngest"),
         replaceFeed: unserved("replaceFeed"),
         saveEnrichment: unserved("saveEnrichment"),
-        stats: (_now, sources) => {
+        stats: (_now, sources, catalogKeys) => {
+          countedCatalogs.push(catalogKeys);
+
+          const current = attempted.filter((feed) =>
+            catalogKeys.includes(feed.key)
+          );
+
           countedSources.push(sources);
 
           return Effect.succeed({
             activeJobs: served(sources).length,
-            feedsFailing: 0,
-            feedsTotal: 2,
+            feedsFailing: current.filter((feed) => feed.failing).length,
+            feedsTotal: current.length,
             lastRun: null,
             newToday: 0,
             regions: [],
@@ -256,7 +288,7 @@ const fixture = Effect.gen(function* fixture() {
       return { headers: web.headers, status: web.status, text };
     });
 
-  return { countedSources, listedSources, savedBy, send };
+  return { countedCatalogs, countedSources, listedSources, savedBy, send };
 });
 
 type Send = Effect.Success<typeof fixture>["send"];
@@ -701,7 +733,7 @@ describe("board over MCP", () => {
     "counts only the sources agents may see, so boardStats agrees with listJobs",
     () =>
       Effect.gen(function* stats() {
-        const { countedSources, send } = yield* fixture;
+        const { countedCatalogs, countedSources, send } = yield* fixture;
         const { tool } = client(send);
         const counted = yield* tool("boardStats", {});
 
@@ -712,6 +744,17 @@ describe("board over MCP", () => {
         });
 
         expect(countedSources.at(-1)).not.toContain("Remotive");
+        expect(countedCatalogs.at(-1)).toStrictEqual([
+          "Greenhouse:all",
+          "Remotive:all",
+          "Greenhouse:unattempted",
+        ]);
+        expect(JSON.stringify(counted.structuredContent)).toContain(
+          '"feedsTotal":2'
+        );
+        expect(JSON.stringify(counted.structuredContent)).toContain(
+          '"feedsFailing":1'
+        );
         expect(JSON.stringify(counted.structuredContent)).toContain(
           '"activeJobs":1'
         );

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  boardStats,
   companyJobs,
   companyJobsContract,
   DAY_MILLIS,
   JobStore,
+  PostingFeeds,
   SourceName,
 } from "@rat-stack/core";
 import type { JobQueryValue, JobValue } from "@rat-stack/core";
@@ -425,7 +427,11 @@ describe("D1 job store queries", () => {
           yield* store.recordFeedFailure("b", NOW + 1, "timeout");
 
           const states = yield* store.feedStates;
-          const stats = yield* store.stats(NOW, SourceName.literals);
+
+          const stats = yield* store.stats(NOW, SourceName.literals, [
+            "a",
+            "b",
+          ]);
 
           expect(pruned).toBe(1);
           expect(
@@ -442,6 +448,106 @@ describe("D1 job store queries", () => {
             stats.feedsTotal,
             stats.feedsFailing,
           ]).toStrictEqual([1, 2, 1]);
+        })
+      )
+  );
+
+  it.effect(
+    "feed health excludes removed boards without deleting their listings or history",
+    () =>
+      withStore(
+        Effect.gen(function* catalogHealth() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "greenhouse:active",
+            [job({ feed: "greenhouse:active", id: "active:1" })],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "greenhouse:removed",
+            [
+              job({
+                company: "Removed",
+                feed: "greenhouse:removed",
+                id: "removed:1",
+              }),
+            ],
+            NOW
+          );
+          yield* store.recordFeedFailure(
+            "greenhouse:removed",
+            NOW + 1,
+            "removed board"
+          );
+          yield* store.recordFeedFailure(
+            "remotive:engineering-manager",
+            NOW + 1,
+            "timeout"
+          );
+          const beforeStates = yield* store.feedStates;
+
+          const beforeHistory = yield* store.historyOf({
+            company: "Removed",
+            title: "Engineering Manager",
+          });
+
+          const catalog = [
+            "greenhouse:active",
+            "remotive:engineering-manager",
+            ...Array.makeBy(600, (index) => `greenhouse:unattempted-${index}`),
+            `greenhouse:quote"'`,
+          ];
+
+          expect(Option.isSome(beforeHistory)).toBe(true);
+
+          const stats = yield* store.stats(NOW, SourceName.literals, catalog);
+          const empty = yield* store.stats(NOW, SourceName.literals, []);
+
+          const repeated = yield* store.stats(NOW, SourceName.literals, [
+            ...catalog,
+            ...catalog,
+          ]);
+
+          expect([
+            stats.feedsTotal,
+            stats.feedsFailing,
+            stats.activeJobs,
+          ]).toStrictEqual([2, 1, 2]);
+          expect([
+            empty.feedsTotal,
+            empty.feedsFailing,
+            empty.activeJobs,
+          ]).toStrictEqual([0, 0, 2]);
+          expect(repeated).toStrictEqual(stats);
+
+          const publicStats = yield* boardStats.handler({}).pipe(
+            Effect.provideService(PostingFeeds, {
+              catalog: catalog.map((key) => ({
+                company: Option.none(),
+                key,
+                minIntervalMinutes: 60,
+                source: "Greenhouse" as const,
+              })),
+              fetch: () => Effect.die("boardStats must not fetch postings"),
+            })
+          );
+
+          expect([
+            publicStats.feedsTotal,
+            publicStats.feedsFailing,
+            publicStats.activeJobs,
+          ]).toStrictEqual([2, 1, 2]);
+          expect(yield* store.feedStates).toStrictEqual(beforeStates);
+          expect(
+            yield* store.historyOf({
+              company: "Removed",
+              title: "Engineering Manager",
+            })
+          ).toStrictEqual(beforeHistory);
+          expect(
+            ids((yield* store.list(query(), NOW, SourceName.literals)).jobs)
+          ).toStrictEqual(["active:1", "removed:1"]);
         })
       )
   );
