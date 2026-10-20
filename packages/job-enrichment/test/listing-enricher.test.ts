@@ -179,13 +179,8 @@ describe("listing enricher", () => {
     ["fractional prompt tokens", 1000.5, 100],
     ["fractional completion tokens", 1000, 0.5],
     [
-      "fewer prompt tokens than the fixed prompt and schema hold",
+      "fewer prompt tokens than the system-text lower bound",
       PROMPT_TOKEN_FLOOR - 1,
-      100,
-    ],
-    [
-      "no more prompt tokens than the system prompt alone holds",
-      SYSTEM_PROMPT.match(/\p{L}+/gu)?.length ?? 0,
       100,
     ],
   ])(
@@ -205,6 +200,23 @@ describe("listing enricher", () => {
         );
 
         expect(reported).toStrictEqual({ answer, neurons: null });
+      })
+  );
+
+  it.effect.each([316, 385])(
+    "accepts a system-text usage report of %s without counting schema or template tokens",
+    (promptTokens) =>
+      Effect.gen(function* systemOnlyUsage() {
+        const reported = yield* extractWith(
+          recording(
+            Effect.succeed({
+              response: answer,
+              usage: { completion_tokens: 0, prompt_tokens: promptTokens },
+            })
+          ).run
+        );
+
+        expect(reported.neurons).toBe(Math.ceil(promptTokens * 0.026668));
       })
   );
 
