@@ -711,6 +711,52 @@ a {
   overflow-wrap: anywhere;
 }
 
+.agent-tokens {
+  max-width: var(--measure);
+  margin: 2rem 0 0;
+}
+
+.agent-tokens h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.agent-token-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.agent-token {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.agent-token-label {
+  overflow-wrap: anywhere;
+}
+
+.agent-token-secret {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid var(--marigold);
+  background: var(--paper-raised);
+}
+
+.agent-tokens pre {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .pro-badge {
   display: inline-block;
   padding: 0.1rem 0.55rem;

@@ -196,6 +196,10 @@ export const limitSends =
         await refund(adapter, attemptKey);
       }
 
-      throw error;
+      ctx.context.logger.error("magic link send failed", error);
+
+      throw new APIError("INTERNAL_SERVER_ERROR", {
+        message: "Unable to send the sign-in link.",
+      });
     }
   };

@@ -11,6 +11,7 @@ import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
 import { Model as AccountModel } from "../account/model.js";
+import { Model as AgentTokensModel } from "../agent-tokens/model.js";
 import { Model as BillingModel } from "../billing/model.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { Route } from "../route.js";
@@ -136,6 +137,7 @@ export type TrackerChangeValue = typeof TrackerChange.Type;
 
 export const Model = Schema.Struct({
   account: AccountModel,
+  agentTokens: AgentTokensModel,
   awaitingEcho: Schema.Array(Schema.String),
   billing: BillingModel,
   draftSearch: Schema.String,
