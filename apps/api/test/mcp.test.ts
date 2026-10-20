@@ -130,6 +130,7 @@ const fixture = Effect.gen(function* fixture() {
       JobStore.of({
         claimIngest: unserved("claimIngest"),
         claimNeurons: unserved("claimNeurons"),
+        companyJobs: unserved("companyJobs"),
         companyRecords: unserved("companyRecords"),
         feedStates: Effect.die("feedStates is not served here"),
         find: (id) =>

@@ -1,5 +1,6 @@
 import {
   companySlugOf,
+  COMPANY_LISTING_ROWS,
   DAY_MILLIS,
   fingerprintOf,
   MAX_AGE_DAYS,
@@ -107,10 +108,16 @@ const servedJobsSince = (
 const filteredJobs = (
   query: JobQueryValue,
   now: number,
-  sources: readonly SourceNameValue[]
+  sources: readonly SourceNameValue[],
+  companySlug?: string
 ) => {
   const conditions = ["posted_at >= ?"];
   const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
+
+  if (companySlug !== undefined) {
+    conditions.push("jobs.company_slug = ?");
+    params.push(companySlug);
+  }
 
   const served = servedSourcesCondition(sources);
 
@@ -171,9 +178,10 @@ const filteredJobs = (
 export const listJobsStatement = (
   query: JobQueryValue,
   now: number,
-  sources: readonly SourceNameValue[]
+  sources: readonly SourceNameValue[],
+  companySlug?: string
 ): SqlStatement => {
-  const filtered = filteredJobs(query, now, sources);
+  const filtered = filteredJobs(query, now, sources, companySlug);
 
   const order =
     query.sort === "Newest"
@@ -195,6 +203,34 @@ LIMIT ? OFFSET ?`,
       query.limit,
       query.offset,
     ]
+  );
+};
+
+const companyQuery: JobQueryValue = {
+  limit: COMPANY_LISTING_ROWS,
+  maxAgeDays: MAX_AGE_DAYS,
+  offset: 0,
+  regions: [],
+  roles: [],
+  salaryFloor: null,
+  salaryListed: false,
+  search: "",
+  seniorities: [],
+  sort: "Newest",
+};
+
+export const companyJobsStatement = (slug: string, now: number) =>
+  listJobsStatement(companyQuery, now, SourceName.literals, slug);
+
+export const companySummaryStatement = (slug: string, now: number) => {
+  const filtered = filteredJobs(companyQuery, now, SourceName.literals, slug);
+
+  return statement(
+    `${filtered.sql}
+SELECT COUNT(*) AS total, MIN(COALESCE(history.first_seen_at, ranked.first_seen_at)) AS opened_at
+FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
+WHERE duplicate_rank = 1`,
+    filtered.params
   );
 };
 

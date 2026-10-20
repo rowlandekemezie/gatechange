@@ -24,6 +24,7 @@ const make = Effect.gen(function* makeJobQueries() {
   return {
     agentTokens: client.agentTokens({}),
     companyIntel: (slug: string) => client.companyIntel({ slug }),
+    companyJobs: (slug: string) => client.companyJobs({ slug }),
     deleteSearch: (id: SavedSearchIdValue) => client.deleteSearch({ id }),
     getJob: (id: string) => client.getJob({ id }),
     importShortlist: (jobs: readonly TrackRequestValue[]) =>
