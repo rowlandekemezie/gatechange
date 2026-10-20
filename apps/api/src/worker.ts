@@ -155,6 +155,10 @@ const workersSubdomain = Config.option(
   Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
 );
 
+const restrictedStripeKey = Config.option(
+  Config.Redacted("STRIPE_RESTRICTED_KEY")
+).pipe(Config.map(Option.filter((key) => Redacted.value(key) !== "")));
+
 const socialCredentials = (prefix: string) =>
   Config.all({
     clientId: Config.String(`${prefix}_CLIENT_ID`).pipe(Config.withDefault("")),
@@ -328,9 +332,16 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       Config.withDefault(false)
     );
 
-    const stripe = yield* stripeBilling(
-      billingEnabled ? publicOriginOf(stage, subdomain) : Option.none()
-    );
+    const stripe = yield* stripeBilling({
+      hostId: "JobsBackend",
+      restrictedKey: billingEnabled
+        ? yield* restrictedStripeKey
+        : Option.none(),
+      siteOrigin: billingEnabled
+        ? publicOriginOf(stage, subdomain)
+        : Option.none(),
+      stage,
+    });
 
     const billingLayer = Layer.mergeAll(
       d1BillingStoreLayer(client),
@@ -498,10 +509,8 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       );
 
     const stripeWebhook = (request: HttpServerRequest.HttpServerRequest) =>
-      stripe.webhookSecret.pipe(
-        Effect.flatMap((webhookSecret) =>
-          stripeWebhookResponse(webhookSecret, request)
-        ),
+      stripe.endpoint.pipe(
+        Effect.flatMap((endpoint) => stripeWebhookResponse(endpoint, request)),
         Effect.provide(billingLayer)
       );
 
@@ -526,6 +535,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         Cloudflare.Email.SendBinding,
         CloudflareD1(JobsDatabase),
         Stripe.CreateCheckoutSessionHttp,
+        Stripe.CreateCustomerHttp,
         Stripe.CreateBillingPortalSessionHttp
       )
     )

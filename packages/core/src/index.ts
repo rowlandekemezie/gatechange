@@ -82,9 +82,12 @@ export type {
 export {
   alertsAllowed,
   Cadence,
+  dailySendsFor,
   DigestFrequency,
   digestFor,
   digestSourceLabels,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+  INSTANT_SHARE_OF_DAILY_SENDS,
   INSTANT_WINDOW_MILLIS,
   matchesFilters,
   MAX_DIGEST_JOBS,
@@ -315,6 +318,7 @@ export type {
 } from "./contracts.js";
 
 export {
+  annualSalaryBandOf,
   DEFAULT_DAILY_NEURONS,
   DEFAULT_ENRICHMENT_SWEEP_LIMIT,
   detailsOfAnswer,
@@ -325,6 +329,7 @@ export {
   EnrichmentOutcome,
   ListingEnricher,
   MAX_POSTING_CHARS,
+  namesVariablePay,
   ModelAnswer,
   moneyRangesIn,
   SalaryPeriod,

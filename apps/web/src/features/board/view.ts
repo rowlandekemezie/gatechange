@@ -3,7 +3,6 @@ import {
   offSiteHref,
   roleLevels,
   seniorities,
-  usesProFilters,
 } from "@rat-stack/core/contracts";
 import type { ListedJobValue, RoleLevelValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe, Schema } from "effect";
@@ -27,7 +26,6 @@ import {
 } from "../../client/board/copy.js";
 import {
   ageWindows,
-  queryOf,
   regionGroups,
   salarySteps,
 } from "../../client/board/filters.js";
@@ -294,12 +292,17 @@ const proFilterView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
         Message.ToggledSalaryListed()
       ),
       h.span([h.Class("pro-badge")], ["Pro"]),
-      ...(usesProFilters(queryOf(model.filters, 0)) && isFreeViewer(model)
+      ...((model.filters.salaryListed ||
+        model.filters.salaryFloor !== null ||
+        model.filters.seniorities.length > 0) &&
+      isFreeViewer(model)
         ? [
             h.p(
               [h.Class("upgrade-prompt"), h.Role("status")],
               [
-                "Salary and level filters come with Pro, so the list below still shows every role. ",
+                model.filters.seniorities.length > 0
+                  ? "Salary and seniority filters come with Pro, so the list below still shows every role. "
+                  : "Salary filters come with Pro, so the list below still shows every role. ",
                 h.a([h.Href(pricingRouter())], ["See Pro plans"]),
               ]
             ),

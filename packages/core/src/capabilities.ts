@@ -4,7 +4,7 @@ import type { Effect as EffectType } from "effect";
 
 import { AccountStore } from "./account-store.js";
 import { CurrentViewer, currentMember, Viewer } from "./account.js";
-import type { AccountIdValue } from "./account.js";
+import type { AccountIdValue, AccountValue } from "./account.js";
 import { AlertStore } from "./alert-store.js";
 import { MAX_SAVED_SEARCHES } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
@@ -176,6 +176,29 @@ export const membership = implement(membershipContract, () =>
   currentMember.pipe(Effect.flatMap(({ id }) => membershipOf(id)))
 );
 
+const billingCustomerOf = Effect.fn("billingCustomerOf")(
+  function* billingCustomerOf(member: AccountValue) {
+    const store = yield* BillingStore;
+    const linked = yield* store.customerOf(member.id);
+
+    if (Option.isSome(linked)) {
+      return linked.value;
+    }
+
+    const created = yield* Billing.use((billing) =>
+      billing.createCustomer(member)
+    );
+
+    yield* store.linkCustomer(
+      member.id,
+      created,
+      yield* Clock.currentTimeMillis
+    );
+
+    return Option.getOrElse(yield* store.customerOf(member.id), () => created);
+  }
+);
+
 export const startCheckout = implement(startCheckoutContract, ({ plan }) =>
   Effect.gen(function* startCheckoutHandler() {
     const member = yield* currentMember;
@@ -184,9 +207,7 @@ export const startCheckout = implement(startCheckoutContract, ({ plan }) =>
       return yield* new AlreadyPro();
     }
 
-    const customer = yield* BillingStore.use((store) =>
-      store.customerOf(member.id)
-    );
+    const customer = yield* billingCustomerOf(member);
 
     const url = yield* Billing.use((billing) =>
       billing.checkout({ account: member, customer, plan })
