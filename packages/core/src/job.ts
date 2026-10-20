@@ -74,6 +74,77 @@ export const Job = Schema.Struct({
 
 export type JobValue = typeof Job.Type;
 
+export const Currency = Schema.Literals(["USD", "CAD", "EUR", "GBP"]);
+
+export type CurrencyValue = typeof Currency.Type;
+
+export const currencies: readonly CurrencyValue[] = Currency.literals;
+
+export const AnnualAmount = Schema.Int.check(
+  Schema.isBetween({ maximum: 5_000_000, minimum: 10_000 })
+);
+
+export const SalaryBand = Schema.Struct({
+  currency: Currency,
+  max: AnnualAmount,
+  min: AnnualAmount,
+}).check(
+  Schema.makeFilter((band) => band.min <= band.max || "min must not exceed max")
+);
+
+export type SalaryBandValue = typeof SalaryBand.Type;
+
+export const Seniority = Schema.Literals([
+  "Manager",
+  "SeniorManager",
+  "Director",
+  "SeniorDirector",
+  "VicePresident",
+  "Executive",
+]);
+
+export type SeniorityValue = typeof Seniority.Type;
+
+export const seniorities: readonly SeniorityValue[] = Seniority.literals;
+
+export const RemotePolicy = Schema.Literals([
+  "Remote",
+  "RemoteInRegion",
+  "Hybrid",
+  "Onsite",
+]);
+
+export type RemotePolicyValue = typeof RemotePolicy.Type;
+
+export const ListingDetails = Schema.Struct({
+  remotePolicy: Schema.NullOr(RemotePolicy),
+  reportsTo: Schema.NullOr(
+    Schema.NonEmptyString.check(Schema.isMaxLength(120))
+  ),
+  salary: Schema.NullOr(SalaryBand),
+  seniority: Schema.NullOr(Seniority),
+  teamSize: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ maximum: 10_000, minimum: 1 }))
+  ),
+});
+
+export type ListingDetailsValue = typeof ListingDetails.Type;
+
+export const Enrichment = Schema.Struct({
+  ...ListingDetails.fields,
+  enrichedAt: EpochMillis,
+  model: Schema.NonEmptyString,
+});
+
+export type EnrichmentValue = typeof Enrichment.Type;
+
+export const JobDetail = Schema.Struct({
+  ...Job.fields,
+  enrichment: Schema.NullOr(Enrichment),
+});
+
+export type JobDetailValue = typeof JobDetail.Type;
+
 export const JobSort = Schema.Literals(["Relevance", "Newest"]);
 
 export type JobSortValue = typeof JobSort.Type;
@@ -83,6 +154,13 @@ export const MAX_AGE_DAYS = 30;
 export const DEFAULT_AGE_DAYS = 7;
 
 export const MAX_PAGE_SIZE = 100;
+
+export const SalaryFloor = Schema.Struct({
+  amount: AnnualAmount,
+  currency: Currency,
+});
+
+export type SalaryFloorValue = typeof SalaryFloor.Type;
 
 export const JobQuery = Schema.Struct({
   limit: Schema.Int.check(
@@ -94,10 +172,16 @@ export const JobQuery = Schema.Struct({
   offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   regions: Schema.Array(Region),
   roles: Schema.Array(RoleLevel),
+  salaryFloor: Schema.NullOr(SalaryFloor).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null))
+  ),
   salaryListed: Schema.Boolean.pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
   search: Schema.String.check(Schema.isMaxLength(80)),
+  seniorities: Schema.Array(Seniority).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed([]))
+  ),
   sort: JobSort,
 });
 
@@ -106,7 +190,7 @@ export type JobQueryValue = typeof JobQuery.Type;
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 export const ListedJob = Schema.Struct({
-  ...Job.fields,
+  ...JobDetail.fields,
   daysOpen: Count,
   reposts: Count,
 });

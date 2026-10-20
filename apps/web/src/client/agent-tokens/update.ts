@@ -6,12 +6,14 @@ import type { JobQueries } from "../board/queries.js";
 import { FetchTokens, IssueToken, RevokeToken } from "./command.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { IssueState, labelOf, TokensState } from "./model.js";
+import { canIssue, IssueState, labelOf, TokensState } from "./model.js";
 import type { ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
 
 const initial: ModelValue = {
+  active: false,
+  generation: 0,
   issue: IssueState.Idle(),
   label: "",
   revoking: [],
@@ -20,77 +22,107 @@ const initial: ModelValue = {
 
 export const init = (): UpdateReturn => ({ model: initial });
 
-export const signedOut = (): ModelValue => initial;
-
-export const entered = (model: ModelValue): UpdateReturn => ({
-  commands: [FetchTokens()],
-  model: modifyFields(model, {
-    issue: () => IssueState.Idle(),
-    tokens: (state) =>
-      Schema.is(TokensState.Loaded)(state) ? state : TokensState.Loading(),
-  }),
+export const invalidated = (model: ModelValue): ModelValue => ({
+  ...initial,
+  generation: model.generation + 1,
 });
 
+export const entered = (model: ModelValue): UpdateReturn => {
+  const generation = model.generation + 1;
+
+  return {
+    commands: [FetchTokens({ generation })],
+    model: {
+      ...initial,
+      active: true,
+      generation,
+      tokens: TokensState.Loading(),
+    },
+  };
+};
+
 const submitted = (model: ModelValue): UpdateReturn =>
-  Schema.is(IssueState.Issuing)(model.issue)
-    ? { model }
-    : Option.match(labelOf(model.label), {
+  canIssue(model)
+    ? Option.match(labelOf(model.label), {
         onNone: () => ({ model }),
         onSome: (label) => ({
-          commands: [IssueToken({ label })],
+          commands: [IssueToken({ generation: model.generation, label })],
           model: modifyFields(model, { issue: () => IssueState.Issuing() }),
         }),
-      });
+      })
+    : { model };
 
 export const update = (
   model: ModelValue,
   message: MessageValue
-): UpdateReturn =>
-  Message.match<UpdateReturn>(message, {
+): UpdateReturn => {
+  if (
+    !model.active ||
+    ("generation" in message && message.generation !== model.generation)
+  ) {
+    return { model };
+  }
+
+  return Message.match<UpdateReturn>(message, {
     ClickedRevokeToken: ({ id }) =>
       model.revoking.includes(id)
         ? { model }
         : {
-            commands: [RevokeToken({ id })],
+            commands: [RevokeToken({ generation: model.generation, id })],
             model: modifyFields(model, { revoking: (ids) => [...ids, id] }),
           },
-    CompletedFetchTokens: ({ tokens }) => ({
-      model: modifyFields(model, {
-        tokens: () =>
-          Option.match(tokens, {
-            onNone: () => TokensState.Failed(),
-            onSome: (found) => TokensState.Loaded({ tokens: found }),
-          }),
-      }),
-    }),
-    CompletedIssueToken: ({ issued }) => ({
-      model: modifyFields(model, {
-        issue: () => IssueState.Issued({ secret: issued.secret }),
-        label: () => "",
-        tokens: (state) =>
-          Schema.is(TokensState.Loaded)(state)
-            ? TokensState.Loaded({ tokens: [issued.token, ...state.tokens] })
-            : state,
-      }),
-    }),
-    CompletedRevokeToken: ({ id, ok }) => ({
-      model: modifyFields(model, {
-        revoking: (ids) => ids.filter((pending) => pending !== id),
-        tokens: (state) =>
-          ok && Schema.is(TokensState.Loaded)(state)
-            ? TokensState.Loaded({
-                tokens: state.tokens.filter((token) => token.id !== id),
-              })
-            : state,
-      }),
-    }),
-    FailedIssueToken: ({ problem }) => ({
-      model: modifyFields(model, {
-        issue: () => IssueState.Refused({ problem }),
-      }),
-    }),
+    CompletedFetchTokens: ({ tokens }) =>
+      Schema.is(TokensState.Loading)(model.tokens)
+        ? {
+            model: modifyFields(model, {
+              tokens: () =>
+                Option.match(tokens, {
+                  onNone: () => TokensState.Failed(),
+                  onSome: (found) => TokensState.Loaded({ tokens: found }),
+                }),
+            }),
+          }
+        : { model },
+    CompletedIssueToken: ({ issued }) =>
+      Schema.is(IssueState.Issuing)(model.issue)
+        ? {
+            model: modifyFields(model, {
+              issue: () => IssueState.Issued({ secret: issued.secret }),
+              label: () => "",
+              tokens: (state) =>
+                Schema.is(TokensState.Loaded)(state)
+                  ? TokensState.Loaded({
+                      tokens: [issued.token, ...state.tokens],
+                    })
+                  : state,
+            }),
+          }
+        : { model },
+    CompletedRevokeToken: ({ id, ok }) =>
+      model.revoking.includes(id)
+        ? {
+            model: modifyFields(model, {
+              revoking: (ids) => ids.filter((pending) => pending !== id),
+              tokens: (state) =>
+                ok && Schema.is(TokensState.Loaded)(state)
+                  ? TokensState.Loaded({
+                      tokens: state.tokens.filter((token) => token.id !== id),
+                    })
+                  : state,
+            }),
+          }
+        : { model },
+    FailedIssueToken: ({ problem }) =>
+      Schema.is(IssueState.Issuing)(model.issue)
+        ? {
+            model: modifyFields(model, {
+              issue: () => IssueState.Refused({ problem }),
+            }),
+          }
+        : { model },
     SubmittedIssueToken: () => submitted(model),
     UpdatedTokenLabel: ({ value }) => ({
       model: modifyFields(model, { label: () => value }),
     }),
   });
+};

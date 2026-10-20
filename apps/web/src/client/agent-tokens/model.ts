@@ -21,6 +21,8 @@ export const IssueState = defineTaggedUnion({
 export type IssueStateValue = typeof IssueState.Type;
 
 export const Model = Schema.Struct({
+  active: Schema.Boolean,
+  generation: Schema.Finite,
   issue: IssueState,
   label: Schema.String,
   revoking: Schema.Array(Schema.String),
@@ -34,5 +36,7 @@ const decodeLabel = Schema.decodeUnknownOption(AgentTokenLabel);
 export const labelOf = (draft: string) => decodeLabel(draft.trim());
 
 export const canIssue = (model: ModelValue) =>
+  model.active &&
+  Schema.is(TokensState.Loaded)(model.tokens) &&
   !Schema.is(IssueState.Issuing)(model.issue) &&
   Option.isSome(labelOf(model.label));

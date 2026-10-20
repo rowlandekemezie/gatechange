@@ -1,5 +1,5 @@
-import { roleLevels } from "@rat-stack/core/contracts";
-import { Array, Option, Schema, pipe } from "effect";
+import { roleLevels, seniorities } from "@rat-stack/core/contracts";
+import { Array, Option, Predicate, Schema, pipe } from "effect";
 import { Command, Update } from "foldkit";
 import { UrlRequest } from "foldkit/navigation";
 import { modifyFields } from "foldkit/struct";
@@ -14,6 +14,7 @@ import type { MessageValue as AgentTokensMessageValue } from "../agent-tokens/me
 import type { ModelValue as AgentTokensModelValue } from "../agent-tokens/model.js";
 import * as AgentTokens from "../agent-tokens/update.js";
 import type { MessageValue as BillingMessageValue } from "../billing/message.js";
+import { isProMember, MembershipState } from "../billing/model.js";
 import type { ModelValue as BillingModelValue } from "../billing/model.js";
 import * as Billing from "../billing/update.js";
 import type { ListingRouteValue } from "../listing.js";
@@ -39,6 +40,7 @@ import {
   WriteShortlist,
 } from "./command.js";
 import {
+  DEFAULT_PAY_CURRENCY,
   defaultFilters,
   Filters,
   hasNoSelection,
@@ -189,7 +191,8 @@ const enteredAccount = (
   joined(
     joined(
       joined(foldAccountEntered(model), foldSavedSearchesEntered),
-      foldAgentTokensEntered
+      (next) =>
+        isSignedIn(next) ? foldAgentTokensEntered(next) : { model: next }
     ),
     (next) => enteredBilling(next, notice === "CheckoutDone")
   );
@@ -245,6 +248,30 @@ const navigatedTo = (model: ModelValue, filters: FiltersValue): UpdateReturn =>
     boardUrl(filters)
   );
 
+const followedEntitlement = (
+  previous: ModelValue,
+  step: UpdateReturn
+): UpdateReturn =>
+  isProMember(previous.billing) &&
+  (Schema.is(SessionState.SignedOut)(step.model.account.session) ||
+    (Schema.is(MembershipState.Loaded)(step.model.billing.membership) &&
+      !isProMember(step.model.billing)))
+    ? joined(step, (next) => {
+        const filters = {
+          ...next.filters,
+          salaryFloor: null,
+          salaryListed: false,
+          seniorities: [],
+        };
+
+        const reset = withFilters(next, filters);
+
+        return Schema.is(Route.Board)(next.route)
+          ? visiting(reset, ReplaceUrl, boardUrl(filters))
+          : reset;
+      })
+    : step;
+
 const listedJob = (model: ModelValue, id: string) =>
   Schema.is(JobsState.Loaded)(model.jobs)
     ? Array.findFirst(model.jobs.jobs, (job) => job.id === id)
@@ -296,7 +323,13 @@ const isAwaitingListing = (model: ModelValue, route: ListingRouteValue) =>
   Option.exists(listingRouteOf(model), (pending) => sameRoute(pending, route));
 
 const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
-  const routed = modifyFields(model, { route: () => route });
+  const routed = modifyFields(model, {
+    agentTokens: (tokens) =>
+      Schema.is(Route.Account)(model.route) && !Schema.is(Route.Account)(route)
+        ? AgentTokens.invalidated(tokens)
+        : tokens,
+    route: () => route,
+  });
 
   return Route.match<UpdateReturn>(route, {
     Account: ({ notice }) => enteredAccount(routed, notice),
@@ -529,7 +562,7 @@ const followedBilling = (step: UpdateReturn): UpdateReturn =>
     SignedOut: () => ({
       ...step,
       model: modifyFields(step.model, {
-        agentTokens: AgentTokens.signedOut,
+        agentTokens: AgentTokens.invalidated,
         billing: Billing.signedOut,
       }),
     }),
@@ -649,6 +682,25 @@ export const update = (
           ? { model }
           : sentChange(model, tracker, TrackerChange.Note({ jobId, notes }))
       ),
+    ChangedPayCurrency: ({ currency }) =>
+      model.filters.salaryFloor === null
+        ? { model }
+        : navigatedTo(model, {
+            ...model.filters,
+            salaryFloor: { ...model.filters.salaryFloor, currency },
+          }),
+    ChangedPayFloor: ({ amount }) =>
+      navigatedTo(model, {
+        ...model.filters,
+        salaryFloor:
+          amount === null
+            ? null
+            : {
+                amount,
+                currency:
+                  model.filters.salaryFloor?.currency ?? DEFAULT_PAY_CURRENCY,
+              },
+      }),
     ChangedSort: ({ sort }) => navigatedTo(model, { ...model.filters, sort }),
     ChangedStage: ({ jobId, stage }) =>
       withTrackedJob(model, jobId, (tracker, job) =>
@@ -663,6 +715,8 @@ export const update = (
             )
       ),
     ChangedUrl: ({ url }) => echoed(model, url),
+    ClickedAnySeniority: () =>
+      navigatedTo(model, { ...model.filters, seniorities: [] }),
     ClickedClearMark: ({ id }) => unmarked(model, id),
     ClickedKeepShortlist: () => ({
       model: withOffer(model, (offer) =>
@@ -792,12 +846,46 @@ export const update = (
         ? synced(flagged)
         : { model: flagged };
     },
-    GotAccountMessage: ({ message: accountMessage }) =>
-      followedSession(foldAccount(model, accountMessage)),
+    GotAccountMessage: ({ message: accountMessage }) => {
+      const taken = foldAccount(model, accountMessage);
+      const previous = model.account.session;
+      const current = taken.model.account.session;
+
+      const sameOwner =
+        Schema.is(SessionState.SignedIn)(previous) &&
+        Schema.is(SessionState.SignedIn)(current) &&
+        previous.account.id === current.account.id;
+
+      const invalidate =
+        !sameOwner ||
+        Predicate.isTagged(accountMessage, "ClickedSignOut") ||
+        Predicate.isTagged(accountMessage, "CompletedSignOut");
+
+      const scoped = invalidate
+        ? {
+            ...taken,
+            model: modifyFields(taken.model, {
+              agentTokens: AgentTokens.invalidated,
+            }),
+          }
+        : taken;
+
+      const refreshed =
+        invalidate &&
+        Schema.is(SessionState.SignedIn)(current) &&
+        Schema.is(Route.Account)(scoped.model.route) &&
+        !Predicate.isTagged(accountMessage, "ClickedSignOut")
+          ? joined(scoped, foldAgentTokensEntered)
+          : scoped;
+
+      return followedEntitlement(model, followedSession(refreshed));
+    },
     GotAgentTokensMessage: ({ message: agentTokensMessage }) =>
-      foldAgentTokens(model, agentTokensMessage),
+      isSignedIn(model) && Schema.is(Route.Account)(model.route)
+        ? foldAgentTokens(model, agentTokensMessage)
+        : { model },
     GotBillingMessage: ({ message: billingMessage }) =>
-      foldBilling(model, billingMessage),
+      followedEntitlement(model, foldBilling(model, billingMessage)),
     GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>
       foldSavedSearches(model, savedSearchesMessage),
     SubmittedSearch: () =>
@@ -885,6 +973,11 @@ export const update = (
       navigatedTo(model, {
         ...model.filters,
         salaryListed: !model.filters.salaryListed,
+      }),
+    ToggledSeniority: ({ seniority }) =>
+      navigatedTo(model, {
+        ...model.filters,
+        seniorities: toggled(seniorities, model.filters.seniorities, seniority),
       }),
     UpdatedDraftSearch: ({ value }) => ({
       model: modifyFields(model, { draftSearch: () => value }),

@@ -1,8 +1,11 @@
 import {
   BoardStats,
+  Currency,
   Job,
+  JobDetail,
   JobPage,
   RoleLevel,
+  Seniority,
   Stage,
   TrackedJobs,
 } from "@rat-stack/core/contracts";
@@ -16,15 +19,18 @@ import { Message as AgentTokensMessage } from "../agent-tokens/message.js";
 import { Message as BillingMessage } from "../billing/message.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { Message as SavedSearchesMessage } from "../saved-searches/message.js";
-import { AgeWindow, RegionGroup, Sort } from "./filters.js";
+import { AgeWindow, RegionGroup, SalaryStep, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
 export const Message = defineMessageUnion({
   ChangedAge: { maxAgeDays: AgeWindow },
   ChangedNotes: { jobId: Schema.String, notes: Schema.String },
+  ChangedPayCurrency: { currency: Currency },
+  ChangedPayFloor: { amount: Schema.NullOr(SalaryStep) },
   ChangedSort: { sort: Sort },
   ChangedStage: { jobId: Schema.String, stage: Stage },
   ChangedUrl: { url: Url },
+  ClickedAnySeniority: {},
   ClickedClearMark: { id: Schema.String },
   ClickedKeepShortlist: {},
   ClickedLink: { request: UrlRequest },
@@ -57,7 +63,7 @@ export const Message = defineMessageUnion({
   GotBillingMessage: { message: BillingMessage },
   GotSavedSearchesMessage: { message: SavedSearchesMessage },
   SubmittedSearch: {},
-  SucceededFetchJob: { id: Schema.String, job: Schema.Option(Job) },
+  SucceededFetchJob: { id: Schema.String, job: Schema.Option(JobDetail) },
   SucceededFetchJobs: { generation: Schema.Finite, page: JobPage },
   SucceededFetchListing: { listing: Listing, route: ListingRoute },
   SucceededFetchMoreJobs: { generation: Schema.Finite, page: JobPage },
@@ -66,6 +72,7 @@ export const Message = defineMessageUnion({
   ToggledRegionGroup: { group: RegionGroup },
   ToggledRole: { role: RoleLevel },
   ToggledSalaryListed: {},
+  ToggledSeniority: { seniority: Seniority },
   UpdatedDraftSearch: { value: Schema.String },
 });
 

@@ -1,8 +1,10 @@
 import {
   AccountId,
   AlertStore,
+  DAY_MILLIS,
   DigestFrequency,
   GRANTING_STATUSES,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
   RECIPIENT_SENDS_PER_WEEK,
   Region,
   regions,
@@ -107,9 +109,17 @@ export const makeAlertStore = Effect.gen(function* makeAlertStore() {
           cadence === "Instant"
             ? statement(
                 `INSERT INTO instant_sends (account_id, window_start, status, claimed_at)
-VALUES (?, ?, 'Claimed', ?)
+SELECT ?, ?, 'Claimed', ?
+WHERE (SELECT COUNT(*) FROM instant_sends WHERE account_id = ? AND claimed_at > ?) < ?
 ON CONFLICT (account_id, window_start) DO NOTHING`,
-                [account, periodStart, now]
+                [
+                  account,
+                  periodStart,
+                  now,
+                  account,
+                  now - DAY_MILLIS,
+                  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+                ]
               )
             : statement(
                 `INSERT INTO alert_sends (account_id, period_start, status, claimed_at)
@@ -152,9 +162,16 @@ JOIN instant_alerts AS i ON i.account_id = s.account_id
 WHERE u.emailVerified = 1
   AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes AS x WHERE x.account_id = s.account_id)
   AND NOT EXISTS (SELECT 1 FROM instant_sends AS a WHERE a.account_id = s.account_id AND a.window_start = ?)
+  AND (SELECT COUNT(*) FROM instant_sends AS c WHERE c.account_id = s.account_id AND c.claimed_at > ?) < ?
   AND EXISTS (SELECT 1 FROM subscriptions AS b WHERE b.account_id = s.account_id AND b.period_end > ? AND b.status IN (${placeholders(GRANTING_STATUSES.length)}))
 ORDER BY s.account_id, s.created_at`,
-                [periodStart, now, ...GRANTING_STATUSES]
+                [
+                  periodStart,
+                  now - DAY_MILLIS,
+                  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+                  now,
+                  ...GRANTING_STATUSES,
+                ]
               )
             : statement(
                 `SELECT s.id, s.account_id, s.roles, s.regions, s.search, s.frequency, s.created_at, u.email,
@@ -264,14 +281,13 @@ RETURNING ${searchColumns}`,
 
     searchesOf,
 
-    sendsSince: (since) =>
+    sendsSince: (cadence, since) =>
       sql
         .all(
           "sendsSince",
           statement(
-            `SELECT (SELECT COUNT(*) FROM alert_sends WHERE claimed_at >= ?)
-  + (SELECT COUNT(*) FROM instant_sends WHERE claimed_at >= ?) AS total`,
-            [since, since]
+            `SELECT COUNT(*) AS total FROM ${sends[cadence].table} WHERE claimed_at >= ?`,
+            [since]
           ),
           TotalRow
         )
