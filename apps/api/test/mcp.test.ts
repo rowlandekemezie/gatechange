@@ -1074,7 +1074,11 @@ describe("board over MCP", () => {
         expect(response.status).toBe(200);
         expect(document.endpoint).toBe(`${ORIGIN}/mcp`);
         expect(document.transport).toBe("streamable-http");
-        expect(document.protocolVersions).toStrictEqual([PROTOCOL]);
+        expect(document.protocolVersions).toStrictEqual([
+          PROTOCOL,
+          "2025-11-25",
+          "2025-06-18",
+        ]);
         expect(document.rateLimits).toStrictEqual({
           anonymousCallsPerMinute: 30,
           tokenCallsPerMinute: 120,

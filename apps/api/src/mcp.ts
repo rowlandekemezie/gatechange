@@ -27,7 +27,10 @@ import { McpProtocol, McpServer } from "effect/ai";
 import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 
-import { withStreamableHttpCompatibility } from "./mcp-streamable-http.js";
+import {
+  MCP_WIRE_VERSIONS,
+  withStreamableHttpCompatibility,
+} from "./mcp-streamable-http.js";
 
 export const MCP_SERVER_NAME = "jobs-rowlandekemezie";
 
@@ -158,7 +161,7 @@ export const mcpDiscovery = (origin: string) => ({
     "Engineering leadership roles from company boards and job aggregators, refreshed every 20 minutes. Listings from sources whose terms forbid redistribution are left out.",
   endpoint: `${origin}${MCP_PATH}`,
   name: MCP_SERVER_NAME,
-  protocolVersions: MCP_PROTOCOLS.map((protocol) => protocol.protocolVersion),
+  protocolVersions: MCP_WIRE_VERSIONS,
   rateLimits: {
     anonymousCallsPerMinute: ANONYMOUS_MCP_CALLS_PER_MINUTE,
     tokenCallsPerMinute: TOKEN_MCP_CALLS_PER_MINUTE,
