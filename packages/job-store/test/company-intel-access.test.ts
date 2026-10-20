@@ -10,6 +10,7 @@ import {
   PostingFeeds,
   runIngest,
   ShownTrend,
+  SourceName,
   Viewer,
 } from "@rat-stack/core";
 import type {
@@ -164,7 +165,12 @@ describe("the companyIntel capability", () => {
           yield* ingestAt(29, [vp, director, lookalike]);
 
           const store = yield* JobStore;
-          const listed = yield* store.list(everything, NOW + 29 * DAY_MILLIS);
+
+          const listed = yield* store.list(
+            everything,
+            NOW + 29 * DAY_MILLIS,
+            SourceName.literals
+          );
 
           const idOf = (title: string, company = "Acme Cloud") =>
             Option.getOrThrow(

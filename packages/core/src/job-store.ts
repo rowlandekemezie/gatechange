@@ -109,7 +109,8 @@ export class JobStore extends Context.Service<
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;
     readonly list: (
       query: JobQueryValue,
-      now: number
+      now: number,
+      sources: readonly SourceNameValue[]
     ) => Effect.Effect<JobListing, JobStoreUnavailable>;
     readonly neuronsClaimed: (
       day: number
@@ -149,7 +150,8 @@ export class JobStore extends Context.Service<
       enrichment: EnrichmentValue
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly stats: (
-      now: number
+      now: number,
+      sources: readonly SourceNameValue[]
     ) => Effect.Effect<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable

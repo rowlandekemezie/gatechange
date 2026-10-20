@@ -280,12 +280,14 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       ),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
-    list: (query, now) =>
+    list: (query, now, sources) =>
       Effect.sync(() => {
         const matching = pipe(
           [...jobs.values()],
           Array.filter(
-            (job) => job.postedAt >= now - query.maxAgeDays * 86_400_000
+            (job) =>
+              job.postedAt >= now - query.maxAgeDays * 86_400_000 &&
+              sources.includes(job.source)
           ),
           Array.filter(matchesEnrichment(query))
         );
@@ -446,9 +448,11 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         enrichments.set(id, enrichment);
         skips.delete(id);
       }),
-    stats: () =>
+    stats: (_now, sources) =>
       Effect.sync(() => ({
-        activeJobs: jobs.size,
+        activeJobs: [...jobs.values()].filter((job) =>
+          sources.includes(job.source)
+        ).length,
         feedsFailing: pipe(
           [...states.values()],
           Array.filter((state) => state.consecutiveFailures > 0)

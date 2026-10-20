@@ -84,6 +84,7 @@ afterEach(() => {
 describe("edge routing", () => {
   it.effect.each([
     "/rpc",
+    "/mcp",
     "/api/auth/sign-in/magic-link",
     "/api/auth/get-session",
   ])("sends %s to the backend and nothing else", (path) =>
@@ -142,7 +143,7 @@ describe("edge routing", () => {
       })
   );
 
-  it.effect.each(["/rpc", "/api/auth/get-session"])(
+  it.effect.each(["/rpc", "/mcp", "/api/auth/get-session"])(
     "keeps %s private even when the backend sets no cookie",
     (path) =>
       Effect.gen(function* backendWithoutCookie() {
