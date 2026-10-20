@@ -843,6 +843,26 @@ const roleStatesOtherPolicy = (
       )
   );
 
+const statedArrangement = (word: string) =>
+  new RegExp(
+    String.raw`\bwork(?:ing)? arrangement\s*:\s*${word}\b|\b${word} work(?:ing)? arrangement\b|\bthis is an? ${word} (?:role|position)\b`,
+    "iu"
+  );
+
+const arrangementStatements: readonly (readonly [RemotePolicyValue, RegExp])[] =
+  [
+    ["Hybrid", statedArrangement("hybrid")],
+    ["Remote", statedArrangement("remote")],
+    ["Onsite", statedArrangement("on-?site")],
+  ];
+
+const arrangementStated = (posting: SearchableText) =>
+  pipe(
+    arrangementStatements,
+    Array.findFirst(([, statement]) => statement.test(posting.flat)),
+    Option.map(([stated]) => stated)
+  );
+
 const taggedPolicy = (posting: SearchableText) =>
   pipe(
     workplaceTags,
@@ -879,7 +899,15 @@ const remotePolicyOf = (
   const quoted = quotedPolicy(answer, posting);
 
   return pipe(
-    workplace === "Unspecified" ? Option.none() : Option.some(workplace),
+    workplace === "Unspecified"
+      ? Option.none()
+      : Option.some(
+          pipe(
+            arrangementStated(posting),
+            Option.orElse(() => taggedPolicy(posting)),
+            Option.getOrElse((): RemotePolicyValue => workplace)
+          )
+        ),
     Option.map((stated) =>
       stated === "Remote" &&
       Option.exists(quoted, (policy) => policy === "RemoteInRegion")

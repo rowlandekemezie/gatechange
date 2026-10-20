@@ -71,6 +71,12 @@ const fetchPosting = Effect.fnUntraced(function* fetchPosting(id: string) {
   return yield* texts.fetch(jobWithId(id));
 });
 
+const unitedStates = (addressLocality: string, addressRegion: string) => ({
+  addressCountry: "United States",
+  addressLocality,
+  addressRegion,
+});
+
 const salaryComponent = (
   interval: string,
   minValue: number,
@@ -596,6 +602,139 @@ describe("posting texts", () => {
         });
 
         expect(posting.salary).toStrictEqual(salary);
+      })
+  );
+
+  const tier = (title: string, minValue: number, maxValue: number) => ({
+    components: [salaryComponent("1 YEAR", minValue, maxValue)],
+    title,
+  });
+
+  const writerTiers = [
+    tier("SF & NYC", 204_000, 240_000),
+    tier("Other US Locations", 183_000, 216_000),
+  ];
+
+  it.effect.each([
+    [
+      "San Francisco, CA",
+      unitedStates("San Francisco", "California"),
+      writerTiers,
+      204_000,
+    ],
+    [
+      "New York City, NY",
+      unitedStates("New York City", "New York"),
+      writerTiers,
+      204_000,
+    ],
+    ["Denver, CO", unitedStates("Denver", "Colorado"), writerTiers, 204_000],
+    [
+      "Denver, Colorado",
+      unitedStates("Denver", "Colorado"),
+      [
+        tier("SF & NYC", 204_000, 240_000),
+        tier("Columbus and Austin", 170_000, 200_000),
+      ],
+      204_000,
+    ],
+    [
+      "San Francisco",
+      unitedStates("San Francisco", "California"),
+      [
+        tier("Remote (US)", 180_000, 210_000),
+        tier("SF & NYC", 204_000, 240_000),
+      ],
+      204_000,
+    ],
+    [
+      "SF",
+      unitedStates("San Francisco", "California"),
+      [
+        tier("Outside SF and NYC", 183_000, 216_000),
+        tier("SF and NYC", 204_000, 240_000),
+      ],
+      204_000,
+    ],
+    [
+      "Austin, TX",
+      {
+        addressCountry: "US",
+        addressLocality: "Austin",
+        addressRegion: "Texas",
+      },
+      [
+        tier("Tier 1 metros", 200_000, 250_000),
+        tier("Non-US", 90_000, 110_000),
+        tier("US other", 150_000, 180_000),
+      ],
+      200_000,
+    ],
+    [
+      "Seattle, WA",
+      unitedStates("Seattle", "Washington"),
+      [
+        tier("Tier 1: New York, San Francisco", 200_000, 250_000),
+        tier("Washington DC", 190_000, 240_000),
+        tier("Rest of US", 150_000, 180_000),
+      ],
+      200_000,
+    ],
+    [
+      "Washington, DC",
+      unitedStates("Washington", "District of Columbia"),
+      [
+        tier("Seattle, Washington", 210_000, 260_000),
+        tier("DC Metro", 190_000, 240_000),
+      ],
+      190_000,
+    ],
+    [
+      "London, Ontario",
+      {
+        addressCountry: "Canada",
+        addressLocality: "London",
+        addressRegion: "Ontario",
+      },
+      [
+        tier("Toronto / Canada", 120_000, 150_000),
+        tier("London", 90_000, 110_000),
+      ],
+      120_000,
+    ],
+    [
+      "Atlanta, GA",
+      unitedStates("Atlanta", "Georgia"),
+      [
+        tier("Tbilisi, Georgia", 40_000, 60_000),
+        tier("United States", 150_000, 180_000),
+      ],
+      150_000,
+    ],
+    [
+      "Tbilisi",
+      {
+        addressCountry: "Georgia",
+        addressLocality: "Tbilisi",
+        addressRegion: "",
+      },
+      [
+        tier("United States", 150_000, 180_000),
+        tier("Georgia", 40_000, 60_000),
+      ],
+      40_000,
+    ],
+  ] as const)(
+    "an Ashby posting in %s takes no residual, negated or other-place tier",
+    ([location, postalAddress, compensationTiers, min]) =>
+      Effect.gen(function* readTierByPlace() {
+        const posting = yield* readAshbyJob({
+          address: { postalAddress },
+          compensation: { compensationTiers },
+          location,
+        });
+
+        expect(posting.salary?.min).toBe(min);
       })
   );
 

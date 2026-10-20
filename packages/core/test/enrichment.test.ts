@@ -1877,6 +1877,44 @@ describe("enrichListing", () => {
     ).toBeNull();
   });
 
+  it.each([
+    ["its own workplace tag", "Remote", "Great team. #LI-Hybrid", "Hybrid"],
+    [
+      "a work arrangement line",
+      "Remote",
+      "Benefits: Work Arrangement: Hybrid. #LI-Onsite",
+      "Hybrid",
+    ],
+    [
+      "an arrangement named before the word",
+      "Remote",
+      "Hybrid work arrangement: home and office.",
+      "Hybrid",
+    ],
+    [
+      "a statement that this is the role's policy",
+      "Hybrid",
+      "This is an on-site role in Austin.",
+      "Onsite",
+    ],
+    ["only a model answer", "Hybrid", "This role is fully remote.", "Hybrid"],
+    ["a negated statement", "Hybrid", "This is not a remote role.", "Hybrid"],
+  ] as const)(
+    "a listed workplace beside %s saves the policy the posting states",
+    (_name, workplace, text, saved) => {
+      expect(
+        detailsOfAnswer(
+          {
+            ...validAnswer,
+            remotePolicy: "Remote",
+            remotePolicyQuote: "This role is fully remote.",
+          },
+          { company: "Acme", salary: null, text, title: "Engineer", workplace }
+        ).remotePolicy
+      ).toBe(saved);
+    }
+  );
+
   it("a role sentence that restates the tagged policy beside another keeps the tag", () => {
     expect(
       detailsOfAnswer(

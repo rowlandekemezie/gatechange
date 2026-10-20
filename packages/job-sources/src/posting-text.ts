@@ -17,6 +17,7 @@ import {
   Layer,
   Match,
   Option,
+  Order,
   pipe,
   Predicate,
   Schema,
@@ -244,61 +245,139 @@ const countryNames: readonly (readonly string[])[] = [
   ["United Kingdom", "UK"],
 ];
 
+const cityNames: readonly (readonly string[])[] = [
+  ["San Francisco", "SF"],
+  ["New York City", "New York", "NYC", "NY"],
+];
+
+const sharedPlaceNames = new Set([" georgia ", " london ", " washington "]);
+
+const residualTier = / (?:other|rest|else|everywhere|non|outside) /u;
+
+const negatedPlace = / (?:non|outside(?: of| the)?)$/u;
+
 const wordsOf = (text: string) =>
   ` ${text
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .join(" ")
-    .trim()} `;
-
-const namesOfPlace = (place: string) =>
-  pipe(
-    countryNames,
-    Array.findFirst((names) =>
-      names.some((name) => wordsOf(name) === wordsOf(place))
-    ),
-    Option.getOrElse(() => [place])
+    .trim()} `.replaceAll(
+    /(?<= )(?:washington d ?c|district of columbia|d c)(?= )/gu,
+    "dc"
   );
 
-const titleNamesPlace = (title: string, place: string) =>
-  namesOfPlace(place).some(
-    (name) =>
-      wordsOf(name).trim() !== "" && wordsOf(title).includes(wordsOf(name))
+interface PlaceName {
+  readonly country: boolean;
+  readonly rank: number;
+  readonly words: string;
+}
+
+const namesOfPlace = (
+  place: string | null | undefined,
+  rank: number,
+  aliases: readonly (readonly string[])[],
+  isCountry = false
+): readonly PlaceName[] =>
+  pipe(
+    aliases,
+    Array.findFirst((names) =>
+      names.some((name) => wordsOf(name) === wordsOf(place ?? ""))
+    ),
+    Option.getOrElse(() => [place ?? ""]),
+    Array.map((name) => ({
+      country:
+        isCountry ||
+        countryNames.some((names) =>
+          names.some((known) => wordsOf(known) === wordsOf(name))
+        ),
+      rank,
+      words: wordsOf(name),
+    })),
+    Array.filter(({ words }) => words.trim() !== "")
   );
 
 const placesOf = (
   location: string | null | undefined,
   address: Option.Option<typeof AshbyAddress.Type>
-) =>
-  nonEmpty([
-    location,
-    ...pipe(
-      address,
-      Option.match({
-        onNone: () => [],
-        onSome: ({ postalAddress }) => [
-          postalAddress.addressLocality,
-          postalAddress.addressRegion,
-          postalAddress.addressCountry,
-        ],
-      })
-    ),
-  ]);
+) => {
+  const postal = pipe(
+    address,
+    Option.map(({ postalAddress }) => postalAddress),
+    Option.getOrUndefined
+  );
 
-const ashbyTierFor = (tiers: readonly unknown[], places: readonly string[]) =>
+  return [
+    ...namesOfPlace(location, 0, [...countryNames, ...cityNames]),
+    ...namesOfPlace(postal?.addressLocality, 1, [
+      ...countryNames,
+      ...cityNames,
+    ]),
+    ...namesOfPlace(postal?.addressRegion, 2, countryNames),
+    ...namesOfPlace(postal?.addressCountry, 3, countryNames, true),
+  ];
+};
+
+const titleNames = (title: string, { words }: PlaceName) => {
+  const parts = wordsOf(title).split(words);
+
+  return parts
+    .slice(1)
+    .some(
+      (_, index) => !negatedPlace.test(parts.slice(0, index + 1).join(words))
+    );
+};
+
+interface TierFit {
+  readonly rank: number;
+  readonly shared: boolean;
+}
+
+const tierFit = (
+  title: string,
+  places: readonly PlaceName[]
+): Option.Option<TierFit> => {
+  const named = places.filter((place) => titleNames(title, place));
+
+  return named.length === 0 ||
+    (named.every(({ country }) => country) && residualTier.test(wordsOf(title)))
+    ? Option.none()
+    : Option.some({
+        rank: Math.min(...named.map(({ rank }) => rank)),
+        shared: named.every(({ words }) => sharedPlaceNames.has(words)),
+      });
+};
+
+const byFit = Order.mapInput(
+  Order.combine(
+    Order.mapInput(Order.Boolean, ({ shared }: TierFit) => shared),
+    Order.mapInput(Order.Number, ({ rank }: TierFit) => rank)
+  ),
+  ({ fit }: { readonly fit: TierFit }) => fit
+);
+
+const ashbyTierFor = (
+  tiers: readonly unknown[],
+  places: readonly PlaceName[]
+) =>
   pipe(
-    places,
-    Array.findFirst((place) =>
-      Array.findFirst(tiers, (item) =>
-        Option.filter(
-          decodeAshbyTier(item),
-          ({ title }) =>
-            title !== null &&
-            title !== undefined &&
-            titleNamesPlace(title, place)
-        )
+    tiers,
+    Array.flatMap((item) =>
+      pipe(
+        decodeAshbyTier(item),
+        Option.flatMap((tier) =>
+          pipe(
+            Option.fromNullishOr(tier.title),
+            Option.flatMap((title) => tierFit(title, places)),
+            Option.map((fit) => ({ fit, tier }))
+          )
+        ),
+        Option.toArray
       )
     ),
+    Array.match({
+      onEmpty: () => Option.none(),
+      onNonEmpty: (fits) => Option.some(Array.min(fits, byFit).tier),
+    }),
     Option.orElse(() => Option.flatMap(Array.head(tiers), decodeAshbyTier))
   );
 
@@ -312,7 +391,7 @@ const labelsVariablePay = (
 
 const ashbySalary = (
   { compensationTiers }: AshbyCompensationValue,
-  places: readonly string[]
+  places: readonly PlaceName[]
 ): SalaryBandValue | null =>
   pipe(
     ashbyTierFor(
