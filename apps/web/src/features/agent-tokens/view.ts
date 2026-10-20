@@ -230,7 +230,7 @@ export const agentTokensPanel = defineView<
         h,
         isPro(membership.membership.entitlement) && !isRefusedForPro(model)
           ? proPanel(model, origin, h)
-          : [upsell(h)]
+          : [...tokenList(model, h), upsell(h)]
       )
     : h.empty
 );

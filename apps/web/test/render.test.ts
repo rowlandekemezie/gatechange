@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import type {
+  JobDetailValue,
   JobPageValue,
   TrackedJobValue,
   JobQueryValue,
@@ -42,6 +43,7 @@ const jobFrom = (
   arrangement: "Remote",
   company: "Acme <Robotics>",
   daysOpen: 0,
+  enrichment: null,
   feed: `${source}:acme`,
   firstSeenAt: 1_760_000_000_000,
   id,
@@ -78,7 +80,7 @@ const render = (
     policy
   );
 
-const renderJob = (job: JobValue, policy: MarkupPolicy) =>
+const renderJob = (job: JobDetailValue, policy: MarkupPolicy) =>
   render(GREENHOUSE_PATH, Preload.Job({ job }), policy);
 
 const JSON_LD = /<script type="application\/ld\+json">(?<json>.*?)<\/script>/su;

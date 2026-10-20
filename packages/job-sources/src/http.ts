@@ -9,14 +9,13 @@ export const REQUEST_TIMEOUT = "20 seconds";
 
 export const TRANSIENT_RETRIES = 2;
 
-export const fetchJson = <
+export const getJson = <
   S extends Schema.Top & { readonly DecodingServices: never },
 >(
-  feed: string,
   url: string,
   envelope: S
 ) =>
-  Effect.gen(function* fetchFeedJson() {
+  Effect.gen(function* readJson() {
     const client = (yield* HttpClient.HttpClient).pipe(
       HttpClient.filterStatusOk,
       HttpClient.retryTransient({
@@ -37,8 +36,16 @@ export const fetchJson = <
     const body = yield* response.json;
 
     return yield* Schema.decodeUnknownEffect(envelope)(body);
-  }).pipe(
-    Effect.timeout(REQUEST_TIMEOUT),
+  }).pipe(Effect.timeout(REQUEST_TIMEOUT));
+
+export const fetchJson = <
+  S extends Schema.Top & { readonly DecodingServices: never },
+>(
+  feed: string,
+  url: string,
+  envelope: S
+) =>
+  getJson(url, envelope).pipe(
     Effect.mapError(
       (failure) =>
         new FeedUnavailable({

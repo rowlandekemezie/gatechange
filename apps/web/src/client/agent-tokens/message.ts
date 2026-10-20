@@ -16,10 +16,17 @@ export type IssueProblemValue = typeof IssueProblem.Type;
 
 export const Message = defineMessageUnion({
   ClickedRevokeToken: { id: AgentTokenId },
-  CompletedFetchTokens: { tokens: Schema.Option(Schema.Array(AgentToken)) },
-  CompletedIssueToken: { issued: IssuedAgentToken },
-  CompletedRevokeToken: { id: AgentTokenId, ok: Schema.Boolean },
-  FailedIssueToken: { problem: IssueProblem },
+  CompletedFetchTokens: {
+    generation: Schema.Finite,
+    tokens: Schema.Option(Schema.Array(AgentToken)),
+  },
+  CompletedIssueToken: { generation: Schema.Finite, issued: IssuedAgentToken },
+  CompletedRevokeToken: {
+    generation: Schema.Finite,
+    id: AgentTokenId,
+    ok: Schema.Boolean,
+  },
+  FailedIssueToken: { generation: Schema.Finite, problem: IssueProblem },
   SubmittedIssueToken: {},
   UpdatedTokenLabel: { value: Schema.String },
 });

@@ -123,11 +123,16 @@ export const paidFeatureSources = (
 ): readonly SourceNameValue[] =>
   SourceName.literals.filter((source) => paidFeaturesAllowed(source, terms));
 
-export const usesProFilters = (query: JobQueryValue) => query.salaryListed;
+export const usesProFilters = (query: JobQueryValue) =>
+  query.salaryListed ||
+  query.salaryFloor !== null ||
+  query.seniorities.length > 0;
 
 export const proFiltersCleared = (query: JobQueryValue): JobQueryValue => ({
   ...query,
+  salaryFloor: null,
   salaryListed: false,
+  seniorities: [],
 });
 
 export const Membership = Schema.Struct({

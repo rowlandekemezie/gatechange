@@ -16,12 +16,15 @@ import {
 
 import {
   checkoutSessionRequest,
+  customerRequest,
   billingChangeOf,
+  PAST_DUE_GRACE_SECONDS,
   makeBilling,
   signatureHeader,
   signPayload,
   verifiedChange,
 } from "../src/index.js";
+import type { EventTerms, StripeEndpoint } from "../src/index.js";
 
 const Fixtures = Schema.fromJsonString(Schema.Array(Schema.Unknown));
 
@@ -33,9 +36,22 @@ const [checkout = "", created = "", cancelled = ""] = payloads;
 
 const secret = Redacted.make("whsec_test_fixture_secret");
 
+const SANDBOX_MONTHLY = "price_1USIFA0ZnafJYNlYo9bbbD97";
+
+const sandbox: EventTerms = {
+  livemode: false,
+  prices: {
+    Monthly: SANDBOX_MONTHLY,
+    Quarterly: "price_sandbox_quarterly",
+    Yearly: "price_sandbox_yearly",
+  },
+};
+
+const endpoint: StripeEndpoint = { ...sandbox, secret };
+
 class InvalidRequestError extends Data.TaggedError("InvalidRequestError")<{
   readonly message: string;
-  readonly request_log_url: string;
+  readonly request_log_url: string | undefined;
 }> {}
 
 const NOW = 1_760_600_100_000;
@@ -45,7 +61,8 @@ const signed = (payload: string, at = NOW, key = secret) =>
     Effect.map((signature) => signatureHeader(Math.floor(at / 1000), signature))
   );
 
-const changeOf = billingChangeOf;
+const changeOf = (payload: string, terms: EventTerms = sandbox) =>
+  billingChangeOf(terms, payload);
 
 const ada = Schema.decodeSync(Account)({
   email: "ada@example.com",
@@ -57,7 +74,7 @@ describe("Stripe webhook signature", () => {
   it.effect("accepts a payload signed with the endpoint secret", () =>
     Effect.gen(function* accepts() {
       const header = yield* signed(created);
-      const change = yield* verifiedChange(secret, created, header, NOW);
+      const change = yield* verifiedChange(endpoint, created, header, NOW);
 
       expect(change._tag).toBe("ApplySubscription");
     })
@@ -83,10 +100,10 @@ describe("Stripe webhook signature", () => {
         );
 
         const failures = yield* Effect.all([
-          Effect.flip(verifiedChange(secret, tampered, header, NOW)),
-          Effect.flip(verifiedChange(secret, created, foreign, NOW)),
-          Effect.flip(verifiedChange(secret, created, stale, NOW)),
-          Effect.flip(verifiedChange(secret, created, "", NOW)),
+          Effect.flip(verifiedChange(endpoint, tampered, header, NOW)),
+          Effect.flip(verifiedChange(endpoint, created, foreign, NOW)),
+          Effect.flip(verifiedChange(endpoint, created, stale, NOW)),
+          Effect.flip(verifiedChange(endpoint, created, "", NOW)),
         ]);
 
         expect(failures.map((failure) => failure.reason)).toEqual([
@@ -105,7 +122,7 @@ describe("Stripe webhook signature", () => {
       const current = yield* signPayload(secret, at, created);
 
       const change = yield* verifiedChange(
-        secret,
+        endpoint,
         created,
         `t=${at},v1=${old},v1=${current}`,
         NOW
@@ -195,14 +212,44 @@ describe("Stripe events to billing changes", () => {
   );
 
   it.effect(
-    "falls back to the price interval when the price has no plan metadata",
+    "keeps a past-due subscription on Pro for seven days from the failed renewal, not the whole new period",
     () =>
-      Effect.gen(function* interval() {
-        const quarterly = created
-          .replaceAll('"plan":"Monthly"', '"plan":"Unknown"')
-          .replaceAll('"interval_count":1', '"interval_count":3');
+      Effect.gen(function* pastDue() {
+        const failed = created.replace(
+          '"status":"active"',
+          '"status":"past_due"'
+        );
 
-        const change = yield* changeOf(quarterly);
+        const changes = yield* Effect.all([
+          changeOf(failed),
+          changeOf(created),
+        ]);
+
+        expect(
+          changes.map((change) =>
+            Predicate.isTagged(change, "ApplySubscription")
+              ? [change.subscription.status, change.subscription.periodEnd]
+              : null
+          )
+        ).toEqual([
+          ["past_due", (1_792_424_047 + PAST_DUE_GRACE_SECONDS) * 1000],
+          ["active", 1_795_102_447_000],
+        ]);
+      })
+  );
+
+  it.effect(
+    "reads the plan from the stage's price id, whatever the price metadata says",
+    () =>
+      Effect.gen(function* byPrice() {
+        const change = yield* changeOf(created, {
+          ...sandbox,
+          prices: {
+            Monthly: "price_sandbox_monthly",
+            Quarterly: SANDBOX_MONTHLY,
+            Yearly: "price_sandbox_yearly",
+          },
+        });
 
         expect(
           Predicate.isTagged(change, "ApplySubscription")
@@ -212,12 +259,65 @@ describe("Stripe events to billing changes", () => {
       })
   );
 
+  it.effect(
+    "ignores a subscription whose only price is not one of this stage's Pro prices",
+    () =>
+      Effect.gen(function* foreignPrice() {
+        const foreign = created.replaceAll(
+          SANDBOX_MONTHLY,
+          "price_other_product"
+        );
+
+        expect(yield* changeOf(foreign)).toEqual(
+          BillingChange.Ignore({ type: "customer.subscription.created" })
+        );
+      })
+  );
+
+  it.effect("reads a Pro price listed after another product's item", () =>
+    Effect.gen(function* secondItem() {
+      const twoItems = created.replace(
+        '"items":{"object":"list","data":[',
+        '"items":{"object":"list","data":[{"price":{"id":"price_other_product"}},'
+      );
+
+      const change = yield* changeOf(twoItems);
+
+      expect(change._tag).toBe("ApplySubscription");
+    })
+  );
+
+  it.effect(
+    "ignores a test-mode event on a live endpoint and a live event on a test endpoint",
+    () =>
+      Effect.gen(function* livemode() {
+        const envelopeMode = created.lastIndexOf('"livemode":false');
+
+        const live = `${created.slice(0, envelopeMode)}"livemode":true${created.slice(envelopeMode + '"livemode":false'.length)}`;
+
+        const outcomes = yield* Effect.all([
+          changeOf(created, { ...sandbox, livemode: true }),
+          changeOf(checkout, { ...sandbox, livemode: true }),
+          changeOf(live, sandbox),
+          changeOf(live, { ...sandbox, livemode: true }),
+        ]);
+
+        expect(outcomes.map((outcome) => outcome._tag)).toEqual([
+          "Ignore",
+          "Ignore",
+          "Ignore",
+          "ApplySubscription",
+        ]);
+      })
+  );
+
   it.effect("ignores event types it does not handle", () =>
     Effect.gen(function* ignores() {
       const invoice = JSON.stringify({
         created: 1,
         data: { object: { id: "in_1" } },
         id: "evt_invoice",
+        livemode: false,
         type: "invoice.paid",
       });
 
@@ -233,6 +333,7 @@ describe("Stripe events to billing changes", () => {
         created: 1,
         data: { object: { id: "sub_1" } },
         id: "evt_broken",
+        livemode: false,
         type: "customer.subscription.updated",
       });
 
@@ -244,9 +345,9 @@ describe("Stripe events to billing changes", () => {
 });
 
 describe("checkout session request", () => {
-  it("tags the session and the subscription with the member and asks a new buyer for their email", () => {
+  it("tags the session and the subscription with the member and bills their linked customer", () => {
     const request = checkoutSessionRequest(
-      { account: ada, customer: Option.none(), plan: "Yearly" },
+      { account: ada, customer: "cus_TestAda", plan: "Yearly" },
       "price_yearly",
       "https://jobs.example"
     );
@@ -254,7 +355,7 @@ describe("checkout session request", () => {
     expect(request).toEqual({
       cancel_url: "https://jobs.example/pricing",
       client_reference_id: "user_ada",
-      customer_email: "ada@example.com",
+      customer: "cus_TestAda",
       line_items: [{ price: "price_yearly", quantity: 1 }],
       managed_payments: { enabled: false },
       metadata: { account_id: "user_ada" },
@@ -264,17 +365,12 @@ describe("checkout session request", () => {
     });
   });
 
-  it("reuses the member's Stripe customer on a return visit", () => {
-    const request = checkoutSessionRequest(
-      { account: ada, customer: Option.some("cus_TestAda"), plan: "Monthly" },
-      "price_monthly",
-      "https://jobs.example"
-    );
-
-    expect([request.customer, request.customer_email]).toEqual([
-      "cus_TestAda",
-      undefined,
-    ]);
+  it("creates the member's Stripe customer with their email, name and account id", () => {
+    expect(customerRequest(ada)).toEqual({
+      email: "ada@example.com",
+      metadata: { account_id: "user_ada" },
+      name: "Ada",
+    });
   });
 
   it.effect(
@@ -292,6 +388,7 @@ describe("checkout session request", () => {
                 request_log_url: "https://dashboard.stripe.com/test/logs/req_1",
               })
             ),
+          createCustomer: () => Effect.succeed({ id: "cus_TestAda" }),
           createPortal: () => Effect.succeed({ url: "https://portal.example" }),
           portalConfiguration: Effect.succeed("bpc_1"),
           priceOf: () => Effect.succeed("price_monthly"),
@@ -299,7 +396,7 @@ describe("checkout session request", () => {
         });
 
         const failure = yield* billing
-          .checkout({ account: ada, customer: Option.none(), plan: "Monthly" })
+          .checkout({ account: ada, customer: "cus_TestAda", plan: "Monthly" })
           .pipe(
             Effect.flip,
             Effect.provide(
@@ -324,6 +421,52 @@ describe("checkout session request", () => {
               stripeRequestLog: "https://dashboard.stripe.com/test/logs/req_1",
             },
             message: ["stripe checkout failed"],
+          },
+        ]);
+      })
+  );
+
+  it.effect(
+    "logs a refusal that has no request log, such as Stripe rejecting the API key",
+    () =>
+      Effect.gen(function* logsKeyRefusal() {
+        const entries: unknown[] = [];
+
+        const billing = makeBilling({
+          createCheckout: () => Effect.succeed({ url: "https://pay.example" }),
+          createCustomer: () =>
+            Effect.fail(
+              new InvalidRequestError({
+                message:
+                  "Invalid API Key provided: rk_test_***********************0000",
+                request_log_url: undefined,
+              })
+            ),
+          createPortal: () => Effect.succeed({ url: "https://portal.example" }),
+          portalConfiguration: Effect.succeed("bpc_1"),
+          priceOf: () => Effect.succeed("price_monthly"),
+          siteOrigin: "https://jobs.example",
+        });
+
+        yield* billing
+          .createCustomer(ada)
+          .pipe(
+            Effect.flip,
+            Effect.provide(
+              Logger.layer([
+                Logger.make(({ fiber }) =>
+                  entries.push(fiber.getRef(References.CurrentLogAnnotations))
+                ),
+              ])
+            )
+          );
+
+        expect(entries).toStrictEqual([
+          {
+            stripeError: "InvalidRequestError",
+            stripeMessage:
+              "Invalid API Key provided: rk_test_***********************0000",
+            stripeRequestLog: "none",
           },
         ]);
       })

@@ -1,0 +1,87 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "1e8c7f3d-3cd6-4393-b17f-6a858f480ba9",
+      "title": "Strategic Solutions Engineer",
+      "department": "Customer Experience",
+      "team": "41020 Solutions",
+      "employmentType": "FullTime",
+      "location": "Australia",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-21T02:50:22.578+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "Australia"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/clickup/1e8c7f3d-3cd6-4393-b17f-6a858f480ba9",
+      "applyUrl": "https://jobs.ashbyhq.com/clickup/1e8c7f3d-3cd6-4393-b17f-6a858f480ba9/application",
+      "descriptionPlain": "At ClickUp, we're building the future of work: the first truly converged AI workspace unifying tasks, docs, chat, calendar, and enterprise search, all supercharged by context-driven AI. We are an AI-native company. Every team member is expected to leverage AI daily, and we evaluate AI fluency as part of our hiring process. Join us and help redefine what's possible. 🚀\n\n\n\n\nABOUT THE ROLE\n\nClickUp is",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "abcd8589-5341-4890-99bb-3dcfc93246a9",
+      "title": "Staff Backend Engineer, Hierarchy",
+      "department": "Engineering",
+      "team": "32010 Backend Engineering",
+      "employmentType": "FullTime",
+      "location": "United States",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [],
+      "publishedAt": "2026-04-29T15:35:16.865+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "United States"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/clickup/abcd8589-5341-4890-99bb-3dcfc93246a9",
+      "applyUrl": "https://jobs.ashbyhq.com/clickup/abcd8589-5341-4890-99bb-3dcfc93246a9/application",
+      "descriptionPlain": "At ClickUp, we're building the future of work: the first truly converged AI workspace unifying tasks, docs, chat, calendar, and enterprise search, all supercharged by context-driven AI. We are an AI-native company. Every team member is expected to leverage AI daily, and we evaluate AI fluency as part of our hiring process. Join us and help redefine what's possible. 🚀\n\n\n\nCome join the Hierarchy Squad to build and optimize a set of tier 1 services that are at the core of ClickUp’s all-in-one productivity platform! Hierarchy owns the ClickUp filesystem that is at foundation of everything we build. We are searching for passionate engineers with exceptional critical thinking skills and technical prowess to help maintain, develop and scale high throughput services to support the company through accelerated growth. The ideal candidate will find the idea of architecting distributed systems that are reliable and highly performant exciting, has a knack for debugging and writing complex code and is excited by the challenge of building and maintaining a platform that every team in the company integrates with. Our key technologies include Typescript, Postgres, Kafka, NestJS running on Amazon Web Services. If this sounds interesting to you, we'd love to have you join our team!\n\n \n\nResponsibilities:\n\n \n\n- Develop and maintain robust, scalable backend systems using Node.js (Express and NestJS).\n\n- Collaborate with engineers, designers, and product managers to drive projects forward.\n\n- Tune and optimize database queries for maximum efficiency and performance.\n\n- Optimize and improve existing code for better performance and user experience.\n\n- Troubleshoot and debug issues, ensuring smooth operations.\n\n- Share your knowledge and expertise to foster a culture of learning and growth.\n\n \n\nRequirements:\n\n \n\n- 8+ years of professional experience building backend services for SaaS products.\n\n- Proven track record of building and scaling backend systems.\n\n- Expertise in relational database query optimizations (prefer PostgreSQL).\n\n- Extensive background working with databases (SQL and NoSQL) and data modeling.\n\n- Strong understanding of RESTful API design and implementation.\n\n- Experience with agile development methodologies (Scrum, Kanban, etc.).\n\n- Familiarity with version control systems like Git.\n\n- Excellent problem-solving skills and a passion for tackling challenges.\n\n- Strong communication skills, as collaboration is key to our success.\n\n- Experience with microservices architecture and containerization (Docker, Kubernetes).\n\n \n\nPreferred Qualifications:\n\n \n\n- Familiarity with frontend technologies (Angular, React, Vue).\n\n- Professional experience with NodeJs, Express, and NestJS\n\n \n\nWhat We Offer:\n\n \n\n- Competitive salary and benefits package.\n\n- Remote work options.\n\n- A supportive, dynamic, and fast-paced work environment.\n\n- The opportunity to make a meaningful impact on a rapidly growing company.\n\n- Opportunities for personal and professional growth.\n\n \n\n#LI-REMOTE\n\nEqual Opportunity Employer \n\nClickUp is an Equal Opportunity Employer, and qualified applicants will receive consideration for employment without regard to race, color, religion, sex, sexual orientation, gender identity, or national origin.\n\n\n\nPrivacy Notice\n\nClickUp collects and processes personal data in accordance with applicable data protection laws. You can find further details by viewing our Global Candidate Privacy Notice. https://clickup.com/careers-terms/candidate-privacy-notice\n\nIf you are a Philippine Job Applicant, please also see our Philippine Data Privacy Notice https://t333.s.clickup-attachments-stg.com/t333/d9a53ce2-6d2c-48cd-84b1-ed4e525f9613/Philippine%20Data%20Privacy%20Notice_2024.pdf?view=open for further details.\n\n\n\nVisa Sponsorship\n\nPlease note we are unable to sponsor or take over sponsorship of an employment visa for roles outside of engineering and product at this time. Sponsorship for engineering and product roles is not guaranteed, but is instead based on the business needs for that specific role at that time. Please reach out to the recruiter with any questions.\n\n\n\nFraud Alert\n\nClickUp Talent Acquisition will only initiate contact via an @clickup.com http://clickup.com email or through our official careers portal on clickup.com http://clickup.com. We will never request fees, payments, or sensitive personal information. Please disregard any offers received outside these channels and report them to support@clickup.com.\n\n\n\nAI Processing Notice\n\nClickUp may use artificial intelligence and machine learning technologies to help review and screen candidates' employment applications against role-related criteria. These tools support, but do not replace, human decision‑making. If you have questions or need an accommodation in the recruitment process, please contact us at AskPeople@ClickUp.com.",
+      "compensation": {
+        "compensationTierSummary": "$200K – $250K",
+        "scrapeableCompensationSalarySummary": "$200K - $250K",
+        "compensationTiers": [
+          {
+            "id": "db9b9d14-08c0-4005-966c-1563c78cb206",
+            "tierSummary": "$200K – $250K",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "ff564fae-efaf-436e-bca4-61f45cca6943",
+                "summary": "$200K – $250K",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 200000,
+                "maxValue": 250000
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 200000,
+            "maxValue": 250000
+          }
+        ]
+      }
+    }
+  ]
+}

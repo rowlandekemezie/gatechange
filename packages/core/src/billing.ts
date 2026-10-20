@@ -8,7 +8,7 @@ import type { PlanValue, SubscriptionRecordValue } from "./entitlement.js";
 
 export interface CheckoutRequest {
   readonly account: AccountValue;
-  readonly customer: Option.Option<string>;
+  readonly customer: string;
   readonly plan: PlanValue;
 }
 
@@ -17,6 +17,9 @@ export class Billing extends Context.Service<
   {
     readonly checkout: (
       request: CheckoutRequest
+    ) => Effect.Effect<string, BillingUnavailable>;
+    readonly createCustomer: (
+      account: AccountValue
     ) => Effect.Effect<string, BillingUnavailable>;
     readonly portal: (
       customer: string

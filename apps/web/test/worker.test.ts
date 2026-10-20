@@ -2,7 +2,7 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type { ListedJobValue } from "@rat-stack/core/contracts";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 import {
@@ -27,6 +27,7 @@ const director: ListedJobValue = {
   arrangement: "Remote",
   company: "Acme",
   daysOpen: 2,
+  enrichment: null,
   feed: "greenhouse:acme",
   firstSeenAt: 1_760_000_000_000,
   id: "greenhouse:acme/1",
@@ -57,7 +58,7 @@ const backend = HttpRouter.toWebHandler(
         agentTokens: () => Effect.die("agent tokens are not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
-        getJob: () => Effect.succeed(Option.none()),
+        getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
         issueAgentToken: () => Effect.die("agent tokens are not served here"),
         listJobs: () =>

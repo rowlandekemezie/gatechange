@@ -12,6 +12,7 @@ import {
   signPayload,
   stripeWebhookResponse,
 } from "../src/index.js";
+import type { StripeEndpoint } from "../src/index.js";
 
 const Fixtures = Schema.fromJsonString(Schema.Array(Schema.Unknown));
 
@@ -20,6 +21,16 @@ const [, created = ""] = Schema.decodeUnknownSync(Fixtures)(
 ).map((event) => JSON.stringify(event));
 
 const secret = Redacted.make("whsec_test_route_secret");
+
+const sandbox: StripeEndpoint = {
+  livemode: false,
+  prices: {
+    Monthly: "price_1USIFA0ZnafJYNlYo9bbbD97",
+    Quarterly: "price_sandbox_quarterly",
+    Yearly: "price_sandbox_yearly",
+  },
+  secret,
+};
 
 const makeStore = () => {
   const writes: string[] = [];
@@ -71,7 +82,7 @@ const post = (
   payload: string,
   headers: Record<string, string>,
   method = "POST",
-  key: Option.Option<Redacted.Redacted> = Option.some(secret)
+  endpoint: Option.Option<StripeEndpoint> = Option.some(sandbox)
 ) =>
   Effect.gen(function* posted() {
     const request = HttpServerRequest.fromWeb(
@@ -84,7 +95,7 @@ const post = (
     );
 
     const response = HttpServerResponse.toWeb(
-      yield* stripeWebhookResponse(key, request).pipe(
+      yield* stripeWebhookResponse(endpoint, request).pipe(
         Effect.provideService(BillingStore, store)
       )
     );
@@ -134,6 +145,23 @@ describe("Stripe webhook endpoint", () => {
           { body: "Stale", status: 200 },
         ]);
         expect(writes).toEqual(["evt_1USIZj0ZnafJYNlYFqQEBJXC"]);
+      })
+  );
+
+  it.effect(
+    "answers a test-mode delivery to the live endpoint without writing",
+    () =>
+      Effect.gen(function* testModeOnLive() {
+        const { rows, store, writes } = makeStore();
+        const headers = yield* signedHeaders(created, 0);
+
+        const live = Option.some({ ...sandbox, livemode: true });
+
+        expect(yield* post(store, created, headers, "POST", live)).toEqual({
+          body: "Ignored",
+          status: 200,
+        });
+        expect([writes, rows.size]).toEqual([[], 0]);
       })
   );
 
