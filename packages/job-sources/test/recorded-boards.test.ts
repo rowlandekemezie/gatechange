@@ -132,6 +132,38 @@ describe("recorded company boards", () => {
   );
 
   it.effect(
+    "distinct id-less postings count toward a complete read but are skipped as listings",
+    () => {
+      const { layer, requested } = serve(() => ({
+        content: [
+          {
+            company: { identifier: "Acme" },
+            id: "valid",
+            name: "Engineering Manager",
+          },
+          { company: { identifier: "Acme" }, name: "Missing id" },
+          { company: { identifier: "Acme" }, id: null, name: "Null id" },
+        ],
+        totalFound: 3,
+      }));
+
+      return Effect.gen(function* keepValidDespiteMissingIds() {
+        const postings = yield* smartRecruitersPostings(
+          "smartrecruiters:Acme",
+          "Acme"
+        );
+
+        expect(postings.map((posting) => posting.externalId)).toStrictEqual([
+          "valid",
+        ]);
+        expect(requested).toStrictEqual([
+          "https://api.smartrecruiters.com/v1/companies/Acme/postings?offset=0&limit=100",
+        ]);
+      }).pipe(Effect.provide(layer));
+    }
+  );
+
+  it.effect(
     "a SmartRecruiters board over one page is read in full, page by page",
     () => {
       const { layer, requested } = listedBoard(250, 250);
