@@ -12,6 +12,8 @@ import { Effect, Layer } from "effect";
 import { McpProtocol, McpServer } from "effect/ai";
 import type { HttpServerResponse } from "effect/http";
 
+import { withStreamableHttpCompatibility } from "./mcp-streamable-http.js";
+
 export const MCP_SERVER_NAME = "jobs-rowlandekemezie";
 
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -53,7 +55,11 @@ export const mcpAppLayer = <E, R>(stores: Layer.Layer<AgentStores, E, R>) =>
 export const serveMcp =
   <E, R>(mcpHttp: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
   () =>
-    mcpHttp.pipe(
+    withStreamableHttpCompatibility(
+      mcpHttp,
+      { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+      INSTRUCTIONS
+    ).pipe(
       Effect.provideService(CurrentViewer, Viewer.Anonymous()),
       Effect.scoped
     );
