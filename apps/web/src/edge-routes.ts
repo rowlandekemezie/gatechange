@@ -1,11 +1,12 @@
-export type EdgeRoute = "backend" | "private" | "public";
+export type EdgeRoute = "agent" | "backend" | "private" | "public";
 
 const routePrefixes: readonly (readonly [
   string,
   Exclude<EdgeRoute, "public">,
 ])[] = [
   ["/rpc", "backend"],
-  ["/mcp", "backend"],
+  ["/mcp", "agent"],
+  ["/.well-known/mcp.json", "backend"],
   ["/api/auth", "backend"],
   ["/unsubscribe", "backend"],
   ["/webhooks/stripe", "backend"],
