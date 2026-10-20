@@ -5,13 +5,12 @@ export const MCP_WIRE_VERSIONS = [
   "2026-07-28",
   "2025-11-25",
   "2025-06-18",
-  "2025-03-26",
 ] as const;
 
 const JsonMessage = Schema.fromJsonString(Schema.Json);
 
 const RequestMessage = Schema.Struct({
-  id: Schema.optional(Schema.Union([Schema.String, Schema.Finite])),
+  id: Schema.optional(Schema.Union([Schema.String, Schema.Int])),
   jsonrpc: Schema.Literal("2.0"),
   method: Schema.String,
   params: Schema.optional(Schema.JsonObject),
@@ -243,6 +242,11 @@ export const withStreamableHttpCompatibility = <E, R>(
     const message = decoded.success;
     const { id, method } = message;
     const params = message.params ?? {};
+
+    if (version === undefined && method !== "initialize") {
+      return rpcError(id, -32_000, "Unsupported MCP protocol version");
+    }
+
     const methodHeader = request.headers["mcp-method"];
 
     if (methodHeader !== undefined && methodHeader !== method) {
