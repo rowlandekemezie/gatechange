@@ -18,9 +18,17 @@ import type { Lifetime } from "./server/edge-cache.js";
 import { renderPage } from "./server/render.js";
 import { closedRobotsTxt, robotsTxt, sitemapXml } from "./server/sitemap.js";
 
+interface RateLimiter {
+  readonly limit: (options: {
+    readonly key: string;
+  }) => Promise<{ readonly success: boolean }>;
+}
+
 interface EdgeBindings {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
+  readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
+  readonly MCP_TOKEN_LIMIT: RateLimiter;
   readonly SITE_INDEXING?: string;
 }
 
@@ -183,6 +191,38 @@ const serveSite = (
     : Effect.succeedNone;
 };
 
+const RETRY_AFTER_SECONDS = 60;
+
+// @effect-diagnostics-next-line asyncFunction:off -- The Rate Limiting binding is Promise-based.
+const agentCallAllowed = async (request: Request, bindings: EdgeBindings) => {
+  const limiter = request.headers.has("authorization")
+    ? bindings.MCP_TOKEN_LIMIT
+    : bindings.MCP_ANONYMOUS_LIMIT;
+
+  const caller = request.headers.get("cf-connecting-ip") ?? "unknown";
+
+  const { success } = await limiter.limit({
+    key: `${new URL(request.url).host}|${caller}`,
+  });
+
+  return success;
+};
+
+const tooManyAgentCalls = (request: Request) =>
+  Response.json(
+    {
+      error: {
+        code: -32_029,
+        message: request.headers.has("authorization")
+          ? `Too many MCP calls from this address. Retry in ${RETRY_AFTER_SECONDS} seconds.`
+          : `Too many MCP calls from this address without a token. Retry in ${RETRY_AFTER_SECONDS} seconds, or connect with a Pro token for a higher limit.`,
+      },
+      id: null,
+      jsonrpc: "2.0",
+    },
+    { headers: { "retry-after": String(RETRY_AFTER_SECONDS) }, status: 429 }
+  );
+
 const noindex = (response: Response) => {
   const copy = new Response(response.body, response);
 
@@ -199,6 +239,15 @@ export default {
     lifetime: Lifetime
   ): Promise<Response> => {
     const route = edgeRouteOf(new URL(request.url).pathname);
+
+    if (route === "agent") {
+      return withoutSharedCache(
+        route,
+        (await agentCallAllowed(request, bindings))
+          ? await bindings.BACKEND.fetch(request)
+          : tooManyAgentCalls(request)
+      );
+    }
 
     if (route === "backend") {
       return withoutSharedCache(route, await bindings.BACKEND.fetch(request));

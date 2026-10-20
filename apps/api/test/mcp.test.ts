@@ -25,7 +25,7 @@ import type {
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
-import { mcpAppLayer, serveMcp } from "../src/mcp.js";
+import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "../src/mcp.js";
 import { handleRoutes } from "../src/route.js";
 
 const ORIGIN = "https://jobs.example";
@@ -233,6 +233,7 @@ const fixture = Effect.gen(function* fixture() {
         serveMcp(mcpHttp)(request).pipe(
           Effect.provide(Layer.mergeAll(tokens, stores))
         ),
+      mcpDiscovery: serveMcpDiscovery,
       rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
       stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
       unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsubscribe")),
@@ -1044,5 +1045,50 @@ describe("board over MCP", () => {
       expect(refused.status).toBe(403);
       expect(refused.message.error?.message).toContain("Pro has ended");
     }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "describes the endpoint and every tool at /.well-known/mcp.json",
+    () =>
+      Effect.gen(function* discovery() {
+        const { send } = yield* fixture;
+        const response = yield* send("/.well-known/mcp.json");
+
+        const document = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(
+            Schema.Struct({
+              endpoint: Schema.String,
+              protocolVersions: Schema.Array(Schema.String),
+              rateLimits: Schema.Struct({
+                anonymousCallsPerMinute: Schema.Int,
+                tokenCallsPerMinute: Schema.Int,
+              }),
+              tools: Schema.Array(
+                Schema.Struct({ access: Schema.String, name: Schema.String })
+              ),
+              transport: Schema.String,
+            })
+          )
+        )(response.text);
+
+        expect(response.status).toBe(200);
+        expect(document.endpoint).toBe(`${ORIGIN}/mcp`);
+        expect(document.transport).toBe("streamable-http");
+        expect(document.protocolVersions).toStrictEqual([
+          PROTOCOL,
+          "2025-11-25",
+          "2025-06-18",
+        ]);
+        expect(document.rateLimits).toStrictEqual({
+          anonymousCallsPerMinute: 30,
+          tokenCallsPerMinute: 120,
+        });
+        expect(
+          document.tools
+            .filter(({ access }) => access === "free")
+            .map(({ name }) => name)
+        ).toStrictEqual(["listJobs", "boardStats", "getJob"]);
+        expect(document.tools).toHaveLength(10);
+      }).pipe(Effect.scoped)
   );
 });

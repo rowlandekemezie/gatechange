@@ -1,6 +1,6 @@
 import { isAuthPath, respondAsViewer } from "@rat-stack/accounts";
 import { STRIPE_WEBHOOK_PATH } from "@rat-stack/billing";
-import { MCP_PATH, SITE_ORIGIN } from "@rat-stack/core";
+import { MCP_DISCOVERY_PATH, MCP_PATH, SITE_ORIGIN } from "@rat-stack/core";
 import type { AccountStore, ViewerValue } from "@rat-stack/core";
 import { UNSUBSCRIBE_PATH } from "@rat-stack/digest-mailer";
 import { Effect } from "effect";
@@ -19,6 +19,9 @@ export interface Routes<Error, Context> {
   readonly mcp: (
     request: HttpServerRequest.HttpServerRequest
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse, Error, Context>;
+  readonly mcpDiscovery: (
+    request: HttpServerRequest.HttpServerRequest
+  ) => HttpServerResponse.HttpServerResponse;
   readonly rpc: (
     viewer: ViewerValue
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse, Error, Context>;
@@ -42,6 +45,10 @@ export const handleRoutes = <Error, Context>(routes: Routes<Error, Context>) =>
 
     if (path === MCP_PATH) {
       return yield* routes.mcp(request);
+    }
+
+    if (path === MCP_DISCOVERY_PATH) {
+      return routes.mcpDiscovery(request);
     }
 
     if (path === UNSUBSCRIBE_PATH) {
