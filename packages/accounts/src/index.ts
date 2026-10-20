@@ -2,7 +2,10 @@ export { makeAccountStore, SESSION_COOKIE } from "./account-store.js";
 
 export type { SessionLookup, SessionUser } from "./account-store.js";
 
-export { EMAIL_SEND_LIMIT } from "./email-send-limit.js";
+export {
+  DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT,
+  EMAIL_SEND_LIMIT,
+} from "./email-send-limit.js";
 
 export { logSendFailure } from "./send-failure.js";
 

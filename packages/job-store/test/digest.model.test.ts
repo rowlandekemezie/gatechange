@@ -66,7 +66,7 @@ const job = (
   ...overrides,
 });
 
-type MailerMode = "Up" | "Down" | "QuotaExhausted";
+type MailerMode = "Up" | "Down" | "QuotaExhausted" | "AcceptedUnknown";
 
 const makeOutbox = () => {
   const sent: Digest[] = [];
@@ -81,6 +81,10 @@ const makeOutbox = () => {
             sent.push(digest);
 
             return Effect.void;
+          }
+
+          if (current === "AcceptedUnknown") {
+            sent.push(digest);
           }
 
           return Effect.fail(
@@ -192,9 +196,9 @@ describe("weekly saved-search digests", () => {
 
           const racing = AlertStore.of({
             ...base,
-            dueRecipients: (cadence, periodStart, now) =>
+            dueRecipients: (cadence, periodStart, now, account) =>
               base
-                .dueRecipients(cadence, periodStart, now)
+                .dueRecipients(cadence, periodStart, now, account)
                 .pipe(Effect.tap(() => Effect.yieldNow)),
           });
 
@@ -232,7 +236,7 @@ describe("weekly saved-search digests", () => {
             { discard: true }
           );
 
-          expect(recipients(outbox.sent)).toEqual(members.toSorted());
+          expect(recipients(outbox.sent)).toEqual([]);
         })
       )
   );
@@ -480,7 +484,7 @@ describe("weekly saved-search digests", () => {
   );
 
   it.effect(
-    "a failed send is not recorded, so the next run retries it once",
+    "an ambiguous send keeps its claim so a later run cannot duplicate delivery",
     () =>
       withStores(
         Effect.gen(function* retriesNextRun() {
@@ -489,7 +493,7 @@ describe("weekly saved-search digests", () => {
           yield* addMember(ada);
           yield* saveSearch(ada);
           yield* listJobs([job({ feed: "greenhouse:acme", id: "gh:1" })]);
-          outbox.setMode("Down");
+          outbox.setMode("AcceptedUnknown");
 
           const failed = yield* runAt(NOW, outbox.layer);
 
@@ -498,7 +502,7 @@ describe("weekly saved-search digests", () => {
           const retried = yield* runAt(NOW + HOUR, outbox.layer);
           const after = yield* runAt(NOW + 2 * HOUR, outbox.layer);
 
-          expect([failed.failed, retried.sent, after.sent]).toEqual([1, 1, 0]);
+          expect([failed.failed, retried.sent, after.sent]).toEqual([1, 0, 0]);
           expect(recipients(outbox.sent)).toEqual([ada]);
         })
       )
@@ -550,6 +554,84 @@ describe("weekly saved-search digests", () => {
       )
   );
 
+  it.effect(
+    "atomic claims refuse a stale run once the cadence daily budget is spent",
+    () =>
+      withStores(
+        Effect.gen(function* atomicDaily() {
+          yield* Effect.forEach([ada, bob, cy], (id) => addMember(id), {
+            discard: true,
+          });
+          const store = yield* AlertStore;
+
+          const claims = yield* Effect.forEach(
+            [ada, bob, cy],
+            (account) => store.claimDigest("Weekly", account, MONDAY, NOW, 2),
+            { concurrency: "unbounded" }
+          );
+
+          expect(claims.filter(Boolean)).toHaveLength(2);
+          expect(yield* store.sendsSince("Weekly", NOW - DAY_MILLIS)).toBe(2);
+          expect(
+            yield* store.claimDigest(
+              "Weekly",
+              cy,
+              MONDAY + WEEK_MILLIS,
+              NOW + DAY_MILLIS + 1,
+              2
+            )
+          ).toBe(true);
+        })
+      )
+  );
+
+  for (const action of ["unsubscribe", "delete", "change"] as const) {
+    it.effect(`rechecks the next recipient after a mid-run ${action}`, () =>
+      withStores(
+        Effect.gen(function* changedDuringRun() {
+          yield* addMember(ada);
+          yield* addMember(bob);
+          yield* saveSearch(ada);
+          const saved = yield* saveSearch(bob);
+          yield* listJobs([job({ feed: "greenhouse:acme", id: "gh:1" })]);
+          const store = yield* AlertStore;
+          const delivered: AccountIdValue[] = [];
+
+          const mailer = Layer.succeed(
+            DigestMailer,
+            DigestMailer.of({
+              send: (digest) =>
+                Effect.gen(function* sendThenChange() {
+                  delivered.push(digest.account);
+
+                  if (digest.account === ada) {
+                    if (action === "unsubscribe") {
+                      yield* store.unsubscribe(bob, NOW);
+                    } else if (Option.isSome(saved)) {
+                      yield* store.deleteSearch(bob, saved.value.id);
+
+                      if (action === "change") {
+                        yield* store.saveSearch(
+                          bob,
+                          { ...everywhere, search: "No matching company" },
+                          NOW,
+                          MAX_SAVED_SEARCHES
+                        );
+                      }
+                    }
+                  }
+                }).pipe(Effect.orDie),
+            })
+          );
+
+          const result = yield* runAt(NOW, mailer);
+          expect(delivered).toEqual([ada]);
+          expect([result.sent, result.skipped]).toEqual([1, 1]);
+        })
+      )
+    );
+  }
+
   it.effect("a member receives at most two digests in any seven days", () =>
     withStores(
       Effect.gen(function* capped() {
@@ -561,7 +643,8 @@ describe("weekly saved-search digests", () => {
               "Weekly",
               ada,
               MONDAY + week * WEEK_MILLIS,
-              MONDAY + 6 * DAY_MILLIS + week
+              MONDAY + 6 * DAY_MILLIS + week,
+              1000
             )
           )
         );
