@@ -6,7 +6,11 @@
       {
         "name": "@effect/language-service",
         "allowedUnstableApis": [
+          "effect/ai/McpProtocol",
+          "effect/ai/McpServer",
           "effect/http/FetchHttpClient",
+          "effect/http/HttpEffect",
+          "effect/http/HttpRouter",
           "effect/http/HttpServerRequest",
           "effect/http/HttpServerResponse",
           "effect/rpc/RpcSerialization",

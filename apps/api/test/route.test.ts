@@ -17,6 +17,9 @@ const accountStore: AccountStore["Service"] = {
 const handle = handleRoutes({
   accountStore,
   auth: Effect.succeed(HttpServerResponse.text("auth")),
+  mcp: (request) =>
+    Effect.succeed(HttpServerResponse.text(`mcp:${request.method}`)),
+  mcpDiscovery: () => HttpServerResponse.text("discovery"),
   rpc: (viewer) =>
     Effect.succeed(HttpServerResponse.text(`rpc:${viewer._tag}`)),
   stripeWebhook: (request) =>
@@ -169,6 +172,24 @@ describe("backend routing", () => {
           yield* send("/rpc?next=/unsubscribe", { method: "POST" })
         ).toEqual({ body: "rpc:Anonymous", status: 200 });
         expect(yield* send("/api/authority", { method: "POST" })).toEqual({
+          body: "rpc:Anonymous",
+          status: 200,
+        });
+      })
+  );
+
+  it.effect(
+    "sends MCP to the agent handler without the session check, even cross-site with a cookie",
+    () =>
+      Effect.gen(function* mcp() {
+        expect(
+          yield* send("/mcp", { method: "POST", ...crossSiteWithSession })
+        ).toEqual({ body: "mcp:POST", status: 200 });
+        expect(yield* send("/.well-known/mcp.json")).toEqual({
+          body: "discovery",
+          status: 200,
+        });
+        expect(yield* send("/mcpx", { method: "POST" })).toEqual({
           body: "rpc:Anonymous",
           status: 200,
         });
