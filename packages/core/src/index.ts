@@ -428,6 +428,7 @@ export {
   publicOriginOf,
   SITE_HOSTNAME,
   SITE_ORIGIN,
+  SITE_WORKERS_SUBDOMAIN,
   SITE_ZONE,
   siteHostsOf,
   WorkersSubdomain,
