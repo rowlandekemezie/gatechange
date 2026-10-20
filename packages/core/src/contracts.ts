@@ -92,6 +92,7 @@ export { Unauthorized } from "./unauthorized.js";
 export {
   DigestFrequency,
   digestSourceLabels,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
   MAX_SAVED_SEARCHES,
   SavedSearch,
   SavedSearchId,
@@ -144,7 +145,6 @@ export {
   plans,
   paidFeaturesAllowed,
   ProEntitlement,
-  usesProFilters,
 } from "./entitlement.js";
 
 export type {

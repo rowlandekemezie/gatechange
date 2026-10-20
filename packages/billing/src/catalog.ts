@@ -1,4 +1,4 @@
-import { PLAN_PRICES } from "@rat-stack/core";
+import { INSTANT_SENDS_PER_MEMBER_PER_DAY, PLAN_PRICES } from "@rat-stack/core";
 import type { PlanValue } from "@rat-stack/core";
 import * as Stripe from "alchemy/Stripe";
 import * as Effect from "effect/Effect";
@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 import { BILLING_EVENTS, STRIPE_WEBHOOK_PATH } from "./webhook.js";
 
 export const PRO_PRODUCT_NAME = "Pro";
+
+export const PRO_PRODUCT_DESCRIPTION = `Email alerts within 20 minutes of a new match for your saved searches, up to ${INSTANT_SENDS_PER_MEMBER_PER_DAY} a day, salary-floor and seniority filters, a filter for roles that state a salary, and company intel with hiring trends, salary bands and repost history.`;
 
 const proPrice = (product: Stripe.Product, plan: PlanValue) =>
   Stripe.Price(`Pro${plan}Price`, {
@@ -23,8 +25,7 @@ const proPrice = (product: Stripe.Product, plan: PlanValue) =>
 export const ProCatalog = (siteOrigin: string) =>
   Effect.gen(function* proCatalog() {
     const product = yield* Stripe.Product("ProProduct", {
-      description:
-        "Instant alerts every 20 minutes, salary and seniority filters, and company intel.",
+      description: PRO_PRODUCT_DESCRIPTION,
       name: PRO_PRODUCT_NAME,
     });
 
