@@ -845,7 +845,7 @@ const roleStatesOtherPolicy = (
 
 const statedArrangement = (word: string) =>
   new RegExp(
-    String.raw`\bwork(?:ing)? arrangement\s*:\s*${word}\b|(?:^|:)\s*${word} work(?:ing)? arrangement\b|\bthis is an? ${word} (?:role|position)\b`,
+    String.raw`\bwork(?:ing)? arrangement\s*:\s*${word}\b|\b${word} work(?:ing)? arrangement\b|\bthis is an? ${word} (?:role|position)\b`,
     "iu"
   );
 
@@ -865,7 +865,13 @@ const arrangementStated = (posting: SearchableText) =>
         (sentence) =>
           statement.test(sentence) &&
           !pastExperience.test(sentence) &&
-          !negationOf(statement).test(sentence)
+          !/\bexperience\b/iu.test(sentence) &&
+          !negationOf(statement).test(
+            sentence.replaceAll(
+              /\b(?:do|does|is|are|ca|wo|would|should|could)n['’]t\b|\bcannot\b/giu,
+              "not"
+            )
+          )
       )
     ),
     Option.map(([stated]) => stated)
