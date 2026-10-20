@@ -52,6 +52,7 @@ const backend = HttpRouter.toWebHandler(
       group.toLayer({
         account: () => Effect.die("account is not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
+        companyIntel: () => Effect.die("company intel is not served here"),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
         getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
