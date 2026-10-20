@@ -289,6 +289,7 @@ const browserWith = (stored: string | null) => {
 
 const serverWith = (imports: unknown[]) =>
   JobQueries.of({
+    agentTokens: Effect.die("unused"),
     companyIntel: () => Effect.die("unused"),
     deleteSearch: () => Effect.die("unused"),
     getJob: () => Effect.die("unused"),
@@ -297,10 +298,12 @@ const serverWith = (imports: unknown[]) =>
 
       return Effect.succeed([trackedAs("Applied")]);
     },
+    issueAgentToken: () => Effect.die("unused"),
     listJobs: () => Effect.die("unused"),
     membership: Effect.die("unused"),
     noteTrackedJob: () => Effect.die("unused"),
     openBillingPortal: Effect.die("unused"),
+    revokeAgentToken: () => Effect.die("unused"),
     saveSearch: () => Effect.die("unused"),
     savedSearches: Effect.die("unused"),
     setInstantAlerts: () => Effect.die("unused"),

@@ -4,6 +4,7 @@ import type { BetterAuthOptions } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 import { Option } from "effect";
 
+import { authLogger } from "./auth-logger.js";
 import { sameSiteVerify } from "./cross-site.js";
 import { emailSendLimit, limitSends } from "./email-send-limit.js";
 
@@ -50,6 +51,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
       onSome: (fallback) => ({ fallback }),
     }),
   },
+  logger: authLogger,
   plugins: [
     magicLink({
       expiresIn: MAGIC_LINK_TTL_MINUTES * 60,

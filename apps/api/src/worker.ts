@@ -49,6 +49,7 @@ import {
 } from "@rat-stack/job-enrichment";
 import { postingFeedsLayer, postingTextsLayer } from "@rat-stack/job-sources";
 import {
+  d1AgentTokenStoreLayer,
   d1AlertStoreLayer,
   d1BillingStoreLayer,
   d1JobStoreLayer,
@@ -74,7 +75,7 @@ import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
-import { mcpAppLayer, serveMcp } from "./mcp.js";
+import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { handleRoutes } from "./route.js";
 import { stripeBilling } from "./stripe.js";
 
@@ -456,10 +457,16 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     );
 
     const mcpHttp = yield* HttpRouter.toHttpEffect(
-      mcpAppLayer(Layer.mergeAll(storeLayer, billingLayer))
+      mcpAppLayer(Layer.mergeAll(storeLayer, alertLayer, billingLayer))
     ).pipe(Effect.orDie);
 
-    const mcp = serveMcp(mcpHttp);
+    const agentAccessLayer = Layer.mergeAll(
+      d1AgentTokenStoreLayer(client),
+      billingLayer
+    );
+
+    const mcp = (request: HttpServerRequest.HttpServerRequest) =>
+      serveMcp(mcpHttp)(request).pipe(Effect.provide(agentAccessLayer));
 
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(
@@ -473,7 +480,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
                 Layer.mergeAll(
                   storeLayer,
                   alertLayer,
-                  billingLayer,
+                  agentAccessLayer,
                   Layer.succeed(AccountStore, accountStore),
                   Layer.succeed(CurrentViewer, viewer)
                 )
@@ -540,6 +547,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       accountStore,
       auth: auth.fetch,
       mcp,
+      mcpDiscovery: serveMcpDiscovery,
       rpc: serveRpc,
       stripeWebhook,
       unsubscribe,
