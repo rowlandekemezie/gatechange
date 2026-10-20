@@ -12,6 +12,7 @@ import {
 import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
 import { BillingUnavailable } from "./billing-unavailable.js";
+import { CompanyIntel, CompanySlug, TREND_WEEKS } from "./company-intel.js";
 import { Membership, Plan } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
@@ -139,6 +140,27 @@ export { NoBillingAccount } from "./no-billing-account.js";
 export { ProRequired } from "./pro-required.js";
 
 export {
+  CompanyIntel,
+  CompanySlug,
+  CompanySummary,
+  companySlugOf,
+  companySummaryOf,
+  HiringTrend,
+  ShownTrend,
+  ThinTrend,
+  TREND_WEEKS,
+} from "./company-intel.js";
+
+export type {
+  CompanyIntelValue,
+  CompanySummaryValue,
+  HiringTrendValue,
+  IntelRoleValue,
+  TrendWeekValue,
+  TypicalBandValue,
+} from "./company-intel.js";
+
+export {
   Entitlement,
   FREE,
   FreeEntitlement,
@@ -147,6 +169,7 @@ export {
   Plan,
   PLAN_PRICES,
   plans,
+  paidFeaturesAllowed,
   ProEntitlement,
 } from "./entitlement.js";
 
@@ -401,6 +424,14 @@ export const revokeAgentTokenContract = defineContract("revokeAgentToken", {
   output: Schema.Void,
 });
 
+export const companyIntelContract = defineContract("companyIntel", {
+  annotations: { idempotent: true, readOnly: true },
+  description: `For a Pro member, report a company's open leadership roles with days open in the current stint and reposts, its ${TREND_WEEKS}-week hiring trend, and typical salary bands`,
+  failure: Schema.Union([Unauthorized, JobStoreUnavailable, ProRequired]),
+  input: Schema.Struct({ slug: CompanySlug }),
+  output: CompanyIntel,
+});
+
 export const jobBoardContracts = [
   listJobsContract,
   boardStatsContract,
@@ -422,4 +453,5 @@ export const jobBoardContracts = [
   agentTokensContract,
   issueAgentTokenContract,
   revokeAgentTokenContract,
+  companyIntelContract,
 ] as const;
