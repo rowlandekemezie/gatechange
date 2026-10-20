@@ -1,5 +1,5 @@
 import { roleLevels, seniorities } from "@rat-stack/core/contracts";
-import { Array, Option, Schema, pipe } from "effect";
+import { Array, Option, Predicate, Schema, pipe } from "effect";
 import { Command, Update } from "foldkit";
 import { UrlRequest } from "foldkit/navigation";
 import { modifyFields } from "foldkit/struct";
@@ -10,6 +10,9 @@ import type { MessageValue as AccountMessageValue } from "../account/message.js"
 import { SessionState } from "../account/model.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
+import type { MessageValue as AgentTokensMessageValue } from "../agent-tokens/message.js";
+import type { ModelValue as AgentTokensModelValue } from "../agent-tokens/model.js";
+import * as AgentTokens from "../agent-tokens/update.js";
 import type { MessageValue as BillingMessageValue } from "../billing/message.js";
 import { isProMember, MembershipState } from "../billing/model.js";
 import type { ModelValue as BillingModelValue } from "../billing/model.js";
@@ -122,6 +125,24 @@ const foldSavedSearchesEntered = Update.foldChildStep({
   update: SavedSearches.entered,
 });
 
+const agentTokensChild = {
+  read: (model: ModelValue) => Option.some(model.agentTokens),
+  toParentMessage: (message: AgentTokensMessageValue) =>
+    Message.GotAgentTokensMessage({ message }),
+  write: (model: ModelValue, agentTokens: AgentTokensModelValue) =>
+    modifyFields(model, { agentTokens: () => agentTokens }),
+};
+
+const foldAgentTokens = Update.foldChild({
+  ...agentTokensChild,
+  update: AgentTokens.update,
+});
+
+const foldAgentTokensEntered = Update.foldChildStep({
+  ...agentTokensChild,
+  update: AgentTokens.entered,
+});
+
 const billingChild = {
   read: (model: ModelValue) => Option.some(model.billing),
   toParentMessage: (message: BillingMessageValue) =>
@@ -169,8 +190,13 @@ const enteredAccount = (
   model: ModelValue,
   notice: AccountNoticeValue
 ): UpdateReturn =>
-  joined(joined(foldAccountEntered(model), foldSavedSearchesEntered), (next) =>
-    enteredBilling(next, notice === "CheckoutDone")
+  joined(
+    joined(
+      joined(foldAccountEntered(model), foldSavedSearchesEntered),
+      (next) =>
+        isSignedIn(next) ? foldAgentTokensEntered(next) : { model: next }
+    ),
+    (next) => enteredBilling(next, notice === "CheckoutDone")
   );
 
 const sameFilters = Schema.toEquivalence(Filters);
@@ -299,7 +325,13 @@ const isAwaitingListing = (model: ModelValue, route: ListingRouteValue) =>
   Option.exists(listingRouteOf(model), (pending) => sameRoute(pending, route));
 
 const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
-  const routed = modifyFields(model, { route: () => route });
+  const routed = modifyFields(model, {
+    agentTokens: (tokens) =>
+      Schema.is(Route.Account)(model.route) && !Schema.is(Route.Account)(route)
+        ? AgentTokens.invalidated(tokens)
+        : tokens,
+    route: () => route,
+  });
 
   return Route.match<UpdateReturn>(route, {
     Account: ({ notice }) => enteredAccount(routed, notice),
@@ -531,7 +563,10 @@ const followedBilling = (step: UpdateReturn): UpdateReturn =>
     SignedIn: () => joined(step, foldBillingStep(Billing.signedIn)),
     SignedOut: () => ({
       ...step,
-      model: modifyFields(step.model, { billing: Billing.signedOut }),
+      model: modifyFields(step.model, {
+        agentTokens: AgentTokens.invalidated,
+        billing: Billing.signedOut,
+      }),
     }),
   });
 
@@ -594,6 +629,7 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
 
 export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   const account = Account.init();
+  const agentTokens = AgentTokens.init();
   const billing = Billing.init();
   const savedSearches = SavedSearches.init();
 
@@ -601,6 +637,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
     preloaded(
       {
         account: account.model,
+        agentTokens: agentTokens.model,
         awaitingEcho: [],
         billing: billing.model,
         draftSearch: "",
@@ -849,11 +886,44 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
         ? synced(flagged)
         : { model: flagged };
     },
-    GotAccountMessage: ({ message: accountMessage }) =>
-      followedEntitlement(
-        model,
-        followedSession(foldAccount(model, accountMessage))
-      ),
+    GotAccountMessage: ({ message: accountMessage }) => {
+      const taken = foldAccount(model, accountMessage);
+      const previous = model.account.session;
+      const current = taken.model.account.session;
+
+      const sameOwner =
+        Schema.is(SessionState.SignedIn)(previous) &&
+        Schema.is(SessionState.SignedIn)(current) &&
+        previous.account.id === current.account.id;
+
+      const invalidate =
+        !sameOwner ||
+        Predicate.isTagged(accountMessage, "ClickedSignOut") ||
+        Predicate.isTagged(accountMessage, "CompletedSignOut");
+
+      const scoped = invalidate
+        ? {
+            ...taken,
+            model: modifyFields(taken.model, {
+              agentTokens: AgentTokens.invalidated,
+            }),
+          }
+        : taken;
+
+      const refreshed =
+        invalidate &&
+        Schema.is(SessionState.SignedIn)(current) &&
+        Schema.is(Route.Account)(scoped.model.route) &&
+        !Predicate.isTagged(accountMessage, "ClickedSignOut")
+          ? joined(scoped, foldAgentTokensEntered)
+          : scoped;
+
+      return followedEntitlement(model, followedSession(refreshed));
+    },
+    GotAgentTokensMessage: ({ message: agentTokensMessage }) =>
+      isSignedIn(model) && Schema.is(Route.Account)(model.route)
+        ? foldAgentTokens(model, agentTokensMessage)
+        : { model },
     GotBillingMessage: ({ message: billingMessage }) =>
       followedEntitlement(model, foldBilling(model, billingMessage)),
     GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>

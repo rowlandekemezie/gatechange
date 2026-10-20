@@ -4,6 +4,7 @@ import {
   DAY_MILLIS,
   JobStore,
   PostingFeeds,
+  SourceName,
 } from "@rat-stack/core";
 import type { JobQueryValue, JobValue } from "@rat-stack/core";
 import { Array, Effect, Option, pipe } from "effect";
@@ -102,7 +103,11 @@ describe("D1 job store queries", () => {
             NOW + 10
           );
 
-          const listing = yield* store.list(query(), NOW + 20);
+          const listing = yield* store.list(
+            query(),
+            NOW + 20,
+            SourceName.literals
+          );
 
           expect(replaced).toStrictEqual({ removed: 1, upserted: 1 });
           expect(ids(listing.jobs)).toStrictEqual(["a:2", "b:1"]);
@@ -142,7 +147,7 @@ describe("D1 job store queries", () => {
             NOW
           );
 
-          const listing = yield* store.list(query(), NOW);
+          const listing = yield* store.list(query(), NOW, SourceName.literals);
 
           expect(ids(listing.jobs)).toStrictEqual(["g:1"]);
           expect(listing.total).toBe(1);
@@ -183,19 +188,29 @@ describe("D1 job store queries", () => {
             NOW
           );
 
-          const week = yield* store.list(query({ maxAgeDays: 7 }), NOW);
+          const week = yield* store.list(
+            query({ maxAgeDays: 7 }),
+            NOW,
+            SourceName.literals
+          );
 
           const vp = yield* store.list(
             query({ roles: ["VicePresident"] }),
-            NOW
+            NOW,
+            SourceName.literals
           );
 
           const bc = yield* store.list(
             query({ regions: ["BritishColumbia"] }),
-            NOW
+            NOW,
+            SourceName.literals
           );
 
-          const search = yield* store.list(query({ search: "100%_" }), NOW);
+          const search = yield* store.list(
+            query({ search: "100%_" }),
+            NOW,
+            SourceName.literals
+          );
 
           expect(ids(week.jobs)).toStrictEqual(["a:bc", "a:vp"]);
           expect(ids(vp.jobs)).toStrictEqual(["a:vp"]);
@@ -230,7 +245,11 @@ describe("D1 job store queries", () => {
             NOW
           );
 
-          const listing = yield* store.list(query({ sort: "Relevance" }), NOW);
+          const listing = yield* store.list(
+            query({ sort: "Relevance" }),
+            NOW,
+            SourceName.literals
+          );
 
           expect(
             pipe(
@@ -264,7 +283,11 @@ describe("D1 job store queries", () => {
           yield* store.recordFeedFailure("b", NOW + 1, "timeout");
 
           const states = yield* store.feedStates;
-          const stats = yield* store.stats(NOW, ["a", "b"]);
+
+          const stats = yield* store.stats(NOW, SourceName.literals, [
+            "a",
+            "b",
+          ]);
 
           expect(pruned).toBe(1);
           expect(
@@ -334,9 +357,13 @@ describe("D1 job store queries", () => {
 
           expect(Option.isSome(beforeHistory)).toBe(true);
 
-          const stats = yield* store.stats(NOW, catalog);
-          const empty = yield* store.stats(NOW, []);
-          const repeated = yield* store.stats(NOW, [...catalog, ...catalog]);
+          const stats = yield* store.stats(NOW, SourceName.literals, catalog);
+          const empty = yield* store.stats(NOW, SourceName.literals, []);
+
+          const repeated = yield* store.stats(NOW, SourceName.literals, [
+            ...catalog,
+            ...catalog,
+          ]);
 
           expect([
             stats.feedsTotal,
@@ -374,10 +401,9 @@ describe("D1 job store queries", () => {
               title: "Engineering Manager",
             })
           ).toStrictEqual(beforeHistory);
-          expect(ids((yield* store.list(query(), NOW)).jobs)).toStrictEqual([
-            "active:1",
-            "removed:1",
-          ]);
+          expect(
+            ids((yield* store.list(query(), NOW, SourceName.literals)).jobs)
+          ).toStrictEqual(["active:1", "removed:1"]);
         })
       )
   );
@@ -393,7 +419,7 @@ describe("D1 job store queries", () => {
           yield* store.replaceFeed("a", [expired], NOW - 40 * DAY_MILLIS);
           yield* store.pruneOlderThan(NOW + DAY_MILLIS);
 
-          const listing = yield* store.list(query(), NOW);
+          const listing = yield* store.list(query(), NOW, SourceName.literals);
           const kept = yield* store.historyOf(expired);
 
           expect(listing.total).toBe(0);
@@ -419,7 +445,7 @@ describe("D1 job store queries", () => {
           );
           yield* store.replaceFeed("a", [job({ feed: "a", id: "a:1" })], NOW);
 
-          const listing = yield* store.list(query(), late);
+          const listing = yield* store.list(query(), late, SourceName.literals);
 
           expect(
             pipe(
@@ -479,7 +505,7 @@ describe("D1 job store queries", () => {
 
           return {
             kept: yield* store.historyOf(job({ feed: "a", id: "a:1" })),
-            listing: yield* store.list(query(), NOW),
+            listing: yield* store.list(query(), NOW, SourceName.literals),
           };
         }).pipe(Effect.provide(layer));
 

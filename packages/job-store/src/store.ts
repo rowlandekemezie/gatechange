@@ -366,15 +366,19 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       sql
         .all("historyOf", historyStatement(job), HistoryRow)
         .pipe(Effect.map((rows) => Option.map(Array.head(rows), historyOfRow))),
-    list: (query, now) =>
+    list: (query, now, sources) =>
       Effect.all(
         {
           rows: sql.all(
             "listJobs",
-            listJobsStatement(query, now),
+            listJobsStatement(query, now, sources),
             ListedJobRow
           ),
-          total: sql.all("countJobs", countJobsStatement(query, now), TotalRow),
+          total: sql.all(
+            "countJobs",
+            countJobsStatement(query, now, sources),
+            TotalRow
+          ),
         },
         { concurrency: 2 }
       ).pipe(
@@ -492,23 +496,35 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         ])
         .pipe(Effect.asVoid),
 
-    stats: (now, catalogKeys) =>
+    stats: (now, sources, catalogKeys) =>
       Effect.all(
         {
-          active: sql.all("activeJobs", activeCountStatement(now), TotalRow),
+          active: sql.all(
+            "activeJobs",
+            activeCountStatement(now, sources),
+            TotalRow
+          ),
           feeds: sql.all(
             "feedHealth",
             feedHealthStatement(catalogKeys),
             FeedHealthRow
           ),
           lastRun: sql.all("lastRun", lastRunStatement, RunRow),
-          newToday: sql.all("newToday", newTodayStatement(now), TotalRow),
+          newToday: sql.all(
+            "newToday",
+            newTodayStatement(now, sources),
+            TotalRow
+          ),
           regions: sql.all(
             "regionCounts",
-            regionCountsStatement(now),
+            regionCountsStatement(now, sources),
             RegionCountRow
           ),
-          roles: sql.all("roleCounts", roleCountsStatement(now), RoleCountRow),
+          roles: sql.all(
+            "roleCounts",
+            roleCountsStatement(now, sources),
+            RoleCountRow
+          ),
         },
         { concurrency: 3 }
       ).pipe(

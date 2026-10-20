@@ -48,6 +48,7 @@ import {
 } from "@rat-stack/job-enrichment";
 import { postingFeedsLayer, postingTextsLayer } from "@rat-stack/job-sources";
 import {
+  d1AgentTokenStoreLayer,
   d1AlertStoreLayer,
   d1BillingStoreLayer,
   d1JobStoreLayer,
@@ -69,10 +70,11 @@ import {
   Schema,
   Stream,
 } from "effect";
-import { FetchHttpClient, HttpServerResponse } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
+import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { handleRoutes } from "./route.js";
 import { stripeBilling } from "./stripe.js";
 
@@ -443,6 +445,20 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       }
     );
 
+    const mcpHttp = yield* HttpRouter.toHttpEffect(
+      mcpAppLayer(
+        Layer.mergeAll(storeLayer, feedsLayer, alertLayer, billingLayer)
+      )
+    ).pipe(Effect.orDie);
+
+    const agentAccessLayer = Layer.mergeAll(
+      d1AgentTokenStoreLayer(client),
+      billingLayer
+    );
+
+    const mcp = (request: HttpServerRequest.HttpServerRequest) =>
+      serveMcp(mcpHttp)(request).pipe(Effect.provide(agentAccessLayer));
+
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(
         RpcServer.toHttpEffect(rpcProjection.group).pipe(
@@ -456,7 +472,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
                   storeLayer,
                   feedsLayer,
                   alertLayer,
-                  billingLayer,
+                  agentAccessLayer,
                   Layer.succeed(AccountStore, accountStore),
                   Layer.succeed(CurrentViewer, viewer)
                 )
@@ -518,6 +534,8 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     const handle = handleRoutes({
       accountStore,
       auth: auth.fetch,
+      mcp,
+      mcpDiscovery: serveMcpDiscovery,
       rpc: serveRpc,
       stripeWebhook,
       unsubscribe,

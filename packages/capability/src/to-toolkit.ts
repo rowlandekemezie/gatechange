@@ -1,6 +1,6 @@
 // @effect-diagnostics anyUnknownInErrorContext:off unsafeEffectTypeAssertion:off missingEffectContext:off -- A projection over a heterogeneous list of capabilities erases each one's error and requirement types at the boundary and recovers them for callers through `ToolsOf` / `RequirementsOf`. The three diagnostics above cannot distinguish that boundary from a leak, so they are off for this file only.
 import type { Layer } from "effect";
-import { Effect, Schema } from "effect";
+import { Context, Effect, Schema } from "effect";
 import { Tool, Toolkit } from "effect/ai";
 
 import { failureSchemaOf } from "./contract.js";
@@ -111,6 +111,15 @@ export const toToolkit = <const Caps extends readonly AnyCapability[]>(
         (parameters: unknown) => Effect.Effect<unknown, unknown>
       > = {};
 
+      const withRequestContext = <A, E>(
+        effect: Effect.Effect<A, E, RequirementsOf<Caps>>
+      ) =>
+        effect.pipe(
+          Effect.updateContext((request: Context.Context<never>) =>
+            Context.merge(context, request)
+          )
+        );
+
       for (const capability of capabilities) {
         // SAFETY: `Any` erased this capability's requirements to `unknown`; they are a subset of `RequirementsOf<Caps>`, which `context` carries.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -130,10 +139,9 @@ export const toToolkit = <const Caps extends readonly AnyCapability[]>(
               decodeEmptyInput(parameters).pipe(
                 Effect.orDie,
                 Effect.flatMap(run),
-                Effect.provideContext(context)
+                withRequestContext
               )
-          : (parameters) =>
-              run(parameters).pipe(Effect.provideContext(context));
+          : (parameters) => withRequestContext(run(parameters));
       }
 
       // SAFETY: same boundary as the toolkit cast: the record is keyed by the capabilities' names, which is exactly `HandlersFrom<ToolsOf<Caps>>`.
