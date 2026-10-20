@@ -1,6 +1,7 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type {
+  AgentTokenIdValue,
   JobQueryValue,
   PlanValue,
   SavedSearchIdValue,
@@ -21,17 +22,21 @@ const make = Effect.gen(function* makeJobQueries() {
   const client = yield* RpcClient.make(group).pipe(Effect.provide(protocol));
 
   return {
+    agentTokens: client.agentTokens({}),
     companyIntel: (slug: string) => client.companyIntel({ slug }),
     companyJobs: (slug: string) => client.companyJobs({ slug }),
     deleteSearch: (id: SavedSearchIdValue) => client.deleteSearch({ id }),
     getJob: (id: string) => client.getJob({ id }),
     importShortlist: (jobs: readonly TrackRequestValue[]) =>
       client.importShortlist({ jobs }),
+    issueAgentToken: (label: string) => client.issueAgentToken({ label }),
     listJobs: (query: JobQueryValue) => client.listJobs(query),
     membership: client.membership({}),
     noteTrackedJob: (jobId: string, notes: string) =>
       client.noteTrackedJob({ jobId, notes }),
     openBillingPortal: client.openBillingPortal({}),
+    revokeAgentToken: (id: AgentTokenIdValue) =>
+      client.revokeAgentToken({ id }),
     saveSearch: (filters: SearchFiltersValue) => client.saveSearch({ filters }),
     savedSearches: client.savedSearches({}),
     setInstantAlerts: (enabled: boolean) =>

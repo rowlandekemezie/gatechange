@@ -8,6 +8,7 @@ import {
   paidFeaturesAllowed,
   RECENCY_PENALTY_PER_DAY,
   REPOST_GAP,
+  SourceName,
   sourceOfFeedKey,
 } from "@rat-stack/core";
 import type {
@@ -19,6 +20,7 @@ import type {
   NeuronClaim,
   NeuronUsage,
   Sighted,
+  SourceNameValue,
   UnenrichedSweep,
 } from "@rat-stack/core";
 import { Option } from "effect";
@@ -82,9 +84,31 @@ const rankedColumns = [...jobColumnNames, ...enrichmentColumnNames]
   .map((column) => `ranked.${column}`)
   .join(", ");
 
+const servedSourcesCondition = (sources: readonly SourceNameValue[]) =>
+  SourceName.literals.some((source) => !sources.includes(source))
+    ? {
+        conditions: [`source IN (${placeholders(sources.length)})`],
+        params: [...sources],
+      }
+    : { conditions: [], params: [] };
+
+const servedJobsSince = (
+  column: "first_seen_at" | "posted_at",
+  since: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const served = servedSourcesCondition(sources);
+
+  return {
+    params: [since, ...served.params],
+    where: [`${column} >= ?`, ...served.conditions].join(" AND "),
+  };
+};
+
 const filteredJobs = (
   query: JobQueryValue,
   now: number,
+  sources: readonly SourceNameValue[],
   companySlug?: string
 ) => {
   const conditions = ["posted_at >= ?"];
@@ -94,6 +118,11 @@ const filteredJobs = (
     conditions.push("jobs.company_slug = ?");
     params.push(companySlug);
   }
+
+  const served = servedSourcesCondition(sources);
+
+  conditions.push(...served.conditions);
+  params.push(...served.params);
 
   if (query.roles.length > 0) {
     conditions.push(`role IN (${placeholders(query.roles.length)})`);
@@ -106,12 +135,12 @@ const filteredJobs = (
   }
 
   if (query.salaryListed) {
-    const sources = paidFeatureSources();
+    const paidSources = paidFeatureSources();
 
     conditions.push(
-      `(salary IS NOT NULL OR salary_currency IS NOT NULL) AND source IN (${placeholders(sources.length)})`
+      `(salary IS NOT NULL OR salary_currency IS NOT NULL) AND source IN (${placeholders(paidSources.length)})`
     );
-    params.push(...sources);
+    params.push(...paidSources);
   }
 
   const search = query.search.trim();
@@ -149,9 +178,10 @@ const filteredJobs = (
 export const listJobsStatement = (
   query: JobQueryValue,
   now: number,
+  sources: readonly SourceNameValue[],
   companySlug?: string
 ): SqlStatement => {
-  const filtered = filteredJobs(query, now, companySlug);
+  const filtered = filteredJobs(query, now, sources, companySlug);
 
   const order =
     query.sort === "Newest"
@@ -190,10 +220,10 @@ const companyQuery: JobQueryValue = {
 };
 
 export const companyJobsStatement = (slug: string, now: number) =>
-  listJobsStatement(companyQuery, now, slug);
+  listJobsStatement(companyQuery, now, SourceName.literals, slug);
 
 export const companySummaryStatement = (slug: string, now: number) => {
-  const filtered = filteredJobs(companyQuery, now, slug);
+  const filtered = filteredJobs(companyQuery, now, SourceName.literals, slug);
 
   return statement(
     `${filtered.sql}
@@ -311,9 +341,10 @@ ON CONFLICT (job_id) DO UPDATE SET
 
 export const countJobsStatement = (
   query: JobQueryValue,
-  now: number
+  now: number,
+  sources: readonly SourceNameValue[]
 ): SqlStatement => {
-  const filtered = filteredJobs(query, now);
+  const filtered = filteredJobs(query, now, sources);
 
   return statement(
     `${filtered.sql}
@@ -581,27 +612,65 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ]
   );
 
-export const activeCountStatement = (now: number) =>
-  statement("SELECT COUNT(*) AS total FROM jobs WHERE posted_at >= ?", [
+export const activeCountStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
     now - MAX_AGE_DAYS * DAY_MILLIS,
-  ]);
-
-export const newTodayStatement = (now: number) =>
-  statement("SELECT COUNT(*) AS total FROM jobs WHERE first_seen_at >= ?", [
-    now - DAY_MILLIS,
-  ]);
-
-export const regionCountsStatement = (now: number) =>
-  statement(
-    "SELECT region, COUNT(*) AS count FROM jobs WHERE posted_at >= ? GROUP BY region ORDER BY count DESC",
-    [now - MAX_AGE_DAYS * DAY_MILLIS]
+    sources
   );
 
-export const roleCountsStatement = (now: number) =>
-  statement(
-    "SELECT role, COUNT(*) AS count FROM jobs WHERE posted_at >= ? GROUP BY role ORDER BY count DESC",
-    [now - MAX_AGE_DAYS * DAY_MILLIS]
+  return statement(
+    `SELECT COUNT(*) AS total FROM jobs WHERE ${active.where}`,
+    active.params
   );
+};
+
+export const newTodayStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const fresh = servedJobsSince("first_seen_at", now - DAY_MILLIS, sources);
+
+  return statement(
+    `SELECT COUNT(*) AS total FROM jobs WHERE ${fresh.where}`,
+    fresh.params
+  );
+};
+
+export const regionCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `SELECT region, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY region ORDER BY count DESC`,
+    active.params
+  );
+};
+
+export const roleCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `SELECT role, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY role ORDER BY count DESC`,
+    active.params
+  );
+};
 
 export const feedHealthStatement = statement(
   "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN consecutive_failures > 0 THEN 1 ELSE 0 END), 0) AS failing FROM feeds"

@@ -8,6 +8,7 @@ import {
   JobStore,
   SalaryBand,
   SalaryFloor,
+  SourceName,
 } from "@rat-stack/core";
 import type {
   EnrichmentValue,
@@ -96,7 +97,7 @@ const withStore = <A, E>(body: Effect.Effect<A, E, JobStore | SqlExecutor>) =>
 const listedIds = (listQuery: JobQueryValue) =>
   Effect.gen(function* listIds() {
     const store = yield* JobStore;
-    const page = yield* store.list(listQuery, NOW);
+    const page = yield* store.list(listQuery, NOW, SourceName.literals);
 
     return {
       ids: pipe(
@@ -577,7 +578,7 @@ describe("enrichment storage", () => {
           yield* store.saveEnrichment("full", full);
           yield* store.saveEnrichment("bare", bare);
 
-          const page = yield* store.list(query(), NOW);
+          const page = yield* store.list(query(), NOW, SourceName.literals);
 
           const found = yield* Effect.forEach(["full", "bare", "plain"], (id) =>
             store.find(id)

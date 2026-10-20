@@ -16,6 +16,7 @@ export type PermissionValue = Data.TaggedEnum<{
 export const Permission = Data.taggedEnum<PermissionValue>();
 
 export interface SourceTermsValue {
+  readonly agentAccess: PermissionValue;
   readonly creditUrl: string;
   readonly emailAlerts: PermissionValue;
   readonly jobPostingMarkup: PermissionValue;
@@ -36,6 +37,12 @@ const ycSiteContent = Permission.Forbidden({
 
 const REMOTIVE_TERMS = "https://github.com/remotive-com/remote-jobs-api";
 
+const remotiveThirdParties = Permission.Forbidden({
+  quote:
+    "Please do not submit Remotive jobs to third Party websites, including but not limited to: Jooble, Neuvoo, Google Jobs, LinkedIn Jobs.",
+  url: REMOTIVE_TERMS,
+});
+
 const remotiveSignups = Permission.Forbidden({
   quote:
     "Displaying our jobs in order to collect signups/email addresses to show a listing constitutes a breach of our terms of services.",
@@ -45,6 +52,7 @@ const remotiveSignups = Permission.Forbidden({
 export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
   {
     Ashby: {
+      agentAccess: unstated,
       creditUrl: "https://www.ashbyhq.com",
       emailAlerts: unstated,
       jobPostingMarkup: unstated,
@@ -53,6 +61,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
     Greenhouse: {
+      agentAccess: unstated,
       creditUrl: "https://www.greenhouse.com",
       emailAlerts: unstated,
       jobPostingMarkup: unstated,
@@ -61,6 +70,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
     HackerNews: {
+      agentAccess: ycSiteContent,
       creditUrl: "https://news.ycombinator.com",
       emailAlerts: ycSiteContent,
       jobPostingMarkup: ycSiteContent,
@@ -73,6 +83,11 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       }),
     },
     Himalayas: {
+      agentAccess: Permission.Forbidden({
+        quote:
+          "Do not redistribute jobs from Himalayas to other job boards, aggregators or job search engines.",
+        url: "https://himalayas.app/terms",
+      }),
       creditUrl: "https://himalayas.app",
       emailAlerts: unstated,
       jobPostingMarkup: Permission.Forbidden({
@@ -89,6 +104,11 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       }),
     },
     Jobicy: {
+      agentAccess: Permission.Allowed({
+        quote:
+          "Most integrations, including job boards, newsletters, career tools, AI assistants, and internal applications, can use the public API without a separate agreement.",
+        url: "https://jobicy.com/jobs-rss-feed",
+      }),
       creditUrl: "https://jobicy.com",
       emailAlerts: Permission.Allowed({
         quote:
@@ -101,6 +121,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
     Lever: {
+      agentAccess: unstated,
       creditUrl: "https://www.lever.co",
       emailAlerts: unstated,
       jobPostingMarkup: unstated,
@@ -109,6 +130,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
     RemoteOK: {
+      agentAccess: unstated,
       creditUrl: "https://remoteok.com",
       emailAlerts: unstated,
       jobPostingMarkup: unstated,
@@ -117,18 +139,16 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
     Remotive: {
+      agentAccess: remotiveThirdParties,
       creditUrl: "https://remotive.com",
       emailAlerts: remotiveSignups,
-      jobPostingMarkup: Permission.Forbidden({
-        quote:
-          "Please do not submit Remotive jobs to third Party websites, including but not limited to: Jooble, Neuvoo, Google Jobs, LinkedIn Jobs.",
-        url: REMOTIVE_TERMS,
-      }),
+      jobPostingMarkup: remotiveThirdParties,
       kind: "Aggregator",
       label: "Remotive",
       paidFeatures: remotiveSignups,
     },
     SmartRecruiters: {
+      agentAccess: unstated,
       creditUrl: "https://www.smartrecruiters.com",
       emailAlerts: unstated,
       jobPostingMarkup: unstated,
@@ -137,6 +157,7 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
     Workable: {
+      agentAccess: unstated,
       creditUrl: "https://www.workable.com",
       emailAlerts: unstated,
       jobPostingMarkup: unstated,

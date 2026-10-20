@@ -8,6 +8,7 @@ import {
   PostingFeeds,
   runIngest,
   ShownTrend,
+  SourceName,
   ThinTrend,
 } from "@rat-stack/core";
 import type { FeedRef, JobQueryValue, PostingValue } from "@rat-stack/core";
@@ -184,7 +185,12 @@ describe("company records on the SQL store", () => {
           yield* ingestAt(29, [vp, director, lookalike]);
 
           const store = yield* JobStore;
-          const listed = yield* store.list(everything, NOW + 29 * DAY_MILLIS);
+
+          const listed = yield* store.list(
+            everything,
+            NOW + 29 * DAY_MILLIS,
+            SourceName.literals
+          );
 
           const idOf = (title: string, company = "Acme Cloud") =>
             Option.getOrThrow(
