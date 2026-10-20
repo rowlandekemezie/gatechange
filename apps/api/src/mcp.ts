@@ -20,6 +20,7 @@ import type {
   BillingStore,
   JobStore,
   JobStoreUnavailable,
+  PostingFeeds,
   TrackerStore,
 } from "@rat-stack/core";
 import { Data, Effect, Layer, Match, Option } from "effect";
@@ -47,7 +48,12 @@ const freeToolNames: ReadonlySet<string> = new Set(
   freeAgentCapabilities.map(({ contract }) => contract.name)
 );
 
-type AgentStores = AlertStore | BillingStore | JobStore | TrackerStore;
+type AgentStores =
+  | AlertStore
+  | BillingStore
+  | JobStore
+  | TrackerStore
+  | PostingFeeds;
 
 export const mcpAppLayer = <E, R>(stores: Layer.Layer<AgentStores, E, R>) =>
   McpServer.toolkit(agentToolkit.toolkit).pipe(

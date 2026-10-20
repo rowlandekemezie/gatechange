@@ -1,5 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { moneyRangesIn, PostingGone, PostingTexts } from "@rat-stack/core";
+import {
+  detailsOfAnswer,
+  moneyRangesIn,
+  PostingGone,
+  PostingTexts,
+} from "@rat-stack/core";
 import type { JobValue } from "@rat-stack/core";
 import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -98,6 +103,7 @@ type Json =
   | { readonly [key: string]: Json };
 
 interface AshbyJobFixture {
+  readonly descriptionPlain?: string;
   readonly address?: Json;
   readonly compensation?: Json;
   readonly location?: string;
@@ -140,6 +146,96 @@ const fetchText = (id: string) =>
   fetchPosting(id).pipe(Effect.map((posting) => posting.text));
 
 describe("posting texts", () => {
+  it.effect.each([
+    ["conflicting bounds", "Base salary: USD 293,000 - 325,000 per year", true],
+    [
+      "conflicting currency",
+      "Base salary: CAD 347,000 - 385,000 per year",
+      true,
+    ],
+    ["matching bounds", "Base salary: USD 347,000 - 385,000 per year", false],
+    [
+      "matching monthly pay",
+      "Base salary: USD 28,916.6667 - 32,083.3333 per month",
+      false,
+    ],
+    [
+      "selected regional band",
+      "Base salary ranges:\nZone 1: USD 347,000 - 385,000\nZone 2: USD 293,000 - 325,000",
+      false,
+    ],
+    ["no description salary", "Lead the team.", false],
+    ["a distinct equity band", "Equity value: USD 293,000 - 325,000", false],
+  ] as const)(
+    "preserves salary uncertainty for %s",
+    ([, descriptionPlain, uncertain]) =>
+      Effect.gen(function* salarySources() {
+        const posting = yield* readAshbyJob({
+          compensation: {
+            compensationTierSummary: "$347K - $385K",
+            compensationTiers: [
+              { components: [salaryComponent("1 YEAR", 347_000, 385_000)] },
+            ],
+          },
+          descriptionPlain,
+        });
+
+        expect(posting.salaryUncertain === true).toBe(uncertain);
+
+        const details = detailsOfAnswer(
+          {
+            remotePolicy: null,
+            remotePolicyQuote: null,
+            reportsTo: null,
+            reportsToQuote: null,
+            salaryMax: 385_000,
+            salaryMin: 347_000,
+            seniority: null,
+            teamSize: null,
+            teamSizeQuote: null,
+          },
+          { ...posting, company: "Acme", title: "Engineering Manager" }
+        );
+
+        expect(details.salary).toStrictEqual(
+          uncertain ? null : { currency: "USD", max: 385_000, min: 347_000 }
+        );
+      })
+  );
+  it.effect.each([
+    "Software Engineering Intern",
+    "Contract Engineering Manager",
+    "Student Developer",
+    "Engineering Contractor",
+  ])("does not annualize hourly compensation for %s", (title) =>
+    Effect.gen(function* hourlyPopulation() {
+      const texts = yield* PostingTexts;
+
+      const posting = yield* texts.fetch({
+        ...jobWithId("ashby:acme:job"),
+        title,
+      });
+
+      expect(posting.salary).toBeNull();
+    }).pipe(
+      Effect.provide(
+        serving(
+          JSON.stringify({
+            jobs: [
+              {
+                compensation: {
+                  compensationTiers: [
+                    { components: [salaryComponent("1 HOUR", 62, 72)] },
+                  ],
+                },
+                id: "job",
+              },
+            ],
+          })
+        ).layer
+      )
+    )
+  );
   it.effect(
     "a Greenhouse posting decodes its escaped HTML into plain text",
     () => {

@@ -3,6 +3,7 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
   authOptions,
   authSecret,
+  DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT,
   logSendFailure,
   magicLinkEmail,
   makeAccountStore,
@@ -239,11 +240,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
     });
 
-    const ingestLayer = Layer.mergeAll(
-      storeLayer,
-      queueLayer,
-      postingFeedsLayer().pipe(Layer.provide(FetchHttpClient.layer))
+    const feedsLayer = postingFeedsLayer().pipe(
+      Layer.provide(FetchHttpClient.layer)
     );
+
+    const ingestLayer = Layer.mergeAll(storeLayer, queueLayer, feedsLayer);
 
     const enrichmentLayer = Layer.mergeAll(
       storeLayer,
@@ -369,6 +370,10 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       ),
     };
 
+    const unsubscribeTokenVersion = yield* Config.Int(
+      "UNSUBSCRIBE_TOKEN_VERSION"
+    ).pipe(Config.withDefault(1), Config.map(String));
+
     const digestMailer = makeDigestMailer({
       secret,
       send: (email) =>
@@ -377,6 +382,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
           .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
       sender: DIGEST_SENDER,
       siteOrigin: digestSiteOrigin,
+      unsubscribeTokenVersion,
     });
 
     yield* Cloudflare.Workers.cron(DIGEST_SCHEDULE, (controller) =>
@@ -413,9 +419,14 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
 
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
+    const magicLinkDailySendLimit = yield* Config.Int(
+      "MAGIC_LINK_DAILY_SEND_LIMIT"
+    ).pipe(Config.withDefault(DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT));
+
     const auth = yield* BetterAuth({
       ...authOptions({
         hosts,
+        magicLinkDailySendLimit,
         // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
         sendMagicLink: async (request) => {
           await runPromise(
@@ -446,7 +457,9 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     );
 
     const mcpHttp = yield* HttpRouter.toHttpEffect(
-      mcpAppLayer(Layer.mergeAll(storeLayer, alertLayer, billingLayer))
+      mcpAppLayer(
+        Layer.mergeAll(storeLayer, feedsLayer, alertLayer, billingLayer)
+      )
     ).pipe(Effect.orDie);
 
     const agentAccessLayer = Layer.mergeAll(
@@ -468,6 +481,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
               Layer.provide(
                 Layer.mergeAll(
                   storeLayer,
+                  feedsLayer,
                   alertLayer,
                   agentAccessLayer,
                   Layer.succeed(AccountStore, accountStore),
@@ -484,7 +498,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
         const token =
           new URL(request.url, SITE_ORIGIN).searchParams.get("token") ?? "";
 
-        const account = yield* verifyUnsubscribeToken(secret, token);
+        const account = yield* verifyUnsubscribeToken(
+          secret,
+          token,
+          unsubscribeTokenVersion
+        );
 
         if (Option.isNone(account)) {
           return unsubscribePage("Invalid", token);

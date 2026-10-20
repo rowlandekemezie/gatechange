@@ -185,6 +185,7 @@ export {
   saveSearch,
   noteTrackedJob,
   companyIntel,
+  companyJobs,
   setInstantAlerts,
   signInOptions,
   startCheckout,
@@ -302,6 +303,7 @@ export {
   revokeAgentTokenContract,
   BoardStats,
   boardStatsContract,
+  companyJobsContract,
   currencies,
   Currency,
   DEFAULT_AGE_DAYS,
@@ -388,6 +390,7 @@ export {
   ModelAnswer,
   moneyRangesIn,
   SalaryPeriod,
+  salaryDisagreesWithText,
   skipHandling,
   SkipReason,
   sweepLimitOf,
@@ -461,3 +464,7 @@ export type {
   TrendWeekValue,
   TypicalBandValue,
 } from "./company-intel.js";
+
+export { CompanyJobs, COMPANY_LISTING_ROWS } from "./company-jobs.js";
+
+export type { CompanyJobsValue } from "./company-jobs.js";

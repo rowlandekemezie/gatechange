@@ -1214,6 +1214,32 @@ describe("enrichListing", () => {
       })
   );
 
+  it.effect(
+    "a posting salary conflict cannot fall back to the model range",
+    () =>
+      Effect.gen(function* uncertainSalary() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          fetched: Effect.succeed({
+            salary: { currency: "USD", max: 220_000, min: 180_000 },
+            salaryUncertain: true,
+            text: statedPosting,
+            workplace: "Unspecified",
+          }),
+        });
+
+        expect(
+          pipe(
+            result.after,
+            Option.map((found) => found.enrichment?.salary)
+          )
+        ).toStrictEqual(Option.some(null));
+        expect(
+          result.sent.map((request) => request.salaryUncertain)
+        ).toStrictEqual([true]);
+      })
+  );
+
   it.effect.each([
     ["no salary", null, null],
     ["a different salary", 90_000, 120_000],

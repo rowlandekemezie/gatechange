@@ -19,7 +19,8 @@ export class AlertStore extends Context.Service<
       cadence: CadenceValue,
       account: AccountIdValue,
       periodStart: number,
-      now: number
+      now: number,
+      dailyLimit: number
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
     readonly deleteSearch: (
       owner: AccountIdValue,
@@ -28,7 +29,8 @@ export class AlertStore extends Context.Service<
     readonly dueRecipients: (
       cadence: CadenceValue,
       periodStart: number,
-      now: number
+      now: number,
+      account?: AccountIdValue
     ) => Effect.Effect<readonly DigestRecipient[], JobStoreUnavailable>;
     readonly jobsSeenSince: (
       since: number

@@ -54,7 +54,7 @@ export const FetchJob = Command.define("FetchJob", {
 export const FetchListing = Command.define("FetchListing", {
   args: { route: ListingRoute },
   execute: ({ route }) =>
-    JobQueries.use((queries) => collectListing(queries.listJobs, route)).pipe(
+    JobQueries.use((queries) => collectListing(queries, route)).pipe(
       Effect.match({
         onFailure: (failure) =>
           Message.FailedFetchListing({ message: failureText(failure), route }),
