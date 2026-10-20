@@ -914,3 +914,88 @@ a {
   border-left: 4px solid var(--marigold);
   overflow-wrap: anywhere;
 }
+
+.intel {
+  max-width: var(--measure);
+  margin: 1.5rem 0 2rem;
+  padding: 1rem 0 0;
+  border-top: 1px solid var(--rule);
+}
+
+.intel-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--display);
+  font-size: 1.25rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.intel-summary {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+}
+
+.intel-block h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.trend {
+  margin: 0;
+}
+
+.trend-chart {
+  display: block;
+  width: 100%;
+  max-width: 32rem;
+  height: auto;
+}
+
+.trend-bar {
+  fill: var(--pine);
+}
+
+.trend-axis {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.trend-label {
+  fill: var(--ink-soft);
+  font-family: var(--text);
+  font-size: 10px;
+}
+
+.trend-summary,
+.trend-thin,
+.source-note {
+  margin: 0.5rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+
+.intel-roles,
+.intel-bands {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intel-role,
+.intel-bands > li {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--rule);
+  overflow-wrap: anywhere;
+}
+
+.intel-role {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.intel-role-facts {
+  color: var(--ink-soft);
+}

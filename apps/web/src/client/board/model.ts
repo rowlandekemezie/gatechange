@@ -1,6 +1,6 @@
 import {
   BoardStats,
-  EpochMillis,
+  CompanyIntel,
   JobDetail,
   ListedJob,
   Stage,
@@ -13,7 +13,7 @@ import { defineTaggedUnion } from "foldkit/schema";
 import { Model as AccountModel } from "../account/model.js";
 import { Model as AgentTokensModel } from "../agent-tokens/model.js";
 import { Model as BillingModel } from "../billing/model.js";
-import { ListingRoute } from "../listing.js";
+import { Listing, ListingRoute } from "../listing.js";
 import { Route } from "../route.js";
 import { Model as SavedSearchesModel } from "../saved-searches/model.js";
 import { Filters } from "./filters.js";
@@ -39,24 +39,25 @@ export const JobState = defineTaggedUnion({
 
 export const ListingState = defineTaggedUnion({
   Failed: { message: Schema.String, route: ListingRoute },
-  Loaded: {
-    generatedAt: EpochMillis,
-    jobs: Schema.Array(ListedJob),
-    route: ListingRoute,
-    total: Schema.Finite,
-  },
+  Loaded: { ...Listing.fields, route: ListingRoute },
   Loading: { route: ListingRoute },
   NotAsked: {},
 });
 
+export const IntelState = defineTaggedUnion({
+  Failed: { slug: Schema.String },
+  Loaded: { intel: CompanyIntel, slug: Schema.String },
+  Loading: { slug: Schema.String },
+  Locked: { slug: Schema.String },
+  NotAsked: {},
+});
+
+export type IntelStateValue = typeof IntelState.Type;
+
 export const Preload = defineTaggedUnion({
   Job: { job: JobDetail },
   JobMissing: {},
-  Listing: {
-    generatedAt: EpochMillis,
-    jobs: Schema.Array(ListedJob),
-    total: Schema.Finite,
-  },
+  Listing: Listing.fields,
   Nothing: {},
 });
 
@@ -142,6 +143,7 @@ export const Model = Schema.Struct({
   draftSearch: Schema.String,
   filters: Filters,
   generation: Schema.Finite,
+  intel: IntelState,
   job: JobState,
   jobs: JobsState,
   listing: ListingState,
