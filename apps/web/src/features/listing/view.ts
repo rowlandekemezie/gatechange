@@ -1,5 +1,5 @@
 import { roleLevels } from "@rat-stack/core/contracts";
-import type { JobValue } from "@rat-stack/core/contracts";
+import type { JobValue, ListedJobValue } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
@@ -49,6 +49,7 @@ const backLink = (h: H, route: ListingRouteValue): Html =>
 const everyRoleOf = (route: ListingRouteValue, jobs: readonly JobValue[]) =>
   Schema.is(Route.Company)(route)
     ? boardUrl({
+        ...defaultFilters,
         maxAgeDays: 30,
         regionGroups,
         roles: roleLevels,
@@ -83,7 +84,7 @@ const loadedView = (
   h: H,
   route: ListingRouteValue,
   generatedAt: number,
-  jobs: readonly JobValue[],
+  jobs: readonly ListedJobValue[],
   total: number
 ): Html =>
   Array.isReadonlyArrayEmpty(jobs)

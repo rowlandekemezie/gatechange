@@ -54,10 +54,13 @@ const fixture = Effect.gen(function* fixture() {
       JobStore,
       JobStore.of({
         claimIngest: unserved("claimIngest"),
+        claimNeurons: unserved("claimNeurons"),
         feedStates: Effect.die("feedStates is not served here"),
         find: (id) =>
           Effect.succeed(
-            Option.fromNullishOr(board.find((row) => row.id === id))
+            Option.fromNullishOr(board.find((row) => row.id === id)).pipe(
+              Option.map((row) => ({ ...row, enrichment: null }))
+            )
           ),
         historyOf: unserved("historyOf"),
         list: (_query, _now, sources) => {
@@ -66,17 +69,22 @@ const fixture = Effect.gen(function* fixture() {
           const jobs = served(sources).map((row) => ({
             ...row,
             daysOpen: 0,
+            enrichment: null,
             reposts: 0,
           }));
 
           return Effect.succeed({ jobs, total: jobs.length });
         },
+        neuronsClaimed: unserved("neuronsClaimed"),
         pruneOlderThan: unserved("pruneOlderThan"),
         recordFeedFailure: unserved("recordFeedFailure"),
+        recordNeuronsUsed: unserved("recordNeuronsUsed"),
         recordRun: unserved("recordRun"),
         recordSightings: unserved("recordSightings"),
+        recordSkip: unserved("recordSkip"),
         releaseIngest: unserved("releaseIngest"),
         replaceFeed: unserved("replaceFeed"),
+        saveEnrichment: unserved("saveEnrichment"),
         stats: (_now, sources) => {
           countedSources.push(sources);
 
@@ -90,6 +98,7 @@ const fixture = Effect.gen(function* fixture() {
             roles: [],
           });
         },
+        unenrichedListings: unserved("unenrichedListings"),
       })
     ),
     Layer.succeed(

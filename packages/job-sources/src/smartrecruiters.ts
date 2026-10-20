@@ -13,21 +13,19 @@ const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
 const OptionalBoolean = Schema.optional(Schema.NullOr(Schema.Boolean));
 
+export const SmartRecruitersLocation = Schema.Struct({
+  city: OptionalString,
+  country: OptionalString,
+  fullLocation: OptionalString,
+  hybrid: OptionalBoolean,
+  region: OptionalString,
+  remote: OptionalBoolean,
+});
+
 const SmartRecruitersPosting = Schema.Struct({
   company: Schema.Struct({ identifier: Schema.NonEmptyString }),
   id: Schema.NonEmptyString,
-  location: Schema.optional(
-    Schema.NullOr(
-      Schema.Struct({
-        city: OptionalString,
-        country: OptionalString,
-        fullLocation: OptionalString,
-        hybrid: OptionalBoolean,
-        region: OptionalString,
-        remote: OptionalBoolean,
-      })
-    )
-  ),
+  location: Schema.optional(Schema.NullOr(SmartRecruitersLocation)),
   name: Schema.String,
   releasedDate: OptionalString,
 });
@@ -41,12 +39,14 @@ const PostingPage = Schema.Struct({
 
 const PostingId = Schema.Struct({ id: Schema.String });
 
-const workplaceOf = (job: SmartRecruitersPostingValue): ArrangementValue => {
-  if (job.location?.remote === true) {
+export const smartRecruitersWorkplaceOf = (
+  location: typeof SmartRecruitersLocation.Type | null | undefined
+): ArrangementValue => {
+  if (location?.remote === true) {
     return "Remote";
   }
 
-  return job.location?.hybrid === true ? "Hybrid" : "Unspecified";
+  return location?.hybrid === true ? "Hybrid" : "Unspecified";
 };
 
 const pageUrl = (slug: string, offset: number) =>
@@ -66,7 +66,7 @@ const postingOf = (job: SmartRecruitersPostingValue): PostingValue => ({
   salary: null,
   title: job.name,
   url: `https://jobs.smartrecruiters.com/${encodeURIComponent(job.company.identifier)}/${encodeURIComponent(job.id)}`,
-  workplace: workplaceOf(job),
+  workplace: smartRecruitersWorkplaceOf(job.location),
 });
 
 const readAllPages = (feed: string, slug: string) =>

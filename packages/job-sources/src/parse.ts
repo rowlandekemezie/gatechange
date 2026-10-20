@@ -88,25 +88,135 @@ export const periodOf = (value: string | null | undefined): string | null =>
   );
 
 const entities: readonly (readonly [RegExp, string])[] = [
-  [/&#x2F;/gu, "/"],
-  [/&#x27;/gu, "'"],
-  [/&#39;/gu, "'"],
   [/&quot;/gu, '"'],
   [/&gt;/gu, ">"],
   [/&lt;/gu, "<"],
   [/&nbsp;/gu, " "],
+  [/&mdash;/gu, "—"],
+  [/&ndash;/gu, "–"],
+  [/&minus;/gu, "-"],
+  [/&euro;/gu, "€"],
+  [/&pound;/gu, "£"],
+  [/&yen;/gu, "¥"],
+  [/&rsquo;/gu, "’"],
+  [/&lsquo;/gu, "‘"],
+  [/&rdquo;/gu, "”"],
+  [/&ldquo;/gu, "“"],
+  [/&hellip;/gu, "…"],
+  [/&bull;/gu, "•"],
   [/&amp;/gu, "&"],
 ];
 
-export const textOfHtml = (html: string): string => {
-  let text = html.replaceAll(/<[^>]*>/gu, " ");
+const characterOf = (entity: string, code: number) =>
+  code <= 0x10_ff_ff ? String.fromCodePoint(code) : entity;
+
+export const MAX_HTML_CHARS = 200_000;
+
+const blockTag =
+  /<\/?(?:p|div|li|ul|ol|br|h[1-6]|tr|table|section|article|blockquote|hr)\b[^<>]*>/giu;
+
+const htmlTag = /<(?<closing>\/?)(?<name>[a-z][\w-]*)(?![\w-])[^<>]*>/giu;
+
+const hiddenAttribute = /\shidden(?:[\s=/>]|$)/iu;
+
+const styleAttribute =
+  /\sstyle\s*=\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)'|(?<bare>[^\s"'>]+))/iu;
+
+const hiddenStyle =
+  /\b(?:display\s*:\s*none|visibility\s*:\s*hidden|(?:font-size|opacity)\s*:\s*(?:0+(?:\.0*)?|\.0+)(?![\d.])[a-z%]*\s*(?:[;!]|$))/iu;
+
+const hiddenByMarkup = (tag: string) => {
+  const style = styleAttribute.exec(tag)?.groups;
+
+  return (
+    hiddenAttribute.test(tag) ||
+    hiddenStyle.test(style?.double ?? style?.single ?? style?.bare ?? "")
+  );
+};
+
+const unreadTags: ReadonlySet<string> = new Set([
+  "noscript",
+  "script",
+  "style",
+  "template",
+]);
+
+const voidTags: ReadonlySet<string> = new Set([
+  "area",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+
+const opensHiddenElement = (tag: string, name: string) =>
+  !voidTags.has(name) &&
+  !tag.endsWith("/>") &&
+  (unreadTags.has(name) || hiddenByMarkup(tag));
+
+export const withoutHiddenElements = (html: string): string => {
+  const shown: string[] = [];
+  let shownFrom = 0;
+  let hidden: { depth: number; name: string } | null = null;
+
+  for (const tag of html.matchAll(htmlTag)) {
+    const name = (tag.groups?.name ?? "").toLowerCase();
+    const closing = tag.groups?.closing === "/";
+
+    if (hidden === null) {
+      if (!closing && opensHiddenElement(tag[0], name)) {
+        shown.push(html.slice(shownFrom, tag.index));
+        hidden = { depth: 1, name };
+      }
+    } else if (name === hidden.name) {
+      hidden.depth += closing ? -1 : 1;
+
+      if (hidden.depth === 0) {
+        shownFrom = tag.index + tag[0].length;
+        hidden = null;
+      }
+    }
+  }
+
+  if (hidden === null) {
+    shown.push(html.slice(shownFrom));
+  }
+
+  return shown.join(" ");
+};
+
+export const linesOfHtml = (html: string): string => {
+  let text = withoutHiddenElements(html.slice(0, MAX_HTML_CHARS))
+    .replaceAll(/\s+/gu, " ")
+    .replaceAll(blockTag, "\n")
+    .replaceAll(/<[^<>]*>/gu, " ")
+    .replaceAll(/&#x(?<hex>[\da-f]+);/giu, (entity, hex: string) =>
+      characterOf(entity, Number.parseInt(hex, 16))
+    )
+    .replaceAll(/&#(?<decimal>\d+);/gu, (entity, decimal: string) =>
+      characterOf(entity, Number(decimal))
+    );
 
   for (const [pattern, replacement] of entities) {
     text = text.replaceAll(pattern, replacement);
   }
 
-  return text.replaceAll(/\s+/gu, " ").trim();
+  return text
+    .split("\n")
+    .map((line) => line.replaceAll(/\s+/gu, " ").trim())
+    .filter((line) => line !== "")
+    .join("\n");
 };
+
+export const textOfHtml = (html: string): string =>
+  linesOfHtml(html).replaceAll(/\s+/gu, " ").trim();
 
 export const nonEmpty = (
   values: readonly (string | null | undefined)[]

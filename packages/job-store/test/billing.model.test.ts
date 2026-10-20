@@ -14,8 +14,8 @@ import {
   FREE,
   JobStore,
   listJobs,
-  paidFeaturesAllowed,
   ProEntitlement,
+  ServedSources,
   Viewer,
 } from "@rat-stack/core";
 import type {
@@ -67,8 +67,17 @@ const addMember = (id: AccountIdValue) =>
     ])
   );
 
+const sandbox = {
+  livemode: false,
+  prices: {
+    Monthly: "price_1USIFA0ZnafJYNlYo9bbbD97",
+    Quarterly: "price_sandbox_quarterly",
+    Yearly: "price_sandbox_yearly",
+  },
+};
+
 const deliver = (payload: string) =>
-  billingChangeOf(payload).pipe(Effect.flatMap(applyBillingChange));
+  billingChangeOf(sandbox, payload).pipe(Effect.flatMap(applyBillingChange));
 
 const entitlementAt = (now: number) =>
   BillingStore.use((store) => store.subscriptionsOf(ada)).pipe(
@@ -209,7 +218,6 @@ const board: readonly JobValue[] = [
   seed({
     feed: "greenhouse:acme",
     id: "gh-1",
-    salary: "$250k",
     source: "Greenhouse",
   }),
   seed({ feed: "greenhouse:acme", id: "gh-2", source: "Greenhouse" }),
@@ -230,6 +238,9 @@ const board: readonly JobValue[] = [
   seed({
     feed: "hn:hiring",
     id: "hn-1",
+    location: "Vancouver, BC",
+    region: "BritishColumbia",
+    role: "EngineeringManager",
     source: "HackerNews",
     title: "Engineering Manager",
   }),
@@ -241,8 +252,10 @@ const everything: JobQueryValue = {
   offset: 0,
   regions: [],
   roles: [],
+  salaryFloor: null,
   salaryListed: false,
   search: "",
+  seniorities: [],
   sort: "Newest",
 };
 
@@ -285,6 +298,27 @@ describe("listJobs for Free and Pro viewers", () => {
             )
           );
 
+          yield* JobStore.use((store) =>
+            Effect.forEach(
+              ["gh-1", "gh-2", "rm-1"],
+              (id) =>
+                store.saveEnrichment(id, {
+                  enrichedAt: NOW,
+                  model: "test-model",
+                  remotePolicy: "Remote",
+                  reportsTo: null,
+                  salary: {
+                    currency: "USD",
+                    max: id === "gh-1" ? 250_000 : 180_000,
+                    min: 150_000,
+                  },
+                  seniority: id === "gh-1" ? "Director" : "Manager",
+                  teamSize: null,
+                }),
+              { discard: true }
+            )
+          );
+
           yield* BillingStore.use((store) =>
             store.applySubscription({
               account: pro.id,
@@ -299,31 +333,88 @@ describe("listJobs for Free and Pro viewers", () => {
 
           const salaried = { ...everything, salaryListed: true };
 
-          const [anonymous, freeRows, proRows, freeFiltered, proFiltered] =
-            yield* Effect.all([
-              rowsFor(Viewer.Anonymous(), everything),
-              rowsFor(Viewer.Member({ account: free }), everything),
-              rowsFor(Viewer.Member({ account: pro }), everything),
-              rowsFor(Viewer.Member({ account: free }), salaried),
-              rowsFor(Viewer.Member({ account: pro }), salaried),
-            ]);
+          const [
+            anonymous,
+            freeRows,
+            proRows,
+            publicFiltered,
+            freeFiltered,
+            proFiltered,
+          ] = yield* Effect.all([
+            rowsFor(Viewer.Anonymous(), everything),
+            rowsFor(Viewer.Member({ account: free }), everything),
+            rowsFor(Viewer.Member({ account: pro }), everything),
+            rowsFor(Viewer.Anonymous(), salaried),
+            rowsFor(Viewer.Member({ account: free }), salaried),
+            rowsFor(Viewer.Member({ account: pro }), salaried),
+          ]);
 
           expect(anonymous.toSorted()).toEqual(
             board.map((job) => job.id).toSorted()
           );
           expect(freeRows).toEqual(anonymous);
           expect(proRows).toEqual(anonymous);
+          expect(publicFiltered).toEqual(anonymous);
           expect(freeFiltered).toEqual(anonymous);
-          expect(proFiltered.toSorted()).toEqual(
-            board
-              .flatMap((job) =>
-                job.salary !== null && paidFeaturesAllowed(job.source)
-                  ? [job.id]
-                  : []
-              )
-              .toSorted()
+          expect(proFiltered.toSorted()).toEqual(["gh-1", "gh-2", "jb-1"]);
+
+          const proViewer = Viewer.Member({ account: pro });
+
+          const servedSalaries = yield* rowsFor(proViewer, salaried).pipe(
+            Effect.provideService(ServedSources, ["Greenhouse"])
           );
-          expect(proFiltered.toSorted()).toEqual(["gh-1", "jb-1"]);
+
+          const forbiddenSalaries = yield* rowsFor(proViewer, salaried).pipe(
+            Effect.provideService(ServedSources, ["Remotive"])
+          );
+
+          expect(servedSalaries.toSorted()).toEqual(["gh-1", "gh-2"]);
+          expect(forbiddenSalaries).toEqual([]);
+
+          const enrichmentFilters: readonly JobQueryValue[] = [
+            {
+              ...everything,
+              salaryFloor: { amount: 200_000, currency: "USD" },
+            },
+            { ...everything, seniorities: ["Director"] },
+            {
+              ...everything,
+              salaryFloor: { amount: 200_000, currency: "USD" },
+              salaryListed: true,
+              seniorities: ["Director"],
+            },
+          ];
+
+          for (const query of enrichmentFilters) {
+            const [publicRows, memberRows, paidRows] = yield* Effect.all([
+              rowsFor(Viewer.Anonymous(), query),
+              rowsFor(Viewer.Member({ account: free }), query),
+              rowsFor(Viewer.Member({ account: pro }), query),
+            ]);
+
+            expect(publicRows).toEqual(anonymous);
+            expect(memberRows).toEqual(anonymous);
+            expect(paidRows).toEqual(["gh-1"]);
+          }
+
+          const freeQueries: readonly (readonly [
+            JobQueryValue,
+            readonly string[],
+          ])[] = [
+            [{ ...everything, regions: ["BritishColumbia"] }, ["hn-1"]],
+            [{ ...everything, roles: ["EngineeringManager"] }, ["hn-1"]],
+            [{ ...everything, search: "gh-2" }, ["gh-2"]],
+          ];
+
+          for (const viewer of [
+            Viewer.Anonymous(),
+            Viewer.Member({ account: free }),
+            Viewer.Member({ account: pro }),
+          ]) {
+            for (const [query, expected] of freeQueries) {
+              expect(yield* rowsFor(viewer, query)).toEqual(expected);
+            }
+          }
         })
       )
   );

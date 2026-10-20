@@ -42,8 +42,11 @@ describe("getJob", () => {
     Effect.gen(function* listedJob() {
       const found = yield* lookUp(listed.id);
 
-      expect(found).toStrictEqual(Option.some(listed));
-      expect(encodeOutput(found)).toStrictEqual(listed);
+      expect(found).toStrictEqual(Option.some({ ...listed, enrichment: null }));
+      expect(encodeOutput(found)).toStrictEqual({
+        ...listed,
+        enrichment: null,
+      });
     })
   );
 
