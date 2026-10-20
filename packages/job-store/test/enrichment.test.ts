@@ -745,6 +745,24 @@ describe("claimNeurons", () => {
   );
 
   it.effect(
+    "defensive over-release clamps the held neuron ledger at zero",
+    () =>
+      withStore(
+        Effect.gen(function* clampReconciliation() {
+          const store = yield* JobStore;
+          const day = Math.floor(NOW / DAY_MILLIS);
+
+          yield* store.claimNeurons({ budget: 1000, day, neurons: 10 });
+          yield* store.recordNeuronsUsed({ claimed: 100, day, neurons: 20 });
+
+          expect(yield* ledgerOf).toStrictEqual([
+            { claimed: 0, day, used: 20 },
+          ]);
+        })
+      )
+  );
+
+  it.effect(
     "concurrent claims and reconciles over a store that yields between statements leave claimed equal to the neurons used",
     () =>
       withStore(

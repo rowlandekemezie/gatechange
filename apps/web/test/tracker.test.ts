@@ -291,6 +291,7 @@ const serverWith = (imports: unknown[]) =>
   JobQueries.of({
     agentTokens: Effect.die("unused"),
     companyIntel: () => Effect.die("unused"),
+    companyJobs: () => Effect.die("unused"),
     deleteSearch: () => Effect.die("unused"),
     getJob: () => Effect.die("unused"),
     importShortlist: (jobs) => {
