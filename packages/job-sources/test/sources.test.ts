@@ -52,12 +52,48 @@ describe("company boards", () => {
               jobs: [
                 {
                   absolute_url: "https://boards.greenhouse.io/acme/jobs/42",
+                  first_published: "2025-10-09T08:53:20.000Z",
                   id: 42,
                   location: { name: "Remote - Canada" },
                   title: "Engineering Manager, Payments",
                   updated_at: "2025-10-09T08:53:20.000Z",
                 },
                 { id: 43, title: "Missing a URL" },
+              ],
+            })
+          )
+        )
+      )
+  );
+
+  it.effect.each([
+    { expected: null, first_published: undefined },
+    { expected: null, first_published: null },
+    { expected: null, first_published: "" },
+    { expected: null, first_published: "not a date" },
+    {
+      expected: 1_760_000_000_000,
+      first_published: "2025-10-09T08:53:20.000Z",
+    },
+  ])(
+    "Greenhouse publication dates preserve missing and unreadable facts %#",
+    ({ first_published, expected }) =>
+      Effect.gen(function* publicationDate() {
+        const [posting] = yield* greenhousePostings("greenhouse:acme", "acme");
+
+        expect(posting?.postedAt).toBe(expected);
+      }).pipe(
+        Effect.provide(
+          respondWith(
+            JSON.stringify({
+              jobs: [
+                {
+                  absolute_url: "https://boards.greenhouse.io/acme/jobs/42",
+                  first_published,
+                  id: 42,
+                  title: "Engineering Manager",
+                  updated_at: "2026-10-09T08:53:20.000Z",
+                },
               ],
             })
           )
