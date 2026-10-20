@@ -54,7 +54,7 @@ export const FetchJob = Command.define("FetchJob", {
 export const FetchListing = Command.define("FetchListing", {
   args: { route: ListingRoute },
   execute: ({ route }) =>
-    JobQueries.use((queries) => collectListing(queries.listJobs, route)).pipe(
+    JobQueries.use((queries) => collectListing(queries, route)).pipe(
       Effect.match({
         onFailure: (failure) =>
           Message.FailedFetchListing({ message: failureText(failure), route }),
@@ -185,8 +185,16 @@ const trackerFailureText = (failure: { readonly _tag: string }) => {
     return "Your session ended. Sign in again to keep tracking.";
   }
 
+  if (Predicate.isTagged(failure, "TrackerJobIdTooLong")) {
+    return "This job’s identifier exceeds the 200-byte limit for new tracker entries. You can still open its original posting.";
+  }
+
+  if (Predicate.isTagged(failure, "TrackerStorageFull")) {
+    return "Your tracker has reached its storage limit. Shorten some notes or remove jobs you no longer need, then try again.";
+  }
+
   if (Predicate.isTagged(failure, "TrackerFull")) {
-    return `Your tracker holds ${TRACKER_LIMIT} jobs, the most it can. Remove a job you no longer need, then add this one.`;
+    return `Your tracker can hold up to ${TRACKER_LIMIT} jobs. Remove jobs you no longer need, then try again.`;
   }
 
   return Predicate.isTagged(failure, "JobStoreUnavailable")
@@ -232,24 +240,42 @@ export const SyncTracker = Command.define("SyncTracker", {
 export const ImportStoredShortlist = Command.define("ImportStoredShortlist", {
   args: { revision: Schema.Finite },
   execute: ({ revision }) =>
-    JobQueries.use((queries) =>
-      Effect.gen(function* importStoredShortlist() {
-        const requests = importRequestsOf(storedShortlist());
+    JobQueries.use((queries) => {
+      const requests = importRequestsOf(storedShortlist());
+      let completed = 0;
 
+      return Effect.gen(function* importStoredShortlist() {
         if (!Array.isReadonlyArrayNonEmpty(requests)) {
           return { jobs: yield* queries.trackedJobs, waiting: 0 };
         }
 
         const imported = yield* Effect.forEach(
           Array.chunksOf(requests, MAX_IMPORTED_JOBS),
-          queries.importShortlist
+          (chunk) =>
+            queries.importShortlist(chunk).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  completed += chunk.length;
+                })
+              )
+            )
         );
 
         yield* forgetStoredShortlist;
 
         return { jobs: Array.lastNonEmpty(imported), waiting: 0 };
-      })
-    ).pipe(syncReply(revision)),
+      }).pipe(
+        Effect.match({
+          onFailure: (failure) =>
+            Message.FailedSyncTracker({
+              message: `Confirmed ${completed} of ${requests.length} browser jobs in your tracker. ${requests.length - completed} remain unconfirmed. Your browser list is kept; retrying skips jobs already tracked. ${trackerFailureText(failure)}`,
+              revision,
+            }),
+          onSuccess: ({ jobs, waiting }) =>
+            Message.CompletedSyncTracker({ jobs, revision, waiting }),
+        })
+      );
+    }),
   messages: [Message.CompletedSyncTracker, Message.FailedSyncTracker],
 });
 

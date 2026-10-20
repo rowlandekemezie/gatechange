@@ -185,6 +185,7 @@ export {
   saveSearch,
   noteTrackedJob,
   companyIntel,
+  companyJobs,
   setInstantAlerts,
   signInOptions,
   startCheckout,
@@ -202,19 +203,27 @@ export {
   Stage,
   stages,
   TRACKER_LIMIT,
+  TRACKER_BYTE_LIMIT,
+  MAX_NEW_TRACKED_JOB_ID_BYTES,
   TrackedJob,
   TrackedJobs,
   TrackerStore,
   TrackRequest,
+  TrackOrMoveRequest,
 } from "./tracker.js";
 
 export { TrackerFull } from "./tracker-full.js";
+
+export { TrackerJobIdTooLong } from "./tracker-job-id-too-long.js";
+
+export { TrackerStorageFull } from "./tracker-storage-full.js";
 
 export type {
   JobSnapshotValue,
   StageValue,
   TrackedJobValue,
   TrackRequestValue,
+  TrackOrMoveRequestValue,
 } from "./tracker.js";
 
 export {
@@ -294,6 +303,7 @@ export {
   revokeAgentTokenContract,
   BoardStats,
   boardStatsContract,
+  companyJobsContract,
   currencies,
   Currency,
   DEFAULT_AGE_DAYS,
@@ -380,6 +390,7 @@ export {
   ModelAnswer,
   moneyRangesIn,
   SalaryPeriod,
+  salaryDisagreesWithText,
   skipHandling,
   SkipReason,
   sweepLimitOf,
@@ -454,3 +465,7 @@ export type {
   TrendWeekValue,
   TypicalBandValue,
 } from "./company-intel.js";
+
+export { CompanyJobs, COMPANY_LISTING_ROWS } from "./company-jobs.js";
+
+export type { CompanyJobsValue } from "./company-jobs.js";

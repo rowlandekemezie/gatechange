@@ -3,6 +3,8 @@ import type { AccountIdValue } from "@rat-stack/core";
 import { Effect, Option, pipe, Redacted, Result, Schema } from "effect";
 import { Base64Url } from "effect/encoding";
 
+const INITIAL_VERSION = "1";
+
 const KEY_PURPOSE = "rat-stack digest unsubscribe key v1";
 
 const encoder = new TextEncoder();
@@ -38,19 +40,29 @@ const derivedKey = Effect.fn("unsubscribeKey")(function* derive(
 
 export const unsubscribeToken = Effect.fn("unsubscribeToken")(function* token(
   secret: Redacted.Redacted,
-  account: AccountIdValue
+  account: AccountIdValue,
+  version: string = INITIAL_VERSION
 ) {
-  const signature = yield* sign(yield* derivedKey(secret), account);
+  const signature = yield* sign(
+    yield* derivedKey(secret),
+    `${version}.${account}`
+  );
 
-  return `${Base64Url.encode(account)}.${Base64Url.encode(signature)}`;
+  return `${version}.${Base64Url.encode(account)}.${Base64Url.encode(signature)}`;
 });
 
 const decodeAccount = Schema.decodeUnknownOption(AccountId);
 
-const partsOf = (token: string) => {
-  const [encodedAccount, encodedSignature, ...rest] = token.split(".");
+const partsOf = (token: string, expectedVersion: string) => {
+  const fields = token.split(".");
+  const legacy = fields.length === 2 && expectedVersion === "1";
+
+  const [version, encodedAccount, encodedSignature, ...rest] = legacy
+    ? ["1", ...fields]
+    : fields;
 
   if (
+    version !== expectedVersion ||
     encodedAccount === undefined ||
     encodedSignature === undefined ||
     rest.length > 0
@@ -64,21 +76,25 @@ const partsOf = (token: string) => {
     Option.flatMap((account) =>
       pipe(
         Result.getSuccess(Base64Url.decode(encodedSignature)),
-        Option.map((signature) => ({ account, signature }))
+        Option.map((signature) => ({ account, legacy, signature, version }))
       )
     )
   );
 };
 
 export const verifyUnsubscribeToken = Effect.fn("verifyUnsubscribeToken")(
-  function* verify(secret: Redacted.Redacted, token: string) {
-    const parts = partsOf(token);
+  function* verify(
+    secret: Redacted.Redacted,
+    token: string,
+    version: string = INITIAL_VERSION
+  ) {
+    const parts = partsOf(token, version);
 
     if (Option.isNone(parts)) {
       return Option.none<AccountIdValue>();
     }
 
-    const { account, signature } = parts.value;
+    const { account, legacy, signature } = parts.value;
     const key = yield* derivedKey(secret);
 
     const valid = yield* Effect.promise(
@@ -88,7 +104,7 @@ export const verifyUnsubscribeToken = Effect.fn("verifyUnsubscribeToken")(
           "HMAC",
           key,
           new Uint8Array(signature),
-          encoder.encode(account)
+          encoder.encode(legacy ? account : `${version}.${account}`)
         )
     );
 

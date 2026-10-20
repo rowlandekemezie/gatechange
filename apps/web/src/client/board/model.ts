@@ -5,7 +5,7 @@ import {
   ListedJob,
   Stage,
   TrackedJob,
-  TrackRequest,
+  TrackOrMoveRequest,
 } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
@@ -129,7 +129,7 @@ export type RemoteTrackerValue = Extract<
 
 export const TrackerChange = defineTaggedUnion({
   Note: { jobId: Schema.String, notes: Schema.String },
-  Track: { job: TrackRequest },
+  Track: { job: TrackOrMoveRequest },
   Untrack: { jobId: Schema.String },
 });
 

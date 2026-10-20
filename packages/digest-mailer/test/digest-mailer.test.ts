@@ -198,6 +198,48 @@ describe("digest email", () => {
       })
   );
 
+  it.effect(
+    "does not infer a refundable refusal from an uncertain error message",
+    () =>
+      Effect.gen(function* uncertain() {
+        const failure = yield* Effect.flip(
+          capture(
+            Effect.fail({
+              message:
+                "connection failed after E_DAILY_LIMIT_EXCEEDED appeared in diagnostics",
+            })
+          ).mailer.send(digest([job("x")]))
+        );
+
+        expect(failure.quotaExhausted).toBe(false);
+      })
+  );
+
+  it.effect.each<readonly [string, boolean]>([
+    ["E_DAILY_LIMIT_EXCEEDED", true],
+    ["E_RECIPIENT_SUPPRESSED", false],
+    ["recipient.privacy@example.com", false],
+  ])(
+    "does not expose provider messages or arbitrary codes for %s",
+    ([code, quotaExhausted]) =>
+      Effect.gen(function* safeDiagnostic() {
+        const failure = yield* capture(
+          Effect.fail({
+            cause: { code },
+            message:
+              "Delivery to recipient.privacy@example.com failed; token=private-provider-detail",
+          })
+        )
+          .mailer.send(digest([job("privacy")]))
+          .pipe(Effect.flip);
+
+        expect(failure.quotaExhausted).toBe(quotaExhausted);
+        expect(failure.message).not.toContain("recipient.privacy@example.com");
+        expect(failure.message).not.toContain("private-provider-detail");
+        expect(failure.message).not.toContain("token=");
+      })
+  );
+
   it.effect("reports quota errors from Email Sending so the run can stop", () =>
     Effect.gen(function* quota() {
       const daily = yield* Effect.flip(failingSend("E_DAILY_LIMIT_EXCEEDED"));
@@ -219,9 +261,9 @@ describe("unsubscribe token", () => {
   it.effect("needs no login and identifies only its own account", () =>
     Effect.gen(function* roundTrip() {
       const token = yield* unsubscribeToken(SECRET, ada);
-      const [account = "", signature = ""] = token.split(".");
+      const [version = "", account = "", signature = ""] = token.split(".");
       const bob = yield* unsubscribeToken(SECRET, AccountId.make("user_bob"));
-      const [bobAccount = ""] = bob.split(".");
+      const [, bobAccount = ""] = bob.split(".");
 
       expect(yield* verifyUnsubscribeToken(SECRET, token)).toEqual(
         Option.some(ada)
@@ -230,7 +272,10 @@ describe("unsubscribe token", () => {
         Option.none()
       );
       expect(
-        yield* verifyUnsubscribeToken(SECRET, `${bobAccount}.${signature}`)
+        yield* verifyUnsubscribeToken(
+          SECRET,
+          `${version}.${bobAccount}.${signature}`
+        )
       ).toEqual(Option.none());
       expect(
         yield* Effect.forEach(
@@ -246,6 +291,36 @@ describe("unsubscribe token", () => {
         )
       ).toEqual(Array.makeBy(6, () => Option.none()));
     })
+  );
+});
+
+describe("unsubscribe token revocation", () => {
+  it.effect(
+    "changing the token version revokes earlier links with the same auth secret",
+    () =>
+      Effect.gen(function* revoked() {
+        const legacy =
+          "dXNlcl9hZGE.Qd27NDlQKl1-TUUhdYPw4pZ06c5iq0tAe2biMYQLKN4";
+
+        const old = yield* unsubscribeToken(SECRET, ada, "1");
+        const current = yield* unsubscribeToken(SECRET, ada, "2");
+
+        expect(yield* verifyUnsubscribeToken(SECRET, legacy)).toEqual(
+          Option.some(ada)
+        );
+        expect(yield* verifyUnsubscribeToken(SECRET, legacy, "2")).toEqual(
+          Option.none()
+        );
+        expect(yield* verifyUnsubscribeToken(SECRET, old, "2")).toEqual(
+          Option.none()
+        );
+        expect(yield* verifyUnsubscribeToken(SECRET, current, "2")).toEqual(
+          Option.some(ada)
+        );
+        expect(
+          yield* verifyUnsubscribeToken(SECRET, old.replace(/^1/u, "2"), "2")
+        ).toEqual(Option.none());
+      })
   );
 });
 

@@ -34,11 +34,19 @@ export interface DigestMailerSettings {
   readonly send: (email: DigestEmail) => Effect.Effect<unknown, SendFailure>;
   readonly sender: string;
   readonly siteOrigin: string;
+  readonly unsubscribeTokenVersion?: string;
 }
 
 export const QUOTA_ERROR_CODES: ReadonlySet<string> = new Set([
   "E_DAILY_LIMIT_EXCEEDED",
   "E_RATE_LIMIT_EXCEEDED",
+]);
+
+const DIAGNOSTIC_CODES: ReadonlySet<string> = new Set([
+  ...QUOTA_ERROR_CODES,
+  "E_RECIPIENT_SUPPRESSED",
+  "E_SENDER_DOMAIN_NOT_AVAILABLE",
+  "E_SENDER_NOT_VERIFIED",
 ]);
 
 const codeOf = (failure: SendFailure) =>
@@ -48,13 +56,16 @@ const codeOf = (failure: SendFailure) =>
     : "";
 
 export const isQuotaFailure = (failure: SendFailure) =>
-  QUOTA_ERROR_CODES.has(codeOf(failure)) ||
-  [...QUOTA_ERROR_CODES].some((code) => failure.message.includes(code));
+  QUOTA_ERROR_CODES.has(codeOf(failure));
 
 export const makeDigestMailer = (settings: DigestMailerSettings) =>
   DigestMailer.of({
     send: (digest) =>
-      unsubscribeToken(settings.secret, digest.account).pipe(
+      unsubscribeToken(
+        settings.secret,
+        digest.account,
+        settings.unsubscribeTokenVersion
+      ).pipe(
         Effect.flatMap((token) =>
           settings.send(
             digestEmail(settings.sender, digest, {
@@ -66,9 +77,9 @@ export const makeDigestMailer = (settings: DigestMailerSettings) =>
         Effect.mapError(
           (failure) =>
             new DigestMailerUnavailable({
-              message: `${codeOf(failure)} ${failure.message}`
-                .trim()
-                .slice(0, 500),
+              message: DIAGNOSTIC_CODES.has(codeOf(failure))
+                ? `Email sending failed (${codeOf(failure)})`
+                : "Email sending failed",
               quotaExhausted: isQuotaFailure(failure),
             })
         ),

@@ -22,6 +22,7 @@ import {
   agentTokensContract,
   boardStatsContract,
   companyIntelContract,
+  companyJobsContract,
   deleteSearchContract,
   getJobContract,
   importShortlistContract,
@@ -45,10 +46,13 @@ import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { JobStore } from "./job-store.js";
 import type { JobQueryValue } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
+import { PostingFeeds } from "./posting-feeds.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
 import { ServedSources } from "./served-sources.js";
 import type { TrackerFull } from "./tracker-full.js";
+import type { TrackerJobIdTooLong } from "./tracker-job-id-too-long.js";
+import type { TrackerStorageFull } from "./tracker-storage-full.js";
 import { TrackerStore } from "./tracker.js";
 
 const viewerIsPro = CurrentViewer.pipe(
@@ -84,11 +88,27 @@ export const listJobs = implement(listJobsContract, (query) =>
   })
 );
 
+export const companyJobs = implement(companyJobsContract, ({ slug }) =>
+  Effect.gen(function* companyJobsHandler() {
+    const store = yield* JobStore;
+    const generatedAt = yield* Clock.currentTimeMillis;
+    const listing = yield* store.companyJobs(slug, generatedAt);
+
+    return { ...listing, generatedAt };
+  })
+);
+
 export const boardStats = implement(boardStatsContract, () =>
   Effect.gen(function* boardStatsHandler() {
     const store = yield* JobStore;
     const generatedAt = yield* Clock.currentTimeMillis;
-    const stats = yield* store.stats(generatedAt, yield* ServedSources);
+    const feeds = yield* PostingFeeds;
+
+    const stats = yield* store.stats(
+      generatedAt,
+      yield* ServedSources,
+      feeds.catalog.map((feed) => feed.key)
+    );
 
     return { ...stats, generatedAt };
   })
@@ -146,7 +166,13 @@ export const deleteSearch = implement(deleteSearchContract, ({ id }) =>
   })
 );
 
-const changeTracker = <E extends JobStoreUnavailable | TrackerFull>(
+const changeTracker = <
+  E extends
+    | JobStoreUnavailable
+    | TrackerFull
+    | TrackerStorageFull
+    | TrackerJobIdTooLong,
+>(
   change: (
     store: TrackerStore["Service"],
     owner: AccountIdValue,
@@ -350,6 +376,7 @@ export const companyIntel = implement(companyIntelContract, ({ slug }) =>
 
 export const capabilities = [
   listJobs,
+  companyJobs,
   boardStats,
   getJob,
   account,

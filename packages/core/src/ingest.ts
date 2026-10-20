@@ -203,6 +203,15 @@ export const runIngest = Effect.fn("runIngest")(function* runIngest(
       )
     ),
     () => ingestDueFeeds(plan, startedAt),
-    () => store.releaseIngest(startedAt)
+    () =>
+      store
+        .releaseIngest(startedAt)
+        .pipe(
+          Effect.catchTag("JobStoreUnavailable", ({ operation }) =>
+            Effect.logWarning(
+              "ingest lease release failed; lease will expire"
+            ).pipe(Effect.annotateLogs({ operation, startedAt }))
+          )
+        )
   );
 });

@@ -103,19 +103,22 @@ export const makeAlertStore = Effect.gen(function* makeAlertStore() {
       .pipe(Effect.map(Array.map(searchOfRow)));
 
   return AlertStore.of({
-    claimDigest: (cadence, account, periodStart, now) =>
+    claimDigest: (cadence, account, periodStart, now, dailyLimit) =>
       sql
         .batch("claimDigest", [
           cadence === "Instant"
             ? statement(
                 `INSERT INTO instant_sends (account_id, window_start, status, claimed_at)
 SELECT ?, ?, 'Claimed', ?
-WHERE (SELECT COUNT(*) FROM instant_sends WHERE account_id = ? AND claimed_at > ?) < ?
+WHERE (SELECT COUNT(*) FROM instant_sends WHERE claimed_at >= ?) < ?
+  AND (SELECT COUNT(*) FROM instant_sends WHERE account_id = ? AND claimed_at > ?) < ?
 ON CONFLICT (account_id, window_start) DO NOTHING`,
                 [
                   account,
                   periodStart,
                   now,
+                  now - DAY_MILLIS,
+                  dailyLimit,
                   account,
                   now - DAY_MILLIS,
                   INSTANT_SENDS_PER_MEMBER_PER_DAY,
@@ -124,12 +127,15 @@ ON CONFLICT (account_id, window_start) DO NOTHING`,
             : statement(
                 `INSERT INTO alert_sends (account_id, period_start, status, claimed_at)
 SELECT ?, ?, 'Claimed', ?
-WHERE (SELECT COUNT(*) FROM alert_sends WHERE account_id = ? AND claimed_at > ?) < ?
+WHERE (SELECT COUNT(*) FROM alert_sends WHERE claimed_at >= ?) < ?
+  AND (SELECT COUNT(*) FROM alert_sends WHERE account_id = ? AND claimed_at > ?) < ?
 ON CONFLICT (account_id, period_start) DO NOTHING`,
                 [
                   account,
                   periodStart,
                   now,
+                  now - DAY_MILLIS,
+                  dailyLimit,
                   account,
                   now - WEEK_MILLIS,
                   RECIPIENT_SENDS_PER_WEEK,
@@ -148,24 +154,26 @@ ON CONFLICT (account_id, period_start) DO NOTHING`,
         ])
         .pipe(Effect.asVoid),
 
-    dueRecipients: (cadence, periodStart, now) =>
+    dueRecipients: (cadence, periodStart, now, account) =>
       sql
         .all(
           "dueRecipients",
           cadence === "Instant"
             ? statement(
                 `SELECT s.id, s.account_id, s.roles, s.regions, s.search, s.frequency, s.created_at, u.email,
-  MAX(i.enabled_at, COALESCE((SELECT MAX(a.sent_at) FROM instant_sends AS a WHERE a.account_id = s.account_id AND a.status = 'Sent'), 0)) AS last_sent_at
+  MAX(i.enabled_at, COALESCE((SELECT MAX(COALESCE(a.sent_at, a.claimed_at)) FROM instant_sends AS a WHERE a.account_id = s.account_id), 0)) AS last_sent_at
 FROM saved_searches AS s
 JOIN "user" AS u ON u.id = s.account_id
 JOIN instant_alerts AS i ON i.account_id = s.account_id
 WHERE u.emailVerified = 1
+  ${account === undefined ? "" : "AND s.account_id = ?"}
   AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes AS x WHERE x.account_id = s.account_id)
   AND NOT EXISTS (SELECT 1 FROM instant_sends AS a WHERE a.account_id = s.account_id AND a.window_start = ?)
   AND (SELECT COUNT(*) FROM instant_sends AS c WHERE c.account_id = s.account_id AND c.claimed_at > ?) < ?
   AND EXISTS (SELECT 1 FROM subscriptions AS b WHERE b.account_id = s.account_id AND b.period_end > ? AND b.status IN (${placeholders(GRANTING_STATUSES.length)}))
 ORDER BY s.account_id, s.created_at`,
                 [
+                  ...(account === undefined ? [] : [account]),
                   periodStart,
                   now - DAY_MILLIS,
                   INSTANT_SENDS_PER_MEMBER_PER_DAY,
@@ -175,13 +183,14 @@ ORDER BY s.account_id, s.created_at`,
               )
             : statement(
                 `SELECT s.id, s.account_id, s.roles, s.regions, s.search, s.frequency, s.created_at, u.email,
-  (SELECT MAX(a.sent_at) FROM alert_sends AS a WHERE a.account_id = s.account_id AND a.status = 'Sent') AS last_sent_at
+  (SELECT MAX(COALESCE(a.sent_at, a.claimed_at)) FROM alert_sends AS a WHERE a.account_id = s.account_id) AS last_sent_at
 FROM saved_searches AS s JOIN "user" AS u ON u.id = s.account_id
 WHERE u.emailVerified = 1
+  ${account === undefined ? "" : "AND s.account_id = ?"}
   AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes AS x WHERE x.account_id = s.account_id)
   AND NOT EXISTS (SELECT 1 FROM alert_sends AS a WHERE a.account_id = s.account_id AND a.period_start = ?)
 ORDER BY s.account_id, s.created_at`,
-                [periodStart]
+                [...(account === undefined ? [] : [account]), periodStart]
               ),
           RecipientRow
         )
