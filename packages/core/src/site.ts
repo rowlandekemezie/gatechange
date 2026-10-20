@@ -8,7 +8,7 @@ export const SITE_ZONE = "rowlandekemezie.com";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
 
-const SITE_WORKERS_SUBDOMAIN = "rowland-ekemezie";
+export const SITE_WORKERS_SUBDOMAIN = "rowland-ekemezie";
 
 const OWN_DOMAINS = [
   SITE_ZONE,
