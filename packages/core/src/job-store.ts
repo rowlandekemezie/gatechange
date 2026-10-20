@@ -1,14 +1,18 @@
 import { Context, Schema } from "effect";
 import type { Effect, Option } from "effect";
 
+import type { SkipReasonValue } from "./enrichment.js";
 import type { FeedStateValue } from "./feed.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import type {
   BoardStatsValue,
+  EnrichmentValue,
   IngestReceiptValue,
+  JobDetailValue,
   JobValue,
   JobQueryValue,
   ListedJobValue,
+  SourceNameValue,
 } from "./job.js";
 import { DAY_MILLIS } from "./posting.js";
 
@@ -18,6 +22,30 @@ export const FeedReplacement = Schema.Struct({
 });
 
 export type FeedReplacementValue = typeof FeedReplacement.Type;
+
+export interface EnrichmentSkip {
+  readonly reason: SkipReasonValue;
+  readonly skippedAt: number;
+}
+
+export interface NeuronClaim {
+  readonly budget: number;
+  readonly day: number;
+  readonly neurons: number;
+}
+
+export interface NeuronUsage {
+  readonly claimed: number;
+  readonly day: number;
+  readonly neurons: number;
+}
+
+export interface UnenrichedSweep {
+  readonly finalSkips: readonly SkipReasonValue[];
+  readonly limit: number;
+  readonly since: number;
+  readonly sources: readonly SourceNameValue[];
+}
 
 export interface JobListing {
   readonly jobs: readonly ListedJobValue[];
@@ -61,13 +89,16 @@ export class JobStore extends Context.Service<
       startedAt: number,
       heldUntil: number
     ) => Effect.Effect<boolean, JobStoreUnavailable>;
+    readonly claimNeurons: (
+      claim: NeuronClaim
+    ) => Effect.Effect<boolean, JobStoreUnavailable>;
     readonly feedStates: Effect.Effect<
       readonly FeedStateValue[],
       JobStoreUnavailable
     >;
     readonly find: (
       id: string
-    ) => Effect.Effect<Option.Option<JobValue>, JobStoreUnavailable>;
+    ) => Effect.Effect<Option.Option<JobDetailValue>, JobStoreUnavailable>;
     readonly historyOf: (
       job: Pick<JobValue, "company" | "title">
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;
@@ -75,6 +106,9 @@ export class JobStore extends Context.Service<
       query: JobQueryValue,
       now: number
     ) => Effect.Effect<JobListing, JobStoreUnavailable>;
+    readonly neuronsClaimed: (
+      day: number
+    ) => Effect.Effect<number, JobStoreUnavailable>;
     readonly pruneOlderThan: (
       cutoff: number
     ) => Effect.Effect<number, JobStoreUnavailable>;
@@ -82,6 +116,13 @@ export class JobStore extends Context.Service<
       feedKey: string,
       attemptedAt: number,
       message: string
+    ) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly recordSkip: (
+      id: string,
+      skip: EnrichmentSkip
+    ) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly recordNeuronsUsed: (
+      usage: NeuronUsage
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly recordRun: (
       receipt: IngestReceiptValue
@@ -98,11 +139,18 @@ export class JobStore extends Context.Service<
       jobs: readonly JobValue[],
       seenAt: number
     ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
+    readonly saveEnrichment: (
+      id: string,
+      enrichment: EnrichmentValue
+    ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly stats: (
       now: number
     ) => Effect.Effect<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable
     >;
+    readonly unenrichedListings: (
+      sweep: UnenrichedSweep
+    ) => Effect.Effect<readonly string[], JobStoreUnavailable>;
   }
 >()("@rat-stack/core/JobStore") {}

@@ -32,8 +32,10 @@ const query = (overrides: Partial<JobQueryValue> = {}): JobQueryValue => ({
   offset: 0,
   regions: [],
   roles: [],
+  salaryFloor: null,
   salaryListed: false,
   search: "",
+  seniorities: [],
   sort: "Newest",
   ...overrides,
 });
@@ -461,7 +463,9 @@ describe("D1 job store queries", () => {
 
           const dropped = yield* store.find("a:1");
 
-          expect(found).toStrictEqual(Option.some(listed));
+          expect(found).toStrictEqual(
+            Option.some({ ...listed, enrichment: null })
+          );
           expect(unknown).toStrictEqual(Option.none());
           expect(dropped).toStrictEqual(Option.none());
         })

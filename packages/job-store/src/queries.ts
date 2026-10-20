@@ -7,10 +7,15 @@ import {
   REPOST_GAP,
 } from "@rat-stack/core";
 import type {
+  EnrichmentSkip,
+  EnrichmentValue,
   IngestReceiptValue,
   JobQueryValue,
   JobValue,
+  NeuronClaim,
+  NeuronUsage,
   Sighted,
+  UnenrichedSweep,
 } from "@rat-stack/core";
 
 import { statement } from "./sql-executor.js";
@@ -51,7 +56,24 @@ const jobColumnNames = [
 
 export const jobColumns = jobColumnNames.join(", ");
 
-const rankedColumns = jobColumnNames
+const enrichmentColumnNames = [
+  "salary_currency",
+  "salary_min",
+  "salary_max",
+  "seniority",
+  "team_size",
+  "reports_to",
+  "remote_policy",
+  "model",
+  "enriched_at",
+] as const;
+
+const enrichmentColumns = enrichmentColumnNames.join(", ");
+
+const enrichedJobs =
+  "jobs LEFT JOIN job_enrichment ON job_enrichment.job_id = jobs.id";
+
+const rankedColumns = [...jobColumnNames, ...enrichmentColumnNames]
   .map((column) => `ranked.${column}`)
   .join(", ");
 
@@ -89,12 +111,22 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
     params.push(pattern, pattern, pattern);
   }
 
+  if (query.salaryFloor !== null) {
+    conditions.push("salary_currency = ? AND salary_max >= ?");
+    params.push(query.salaryFloor.currency, query.salaryFloor.amount);
+  }
+
+  if (query.seniorities.length > 0) {
+    conditions.push(`seniority IN (${placeholders(query.seniorities.length)})`);
+    params.push(...query.seniorities);
+  }
+
   return {
     params,
     sql: `WITH ranked AS (
-  SELECT ${jobColumns}, fingerprint,
+  SELECT ${jobColumns}, ${enrichmentColumns}, fingerprint,
     ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
-  FROM jobs
+  FROM ${enrichedJobs}
   WHERE ${conditions.join(" AND ")}
 )`,
   };
@@ -130,7 +162,71 @@ LIMIT ? OFFSET ?`,
 };
 
 export const findJobStatement = (id: string): SqlStatement =>
-  statement(`SELECT ${jobColumns} FROM jobs WHERE id = ? LIMIT 1`, [id]);
+  statement(
+    `SELECT ${jobColumns}, ${enrichmentColumns} FROM ${enrichedJobs} WHERE id = ? LIMIT 1`,
+    [id]
+  );
+
+export const unenrichedListingsStatement = (
+  sweep: UnenrichedSweep
+): SqlStatement =>
+  statement(
+    `SELECT jobs.id FROM jobs
+LEFT JOIN job_enrichment_skip AS skip ON skip.job_id = jobs.id
+WHERE jobs.first_seen_at >= ? AND jobs.source IN (${placeholders(sweep.sources.length)})
+  AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id)
+  AND (skip.reason IS NULL OR skip.reason NOT IN (${placeholders(sweep.finalSkips.length)}))
+ORDER BY skip.reason IS NOT NULL, jobs.first_seen_at DESC, jobs.id
+LIMIT ?`,
+    [sweep.since, ...sweep.sources, ...sweep.finalSkips, sweep.limit]
+  );
+
+export const recordSkipStatement = (
+  id: string,
+  skip: EnrichmentSkip
+): SqlStatement =>
+  statement(
+    `INSERT INTO job_enrichment_skip (job_id, reason, skipped_at)
+VALUES (?, ?, ?)
+ON CONFLICT (job_id) DO UPDATE SET
+  reason = excluded.reason,
+  skipped_at = excluded.skipped_at`,
+    [id, skip.reason, skip.skippedAt]
+  );
+
+export const clearSkipStatement = (id: string) =>
+  statement("DELETE FROM job_enrichment_skip WHERE job_id = ?", [id]);
+
+export const saveEnrichmentStatement = (
+  id: string,
+  enrichment: EnrichmentValue
+): SqlStatement =>
+  statement(
+    `INSERT INTO job_enrichment (job_id, ${enrichmentColumns})
+VALUES (${placeholders(enrichmentColumnNames.length + 1)})
+ON CONFLICT (job_id) DO UPDATE SET
+  salary_currency = excluded.salary_currency,
+  salary_min = excluded.salary_min,
+  salary_max = excluded.salary_max,
+  seniority = excluded.seniority,
+  team_size = excluded.team_size,
+  reports_to = excluded.reports_to,
+  remote_policy = excluded.remote_policy,
+  model = excluded.model,
+  enriched_at = excluded.enriched_at`,
+    [
+      id,
+      enrichment.salary?.currency ?? null,
+      enrichment.salary?.min ?? null,
+      enrichment.salary?.max ?? null,
+      enrichment.seniority,
+      enrichment.teamSize,
+      enrichment.reportsTo,
+      enrichment.remotePolicy,
+      enrichment.model,
+      enrichment.enrichedAt,
+    ]
+  );
 
 export const countJobsStatement = (
   query: JobQueryValue,
@@ -279,6 +375,30 @@ export const claimIngestStatement = (startedAt: number, heldUntil: number) =>
     [startedAt, heldUntil, startedAt]
   );
 
+export const claimNeuronsStatement = ({ budget, day, neurons }: NeuronClaim) =>
+  statement(
+    `INSERT INTO enrichment_neurons (day, claimed) SELECT ?, ? WHERE ? <= ?
+ON CONFLICT (day) DO UPDATE SET claimed = claimed + excluded.claimed WHERE claimed + excluded.claimed <= ?`,
+    [day, neurons, neurons, budget, budget]
+  );
+
+export const neuronsClaimedStatement = (day: number) =>
+  statement(
+    "SELECT COALESCE(SUM(claimed), 0) AS total FROM enrichment_neurons WHERE day = ?",
+    [day]
+  );
+
+export const recordNeuronsUsedStatement = (usage: NeuronUsage) =>
+  statement(
+    "UPDATE enrichment_neurons SET used = used + ?, claimed = MAX(0, claimed + ? - ?) WHERE day = ? AND ? >= 0",
+    [usage.neurons, usage.neurons, usage.claimed, usage.day, usage.neurons]
+  );
+
+export const pruneNeuronsStatement = (cutoff: number) =>
+  statement("DELETE FROM enrichment_neurons WHERE day < ?", [
+    Math.floor(cutoff / DAY_MILLIS),
+  ]);
+
 export const releaseIngestStatement = (startedAt: number) =>
   statement(
     "UPDATE ingest_lease SET held_until = started_at WHERE id = 1 AND started_at = ?",
@@ -287,6 +407,14 @@ export const releaseIngestStatement = (startedAt: number) =>
 
 export const pruneJobsStatement = (cutoff: number) =>
   statement("DELETE FROM jobs WHERE posted_at < ?", [cutoff]);
+
+export const pruneOrphanEnrichmentStatement = statement(
+  "DELETE FROM job_enrichment WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_enrichment.job_id)"
+);
+
+export const pruneOrphanSkipStatement = statement(
+  "DELETE FROM job_enrichment_skip WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_enrichment_skip.job_id)"
+);
 
 export const pruneRunsStatement = (cutoff: number) =>
   statement("DELETE FROM ingest_runs WHERE started_at < ?", [cutoff]);

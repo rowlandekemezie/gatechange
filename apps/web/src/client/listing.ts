@@ -1,13 +1,13 @@
 import {
   EpochMillis,
-  Job,
+  ListedJob,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
 } from "@rat-stack/core/contracts";
 import type {
   JobPageValue,
   JobQueryValue,
-  JobValue,
+  ListedJobValue,
 } from "@rat-stack/core/contracts";
 import { Array, Effect, Option, pipe, Schema } from "effect";
 
@@ -24,7 +24,7 @@ export const LISTING_ROWS = 12;
 
 export const Listing = Schema.Struct({
   generatedAt: EpochMillis,
-  jobs: Schema.Array(Job),
+  jobs: Schema.Array(ListedJob),
   total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 
@@ -48,7 +48,9 @@ const baseQuery = {
   limit: MAX_PAGE_SIZE,
   maxAgeDays: MAX_AGE_DAYS,
   offset: 0,
+  salaryFloor: null,
   salaryListed: false,
+  seniorities: [],
 } as const;
 
 const companyQuery = (slug: string, offset: number): JobQueryValue => ({
@@ -60,7 +62,7 @@ const companyQuery = (slug: string, offset: number): JobQueryValue => ({
   sort: "Newest",
 });
 
-const isAtCompany = (slug: string) => (job: JobValue) =>
+const isAtCompany = (slug: string) => (job: ListedJobValue) =>
   Option.contains(companySlugOf(job.company), slug);
 
 export const collectListing = <E, R>(
@@ -69,7 +71,7 @@ export const collectListing = <E, R>(
 ): Effect.Effect<ListingValue, E, R> =>
   Schema.is(Route.Company)(route)
     ? Effect.gen(function* collectCompanyJobs() {
-        const seen: JobValue[] = [];
+        const seen: ListedJobValue[] = [];
         let generatedAt = 0;
 
         for (let page = 0; page < COMPANY_PAGES; page += 1) {

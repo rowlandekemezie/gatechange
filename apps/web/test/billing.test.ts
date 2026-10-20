@@ -193,6 +193,82 @@ describe("billing updates", () => {
     ).toBe(true);
   });
 
+  it.each(["membership", "signout"] as const)(
+    "clears every paid filter after confirmed %s loss without leaving the account page",
+    (reason) => {
+      const board = boardInit(flags, urlAt("/account")).model;
+
+      const filters = {
+        ...defaultFilters,
+        salaryFloor: { amount: 200_000, currency: "USD" },
+        salaryListed: true,
+        seniorities: ["Director"],
+      } as const;
+
+      const before = {
+        ...board,
+        account: {
+          ...board.account,
+          session: SessionState.SignedIn({ account: ada }),
+        },
+        billing: loaded(pro),
+        filters,
+      };
+
+      const lost = boardUpdate(
+        before,
+        reason === "membership"
+          ? BoardMessage.GotBillingMessage({
+              message: Message.CompletedFetchMembership({
+                membership: Option.some(free),
+              }),
+            })
+          : BoardMessage.GotAccountMessage({
+              message: AccountMessage.CompletedFetchSession({
+                account: Option.none(),
+              }),
+            })
+      );
+
+      expect(lost.model.filters).toEqual(defaultFilters);
+      expect(lost.model.route).toEqual(before.route);
+      expect(commandNames(lost)).toContain("FetchJobs");
+      expect(commandNames(lost)).not.toContain("PushUrl");
+      expect(commandNames(lost)).not.toContain("ReplaceUrl");
+    }
+  );
+
+  it("preserves requested paid filters while membership is loading", () => {
+    const board = boardInit(
+      flags,
+      urlAt("/?pay=200000&level=director&salary=listed")
+    ).model;
+
+    const before = {
+      ...board,
+      billing: {
+        ...board.billing,
+        membership: MembershipState.Loading(),
+      },
+    };
+
+    const waiting = boardUpdate(
+      before,
+      BoardMessage.GotBillingMessage({
+        message: Message.FailedBillingAction({ message: "Try again." }),
+      })
+    );
+
+    expect(waiting.model.filters).toEqual(before.filters);
+    expect(waiting.model.filters.salaryFloor).toEqual({
+      amount: 200_000,
+      currency: "USD",
+    });
+    expect(waiting.model.filters.salaryListed).toBe(true);
+    expect(waiting.model.filters.seniorities).toEqual(["Director"]);
+    expect(commandNames(waiting)).toEqual([]);
+  });
+
   it("forgets the plan when the member signs out", () => {
     const board = {
       ...boardInit(flags, urlAt("/")).model,
@@ -259,6 +335,24 @@ describe("billing pages", () => {
             "Salary filters come with Pro, so the list below still shows every role."
           );
           expect(text).toContain("Upgrade");
+        }
+      )
+  );
+
+  it.effect(
+    "offers Pro for salary-floor and seniority selections from a shared link",
+    () =>
+      Effect.map(
+        renderAs(
+          "/?pay=200000&level=director",
+          SessionState.SignedIn({ account: ada }),
+          Option.some(free)
+        ),
+        (html) => {
+          expect(textOf(html)).toContain(
+            "Salary and seniority filters come with Pro, so the list below still shows every role."
+          );
+          expect(textOf(html)).toContain("See Pro plans");
         }
       )
   );

@@ -239,6 +239,9 @@ const board: readonly JobValue[] = [
   seed({
     feed: "hn:hiring",
     id: "hn-1",
+    location: "Vancouver, BC",
+    region: "BritishColumbia",
+    role: "EngineeringManager",
     source: "HackerNews",
     title: "Engineering Manager",
   }),
@@ -250,8 +253,10 @@ const everything: JobQueryValue = {
   offset: 0,
   regions: [],
   roles: [],
+  salaryFloor: null,
   salaryListed: false,
   search: "",
+  seniorities: [],
   sort: "Newest",
 };
 
@@ -290,6 +295,27 @@ describe("listJobs for Free and Pro viewers", () => {
             Effect.forEach(
               Object.values(Array.groupBy(board, (job) => job.feed)),
               (group) => store.replaceFeed(group[0].feed, group, NOW - DAY),
+              { discard: true }
+            )
+          );
+
+          yield* JobStore.use((store) =>
+            Effect.forEach(
+              ["gh-1", "gh-2"],
+              (id) =>
+                store.saveEnrichment(id, {
+                  enrichedAt: NOW,
+                  model: "test-model",
+                  remotePolicy: "Remote",
+                  reportsTo: null,
+                  salary: {
+                    currency: "USD",
+                    max: id === "gh-1" ? 250_000 : 180_000,
+                    min: 150_000,
+                  },
+                  seniority: id === "gh-1" ? "Director" : "Manager",
+                  teamSize: null,
+                }),
               { discard: true }
             )
           );
@@ -333,6 +359,51 @@ describe("listJobs for Free and Pro viewers", () => {
               .toSorted()
           );
           expect(proFiltered.toSorted()).toEqual(["gh-1", "jb-1"]);
+
+          const enrichmentFilters: readonly JobQueryValue[] = [
+            {
+              ...everything,
+              salaryFloor: { amount: 200_000, currency: "USD" },
+            },
+            { ...everything, seniorities: ["Director"] },
+            {
+              ...everything,
+              salaryFloor: { amount: 200_000, currency: "USD" },
+              salaryListed: true,
+              seniorities: ["Director"],
+            },
+          ];
+
+          for (const query of enrichmentFilters) {
+            const [publicRows, memberRows, paidRows] = yield* Effect.all([
+              rowsFor(Viewer.Anonymous(), query),
+              rowsFor(Viewer.Member({ account: free }), query),
+              rowsFor(Viewer.Member({ account: pro }), query),
+            ]);
+
+            expect(publicRows).toEqual(anonymous);
+            expect(memberRows).toEqual(anonymous);
+            expect(paidRows).toEqual(["gh-1"]);
+          }
+
+          const freeQueries: readonly (readonly [
+            JobQueryValue,
+            readonly string[],
+          ])[] = [
+            [{ ...everything, regions: ["BritishColumbia"] }, ["hn-1"]],
+            [{ ...everything, roles: ["EngineeringManager"] }, ["hn-1"]],
+            [{ ...everything, search: "gh-2" }, ["gh-2"]],
+          ];
+
+          for (const viewer of [
+            Viewer.Anonymous(),
+            Viewer.Member({ account: free }),
+            Viewer.Member({ account: pro }),
+          ]) {
+            for (const [query, expected] of freeQueries) {
+              expect(yield* rowsFor(viewer, query)).toEqual(expected);
+            }
+          }
         })
       )
   );
