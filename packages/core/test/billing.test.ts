@@ -47,6 +47,7 @@ const subscription = (
 
 interface World {
   readonly checkouts: CheckoutRequest[];
+  readonly created: string[];
   readonly customers: Map<AccountIdValue, string>;
   readonly instant: Set<AccountIdValue>;
   readonly subscriptions: SubscriptionRecordValue[];
@@ -54,6 +55,7 @@ interface World {
 
 const emptyWorld = (): World => ({
   checkouts: [],
+  created: [],
   customers: new Map(),
   instant: new Set(),
   subscriptions: [],
@@ -70,7 +72,12 @@ const layerOf = (world: World) =>
         applySubscription: unused,
         customerOf: (account) =>
           Effect.sync(() => Option.fromNullishOr(world.customers.get(account))),
-        linkCustomer: unused,
+        linkCustomer: (account, customer) =>
+          Effect.sync(() => {
+            if (!world.customers.has(account)) {
+              world.customers.set(account, customer);
+            }
+          }),
         subscriptionsOf: (account) =>
           Effect.sync(() =>
             world.subscriptions.filter((row) => row.account === account)
@@ -85,6 +92,16 @@ const layerOf = (world: World) =>
             world.checkouts.push(request);
 
             return "https://checkout.stripe.test/session";
+          }),
+        createCustomer: () =>
+          Effect.gen(function* createCustomer() {
+            yield* Effect.yieldNow;
+
+            const customer = `cus_${world.created.length + 1}`;
+
+            world.created.push(customer);
+
+            return customer;
           }),
         portal: (customer) =>
           Effect.succeed(`https://billing.stripe.test/${customer}`),
@@ -142,6 +159,25 @@ describe("entitlementOf", () => {
       ProEntitlement.make({ periodEnd: 2000, plan: "Monthly", renews: true })
     );
     expect(entitlementOf([subscription()], 2000)).toEqual(FREE);
+  });
+
+  it("grants Pro to a trialing or past-due subscription until its period end", () => {
+    const granting: readonly SubscriptionStatusValue[] = [
+      "trialing",
+      "past_due",
+    ];
+
+    expect(
+      granting.map((status) => [
+        entitlementOf([subscription({ status })], 1999),
+        entitlementOf([subscription({ status })], 2000),
+      ])
+    ).toEqual(
+      granting.map(() => [
+        ProEntitlement.make({ periodEnd: 2000, plan: "Monthly", renews: true }),
+        FREE,
+      ])
+    );
   });
 
   it("never grants Pro for an unpaid, incomplete, or canceled subscription", () => {
@@ -218,7 +254,52 @@ describe("billing capabilities", () => {
 
         expect(link.url).toBe("https://checkout.stripe.test/session");
         expect(world.checkouts).toEqual([
-          { account: ada, customer: Option.some("cus_ada"), plan: "Quarterly" },
+          { account: ada, customer: "cus_ada", plan: "Quarterly" },
+        ]);
+        expect(world.created).toEqual([]);
+      })
+  );
+
+  it.effect(
+    "creates and links a Stripe customer before a member's first checkout, then reuses it",
+    () =>
+      Effect.gen(function* firstCheckout() {
+        const world = emptyWorld();
+        const client = yield* clientAs(member, world);
+
+        yield* client.startCheckout({ plan: "Monthly" });
+        yield* client.startCheckout({ plan: "Yearly" });
+
+        expect(world.created).toEqual(["cus_1"]);
+        expect(world.customers.get(ada.id)).toBe("cus_1");
+        expect(world.checkouts.map((request) => request.customer)).toEqual([
+          "cus_1",
+          "cus_1",
+        ]);
+      })
+  );
+
+  it.effect(
+    "sends two concurrent first checkouts to the one customer that won the link",
+    () =>
+      Effect.gen(function* doubleCheckout() {
+        const world = emptyWorld();
+        const client = yield* clientAs(member, world);
+
+        yield* Effect.all(
+          [
+            client.startCheckout({ plan: "Monthly" }),
+            client.startCheckout({ plan: "Monthly" }),
+          ],
+          { concurrency: "unbounded" }
+        );
+
+        const linked = world.customers.get(ada.id);
+
+        expect(world.created).toHaveLength(2);
+        expect(world.checkouts.map((request) => request.customer)).toEqual([
+          linked,
+          linked,
         ]);
       })
   );

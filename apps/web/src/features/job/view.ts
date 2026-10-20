@@ -1,12 +1,19 @@
 import { offSiteHref } from "@rat-stack/core/contracts";
-import type { JobValue } from "@rat-stack/core/contracts";
-import { DateTime, Option } from "effect";
+import type {
+  EnrichmentValue,
+  JobDetailValue,
+} from "@rat-stack/core/contracts";
+import { Array, DateTime, Option } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import {
+  bandLabel,
   postedAgo,
   regionLabel,
+  remotePolicyLabel,
+  seniorityLabel,
   sourceLabel,
+  teamSizeLabel,
 } from "../../client/board/copy.js";
 import { entryOf, markButtons } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
@@ -21,10 +28,58 @@ const backLink = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
     ["Back to open roles"]
   );
 
+const fact = <A>(
+  h: HtmlBuilder<MessageValue>,
+  term: string,
+  value: A | null,
+  label: (value: A) => string
+): readonly Html[] =>
+  value === null ? [] : [h.dt([], [term]), h.dd([], [label(value)])];
+
+const enrichmentView = (
+  h: HtmlBuilder<MessageValue>,
+  enrichment: EnrichmentValue
+): readonly Html[] => {
+  const facts = [
+    ...fact(h, "Seniority", enrichment.seniority, seniorityLabel),
+    ...fact(h, "Team size", enrichment.teamSize, teamSizeLabel),
+    ...fact(h, "Reports to", enrichment.reportsTo, (name) => name),
+    ...fact(h, "Remote policy", enrichment.remotePolicy, remotePolicyLabel),
+    ...fact(h, "Salary band", enrichment.salary, bandLabel),
+  ];
+
+  if (Array.isReadonlyArrayEmpty(facts)) {
+    return [];
+  }
+
+  const at = DateTime.makeUnsafe(enrichment.enrichedAt);
+
+  return [
+    h.section(
+      [h.Class("detail-extracted")],
+      [
+        h.h2([h.Class("detail-subhead")], ["From the posting"]),
+        h.dl([h.Class("detail-facts")], facts),
+        h.p(
+          [h.Class("detail-note")],
+          [
+            `Extracted from the posting by Workers AI (${enrichment.model}) on `,
+            h.time(
+              [h.Datetime(DateTime.formatIso(at))],
+              [DateTime.formatUtc(at, { dateStyle: "long", locale: "en-CA" })]
+            ),
+            ". Check the posting before you rely on it.",
+          ]
+        ),
+      ]
+    ),
+  ];
+};
+
 const foundView = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
-  job: JobValue
+  job: JobDetailValue
 ): Html => {
   const where =
     job.location.length > 0 ? job.location : regionLabel(job.region);
@@ -72,6 +127,7 @@ const foundView = (
           h.dd([], [sourceLabel(job.source)]),
         ]
       ),
+      ...(job.enrichment === null ? [] : enrichmentView(h, job.enrichment)),
       h.div(
         [h.Class("detail-actions")],
         [

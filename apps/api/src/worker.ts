@@ -16,13 +16,19 @@ import {
   Billing,
   capabilities,
   CurrentViewer,
+  DEFAULT_DAILY_NEURONS,
   DEFAULT_FEEDS_PER_RUN,
   DigestMailer,
+  enqueueUnenriched,
+  enrichListing,
+  EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
   publicOriginOf,
   runDigests,
   runIngest,
   runInstantAlerts,
+  skipHandling,
+  sweepLimitOf,
   siteHostsOf,
   SITE_ORIGIN,
   SocialProvider,
@@ -34,7 +40,13 @@ import {
   unsubscribePage,
   verifyUnsubscribeToken,
 } from "@rat-stack/digest-mailer";
-import { postingFeedsLayer } from "@rat-stack/job-sources";
+import {
+  enrichmentModel,
+  enrichmentQueueLayer,
+  listingEnricherLayer,
+  loggedBody,
+} from "@rat-stack/job-enrichment";
+import { postingFeedsLayer, postingTextsLayer } from "@rat-stack/job-sources";
 import {
   d1AgentTokenStoreLayer,
   d1AlertStoreLayer,
@@ -44,9 +56,20 @@ import {
 } from "@rat-stack/job-store/d1";
 import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Output from "alchemy/Output";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import * as Stripe from "alchemy/Stripe";
-import { Clock, Config, Effect, Layer, Option, Record, Redacted } from "effect";
+import {
+  Clock,
+  Config,
+  Effect,
+  Layer,
+  Option,
+  Record,
+  Redacted,
+  Schema,
+  Stream,
+} from "effect";
 import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
@@ -61,9 +84,48 @@ export const INGEST_SCHEDULE = `*/${INGEST_INTERVAL_MINUTES} * * * *`;
 
 export const DEFAULT_FEED_CONCURRENCY = 6;
 
-export const MAGIC_LINK_SENDER = "sign-in@rowlandekemezie.com";
+export const ENRICHMENT_BATCH_SIZE = 10;
 
-export const DIGEST_SENDER = "digest@rowlandekemezie.com";
+export const ENRICHMENT_MAX_RETRIES = 3;
+
+export const DEFAULT_ENRICHMENT_SWEEP_HOURS = 24;
+
+export const EnrichmentQueue = Cloudflare.Queues.Queue("EnrichmentQueue");
+
+const EnrichmentMessage = Schema.Struct({ id: Schema.NonEmptyString });
+
+const enrichMessage =
+  (dailyNeurons: number) => (message: Cloudflare.Queues.Message) =>
+    Option.match(Schema.decodeUnknownOption(EnrichmentMessage)(message.body), {
+      onNone: () =>
+        Effect.logWarning(
+          `enrichment message dropped: no listing id, body=${loggedBody(JSON.stringify(message.body ?? null))}`
+        ),
+      onSome: ({ id }) =>
+        enrichListing(id, dailyNeurons).pipe(
+          Effect.flatMap(
+            EnrichmentOutcome.$match({
+              Enriched: ({ enrichment }) =>
+                Effect.logInfo(
+                  `listing enriched id=${id} model=${enrichment.model}`
+                ),
+              Skipped: ({ detail, reason }) =>
+                Effect.logInfo(
+                  `enrichment skipped id=${id} reason=${reason} handling=${skipHandling[reason]} detail=${JSON.stringify(detail)}`
+                ),
+            })
+          ),
+          Effect.catchTag("JobStoreUnavailable", (unavailable) =>
+            Effect.logError(
+              `enrichment left for the next sweep: store unavailable id=${id} detail=${JSON.stringify(unavailable.message)}`
+            )
+          )
+        ),
+    });
+
+export const MAGIC_LINK_SENDER = "sign-in@jobs.rowlandekemezie.com";
+
+export const DIGEST_SENDER = "digest@jobs.rowlandekemezie.com";
 
 export const DIGEST_SCHEDULE = "7 * * * *";
 
@@ -94,6 +156,10 @@ const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
 const workersSubdomain = Config.option(
   Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
 );
+
+const restrictedStripeKey = Config.option(
+  Config.Redacted("STRIPE_RESTRICTED_KEY")
+).pipe(Config.map(Option.filter((key) => Redacted.value(key) !== "")));
 
 const socialCredentials = (prefix: string) =>
   Config.all({
@@ -134,29 +200,119 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       Config.withDefault(DEFAULT_FEED_CONCURRENCY)
     );
 
+    const stageOutput: Output.Output<string | undefined> = Output.literal(
+      Option.getOrElse(yield* Effect.serviceOption(Stage), () => "")
+    );
+
+    const deployedStage =
+      (yield* yield* stageOutput.bind("ENRICHMENT_STAGE")) ?? "";
+
+    const sweepLimit = sweepLimitOf({
+      configured: yield* Config.option(Config.Int("ENRICHMENT_SWEEP_LIMIT")),
+      stage: deployedStage,
+    });
+
+    const dailyNeurons = yield* Config.Int("ENRICHMENT_DAILY_NEURONS").pipe(
+      Config.withDefault(DEFAULT_DAILY_NEURONS)
+    );
+
+    const sweepHours = yield* Config.Int("ENRICHMENT_SWEEP_HOURS").pipe(
+      Config.withDefault(DEFAULT_ENRICHMENT_SWEEP_HOURS)
+    );
+
+    const queue = yield* EnrichmentQueue;
+    const producer = yield* Cloudflare.Queues.WriteQueue(queue);
+    const ai = yield* Cloudflare.Workers.AI();
+    const model = yield* enrichmentModel;
+
+    const queueLayer = enrichmentQueueLayer((messages) =>
+      producer
+        .sendBatch(messages)
+        .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom))
+    );
+
+    const enricherLayer = listingEnricherLayer({
+      model,
+      run: (name, request) =>
+        ai
+          .run(name, request)
+          .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom)),
+    });
+
     const ingestLayer = Layer.mergeAll(
       storeLayer,
+      queueLayer,
       postingFeedsLayer().pipe(Layer.provide(FetchHttpClient.layer))
+    );
+
+    const enrichmentLayer = Layer.mergeAll(
+      storeLayer,
+      enricherLayer,
+      postingTextsLayer.pipe(Layer.provide(FetchHttpClient.layer))
     );
 
     yield* Cloudflare.Workers.cron(INGEST_SCHEDULE, (controller) =>
       runIngest({ feedConcurrency, feedsPerRun }).pipe(
         Effect.tap(({ outcomes, receipt }) =>
-          Effect.logInfo("ingest finished", {
-            failures: outcomes.filter((outcome) => outcome.error !== null),
-            receipt,
-          })
+          Effect.logInfo(
+            `ingest finished outcome=${receipt.outcome} feeds=${receipt.feedsAttempted} failed=${receipt.feedsFailed} upserted=${receipt.jobsUpserted} pruned=${receipt.jobsPruned} failures=${JSON.stringify(
+              outcomes.flatMap(({ error, key }) =>
+                error === null ? [] : [`${key}: ${error}`]
+              )
+            )}`
+          )
+        ),
+        Effect.tap(({ receipt }) =>
+          enqueueUnenriched({
+            limit: sweepLimit,
+            now: receipt.startedAt,
+            windowHours: sweepHours,
+          }).pipe(
+            Effect.tap((queued) =>
+              Effect.logInfo(
+                `listings queued for enrichment queued=${queued} limit=${sweepLimit} stage=${deployedStage}`
+              )
+            ),
+            Effect.catch((error) =>
+              Effect.logError(
+                `enrichment enqueue failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+              )
+            )
+          )
         ),
         Effect.catchTag("IngestInProgress", (busy) =>
-          Effect.logInfo("ingest skipped: another run holds the lease", busy)
+          Effect.logInfo(
+            `ingest skipped: another run holds the lease startedAt=${busy.startedAt}`
+          )
         ),
-        Effect.tapError((error) => Effect.logError("ingest failed", error)),
+        Effect.tapError((error) =>
+          Effect.logError(
+            `ingest failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+          )
+        ),
         Effect.annotateLogs({
           cron: controller.cron,
           scheduledTime: controller.scheduledTime,
         }),
         Effect.provide(ingestLayer)
       )
+    );
+
+    yield* Cloudflare.Queues.consumeQueueMessages(
+      queue,
+      {
+        batchSize: ENRICHMENT_BATCH_SIZE,
+        maxRetries: ENRICHMENT_MAX_RETRIES,
+      },
+      (messages) =>
+        messages.pipe(
+          Stream.mapEffect(enrichMessage(dailyNeurons), {
+            concurrency: ENRICHMENT_BATCH_SIZE,
+            unordered: true,
+          }),
+          Stream.runDrain,
+          Effect.provide(enrichmentLayer)
+        )
     );
 
     const secret = yield* authSecret;
@@ -178,9 +334,16 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       Config.withDefault(false)
     );
 
-    const stripe = yield* stripeBilling(
-      billingEnabled ? publicOriginOf(stage, subdomain) : Option.none()
-    );
+    const stripe = yield* stripeBilling({
+      hostId: "JobsBackend",
+      restrictedKey: billingEnabled
+        ? yield* restrictedStripeKey
+        : Option.none(),
+      siteOrigin: billingEnabled
+        ? publicOriginOf(stage, subdomain)
+        : Option.none(),
+      stage,
+    });
 
     const billingLayer = Layer.mergeAll(
       d1BillingStoreLayer(client),
@@ -360,10 +523,8 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       );
 
     const stripeWebhook = (request: HttpServerRequest.HttpServerRequest) =>
-      stripe.webhookSecret.pipe(
-        Effect.flatMap((webhookSecret) =>
-          stripeWebhookResponse(webhookSecret, request)
-        ),
+      stripe.endpoint.pipe(
+        Effect.flatMap((endpoint) => stripeWebhookResponse(endpoint, request)),
         Effect.provide(billingLayer)
       );
 
@@ -383,9 +544,13 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       Layer.mergeAll(
         Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.Workers.CronEventSourceLive,
+        Cloudflare.Queues.WriteQueueBinding,
+        Cloudflare.Queues.EventSourceLive,
+        Cloudflare.Workers.AIBinding,
         Cloudflare.Email.SendBinding,
         CloudflareD1(JobsDatabase),
         Stripe.CreateCheckoutSessionHttp,
+        Stripe.CreateCustomerHttp,
         Stripe.CreateBillingPortalSessionHttp
       )
     )
