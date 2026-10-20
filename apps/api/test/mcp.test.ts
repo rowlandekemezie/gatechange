@@ -274,7 +274,7 @@ const RpcResult = Schema.fromJsonString(
 );
 
 const rpcResultOf = (text: string) =>
-  Schema.decodeUnknownSync(RpcResult)(
+  Schema.decodeSync(RpcResult)(
     text
       .split("\n")
       .findLast((line) => line.startsWith("data: "))
@@ -363,7 +363,268 @@ const listQuery = {
 const textOf = (result: typeof ToolResult.Type) =>
   result.content.map(({ text }) => text).join("");
 
+const legacyRequest = (
+  method: string,
+  params: Schema.JsonObject = {},
+  version: string | null = "2025-11-25",
+  id: number | undefined = method.startsWith("notifications/") ? undefined : 1,
+  extraHeaders: Readonly<Record<string, string>> = {}
+) =>
+  Effect.gen(function* isolatedRequest() {
+    const { listedSources, savedBy, send } = yield* fixture;
+    const headers = new Headers({ ...MCP_HEADERS, ...extraHeaders });
+
+    if (version !== null) {
+      headers.set("mcp-protocol-version", version);
+    }
+
+    const response = yield* send("/mcp", {
+      body: JSON.stringify({ id, jsonrpc: "2.0", method, params }),
+      headers,
+      method: "POST",
+    });
+
+    return { ...response, listedSources, savedBy };
+  }).pipe(Effect.scoped);
+
 describe("board over MCP", () => {
+  for (const version of ["2025-11-25", "2025-06-18", "2025-03-26"]) {
+    it.effect(
+      `serves the ${version} lifecycle across fresh runtimes without sessions`,
+      () =>
+        Effect.gen(function* legacyLifecycle() {
+          const initialize = yield* legacyRequest(
+            "initialize",
+            {
+              capabilities: { sampling: {} },
+              clientInfo: { name: "ordinary-client", version: "1" },
+              protocolVersion: version,
+            },
+            null
+          );
+
+          expect(initialize.status).toBe(200);
+          expect(rpcResultOf(initialize.text).result).toMatchObject({
+            capabilities: { tools: {} },
+            protocolVersion: version,
+          });
+          expect(initialize.headers.get("mcp-session-id")).toBeNull();
+
+          const initialized = yield* legacyRequest(
+            "notifications/initialized",
+            {},
+            version
+          );
+
+          expect(initialized).toMatchObject({ status: 202 });
+          expect(initialized.text).toBe("");
+
+          const ping = yield* legacyRequest("ping", {}, version);
+
+          expect(ping.status).toBe(200);
+          expect(rpcResultOf(ping.text).result).toStrictEqual({});
+
+          const listed = yield* legacyRequest("tools/list", {}, version);
+
+          const tools = yield* Schema.decodeUnknownEffect(ToolList)(
+            rpcResultOf(listed.text).result
+          );
+
+          expect(listed.status).toBe(200);
+          expect(tools.tools.map(({ name }) => name).toSorted()).toStrictEqual(
+            agentCapabilities.map(({ contract }) => contract.name).toSorted()
+          );
+
+          const called = yield* legacyRequest(
+            "tools/call",
+            { arguments: listQuery, name: "listJobs" },
+            version
+          );
+
+          const result = yield* Schema.decodeUnknownEffect(ToolResult)(
+            rpcResultOf(called.text).result
+          );
+
+          expect(called.status).toBe(200);
+          expect(result.isError).toBe(false);
+          expect(JSON.stringify(result.structuredContent)).toContain("g:1");
+          expect(JSON.stringify(result.structuredContent)).not.toContain("r:1");
+          expect(called.listedSources.at(-1)).not.toContain("Remotive");
+          expect(called.headers.get("mcp-session-id")).toBeNull();
+
+          const forbidden = yield* legacyRequest(
+            "tools/call",
+            { arguments: { id: "r:1" }, name: "getJob" },
+            version
+          );
+
+          expect(
+            textOf(
+              yield* Schema.decodeUnknownEffect(ToolResult)(
+                rpcResultOf(forbidden.text).result
+              )
+            )
+          ).toBe("null");
+
+          const malformed = yield* legacyRequest(
+            "tools/call",
+            { arguments: { ...listQuery, limit: "ten" }, name: "listJobs" },
+            version
+          );
+
+          expect(
+            (yield* Schema.decodeUnknownEffect(ToolResult)(
+              rpcResultOf(malformed.text).result
+            )).isError
+          ).toBe(true);
+          expect(malformed.listedSources).toStrictEqual([]);
+        })
+    );
+  }
+
+  it.effect(
+    "rejects legacy protocol and routing contradictions before calling a capability",
+    () =>
+      Effect.gen(function* contradictoryRequests() {
+        for (const [version, headers, params] of [
+          ["2099-01-01", {}, {}],
+          ["2025-11-25", { "mcp-method": "tools/call" }, {}],
+          ["2025-11-25", { "mcp-name": "listJobs" }, {}],
+          ["2025-11-25", { "mcp-session-id": "invented-session" }, {}],
+          ["2025-11-25", {}, { _meta: null }],
+          [
+            "2025-11-25",
+            {},
+            {
+              _meta: {
+                "io.modelcontextprotocol/protocolVersion": "2025-06-18",
+              },
+            },
+          ],
+        ] satisfies readonly (readonly [
+          string,
+          Readonly<Record<string, string>>,
+          Schema.JsonObject,
+        ])[]) {
+          const response = yield* legacyRequest(
+            "tools/list",
+            params,
+            version,
+            1,
+            headers
+          );
+
+          expect(response.status).toBe(400);
+          expect(rpcResultOf(response.text).error).toBeDefined();
+          expect(response.listedSources).toStrictEqual([]);
+        }
+
+        const mismatch = yield* legacyRequest(
+          "tools/call",
+          { arguments: listQuery, name: "listJobs" },
+          "2025-11-25",
+          1,
+          { "mcp-name": "boardStats" }
+        );
+
+        expect(mismatch.status).toBe(400);
+        expect(mismatch.listedSources).toStrictEqual([]);
+
+        const invalidName = yield* legacyRequest("tools/call", {
+          arguments: {},
+          name: "\uD800",
+        });
+
+        expect(invalidName.status).toBe(400);
+        expect(rpcResultOf(invalidName.text).error?.message).toBe(
+          "Invalid tool name"
+        );
+
+        const initialize = yield* legacyRequest("initialize", {
+          capabilities: {},
+          clientInfo: { name: "test", version: "1" },
+          protocolVersion: "2025-06-18",
+        });
+
+        expect(initialize.status).toBe(400);
+      })
+  );
+
+  it.effect(
+    "rejects malformed legacy envelopes and unsupported transport content",
+    () =>
+      Effect.gen(function* invalidLegacy() {
+        const { send } = yield* fixture;
+
+        for (const body of [
+          "{",
+          "[]",
+          "null",
+          '{"jsonrpc":"2.0","id":null,"method":"tools/list"}',
+          '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":[]}',
+        ]) {
+          const response = yield* send("/mcp", {
+            body,
+            headers: MCP_HEADERS,
+            method: "POST",
+          });
+
+          expect(response.status).toBe(400);
+          expect(rpcResultOf(response.text).error).toBeDefined();
+        }
+
+        for (const [headers, expected] of [
+          [{ "content-type": "text/plain" }, 415],
+          [{ accept: "application/json" }, 406],
+          [{ accept: "application/json, text/event-stream;q=0" }, 406],
+          [{ origin: "https://evil.example" }, 403],
+        ] satisfies readonly (readonly [
+          Readonly<Record<string, string>>,
+          number,
+        ])[]) {
+          const response = yield* legacyRequest(
+            "tools/list",
+            {},
+            "2025-11-25",
+            1,
+            headers
+          );
+
+          expect(response.status).toBe(expected);
+        }
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "accepts an ordinary Streamable HTTP initialization without a version header",
+    () =>
+      Effect.gen(function* initialize() {
+        const { send } = yield* fixture;
+
+        const response = yield* send("/mcp", {
+          body: JSON.stringify({
+            id: 1,
+            jsonrpc: "2.0",
+            method: "initialize",
+            params: {
+              capabilities: {},
+              clientInfo: { name: "codex", version: "0.163" },
+              protocolVersion: "2025-11-25",
+            },
+          }),
+          headers: MCP_HEADERS,
+          method: "POST",
+        });
+
+        expect(response.status).toBe(200);
+        expect(rpcResultOf(response.text).result).toMatchObject({
+          capabilities: { tools: {} },
+          protocolVersion: "2025-11-25",
+        });
+        expect(response.headers.get("mcp-session-id")).toBeNull();
+      }).pipe(Effect.scoped)
+  );
+
   it.effect(
     "lists the board's free contracts plus the Pro tools and nothing else",
     () =>
@@ -574,6 +835,71 @@ describe("board over MCP", () => {
         expect(textOf(result)).toBe(UNAUTHORIZED_MESSAGE);
         expect(savedBy).toStrictEqual([]);
       }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "authenticates every legacy request before lifecycle or Pro tools",
+    () =>
+      Effect.gen(function* legacyAuthentication() {
+        const params = {
+          arguments: {
+            filters: {
+              regions: ["RemoteCanada"],
+              roles: ["Director"],
+              search: "",
+            },
+          },
+          name: "saveSearch",
+        };
+
+        for (const [secret, owner] of [
+          [PRO_SECRET, "user_pro"],
+          [OTHER_PRO_SECRET, "user_other_pro"],
+        ]) {
+          const response = yield* legacyRequest(
+            "tools/call",
+            params,
+            "2025-11-25",
+            1,
+            {
+              authorization: `Bearer ${secret}`,
+            }
+          );
+
+          expect(response.status).toBe(200);
+          expect(response.savedBy).toStrictEqual([owner]);
+        }
+
+        const anonymous = yield* legacyRequest("tools/call", params);
+
+        const result = yield* Schema.decodeUnknownEffect(ToolResult)(
+          rpcResultOf(anonymous.text).result
+        );
+
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toBe(UNAUTHORIZED_MESSAGE);
+        expect(anonymous.savedBy).toStrictEqual([]);
+
+        for (const [secret, status] of [
+          ["jobs_pat_revoked", 401],
+          [FREE_SECRET, 403],
+        ] as const) {
+          const refused = yield* legacyRequest(
+            "initialize",
+            {
+              capabilities: {},
+              clientInfo: { name: "test", version: "1" },
+              protocolVersion: "2025-11-25",
+            },
+            null,
+            1,
+            { authorization: `Bearer ${secret}` }
+          );
+
+          expect(refused.status).toBe(status);
+          expect(refused.savedBy).toStrictEqual([]);
+        }
+      })
   );
 
   it.effect("saves a search for the Pro member who holds the token", () =>
