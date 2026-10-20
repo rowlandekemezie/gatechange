@@ -14,7 +14,6 @@ import {
   FREE,
   JobStore,
   listJobs,
-  paidFeaturesAllowed,
   ProEntitlement,
   Viewer,
 } from "@rat-stack/core";
@@ -218,7 +217,6 @@ const board: readonly JobValue[] = [
   seed({
     feed: "greenhouse:acme",
     id: "gh-1",
-    salary: "$250k",
     source: "Greenhouse",
   }),
   seed({ feed: "greenhouse:acme", id: "gh-2", source: "Greenhouse" }),
@@ -301,7 +299,7 @@ describe("listJobs for Free and Pro viewers", () => {
 
           yield* JobStore.use((store) =>
             Effect.forEach(
-              ["gh-1", "gh-2"],
+              ["gh-1", "gh-2", "rm-1"],
               (id) =>
                 store.saveEnrichment(id, {
                   enrichedAt: NOW,
@@ -334,31 +332,30 @@ describe("listJobs for Free and Pro viewers", () => {
 
           const salaried = { ...everything, salaryListed: true };
 
-          const [anonymous, freeRows, proRows, freeFiltered, proFiltered] =
-            yield* Effect.all([
-              rowsFor(Viewer.Anonymous(), everything),
-              rowsFor(Viewer.Member({ account: free }), everything),
-              rowsFor(Viewer.Member({ account: pro }), everything),
-              rowsFor(Viewer.Member({ account: free }), salaried),
-              rowsFor(Viewer.Member({ account: pro }), salaried),
-            ]);
+          const [
+            anonymous,
+            freeRows,
+            proRows,
+            publicFiltered,
+            freeFiltered,
+            proFiltered,
+          ] = yield* Effect.all([
+            rowsFor(Viewer.Anonymous(), everything),
+            rowsFor(Viewer.Member({ account: free }), everything),
+            rowsFor(Viewer.Member({ account: pro }), everything),
+            rowsFor(Viewer.Anonymous(), salaried),
+            rowsFor(Viewer.Member({ account: free }), salaried),
+            rowsFor(Viewer.Member({ account: pro }), salaried),
+          ]);
 
           expect(anonymous.toSorted()).toEqual(
             board.map((job) => job.id).toSorted()
           );
           expect(freeRows).toEqual(anonymous);
           expect(proRows).toEqual(anonymous);
+          expect(publicFiltered).toEqual(anonymous);
           expect(freeFiltered).toEqual(anonymous);
-          expect(proFiltered.toSorted()).toEqual(
-            board
-              .flatMap((job) =>
-                job.salary !== null && paidFeaturesAllowed(job.source)
-                  ? [job.id]
-                  : []
-              )
-              .toSorted()
-          );
-          expect(proFiltered.toSorted()).toEqual(["gh-1", "jb-1"]);
+          expect(proFiltered.toSorted()).toEqual(["gh-1", "gh-2", "jb-1"]);
 
           const enrichmentFilters: readonly JobQueryValue[] = [
             {

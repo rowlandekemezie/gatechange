@@ -95,7 +95,7 @@ const filteredJobs = (query: JobQueryValue, now: number) => {
     const sources = paidFeatureSources();
 
     conditions.push(
-      `salary IS NOT NULL AND source IN (${placeholders(sources.length)})`
+      `(salary IS NOT NULL OR salary_currency IS NOT NULL) AND source IN (${placeholders(sources.length)})`
     );
     params.push(...sources);
   }

@@ -117,7 +117,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
     const listedMatches =
       !query.salaryListed ||
-      (job.salary !== null && paidFeaturesAllowed(job.source));
+      ((job.salary !== null || salary !== null) &&
+        paidFeaturesAllowed(job.source));
 
     return salaryMatches && seniorityMatches && listedMatches;
   };
