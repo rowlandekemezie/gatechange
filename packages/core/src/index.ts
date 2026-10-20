@@ -382,6 +382,7 @@ export {
   ModelAnswer,
   moneyRangesIn,
   SalaryPeriod,
+  salaryDisagreesWithText,
   skipHandling,
   SkipReason,
   sweepLimitOf,
