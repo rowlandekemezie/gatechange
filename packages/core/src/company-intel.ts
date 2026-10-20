@@ -38,12 +38,6 @@ export const companySlugOf = (company: string): Option.Option<string> =>
     (slug) => slug.length > 0
   );
 
-export const historyRangeOf = (slug: string) => {
-  const key = slug.replaceAll("-", "");
-
-  return { from: `${key}|`, until: `${key}}` };
-};
-
 export const sourceOfFeedKey = (feed: string): Option.Option<SourceNameValue> =>
   Array.findFirst(SourceName.literals, (source) =>
     feed.startsWith(`${source.toLowerCase()}:`)

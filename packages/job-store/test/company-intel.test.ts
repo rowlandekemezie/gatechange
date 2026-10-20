@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   companyIntelOf,
+  companySlugOf,
+  fingerprintOf,
   DAY_MILLIS,
   JobStore,
   PostingFeeds,
@@ -13,8 +15,13 @@ import { Array, Effect, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
 import { SqlExecutor, statement } from "../src/index.js";
-import { trackedSinceStatement } from "../src/queries.js";
+import {
+  companyOpenRolesStatement,
+  trackedSinceStatement,
+} from "../src/queries.js";
 import { seededSqlJsJobStore, sqlJsJobStore } from "./sqljs-executor.js";
+
+const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
 const NOW = 1_760_000_000_000;
 
@@ -444,7 +451,203 @@ describe("company records on the SQL store", () => {
         expect(plan.map((step) => step.detail)).toStrictEqual([
           "SEARCH intel_history USING COVERING INDEX intel_history_first_seen",
         ]);
+
+        const open = companyOpenRolesStatement("acme-cloud", NOW);
+
+        const openPlan = yield* SqlExecutor.use((sql) =>
+          sql.all(
+            "explainCompanyOpenRoles",
+            statement(`EXPLAIN QUERY PLAN ${open.sql}`, open.params),
+            Schema.Struct({ detail: Schema.String })
+          )
+        );
+
+        expect(
+          openPlan.some((step) =>
+            step.detail.includes("SEARCH jobs USING INDEX jobs_company_slug")
+          )
+        ).toBe(true);
       })
     )
   );
+});
+
+it.effect(
+  "independent slug collision with the same title retains the requested company's role",
+  () =>
+    withStore(
+      Effect.gen(function* sameTitleAtDifferentCompanies() {
+        yield* ingestListing(0, {
+          [BOARD]: [vp],
+          [LOOKALIKE_BOARD]: [posting("other-vp", vp.title, "AcmeCloud")],
+        });
+        const store = yield* JobStore;
+        const now = NOW;
+
+        const a = companyIntelOf(
+          "acme-cloud",
+          yield* store.companyRecords("acme-cloud", now),
+          now
+        );
+
+        const b = companyIntelOf(
+          "acmecloud",
+          yield* store.companyRecords("acmecloud", now),
+          now
+        );
+
+        expect(a.roles.map((role) => role.id)).toStrictEqual([`${BOARD}:vp`]);
+        expect(b.roles.map((role) => role.id)).toStrictEqual([
+          `${LOOKALIKE_BOARD}:other-vp`,
+        ]);
+      })
+    )
+);
+
+it.effect(
+  "independent company fingerprint collision cannot donate another company's days",
+  () =>
+    withStore(
+      Effect.gen(function* separateCompanyDays() {
+        yield* ingestListing(0, { [BOARD]: [vp] });
+        yield* ingestListing(1, { [BOARD]: [] });
+        yield* ingestListing(20, {
+          [LOOKALIKE_BOARD]: [posting("other-vp", vp.title, "AcmeCloud")],
+        });
+        const store = yield* JobStore;
+        const now = NOW + 20 * DAY_MILLIS;
+
+        const intel = companyIntelOf(
+          "acmecloud",
+          yield* store.companyRecords("acmecloud", now),
+          now
+        );
+
+        expect(intel.roles).toHaveLength(1);
+        expect(intel.roles[0]).toMatchObject({ daysOpen: 0, reposts: 0 });
+      })
+    )
+);
+
+it.effect(
+  "equivalent company slugs retain one shared role history across board aliases",
+  () =>
+    withStore(
+      Effect.gen(function* equivalentCompany() {
+        yield* ingestListing(0, { [BOARD]: [vp] });
+        yield* ingestListing(1, {});
+        yield* ingestListing(20, {
+          [LOOKALIKE_BOARD]: [posting("alias", vp.title, " ACME---Cloud ")],
+        });
+        const store = yield* JobStore;
+        const now = NOW + 20 * DAY_MILLIS;
+        const records = yield* store.companyRecords("acme-cloud", now);
+        expect(companyIntelOf("acme-cloud", records, now).roles).toMatchObject([
+          { daysOpen: 0, reposts: 1 },
+        ]);
+        expect(records.history).toHaveLength(1);
+      })
+    )
+);
+
+it.effect(
+  "migration company keys match the domain normalizer and isolate colliding histories",
+  () =>
+    Effect.gen(function* companyKeyBackfill() {
+      const companies = [
+        "Acme Cloud",
+        "AcmeCloud",
+        " ACME---Cloud ",
+        "Acme|Cloud",
+        "A__B",
+        "A.B",
+        "A\tB",
+        "K Cloud",
+        "K Cloud",
+        "İCloud",
+        "İCloud",
+        "Straße",
+        "École",
+        "東京",
+        "---",
+        "a😀b",
+        "a'B",
+      ];
+
+      const values = companies.map(
+        (company, index) =>
+          `('seed:${index}', 'greenhouse:seed', 'Greenhouse', 'VP Engineering', ${quote(company)}, 'Remote', 'RemoteCanada', 'Remote', 'VicePresident', 'https://jobs.example/${index}', NULL, 50, ${NOW}, ${NOW - index}, ${NOW}, ${quote(fingerprintOf({ company, title: "VP Engineering" }))})`
+      );
+
+      const layer = yield* seededSqlJsJobStore({
+        "0001_jobs.sql": `INSERT INTO jobs (id, feed, source, title, company, location, region, arrangement, role, url, salary, relevance, posted_at, first_seen_at, last_seen_at, fingerprint) VALUES ${values.join(",")};`,
+      });
+
+      yield* Effect.gen(function* verifyKeys() {
+        const sql = yield* SqlExecutor;
+
+        const rows = yield* sql.all(
+          "companyKeys",
+          statement("SELECT company, company_slug FROM jobs ORDER BY id"),
+          Schema.Struct({ company: Schema.String, company_slug: Schema.String })
+        );
+
+        expect(
+          rows.map((row) => [row.company, row.company_slug])
+        ).toStrictEqual(
+          companies
+            .map((company, index) => ({ company, id: `seed:${index}` }))
+            .toSorted((left, right) => left.id.localeCompare(right.id))
+            .map(({ company }) => [
+              company,
+              Option.getOrElse(companySlugOf(company), () => ""),
+            ])
+        );
+
+        const counts = yield* sql.all(
+          "historyCompanyKeys",
+          statement(
+            "SELECT company_slug, COUNT(*) AS count, MIN(first_seen_at) AS first_seen_at FROM intel_history WHERE company_slug IN ('acme-cloud', 'acmecloud') GROUP BY company_slug ORDER BY company_slug"
+          ),
+          Schema.Struct({
+            company_slug: Schema.String,
+            count: Schema.Int,
+            first_seen_at: Schema.Int,
+          })
+        );
+
+        expect(counts).toStrictEqual([
+          { company_slug: "acme-cloud", count: 2, first_seen_at: NOW - 3 },
+          { company_slug: "acmecloud", count: 1, first_seen_at: NOW - 1 },
+        ]);
+        const store = yield* JobStore;
+        expect(
+          (yield* store.companyRecords("acmecloud", NOW)).open.map(
+            (role) => role.company
+          )
+        ).toStrictEqual(["AcmeCloud"]);
+        expect(
+          (yield* store.companyRecords("acme-cloud", NOW)).open.map(
+            (role) => role.company
+          )
+        ).toStrictEqual(["Acme Cloud", "Acme|Cloud"]);
+      }).pipe(Effect.provide(layer));
+    })
+);
+
+it("accounts for every non-ASCII Unicode character whose lowercase contributes ASCII letters", () => {
+  const mappings: [number, string][] = [];
+
+  for (let point = 128; point <= 0x10_ff_ff; point += 1) {
+    const lower = String.fromCodePoint(point).toLowerCase();
+
+    if (/[a-z]/u.test(lower)) {
+      mappings.push([point, lower]);
+    }
+  }
+
+  expect(mappings).toStrictEqual([
+    [0x1_30, "i̇"],
+    [0x21_2a, "k"],
+  ]);
 });

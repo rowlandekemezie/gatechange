@@ -1,9 +1,9 @@
 import { Array, Effect, Layer, Option, pipe } from "effect";
 
 import {
+  companySlugOf,
   daysOpen,
   fingerprintOf,
-  historyRangeOf,
   isRepost,
   JobStore,
   MAX_AGE_DAYS,
@@ -123,7 +123,11 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       return;
     }
 
-    const fingerprint = fingerprintOf(job);
+    const fingerprint = JSON.stringify([
+      Option.getOrNull(companySlugOf(job.company)),
+      fingerprintOf(job),
+    ]);
+
     const found = intel.get(fingerprint);
 
     if (found === undefined) {
@@ -219,55 +223,53 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         return true;
       }),
     companyRecords: (slug, now) =>
-      Effect.sync(() => {
-        const { from, until } = historyRangeOf(slug);
+      Effect.sync(() => ({
+        history: [...intel.values()].flatMap((found) =>
+          Option.contains(companySlugOf(found.company), slug) &&
+          found.stint.until > now - TREND_WINDOW_MILLIS
+            ? [
+                {
+                  company: found.company,
+                  feed: found.feed,
+                  stints:
+                    found.previous === null
+                      ? [found.stint]
+                      : [found.stint, found.previous],
+                },
+              ]
+            : []
+        ),
+        open: [...jobs.values()].flatMap((job) => {
+          const found = intel.get(
+            JSON.stringify([
+              Option.getOrNull(companySlugOf(job.company)),
+              fingerprintOf(job),
+            ])
+          );
 
-        const inRange = (fingerprint: string) =>
-          fingerprint >= from && fingerprint < until;
-
-        return {
-          history: [...intel.entries()].flatMap(([fingerprint, found]) =>
-            inRange(fingerprint) &&
-            found.stint.until > now - TREND_WINDOW_MILLIS
-              ? [
-                  {
-                    company: found.company,
-                    feed: found.feed,
-                    stints:
-                      found.previous === null
-                        ? [found.stint]
-                        : [found.stint, found.previous],
-                  },
-                ]
-              : []
-          ),
-          open: [...jobs.values()].flatMap((job) => {
-            const found = intel.get(fingerprintOf(job));
-
-            return inRange(fingerprintOf(job)) &&
-              job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
-              ? [
-                  {
-                    company: job.company,
-                    id: job.id,
-                    openedAt: found?.stint.from ?? job.firstSeenAt,
-                    reposts: found?.reposts ?? 0,
-                    role: job.role,
-                    salary: enrichmentOf(job.id)?.salary ?? null,
-                    source: job.source,
-                    title: job.title,
-                  },
-                ]
-              : [];
-          }),
-          trackedSince:
-            intel.size === 0
-              ? null
-              : Math.min(
-                  ...[...intel.values()].map((found) => found.firstSeenAt)
-                ),
-        };
-      }),
+          return Option.contains(companySlugOf(job.company), slug) &&
+            job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
+            ? [
+                {
+                  company: job.company,
+                  id: job.id,
+                  openedAt: found?.stint.from ?? job.firstSeenAt,
+                  reposts: found?.reposts ?? 0,
+                  role: job.role,
+                  salary: enrichmentOf(job.id)?.salary ?? null,
+                  source: job.source,
+                  title: job.title,
+                },
+              ]
+            : [];
+        }),
+        trackedSince:
+          intel.size === 0
+            ? null
+            : Math.min(
+                ...[...intel.values()].map((found) => found.firstSeenAt)
+              ),
+      })),
     feedStates: Effect.sync(() => [...states.values()]),
     find: (id) =>
       Effect.sync(() =>

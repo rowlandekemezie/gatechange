@@ -385,7 +385,6 @@ export {
   CompanySummary,
   companySummaryOf,
   HiringTrend,
-  historyRangeOf,
   MIN_TREND_ROLES,
   MIN_TREND_WEEKS,
   ShownTrend,
