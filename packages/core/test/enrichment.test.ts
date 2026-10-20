@@ -1916,6 +1916,18 @@ describe("enrichListing", () => {
       "Hybrid",
     ],
     [
+      "an arrangement improving employee experience",
+      "Remote",
+      "We offer a hybrid work arrangement to improve the employee experience.",
+      "Hybrid",
+    ],
+    [
+      "an arrangement label improving employee experience",
+      "Remote",
+      "Work Arrangement: Hybrid to improve the employee experience.",
+      "Hybrid",
+    ],
+    [
       "an arrangement denied with a contraction",
       "Remote",
       "We don't offer a hybrid work arrangement.",

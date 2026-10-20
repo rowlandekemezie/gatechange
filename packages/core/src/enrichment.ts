@@ -865,7 +865,7 @@ const arrangementStated = (posting: SearchableText) =>
         (sentence) =>
           statement.test(sentence) &&
           !pastExperience.test(sentence) &&
-          !/\bexperience\b/iu.test(sentence) &&
+          !/\bexperience\s+(?:working|in|under|within)\b/iu.test(sentence) &&
           !negationOf(statement).test(
             sentence.replaceAll(
               /\b(?:do|does|is|are|ca|wo|would|should|could)n['’]t\b|\bcannot\b/giu,
