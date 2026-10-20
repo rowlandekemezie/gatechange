@@ -81,7 +81,7 @@ const proFeatures: readonly (readonly [string, boolean])[] = [
     true,
   ],
   ["Show only roles that state a salary", true],
-  ["Salary floor and seniority filters", false],
+  ["Salary floor and seniority filters", true],
   ["Company intel", false],
 ];
 

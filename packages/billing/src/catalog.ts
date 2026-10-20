@@ -7,7 +7,7 @@ import { BILLING_EVENTS, STRIPE_WEBHOOK_PATH } from "./webhook.js";
 
 export const PRO_PRODUCT_NAME = "Pro";
 
-export const PRO_PRODUCT_DESCRIPTION = `Email alerts within 20 minutes of a new match for your saved searches, up to ${INSTANT_SENDS_PER_MEMBER_PER_DAY} a day, and a filter for roles that state a salary.`;
+export const PRO_PRODUCT_DESCRIPTION = `Email alerts within 20 minutes of a new match for your saved searches, up to ${INSTANT_SENDS_PER_MEMBER_PER_DAY} a day, salary-floor and seniority filters, and a filter for roles that state a salary.`;
 
 const proPrice = (product: Stripe.Product, plan: PlanValue) =>
   Stripe.Price(`Pro${plan}Price`, {

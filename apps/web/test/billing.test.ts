@@ -314,6 +314,11 @@ describe("billing pages", () => {
           expect(text).toContain("$19 a month");
           expect(text).toContain("$49 every 3 months");
           expect(text).toContain("$149 a year");
+          expect(text).toContain("Salary floor and seniority filters");
+          expect(text).not.toContain(
+            "Salary floor and seniority filters coming soon"
+          );
+          expect(text).toContain("Company intel coming soon");
           expect(text.match(/Sign in to upgrade/gu)?.length).toBe(3);
         }
       )
