@@ -82,8 +82,7 @@ const fixedInputTokens =
 
 const letterRunsOf = (text: string) => text.match(/\p{L}+/gu)?.length ?? 0;
 
-export const PROMPT_TOKEN_FLOOR =
-  letterRunsOf(SYSTEM_PROMPT) + letterRunsOf(JSON.stringify(responseFormat));
+export const PROMPT_TOKEN_FLOOR = letterRunsOf(SYSTEM_PROMPT);
 
 const inputTokensOf = (request: ChatRequest) =>
   fixedInputTokens + bytesOf(request.messages[1]?.content ?? "");
