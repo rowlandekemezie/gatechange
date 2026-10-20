@@ -1,5 +1,6 @@
 import {
   Arrangement,
+  Currency,
   daysOpen,
   Enrichment,
   IngestOutcome,
@@ -8,6 +9,7 @@ import {
   Region,
   RoleLevel,
   SourceName,
+  TREND_WINDOW_MILLIS,
 } from "@rat-stack/core";
 import type {
   EnrichmentValue,
@@ -16,7 +18,9 @@ import type {
   JobDetailValue,
   JobValue,
   ListedJobValue,
+  HistoryRecord,
   ListingHistory,
+  OpenRoleRecord,
 } from "@rat-stack/core";
 import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
@@ -25,6 +29,8 @@ import {
   claimIngestStatement,
   claimNeuronsStatement,
   clearSkipStatement,
+  companyHistoryStatement,
+  companyOpenRolesStatement,
   countJobsStatement,
   feedFailedStatement,
   feedHealthStatement,
@@ -32,6 +38,7 @@ import {
   feedSucceededStatement,
   findJobStatement,
   historyStatement,
+  intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
   newTodayStatement,
@@ -50,6 +57,7 @@ import {
   roleCountsStatement,
   saveEnrichmentStatement,
   sightingStatement,
+  trackedSinceStatement,
   unenrichedListingsStatement,
   UPSERT_CHUNK,
   upsertJobStatement,
@@ -106,6 +114,63 @@ const HistoryRow = Schema.Struct({
   last_seen_at: Count,
   reposts: Count,
   sightings: Count,
+});
+
+const CompanyRoleRow = Schema.Struct({
+  company: Schema.String,
+  id: Schema.String,
+  opened_at: Count,
+  reposts: Count,
+  role: RoleLevel,
+  salary_currency: Schema.NullOr(Currency),
+  salary_max: Schema.NullOr(Count),
+  salary_min: Schema.NullOr(Count),
+  source: SourceName,
+  title: Schema.String,
+});
+
+const CompanyHistoryRow = Schema.Struct({
+  company: Schema.String,
+  last_seen_at: Count,
+  last_seen_feed: Schema.String,
+  previous_ended_at: Schema.NullOr(Count),
+  previous_started_at: Schema.NullOr(Count),
+  stint_started_at: Count,
+});
+
+const historyRecordOfRow = (
+  row: typeof CompanyHistoryRow.Type
+): HistoryRecord => ({
+  company: row.company,
+  feed: row.last_seen_feed,
+  stints: [
+    { from: row.stint_started_at, until: row.last_seen_at },
+    ...(row.previous_started_at === null || row.previous_ended_at === null
+      ? []
+      : [{ from: row.previous_started_at, until: row.previous_ended_at }]),
+  ],
+});
+
+const TrackedSinceRow = Schema.Struct({ since: Schema.NullOr(Count) });
+
+const openRoleOfRow = (row: typeof CompanyRoleRow.Type): OpenRoleRecord => ({
+  company: row.company,
+  id: row.id,
+  openedAt: row.opened_at,
+  reposts: row.reposts,
+  role: row.role,
+  salary:
+    row.salary_currency === null ||
+    row.salary_min === null ||
+    row.salary_max === null
+      ? null
+      : {
+          currency: row.salary_currency,
+          max: row.salary_max,
+          min: row.salary_min,
+        },
+  source: row.source,
+  title: row.title,
 });
 
 const FeedStateRow = Schema.Struct({
@@ -251,6 +316,37 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("claimNeurons", [claimNeuronsStatement(claim)])
         .pipe(Effect.map(([claimed]) => claimed?.changes === 1)),
 
+    companyRecords: (slug, now) =>
+      Effect.all(
+        {
+          history: sql.all(
+            "companyHistory",
+            companyHistoryStatement(slug, now - TREND_WINDOW_MILLIS),
+            CompanyHistoryRow
+          ),
+          open: sql.all(
+            "companyOpenRoles",
+            companyOpenRolesStatement(slug, now),
+            CompanyRoleRow
+          ),
+          tracked: sql.all(
+            "trackedSince",
+            trackedSinceStatement,
+            TrackedSinceRow
+          ),
+        },
+        { concurrency: 3 }
+      ).pipe(
+        Effect.map(({ history, open, tracked }) => ({
+          history: history.map(historyRecordOfRow),
+          open: open.map(openRoleOfRow),
+          trackedSince: Option.match(Array.head(tracked), {
+            onNone: () => null,
+            onSome: (row) => row.since,
+          }),
+        }))
+      ),
+
     feedStates: sql
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
@@ -340,7 +436,10 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             "recordSightings",
             pipe(
               chunk,
-              Array.map((listing) => sightingStatement(listing, seenAt))
+              Array.flatMap((listing) => [
+                sightingStatement(listing, seenAt),
+                ...intelSightingStatements(listing, seenAt),
+              ])
             )
           ),
         { discard: true }
@@ -364,6 +463,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             Array.flatMap((job) => [
               upsertJobStatement(job),
               sightingStatement(job, seenAt),
+              ...intelSightingStatements(job, seenAt),
             ])
           )
         );

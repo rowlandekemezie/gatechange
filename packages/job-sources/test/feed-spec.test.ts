@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { selectDueFeeds, SourceTerms } from "@rat-stack/core";
+import { selectDueFeeds, sourceOfFeedKey, SourceTerms } from "@rat-stack/core";
 import type { FeedRef, FeedStateValue, SourceNameValue } from "@rat-stack/core";
+import { Option } from "effect";
 
 import { companyBoards, feedRefOf, feedSpecs } from "../src/index.js";
 
@@ -64,5 +65,13 @@ describe("source terms", () => {
     );
 
     expect(missing).toStrictEqual([]);
+  });
+});
+
+describe("feed keys", () => {
+  it("name their source so company intel can apply each source's terms to history", () => {
+    for (const feed of catalog) {
+      expect(sourceOfFeedKey(feed.key)).toStrictEqual(Option.some(feed.source));
+    }
   });
 });
