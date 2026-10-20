@@ -51,11 +51,13 @@ const backend = HttpRouter.toWebHandler(
     Layer.provide([
       group.toLayer({
         account: () => Effect.die("account is not served here"),
+        agentTokens: () => Effect.die("agent tokens are not served here"),
         boardStats: () => Effect.die("boardStats is not served here"),
         companyIntel: () => Effect.die("company intel is not served here"),
         deleteSearch: () => Effect.die("deleteSearch is not served here"),
         getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
+        issueAgentToken: () => Effect.die("agent tokens are not served here"),
         listJobs: () =>
           Effect.succeed({
             generatedAt: 1_760_500_000_000,
@@ -65,6 +67,7 @@ const backend = HttpRouter.toWebHandler(
         membership: () => Effect.die("billing is not served here"),
         noteTrackedJob: () => Effect.die("the tracker is not served here"),
         openBillingPortal: () => Effect.die("billing is not served here"),
+        revokeAgentToken: () => Effect.die("agent tokens are not served here"),
         saveSearch: () => Effect.die("saveSearch is not served here"),
         savedSearches: () => Effect.die("savedSearches is not served here"),
         setInstantAlerts: () => Effect.die("billing is not served here"),

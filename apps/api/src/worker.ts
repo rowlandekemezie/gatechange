@@ -48,6 +48,7 @@ import {
 } from "@rat-stack/job-enrichment";
 import { postingFeedsLayer, postingTextsLayer } from "@rat-stack/job-sources";
 import {
+  d1AgentTokenStoreLayer,
   d1AlertStoreLayer,
   d1BillingStoreLayer,
   d1JobStoreLayer,
@@ -445,10 +446,16 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     );
 
     const mcpHttp = yield* HttpRouter.toHttpEffect(
-      mcpAppLayer(Layer.mergeAll(storeLayer, billingLayer))
+      mcpAppLayer(Layer.mergeAll(storeLayer, alertLayer, billingLayer))
     ).pipe(Effect.orDie);
 
-    const mcp = serveMcp(mcpHttp);
+    const agentAccessLayer = Layer.mergeAll(
+      d1AgentTokenStoreLayer(client),
+      billingLayer
+    );
+
+    const mcp = (request: HttpServerRequest.HttpServerRequest) =>
+      serveMcp(mcpHttp)(request).pipe(Effect.provide(agentAccessLayer));
 
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(
@@ -462,7 +469,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
                 Layer.mergeAll(
                   storeLayer,
                   alertLayer,
-                  billingLayer,
+                  agentAccessLayer,
                   Layer.succeed(AccountStore, accountStore),
                   Layer.succeed(CurrentViewer, viewer)
                 )
