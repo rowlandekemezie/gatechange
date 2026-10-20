@@ -21,11 +21,13 @@ import { NoBillingAccount } from "./no-billing-account.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
 import { TrackerFull } from "./tracker-full.js";
+import { TrackerJobIdTooLong } from "./tracker-job-id-too-long.js";
+import { TrackerStorageFull } from "./tracker-storage-full.js";
 import {
   ImportShortlist,
   Notes,
   TrackedJobs,
-  TrackRequest,
+  TrackOrMoveRequest,
 } from "./tracker.js";
 import { Unauthorized } from "./unauthorized.js";
 
@@ -209,18 +211,26 @@ export {
   Stage,
   stages,
   TRACKER_LIMIT,
+  TRACKER_BYTE_LIMIT,
+  MAX_NEW_TRACKED_JOB_ID_BYTES,
   TrackedJob,
   TrackedJobs,
   TrackRequest,
+  TrackOrMoveRequest,
 } from "./tracker.js";
 
 export { TrackerFull } from "./tracker-full.js";
+
+export { TrackerJobIdTooLong } from "./tracker-job-id-too-long.js";
+
+export { TrackerStorageFull } from "./tracker-storage-full.js";
 
 export type {
   JobSnapshotValue,
   StageValue,
   TrackedJobValue,
   TrackRequestValue,
+  TrackOrMoveRequestValue,
 } from "./tracker.js";
 
 export { Permission, SourceTerms } from "./source-terms.js";
@@ -317,6 +327,8 @@ const TrackerAddFailure = Schema.Union([
   Unauthorized,
   JobStoreUnavailable,
   TrackerFull,
+  TrackerStorageFull,
+  TrackerJobIdTooLong,
 ]);
 
 const TrackedJobKey = Schema.Struct({ jobId: Schema.NonEmptyString });
@@ -335,7 +347,7 @@ export const trackJobContract = defineContract("trackJob", {
   description:
     "Track a job for the signed-in member at a stage, or move a tracked job to that stage, and return the tracker",
   failure: TrackerAddFailure,
-  input: TrackRequest,
+  input: TrackOrMoveRequest,
   output: TrackedJobs,
 });
 
@@ -352,7 +364,11 @@ export const noteTrackedJobContract = defineContract("noteTrackedJob", {
   annotations: { idempotent: true },
   description:
     "Replace the notes on one of the signed-in member's tracked jobs and return the tracker",
-  failure: TrackerFailure,
+  failure: Schema.Union([
+    Unauthorized,
+    JobStoreUnavailable,
+    TrackerStorageFull,
+  ]),
   input: Schema.Struct({ ...TrackedJobKey.fields, notes: Notes }),
   output: TrackedJobs,
 });

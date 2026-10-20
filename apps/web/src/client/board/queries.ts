@@ -7,6 +7,7 @@ import type {
   SavedSearchIdValue,
   SearchFiltersValue,
   TrackRequestValue,
+  TrackOrMoveRequestValue,
 } from "@rat-stack/core/contracts";
 import { Context, Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -44,7 +45,7 @@ const make = Effect.gen(function* makeJobQueries() {
     signInOptions: client.signInOptions({}),
     startCheckout: (plan: PlanValue) => client.startCheckout({ plan }),
     stats: client.boardStats({}),
-    trackJob: (job: TrackRequestValue) => client.trackJob(job),
+    trackJob: (job: TrackOrMoveRequestValue) => client.trackJob(job),
     trackedJobs: client.trackedJobs({}),
     untrackJob: (jobId: string) => client.untrackJob({ jobId }),
   };

@@ -51,6 +51,8 @@ import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
 import { ServedSources } from "./served-sources.js";
 import type { TrackerFull } from "./tracker-full.js";
+import type { TrackerJobIdTooLong } from "./tracker-job-id-too-long.js";
+import type { TrackerStorageFull } from "./tracker-storage-full.js";
 import { TrackerStore } from "./tracker.js";
 
 const viewerIsPro = CurrentViewer.pipe(
@@ -164,7 +166,13 @@ export const deleteSearch = implement(deleteSearchContract, ({ id }) =>
   })
 );
 
-const changeTracker = <E extends JobStoreUnavailable | TrackerFull>(
+const changeTracker = <
+  E extends
+    | JobStoreUnavailable
+    | TrackerFull
+    | TrackerStorageFull
+    | TrackerJobIdTooLong,
+>(
   change: (
     store: TrackerStore["Service"],
     owner: AccountIdValue,
