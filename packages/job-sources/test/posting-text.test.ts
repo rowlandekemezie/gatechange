@@ -71,6 +71,71 @@ const fetchPosting = Effect.fnUntraced(function* fetchPosting(id: string) {
   return yield* texts.fetch(jobWithId(id));
 });
 
+const unitedStates = (addressLocality: string, addressRegion: string) => ({
+  addressCountry: "United States",
+  addressLocality,
+  addressRegion,
+});
+
+const salaryComponent = (
+  interval: string,
+  minValue: number,
+  maxValue: number
+) => ({
+  compensationType: "Salary",
+  currencyCode: "USD",
+  interval,
+  maxValue,
+  minValue,
+});
+
+type Json =
+  | boolean
+  | number
+  | string
+  | null
+  | readonly Json[]
+  | { readonly [key: string]: Json };
+
+interface AshbyJobFixture {
+  readonly address?: Json;
+  readonly compensation?: Json;
+  readonly location?: string;
+}
+
+const readAshbyJob = (job: AshbyJobFixture) =>
+  fetchPosting("ashby:plaid:job").pipe(
+    Effect.provide(
+      serving(
+        JSON.stringify({
+          jobs: [{ descriptionPlain: "Sell.", id: "job", ...job }],
+        })
+      ).layer
+    )
+  );
+
+const labelledTier = (
+  labels: Record<string, string | null>,
+  components: readonly Json[] = []
+) => ({
+  compensation: {
+    compensationTierSummary: "$143K – $193.2K",
+    compensationTiers: [
+      {
+        additionalInformation: labels.additionalInformation ?? null,
+        components: [
+          ...components,
+          {
+            ...salaryComponent("1 YEAR", 143_000, 193_200),
+            summary: labels.summary ?? "$143K – $193.2K",
+          },
+        ],
+        title: labels.title ?? null,
+      },
+    ],
+  },
+});
+
 const fetchText = (id: string) =>
   fetchPosting(id).pipe(Effect.map((posting) => posting.text));
 
@@ -289,6 +354,7 @@ describe("posting texts", () => {
         const posting = yield* fetchPosting("ashby:baseten:hybrid");
 
         expect(posting).toStrictEqual({
+          salary: null,
           text: "Inference team.",
           workplace: "Hybrid",
         });
@@ -308,6 +374,389 @@ describe("posting texts", () => {
           ).layer
         )
       )
+  );
+
+  it.effect.each([
+    [
+      "a yearly salary tier",
+      [{ components: [salaryComponent("1 YEAR", 200_000, 250_000)] }],
+      { currency: "USD", max: 250_000, min: 200_000 },
+    ],
+    [
+      "an hourly salary tier",
+      [{ components: [salaryComponent("1 HOUR", 50, 60)] }],
+      { currency: "USD", max: 124_800, min: 104_000 },
+    ],
+    [
+      "a monthly salary tier",
+      [{ components: [salaryComponent("1 MONTH", 12_000, 15_000)] }],
+      { currency: "USD", max: 180_000, min: 144_000 },
+    ],
+    [
+      "two tiers whose summary merges them",
+      [
+        {
+          components: [
+            { compensationType: "EquityPercentage", minValue: 0.1 },
+            salaryComponent("1 YEAR", 240_000, 310_000),
+          ],
+          title: "Tier 1",
+        },
+        {
+          components: [salaryComponent("1 YEAR", 210_000, 280_000)],
+          title: "Tier 2",
+        },
+      ],
+      { currency: "USD", max: 310_000, min: 240_000 },
+    ],
+    [
+      "no salary component",
+      [{ components: [{ compensationType: "EquityPercentage", minValue: 1 }] }],
+      null,
+    ],
+    [
+      "a salary with no max",
+      [
+        {
+          components: [
+            { ...salaryComponent("1 YEAR", 200_000, 0), maxValue: null },
+          ],
+        },
+      ],
+      null,
+    ],
+    [
+      "an interval the board does not annualise",
+      [{ components: [salaryComponent("1 WEEK", 60_000, 80_000)] }],
+      null,
+    ],
+    ["malformed tiers", "not a list", null],
+    ["no tiers", undefined, null],
+  ] as const)(
+    "an Ashby posting with %s carries its first tier's salary as its salary field and is still read",
+    ([, compensationTiers, salary]) =>
+      Effect.gen(function* readAshbySalary() {
+        const posting = yield* fetchPosting("ashby:clickhouse:tiers");
+
+        expect(posting.salary).toStrictEqual(salary);
+        expect(posting.text).toBe(
+          "Lead the database team.\n\nCompensation: $210K – $310K USD per 1 YEAR"
+        );
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              jobs: [
+                {
+                  compensation: {
+                    compensationTierSummary: "$210K – $310K",
+                    compensationTiers,
+                    summaryComponents: [
+                      salaryComponent("1 YEAR", 210_000, 310_000),
+                    ],
+                  },
+                  descriptionPlain: "Lead the database team.",
+                  id: "tiers",
+                },
+              ],
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect.each([
+    [
+      "an On-Target Earnings summary",
+      { summary: "On-Target Earnings $143K – $193.2K" },
+    ],
+    ["an OTE split summary", { summary: "OTE 75/25 Split $143K – $193.2K" }],
+    ["an OTE note", { additionalInformation: "OTE 50/50" }],
+    [
+      "a tier title that calls the range OTE",
+      {
+        summary: "Base Salary Range $143K – $193.2K",
+        title:
+          "For candidates in the US, the Compensation Range below represents On-Target Earnings (OTE).",
+      },
+    ],
+    [
+      "a base plus commissions summary",
+      { summary: "On Target Earnings (Base + Commissions) $143K – $193.2K" },
+    ],
+  ] as const)(
+    "an Ashby salary component labelled as on-target pay by %s is no typed salary",
+    ([, labels]) =>
+      Effect.gen(function* readOteTier() {
+        const posting = yield* readAshbyJob(labelledTier(labels));
+
+        expect(posting.salary).toBeNull();
+      })
+  );
+
+  it.effect.each([
+    ["an unlabelled summary", {}],
+    [
+      "an Estimated Base Salary summary",
+      { summary: "Estimated Base Salary $143K – $193.2K" },
+    ],
+    [
+      "a base salary note that excludes commission",
+      {
+        summary:
+          "The target base salary for this position excludes commission (if applicable), equity and benefits. The pay range shown is the target for new-hire salaries. $143K – $193.2K",
+      },
+    ],
+  ] as const)(
+    "an Ashby salary component with %s beside a commission component stays the typed salary",
+    ([, labels]) =>
+      Effect.gen(function* readBaseTier() {
+        const posting = yield* readAshbyJob(
+          labelledTier(labels, [
+            {
+              compensationType: "Commission",
+              currencyCode: "USD",
+              interval: "1 YEAR",
+              maxValue: null,
+              minValue: null,
+              summary: "Offers Commission",
+            },
+          ])
+        );
+
+        expect(posting.salary).toStrictEqual({
+          currency: "USD",
+          max: 193_200,
+          min: 143_000,
+        });
+      })
+  );
+
+  const cohereTiers = [
+    {
+      components: [
+        {
+          ...salaryComponent("1 YEAR", 295_000, 535_000),
+          currencyCode: "CAD",
+        },
+      ],
+      title: "Canada - Toronto (GTA), Montreal",
+    },
+    {
+      components: [salaryComponent("1 YEAR", 205_000, 380_000)],
+      title: "USA - California, New York and Washington",
+    },
+    {
+      components: [salaryComponent("1 YEAR", 175_000, 325_000)],
+      title: "USA - All Other States",
+    },
+  ];
+
+  it.effect.each([
+    [
+      "Toronto",
+      { addressCountry: "Canada", addressLocality: "Toronto" },
+      { currency: "CAD", max: 535_000, min: 295_000 },
+    ],
+    [
+      "San Francisco",
+      {
+        addressCountry: "United States",
+        addressLocality: "San Francisco",
+        addressRegion: "California",
+      },
+      { currency: "USD", max: 380_000, min: 205_000 },
+    ],
+    [
+      "Austin",
+      {
+        addressCountry: "USA",
+        addressLocality: "Austin",
+        addressRegion: "Texas",
+      },
+      { currency: "USD", max: 380_000, min: 205_000 },
+    ],
+    [
+      "London",
+      { addressCountry: "United Kingdom", addressLocality: "London" },
+      { currency: "CAD", max: 535_000, min: 295_000 },
+    ],
+    [
+      "New York",
+      "not an address",
+      { currency: "USD", max: 380_000, min: 205_000 },
+    ],
+    [
+      "United States",
+      "not an address",
+      { currency: "USD", max: 380_000, min: 205_000 },
+    ],
+  ] as const)(
+    "an Ashby posting in %s takes the tier named for its location, else the first",
+    ([location, postalAddress, salary]) =>
+      Effect.gen(function* readLocatedTier() {
+        const posting = yield* readAshbyJob({
+          address: { postalAddress },
+          compensation: { compensationTiers: cohereTiers },
+          location,
+        });
+
+        expect(posting.salary).toStrictEqual(salary);
+      })
+  );
+
+  const tier = (title: string, minValue: number, maxValue: number) => ({
+    components: [salaryComponent("1 YEAR", minValue, maxValue)],
+    title,
+  });
+
+  const writerTiers = [
+    tier("SF & NYC", 204_000, 240_000),
+    tier("Other US Locations", 183_000, 216_000),
+  ];
+
+  it.effect.each([
+    [
+      "San Francisco, CA",
+      unitedStates("San Francisco", "California"),
+      writerTiers,
+      204_000,
+    ],
+    [
+      "New York City, NY",
+      unitedStates("New York City", "New York"),
+      writerTiers,
+      204_000,
+    ],
+    ["Denver, CO", unitedStates("Denver", "Colorado"), writerTiers, 204_000],
+    [
+      "Denver, Colorado",
+      unitedStates("Denver", "Colorado"),
+      [
+        tier("SF & NYC", 204_000, 240_000),
+        tier("Columbus and Austin", 170_000, 200_000),
+      ],
+      204_000,
+    ],
+    [
+      "San Francisco",
+      unitedStates("San Francisco", "California"),
+      [
+        tier("Remote (US)", 180_000, 210_000),
+        tier("SF & NYC", 204_000, 240_000),
+      ],
+      204_000,
+    ],
+    [
+      "SF",
+      unitedStates("San Francisco", "California"),
+      [
+        tier("Outside SF and NYC", 183_000, 216_000),
+        tier("SF and NYC", 204_000, 240_000),
+      ],
+      204_000,
+    ],
+    [
+      "Austin, TX",
+      {
+        addressCountry: "US",
+        addressLocality: "Austin",
+        addressRegion: "Texas",
+      },
+      [
+        tier("Tier 1 metros", 200_000, 250_000),
+        tier("Non-US", 90_000, 110_000),
+        tier("US other", 150_000, 180_000),
+      ],
+      200_000,
+    ],
+    [
+      "Seattle, WA",
+      unitedStates("Seattle", "Washington"),
+      [
+        tier("Tier 1: New York, San Francisco", 200_000, 250_000),
+        tier("Washington DC", 190_000, 240_000),
+        tier("Rest of US", 150_000, 180_000),
+      ],
+      200_000,
+    ],
+    [
+      "Washington, DC",
+      unitedStates("Washington", "District of Columbia"),
+      [
+        tier("Seattle, Washington", 210_000, 260_000),
+        tier("DC Metro", 190_000, 240_000),
+      ],
+      190_000,
+    ],
+    [
+      "London, Ontario",
+      {
+        addressCountry: "Canada",
+        addressLocality: "London",
+        addressRegion: "Ontario",
+      },
+      [
+        tier("Toronto / Canada", 120_000, 150_000),
+        tier("London", 90_000, 110_000),
+      ],
+      120_000,
+    ],
+    [
+      "Atlanta, GA",
+      unitedStates("Atlanta", "Georgia"),
+      [
+        tier("Tbilisi, Georgia", 40_000, 60_000),
+        tier("United States", 150_000, 180_000),
+      ],
+      150_000,
+    ],
+    [
+      "Tbilisi",
+      {
+        addressCountry: "Georgia",
+        addressLocality: "Tbilisi",
+        addressRegion: "",
+      },
+      [
+        tier("United States", 150_000, 180_000),
+        tier("Georgia", 40_000, 60_000),
+      ],
+      40_000,
+    ],
+  ] as const)(
+    "an Ashby posting in %s takes no residual, negated or other-place tier",
+    ([location, postalAddress, compensationTiers, min]) =>
+      Effect.gen(function* readTierByPlace() {
+        const posting = yield* readAshbyJob({
+          address: { postalAddress },
+          compensation: { compensationTiers },
+          location,
+        });
+
+        expect(posting.salary?.min).toBe(min);
+      })
+  );
+
+  it.effect.each([
+    ["a numeric tier summary", { compensationTierSummary: 210_000 }],
+    [
+      "a summary component with a numeric type",
+      {
+        compensationTierSummary: "$210K – $310K",
+        summaryComponents: [
+          { compensationType: 7 },
+          salaryComponent("1 YEAR", 210_000, 310_000),
+        ],
+      },
+    ],
+    ["a compensation string", "$210K"],
+  ] as const)("an Ashby posting with %s is still read", ([, compensation]) =>
+    Effect.gen(function* readMalformedCompensation() {
+      const posting = yield* readAshbyJob({ compensation });
+
+      expect(posting.text.startsWith("Sell.")).toBe(true);
+    })
   );
 
   it.effect(
@@ -334,6 +783,103 @@ describe("posting texts", () => {
         });
       }).pipe(Effect.provide(server.layer));
     }
+  );
+
+  it.effect.each([
+    [
+      "a yearly range",
+      { currency: "USD", max: 236_500, min: 177_400, period: "YEARLY" },
+      { currency: "USD", max: 236_500, min: 177_400 },
+    ],
+    [
+      "an hourly range",
+      { currency: "USD", max: 60, min: 50, period: "HOURLY" },
+      { currency: "USD", max: 124_800, min: 104_000 },
+    ],
+    [
+      "a fractional hourly range",
+      { currency: "USD", max: 30.46, min: 22.84, period: "HOURLY" },
+      { currency: "USD", max: 63_357, min: 47_507 },
+    ],
+    [
+      "a monthly range",
+      { currency: "USD", max: 15_000, min: 12_000, period: "MONTHLY" },
+      { currency: "USD", max: 180_000, min: 144_000 },
+    ],
+    [
+      "a null max",
+      { currency: "USD", max: null, min: 177_400, period: "YEARLY" },
+      null,
+    ],
+    ["no max", { currency: "USD", min: 177_400, period: "YEARLY" }, null],
+    [
+      "a null currency",
+      { currency: null, max: 236_500, min: 177_400, period: "YEARLY" },
+      null,
+    ],
+    [
+      "a range in a currency the board does not show",
+      { currency: "JPY", max: 9_000_000, min: 7_000_000, period: "YEARLY" },
+      null,
+    ],
+    ["no compensation", null, null],
+  ] as const)(
+    "a SmartRecruiters posting with %s carries %j as its salary field",
+    ([, compensation, salary]) =>
+      Effect.gen(function* readSmartRecruitersSalary() {
+        const posting = yield* fetchPosting(
+          "smartrecruiters:WesternDigital:744000153582331"
+        );
+
+        expect(posting.salary).toStrictEqual(salary);
+        expect(posting.text).toBe("Lead the wafer fab equipment team.");
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              compensation,
+              jobAd: {
+                sections: {
+                  jobDescription: {
+                    text: "<p>Lead the wafer fab equipment team.</p>",
+                  },
+                },
+              },
+            })
+          ).layer
+        )
+      )
+  );
+
+  it.effect.each([
+    ["hybrid", { hybrid: true, remote: false }, "Hybrid"],
+    ["remote", { hybrid: false, remote: true }, "Remote"],
+    ["neither", { hybrid: false, remote: false }, "Unspecified"],
+    ["a malformed location", "Fujisawa", "Unspecified"],
+  ] as const)(
+    "a SmartRecruiters posting whose location is %s carries that workplace",
+    ([, location, workplace]) =>
+      Effect.gen(function* readSmartRecruitersWorkplace() {
+        const posting = yield* fetchPosting(
+          "smartrecruiters:WesternDigital:744000156223569"
+        );
+
+        expect(posting.workplace).toBe(workplace);
+        expect(posting.text).toBe("Mon/Wed/Thu On Site.");
+      }).pipe(
+        Effect.provide(
+          serving(
+            JSON.stringify({
+              jobAd: {
+                sections: {
+                  jobDescription: { text: "<p>Mon/Wed/Thu On Site.</p>" },
+                },
+              },
+              location,
+            })
+          ).layer
+        )
+      )
   );
 
   it.effect(
@@ -368,6 +914,7 @@ describe("posting texts", () => {
         const posting = yield* fetchPosting("workable:upstream:0C4692F46C");
 
         expect(posting).toStrictEqual({
+          salary: null,
           text: "Field engineer.",
           workplace: expected,
         });
@@ -387,6 +934,7 @@ describe("posting texts", () => {
         const posting = yield* fetchPosting("greenhouse:acme:2");
 
         expect(posting).toStrictEqual({
+          salary: null,
           text: "Workplace type: Remote\nYou will work in our Austin office five days a week.",
           workplace: "Unspecified",
         });
@@ -471,7 +1019,11 @@ describe("posting texts", () => {
       Effect.gen(function* readBlankPosting() {
         const posting = yield* fetchPosting("greenhouse:vercel:1");
 
-        expect(posting).toStrictEqual({ text: "", workplace: "Unspecified" });
+        expect(posting).toStrictEqual({
+          salary: null,
+          text: "",
+          workplace: "Unspecified",
+        });
       }).pipe(Effect.provide(serving(JSON.stringify({ content: "" })).layer))
   );
 

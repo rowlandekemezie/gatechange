@@ -177,7 +177,12 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       query.seniorities.length === 0 ||
       (seniority !== null && query.seniorities.includes(seniority));
 
-    return salaryMatches && seniorityMatches;
+    const listedMatches =
+      !query.salaryListed ||
+      ((job.salary !== null || salary !== null) &&
+        paidFeaturesAllowed(job.source));
+
+    return salaryMatches && seniorityMatches && listedMatches;
   };
 
   const stateOf = (key: string): FeedStateValue =>

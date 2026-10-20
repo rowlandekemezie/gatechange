@@ -11,6 +11,7 @@ import { SessionState } from "../account/model.js";
 import type { ModelValue as AccountModelValue } from "../account/model.js";
 import * as Account from "../account/update.js";
 import type { MessageValue as BillingMessageValue } from "../billing/message.js";
+import { isProMember, MembershipState } from "../billing/model.js";
 import type { ModelValue as BillingModelValue } from "../billing/model.js";
 import * as Billing from "../billing/update.js";
 import type { ListingRouteValue } from "../listing.js";
@@ -220,6 +221,30 @@ const navigatedTo = (model: ModelValue, filters: FiltersValue): UpdateReturn =>
       : PushUrl,
     boardUrl(filters)
   );
+
+const followedEntitlement = (
+  previous: ModelValue,
+  step: UpdateReturn
+): UpdateReturn =>
+  isProMember(previous.billing) &&
+  (Schema.is(SessionState.SignedOut)(step.model.account.session) ||
+    (Schema.is(MembershipState.Loaded)(step.model.billing.membership) &&
+      !isProMember(step.model.billing)))
+    ? joined(step, (next) => {
+        const filters = {
+          ...next.filters,
+          salaryFloor: null,
+          salaryListed: false,
+          seniorities: [],
+        };
+
+        const reset = withFilters(next, filters);
+
+        return Schema.is(Route.Board)(next.route)
+          ? visiting(reset, ReplaceUrl, boardUrl(filters))
+          : reset;
+      })
+    : step;
 
 const listedJob = (model: ModelValue, id: string) =>
   Schema.is(JobsState.Loaded)(model.jobs)
@@ -785,9 +810,12 @@ export const update = (
         : { model: flagged };
     },
     GotAccountMessage: ({ message: accountMessage }) =>
-      followedSession(foldAccount(model, accountMessage)),
+      followedEntitlement(
+        model,
+        followedSession(foldAccount(model, accountMessage))
+      ),
     GotBillingMessage: ({ message: billingMessage }) =>
-      foldBilling(model, billingMessage),
+      followedEntitlement(model, foldBilling(model, billingMessage)),
     GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>
       foldSavedSearches(model, savedSearchesMessage),
     SubmittedSearch: () =>
