@@ -8,6 +8,9 @@ const engineeringScope =
 const excludedFunction =
   /\b(?:sales|solutions?|customers?|support|accounts?|field|recruit\w*|talent|marketing|partners?|program|project|product manager|products? marketing|intern(?:ship)?|success|pre-?sales|professional services|implementation|enablement|operations manager|facilities|finance|legal|people)\b/iu;
 
+const nonEngineeringLeadership =
+  /^\s*(?:(?:senior|sr\.?|global|group|executive)\s+)*(?:directors?|managers?|s?vp|evp|vice[\s-]+president|head)\s*(?:of\s+|,\s*)?(?:products?|physical\s+security(?:\s*(?:&|and)\s+safety)?)(?=\s*(?:[,|:/–—-]|$))/iu;
+
 const vicePresident = new RegExp(
   String.raw`\b(?:s?vp|evp|vice[\s-]+president)\b[\s\S]*\b${engineeringScope}\b`,
   "iu"
@@ -40,7 +43,7 @@ const rolePatterns: readonly (readonly [RoleLevelValue, RegExp])[] = [
 ];
 
 export const classifyRole = (title: string): Option.Option<RoleLevelValue> => {
-  if (excludedFunction.test(title)) {
+  if (excludedFunction.test(title) || nonEngineeringLeadership.test(title)) {
     return Option.none();
   }
 
