@@ -448,16 +448,21 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         enrichments.set(id, enrichment);
         skips.delete(id);
       }),
-    stats: (_now, sources) =>
+    stats: (_now, sources, catalogKeys) =>
       Effect.sync(() => ({
         activeJobs: [...jobs.values()].filter((job) =>
           sources.includes(job.source)
         ).length,
         feedsFailing: pipe(
           [...states.values()],
-          Array.filter((state) => state.consecutiveFailures > 0)
+          Array.filter(
+            (state) =>
+              catalogKeys.includes(state.key) && state.consecutiveFailures > 0
+          )
         ).length,
-        feedsTotal: states.size,
+        feedsTotal: [...states.keys()].filter((key) =>
+          catalogKeys.includes(key)
+        ).length,
         lastRun: Option.getOrNull(Array.last(runs)),
         newToday: 0,
         regions: [],

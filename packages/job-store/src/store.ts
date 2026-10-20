@@ -496,7 +496,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         ])
         .pipe(Effect.asVoid),
 
-    stats: (now, sources) =>
+    stats: (now, sources, catalogKeys) =>
       Effect.all(
         {
           active: sql.all(
@@ -504,7 +504,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             activeCountStatement(now, sources),
             TotalRow
           ),
-          feeds: sql.all("feedHealth", feedHealthStatement, FeedHealthRow),
+          feeds: sql.all(
+            "feedHealth",
+            feedHealthStatement(catalogKeys),
+            FeedHealthRow
+          ),
           lastRun: sql.all("lastRun", lastRunStatement, RunRow),
           newToday: sql.all(
             "newToday",

@@ -151,7 +151,8 @@ export class JobStore extends Context.Service<
     ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly stats: (
       now: number,
-      sources: readonly SourceNameValue[]
+      sources: readonly SourceNameValue[],
+      catalogKeys: readonly string[]
     ) => Effect.Effect<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable
