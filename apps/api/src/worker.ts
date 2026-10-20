@@ -33,7 +33,6 @@ import {
   siteHostsOf,
   SITE_ORIGIN,
   SocialProvider,
-  WorkersSubdomain,
 } from "@rat-stack/core";
 import type { ViewerValue } from "@rat-stack/core";
 import {
@@ -77,6 +76,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { handleRoutes } from "./route.js";
+import { workersSubdomain } from "./site-config.js";
 import { stripeBilling } from "./stripe.js";
 
 export const rpcProjection = toRpc(capabilities);
@@ -152,10 +152,6 @@ const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
       .map((host) => host.trim())
       .filter((host) => host !== "")
   )
-);
-
-const workersSubdomain = Config.option(
-  Config.schema(WorkersSubdomain, "WORKERS_SUBDOMAIN")
 );
 
 const restrictedStripeKey = Config.option(

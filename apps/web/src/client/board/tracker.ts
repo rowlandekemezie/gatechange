@@ -1,4 +1,8 @@
-import type { StageValue, TrackRequestValue } from "@rat-stack/core/contracts";
+import type {
+  StageValue,
+  TrackRequestValue,
+  TrackOrMoveRequestValue,
+} from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 
 import { ImportOffer, TrackerChange, TrackerState } from "./model.js";
@@ -24,7 +28,7 @@ interface Trackable {
 export const trackRequestOf = (
   job: Trackable,
   stage: StageValue
-): TrackRequestValue => ({
+): TrackOrMoveRequestValue => ({
   jobId: job.id,
   snapshot: {
     company: clipped(job.company),

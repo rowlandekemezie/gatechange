@@ -5,7 +5,12 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "allowedUnstableApis": ["effect/rpc/RpcTest"]
+        "allowedUnstableApis": [
+          "effect/rpc/RpcTest",
+          "effect/http/HttpRouter",
+          "effect/rpc/RpcServer",
+          "effect/rpc/RpcSerialization"
+        ]
       }
     ]
   },

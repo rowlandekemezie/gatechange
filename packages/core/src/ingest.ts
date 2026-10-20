@@ -1,4 +1,4 @@
-import { Array, Clock, Effect, Option, pipe, Result, Schema } from "effect";
+import { Array, Clock, Effect, Option, pipe, Schema } from "effect";
 
 import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
@@ -27,6 +27,7 @@ export const retentionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
 export interface FeedListings {
   readonly jobs: readonly JobValue[];
   readonly unlinked: readonly Sighted[];
+  readonly historySightings: readonly Sighted[];
 }
 
 export const listingsFromPostings = (
@@ -34,21 +35,40 @@ export const listingsFromPostings = (
   postings: readonly PostingValue[],
   seenAt: number
 ): FeedListings => {
-  const [jobs, unlinked] = pipe(
+  const listings = pipe(
     postings,
-    Array.map((posting) => normalizePosting(feed, posting, seenAt)),
+    Array.map((posting) =>
+      normalizePosting(feed, posting, seenAt).pipe(
+        Option.map((listing) => ({
+          fromCatalog: Option.isSome(feed.company) && posting.company === "",
+          listing,
+        }))
+      )
+    ),
     Array.getSomes,
-    Array.filter((listing) => listing.postedAt >= retentionCutoff(seenAt)),
-    Array.dedupeWith((left, right) => left.id === right.id),
-    Array.partition(({ url, ...listing }) =>
-      Option.match(url, {
-        onNone: () => Result.fail(listing),
-        onSome: (href) => Result.succeed({ ...listing, url: href }),
-      })
-    )
+    Array.filter(({ listing }) => listing.postedAt >= retentionCutoff(seenAt)),
+    Array.dedupeWith((left, right) => left.listing.id === right.listing.id)
   );
 
-  return { jobs, unlinked };
+  const jobs: JobValue[] = [];
+  const unlinked: Sighted[] = [];
+  const historySightings: Sighted[] = [];
+
+  for (const { listing, fromCatalog } of listings) {
+    const { url, ...sighting } = listing;
+
+    if (Option.isSome(url)) {
+      jobs.push({ ...sighting, url: url.value });
+    } else {
+      unlinked.push(sighting);
+
+      if (fromCatalog) {
+        historySightings.push(sighting);
+      }
+    }
+  }
+
+  return { historySightings, jobs, unlinked };
 };
 
 const warnOfUnlinked = (feed: FeedRef, unlinked: readonly Sighted[]) =>
@@ -80,9 +100,13 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
           })
         ),
       onSuccess: (postings) => {
-        const { jobs, unlinked } = listingsFromPostings(feed, postings, seenAt);
+        const { jobs, unlinked, historySightings } = listingsFromPostings(
+          feed,
+          postings,
+          seenAt
+        );
 
-        return store.recordSightings(unlinked, seenAt).pipe(
+        return store.recordSightings(historySightings, seenAt).pipe(
           Effect.andThen(store.replaceFeed(feed.key, jobs, seenAt)),
           Effect.tap(() => warnOfUnlinked(feed, unlinked)),
           Effect.map((replacement): FeedOutcomeValue => ({
