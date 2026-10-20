@@ -27,6 +27,7 @@ const director: ListedJobValue = {
   arrangement: "Remote",
   company: "Acme",
   daysOpen: 2,
+  enrichment: null,
   feed: "greenhouse:acme",
   firstSeenAt: 1_760_000_000_000,
   id: "greenhouse:acme/1",

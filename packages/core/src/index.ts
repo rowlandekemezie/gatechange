@@ -135,10 +135,14 @@ export {
 } from "./job-store.js";
 
 export type {
+  EnrichmentSkip,
   FeedReplacementValue,
   JobListing,
   ListingHistory,
+  NeuronClaim,
+  NeuronUsage,
   Sighted,
+  UnenrichedSweep,
 } from "./job-store.js";
 
 export { classifyPlacement, regionWeight } from "./location.js";
@@ -160,41 +164,52 @@ export { FeedUnavailable } from "./feed-unavailable.js";
 
 export { PostingFeeds } from "./posting-feeds.js";
 
-export { classifyRole, roleWeight } from "./role.js";
+export { classifyRole, roleWeight, seniorityOfTitle } from "./role.js";
 
 export { Permission, SourceTerms } from "./source-terms.js";
 
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
 export {
+  AnnualAmount,
   Arrangement,
   accountContract,
   BoardStats,
   boardStatsContract,
+  currencies,
+  Currency,
   DEFAULT_AGE_DAYS,
   deleteSearchContract,
+  Enrichment,
   EpochMillis,
   getJobContract,
   IngestOutcome,
   IngestReceipt,
   Job,
   jobBoardContracts,
+  JobDetail,
   JobPage,
   JobQuery,
   JobSort,
   JobStoreUnavailable,
   ListedJob,
+  ListingDetails,
   listJobsContract,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
   Region,
   RegionCount,
   regions,
+  RemotePolicy,
   RoleCount,
   RoleLevel,
   roleLevels,
+  SalaryBand,
+  SalaryFloor,
   savedSearchesContract,
   saveSearchContract,
+  Seniority,
+  seniorities,
   signInOptionsContract,
   SourceName,
   importShortlistContract,
@@ -207,16 +222,70 @@ export {
 export type {
   ArrangementValue,
   BoardStatsValue,
+  CurrencyValue,
+  EnrichmentValue,
   IngestReceiptValue,
+  JobDetailValue,
   JobPageValue,
   JobQueryValue,
   JobSortValue,
   JobValue,
   ListedJobValue,
+  ListingDetailsValue,
   RegionValue,
+  RemotePolicyValue,
   RoleLevelValue,
+  SalaryBandValue,
+  SalaryFloorValue,
+  SeniorityValue,
   SourceNameValue,
 } from "./contracts.js";
+
+export {
+  annualSalaryBandOf,
+  DEFAULT_DAILY_NEURONS,
+  DEFAULT_ENRICHMENT_SWEEP_LIMIT,
+  detailsOfAnswer,
+  enqueueUnenriched,
+  enrichableSources,
+  finalSkips,
+  enrichListing,
+  EnrichmentOutcome,
+  ListingEnricher,
+  MAX_POSTING_CHARS,
+  namesVariablePay,
+  ModelAnswer,
+  moneyRangesIn,
+  SalaryPeriod,
+  skipHandling,
+  SkipReason,
+  sweepLimitOf,
+} from "./enrichment.js";
+
+export { EnricherUnavailable } from "./enricher-unavailable.js";
+
+export { EnrichmentQueue } from "./enrichment-queue.js";
+
+export { EnrichmentQueueUnavailable } from "./enrichment-queue-unavailable.js";
+
+export { PostingTexts } from "./posting-texts.js";
+
+export type { PostingTextValue } from "./posting-texts.js";
+
+export { PostingGone } from "./posting-gone.js";
+
+export { PostingUnavailable } from "./posting-unavailable.js";
+
+export type {
+  EnrichmentOutcomeValue,
+  ModelAnswerValue,
+  ModelReply,
+  MoneyRange,
+  PostingRequest,
+  SalaryPeriodValue,
+  SkipHandlingValue,
+  SkipReasonValue,
+} from "./enrichment.js";
 
 export {
   offSiteHref,

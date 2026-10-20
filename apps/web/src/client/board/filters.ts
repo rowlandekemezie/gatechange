@@ -1,5 +1,9 @@
-import { RoleLevel } from "@rat-stack/core/contracts";
-import type { JobQueryValue, RegionValue } from "@rat-stack/core/contracts";
+import { Currency, RoleLevel, Seniority } from "@rat-stack/core/contracts";
+import type {
+  CurrencyValue,
+  JobQueryValue,
+  RegionValue,
+} from "@rat-stack/core/contracts";
 import { Array, Match, pipe, Schema } from "effect";
 
 export const PAGE_SIZE = 40;
@@ -44,11 +48,30 @@ export const ageWindows: readonly AgeWindowValue[] = AgeWindow.literals;
 
 export const Sort = Schema.Literals(["Relevance", "Newest"]);
 
+export const SalaryStep = Schema.Literals([
+  150_000, 200_000, 250_000, 300_000, 400_000,
+]);
+
+export type SalaryStepValue = typeof SalaryStep.Type;
+
+export const salarySteps: readonly SalaryStepValue[] = SalaryStep.literals;
+
+export const PayFloor = Schema.Struct({
+  amount: SalaryStep,
+  currency: Currency,
+});
+
+export type PayFloorValue = typeof PayFloor.Type;
+
+export const DEFAULT_PAY_CURRENCY: CurrencyValue = "USD";
+
 export const Filters = Schema.Struct({
   maxAgeDays: AgeWindow,
   regionGroups: Schema.Array(RegionGroup),
   roles: Schema.Array(RoleLevel),
+  salaryFloor: Schema.NullOr(PayFloor),
   search: Schema.String,
+  seniorities: Schema.Array(Seniority),
   sort: Sort,
 });
 
@@ -63,7 +86,9 @@ export const defaultFilters: FiltersValue = {
     "Director",
     "EngineeringManager",
   ],
+  salaryFloor: null,
   search: "",
+  seniorities: [],
   sort: "Relevance",
 };
 
@@ -101,7 +126,9 @@ export const queryOf = (
     Array.dedupe
   ),
   roles: filters.roles,
+  salaryFloor: filters.salaryFloor,
   search: filters.search.trim().slice(0, 80),
+  seniorities: filters.seniorities,
   sort: filters.sort,
 });
 

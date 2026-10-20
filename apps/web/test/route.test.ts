@@ -1,5 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { RoleLevel, roleLevels } from "@rat-stack/core/contracts";
+import {
+  JobQuery,
+  RoleLevel,
+  roleLevels,
+  seniorities,
+} from "@rat-stack/core/contracts";
 import type { RoleLevelValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
@@ -8,6 +13,7 @@ import {
   defaultFilters,
   Filters,
   inOrderOf,
+  queryOf,
   RegionGroup,
   regionGroups,
   toggled,
@@ -61,6 +67,7 @@ describe("board route", () => {
         regionGroups: inOrderOf(regionGroups, filters.regionGroups),
         roles: inOrderOf(roleLevels, filters.roles),
         search: filters.search.replaceAll(LONE_SURROGATE, "\uFFFD"),
+        seniorities: inOrderOf(seniorities, filters.seniorities),
       };
 
       expect(routeAt(boardUrl(filters)), boardUrl(filters)).toStrictEqual(
@@ -120,6 +127,42 @@ describe("board route", () => {
     );
   });
 
+  it("a pay floor and levels read as readable slugs", () => {
+    const filters: FiltersValue = {
+      ...defaultFilters,
+      salaryFloor: { amount: 200_000, currency: "CAD" },
+      seniorities: ["Manager", "SeniorDirector"],
+    };
+
+    expect(boardUrl(filters)).toBe(
+      "/?currency=cad&level=manager%2Csenior-director&pay=200000"
+    );
+    expect(routeAt(boardUrl(filters))).toStrictEqual(Route.Board({ filters }));
+  });
+
+  it("a US dollar floor leaves the currency out of the URL", () => {
+    expect(
+      boardUrl({
+        ...defaultFilters,
+        salaryFloor: { amount: 150_000, currency: "USD" },
+      })
+    ).toBe("/?pay=150000");
+  });
+
+  it("a currency or level without a usable pay floor falls back to no restriction", () => {
+    expect(routeAt("/?currency=cad&pay=123456&level=ceo,")).toStrictEqual(
+      Route.Board({ filters: defaultFilters })
+    );
+    expect(routeAt("/?pay=300000&currency=yen")).toStrictEqual(
+      Route.Board({
+        filters: {
+          ...defaultFilters,
+          salaryFloor: { amount: 300_000, currency: "USD" },
+        },
+      })
+    );
+  });
+
   it("a malformed query falls back to the default for each bad field", () => {
     expect(
       routeAt("/?age=abc&role=bogus,,&place=%&sort=sideways&utm_source=x")
@@ -139,6 +182,40 @@ describe("board route", () => {
       Route.Board({ filters: { ...defaultFilters, roles: [] } })
     );
   });
+});
+
+describe("board query", () => {
+  it("the default filters ask for no pay floor and no level restriction", () => {
+    expect(queryOf(defaultFilters, 0)).toStrictEqual({
+      limit: 40,
+      maxAgeDays: 7,
+      offset: 0,
+      regions: [
+        "RemoteCanada",
+        "RemoteNorthAmerica",
+        "RemoteGlobal",
+        "RemoteUnitedStates",
+        "BritishColumbia",
+      ],
+      roles: defaultFilters.roles,
+      salaryFloor: null,
+      search: "",
+      seniorities: [],
+      sort: "Relevance",
+    });
+  });
+
+  it.prop(
+    "any Filters value maps to a JobQuery the contract accepts, carrying its pay floor and levels",
+    { filters: Filters },
+    ({ filters }) => {
+      const query = queryOf(filters, 0);
+
+      expect(Schema.is(JobQuery)(query)).toBe(true);
+      expect(query.salaryFloor).toStrictEqual(filters.salaryFloor);
+      expect(query.seniorities).toStrictEqual(filters.seniorities);
+    }
+  );
 });
 
 const decodePath = (pathname: string) =>

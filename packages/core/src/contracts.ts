@@ -4,7 +4,7 @@ import { Schema } from "effect";
 import { Account, SignInOptions } from "./account.js";
 import { SavedSearch, SavedSearchId, SearchFilters } from "./alerts.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
-import { BoardStats, Job, JobPage, JobQuery } from "./job.js";
+import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
 import { TrackerFull } from "./tracker-full.js";
 import {
@@ -16,23 +16,34 @@ import {
 import { Unauthorized } from "./unauthorized.js";
 
 export {
+  AnnualAmount,
   Arrangement,
   BoardStats,
+  currencies,
+  Currency,
   DEFAULT_AGE_DAYS,
+  Enrichment,
   EpochMillis,
   IngestOutcome,
   IngestReceipt,
   Job,
+  JobDetail,
   JobPage,
   JobQuery,
   JobSort,
   ListedJob,
+  ListingDetails,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
   Region,
   RegionCount,
+  RemotePolicy,
   RoleCount,
   RoleLevel,
+  SalaryBand,
+  SalaryFloor,
+  Seniority,
+  seniorities,
   SourceName,
   regions,
   roleLevels,
@@ -41,14 +52,22 @@ export {
 export type {
   ArrangementValue,
   BoardStatsValue,
+  CurrencyValue,
+  EnrichmentValue,
   IngestReceiptValue,
+  JobDetailValue,
   JobPageValue,
   JobQueryValue,
   JobSortValue,
   JobValue,
   ListedJobValue,
+  ListingDetailsValue,
   RegionValue,
+  RemotePolicyValue,
   RoleLevelValue,
+  SalaryBandValue,
+  SalaryFloorValue,
+  SeniorityValue,
   SourceNameValue,
 } from "./job.js";
 
@@ -140,7 +159,7 @@ export const getJobContract = defineContract("getJob", {
     "Fetch one listed role by its id, or nothing when its source removed it or it aged off the board",
   failure: JobStoreUnavailable,
   input: Schema.Struct({ id: Schema.NonEmptyString }),
-  output: Schema.OptionFromNullOr(Job),
+  output: Schema.OptionFromNullOr(JobDetail),
 });
 
 export const accountContract = defineContract("account", {

@@ -1,4 +1,9 @@
-import { RoleLevel, roleLevels } from "@rat-stack/core/contracts";
+import {
+  currencies,
+  RoleLevel,
+  roleLevels,
+  seniorities,
+} from "@rat-stack/core/contracts";
 import {
   Array,
   Effect,
@@ -27,14 +32,16 @@ import type { Url } from "foldkit/url";
 
 import {
   ageWindows,
+  DEFAULT_PAY_CURRENCY,
   defaultFilters,
   Filters,
   inOrderOf,
   RegionGroup,
   regionGroups,
+  salarySteps,
   Sort,
 } from "./board/filters.js";
-import type { FiltersValue } from "./board/filters.js";
+import type { FiltersValue, PayFloorValue } from "./board/filters.js";
 
 export const AccountNotice = Schema.Literals([
   "None",
@@ -132,6 +139,9 @@ export const companySlugOf = (company: string): Option.Option<string> =>
 
 const BoardQuery = Schema.Struct({
   age: Schema.optionalKey(Schema.String),
+  currency: Schema.optionalKey(Schema.String),
+  level: Schema.optionalKey(Schema.String),
+  pay: Schema.optionalKey(Schema.String),
   place: Schema.optionalKey(Schema.String),
   q: Schema.optionalKey(Schema.String),
   role: Schema.optionalKey(Schema.String),
@@ -143,6 +153,17 @@ type BoardQueryValue = typeof BoardQuery.Type;
 const sameList = <A>(left: readonly A[], right: readonly A[]) =>
   Array.makeEquivalence(Equivalence.strictEqual<A>())(left, right);
 
+const payFloorOf = (params: BoardQueryValue): PayFloorValue | null =>
+  pipe(
+    Option.fromUndefinedOr(params.pay),
+    Option.flatMap(fromSlug(salarySteps)),
+    Option.map((amount) => ({
+      amount,
+      currency: oneParam(currencies, DEFAULT_PAY_CURRENCY, params.currency),
+    })),
+    Option.getOrNull
+  );
+
 const filtersOfQuery = (params: BoardQueryValue): FiltersValue => ({
   maxAgeDays: oneParam(ageWindows, defaultFilters.maxAgeDays, params.age),
   regionGroups: listParam(
@@ -151,7 +172,9 @@ const filtersOfQuery = (params: BoardQueryValue): FiltersValue => ({
     params.place
   ),
   roles: listParam(roleLevels, defaultFilters.roles, params.role),
+  salaryFloor: payFloorOf(params),
   search: params.q ?? defaultFilters.search,
+  seniorities: listParam(seniorities, defaultFilters.seniorities, params.level),
   sort: oneParam(Sort.literals, defaultFilters.sort, params.sort),
 });
 
@@ -164,6 +187,18 @@ const queryOfFilters = (filters: FiltersValue): BoardQueryValue => {
 
   if (!sameList(filters.regionGroups, defaultFilters.regionGroups)) {
     params.place = filters.regionGroups.map(slugOf).join(",");
+  }
+
+  if (filters.salaryFloor !== null) {
+    params.pay = slugOf(filters.salaryFloor.amount);
+
+    if (filters.salaryFloor.currency !== DEFAULT_PAY_CURRENCY) {
+      params.currency = slugOf(filters.salaryFloor.currency);
+    }
+  }
+
+  if (!sameList(filters.seniorities, defaultFilters.seniorities)) {
+    params.level = filters.seniorities.map(slugOf).join(",");
   }
 
   if (filters.search !== defaultFilters.search) {

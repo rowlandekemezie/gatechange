@@ -1,10 +1,16 @@
-import { offSiteHref, roleLevels } from "@rat-stack/core/contracts";
-import type { JobValue, RoleLevelValue } from "@rat-stack/core/contracts";
+import {
+  currencies,
+  offSiteHref,
+  roleLevels,
+  seniorities,
+} from "@rat-stack/core/contracts";
+import type { ListedJobValue, RoleLevelValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import {
   ageChip,
+  bandLabel,
   dayHeading,
   postedAgo,
   refreshedAgo,
@@ -12,11 +18,18 @@ import {
   regionLabel,
   roleChip,
   roleCount,
+  seniorityChip,
   sourceLabel,
+  thousands,
 } from "../../client/board/copy.js";
-import { ageWindows, regionGroups } from "../../client/board/filters.js";
+import {
+  ageWindows,
+  regionGroups,
+  salarySteps,
+} from "../../client/board/filters.js";
 import type {
   AgeWindowValue,
+  PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
 import { markButtons, stageOf } from "../../client/board/marks.js";
@@ -142,6 +155,96 @@ const sentenceView = (
   );
 };
 
+const currencySelect = (
+  h: HtmlBuilder<MessageValue>,
+  floor: PayFloorValue
+): Html =>
+  h.label(
+    [h.Class("phrase-group")],
+    [
+      h.span([h.Class("visually-hidden")], ["Pay currency"]),
+      h.select(
+        [
+          h.Class("phrase phrase-on phrase-select"),
+          h.OnChange((value) =>
+            Message.ChangedPayCurrency({
+              currency: pipe(
+                currencies,
+                Array.findFirst((currency) => currency === value),
+                Option.getOrElse(() => floor.currency)
+              ),
+            })
+          ),
+        ],
+        pipe(
+          currencies,
+          Array.map((currency) =>
+            h.option(
+              [h.Value(currency), h.Selected(currency === floor.currency)],
+              [currency]
+            )
+          )
+        )
+      ),
+    ]
+  );
+
+const refineView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html => {
+  const { salaryFloor } = model.filters;
+
+  const levels = [
+    chip(
+      h,
+      Array.isReadonlyArrayEmpty(model.filters.seniorities),
+      "any",
+      Message.ClickedAnySeniority()
+    ),
+    ...pipe(
+      seniorities,
+      Array.map((seniority) =>
+        chip(
+          h,
+          Array.contains(model.filters.seniorities, seniority),
+          seniorityChip(seniority),
+          Message.ToggledSeniority({ seniority })
+        )
+      )
+    ),
+  ];
+
+  const steps = pipe(
+    salarySteps,
+    Array.map((amount) =>
+      chip(
+        h,
+        salaryFloor?.amount === amount,
+        thousands(amount),
+        Message.ChangedPayFloor({ amount })
+      )
+    )
+  );
+
+  return h.p(
+    [h.Class("sentence sentence-refine")],
+    [
+      "At ",
+      ...listed(h, levels, "or", ""),
+      " level, with ",
+      chip(
+        h,
+        salaryFloor === null,
+        "any pay",
+        Message.ChangedPayFloor({ amount: null })
+      ),
+      " or a stated band reaching ",
+      ...listed(h, steps, "or", salaryFloor === null ? "." : ""),
+      ...(salaryFloor === null
+        ? []
+        : [" in ", currencySelect(h, salaryFloor), "."]),
+    ]
+  );
+};
+
 const searchView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.form(
     [
@@ -195,6 +298,7 @@ export const boardMasthead = (
     [h.Class("masthead")],
     [
       sentenceView(model, h),
+      refineView(model, h),
       searchView(model, h),
       h.submodel({
         model: model.savedSearches,
@@ -211,7 +315,7 @@ export const boardMasthead = (
 export const jobRow = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
-  job: JobValue,
+  job: ListedJobValue,
   now: number
 ): Html => {
   const isApplied = Option.exists(
@@ -243,9 +347,15 @@ export const jobRow = (
                 [h.Class("job-where"), h.Title(regionLabel(job.region))],
                 [where]
               ),
-              ...(job.salary === null
-                ? []
-                : [h.span([h.Class("job-pay")], [job.salary])]),
+              ...pipe(
+                Option.fromNullishOr(job.enrichment?.salary),
+                Option.map(bandLabel),
+                Option.orElse(() => Option.fromNullishOr(job.salary)),
+                Option.match({
+                  onNone: () => [],
+                  onSome: (pay) => [h.span([h.Class("job-pay")], [pay])],
+                })
+              ),
               h.a(
                 [
                   h.Class("job-source"),
@@ -288,7 +398,7 @@ export const jobRow = (
 const groupedRows = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
-  jobs: readonly JobValue[],
+  jobs: readonly ListedJobValue[],
   now: number
 ): readonly Html[] => {
   if (model.filters.sort === "Relevance") {
@@ -391,7 +501,7 @@ const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
       h.p(
         [],
         [
-          "Pick at least one role and one place, widen the window to a month, or clear the search.",
+          "Pick at least one role and one place, widen the window to a month, open up the level or pay, or clear the search.",
         ]
       ),
       h.button(
