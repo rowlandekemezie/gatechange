@@ -24,6 +24,8 @@ import { McpProtocol, McpServer } from "effect/ai";
 import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 
+import { withStreamableHttpCompatibility } from "./mcp-streamable-http.js";
+
 export const MCP_SERVER_NAME = "jobs-rowlandekemezie";
 
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -129,9 +131,10 @@ export const serveMcp =
       Effect.matchEffect({
         onFailure: (failure) => Effect.succeed(refusalOf(failure)),
         onSuccess: (viewer) =>
-          mcpHttp.pipe(
-            Effect.provideService(CurrentViewer, viewer),
-            Effect.scoped
-          ),
+          withStreamableHttpCompatibility(
+            mcpHttp,
+            { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+            INSTRUCTIONS
+          ).pipe(Effect.provideService(CurrentViewer, viewer), Effect.scoped),
       })
     );
