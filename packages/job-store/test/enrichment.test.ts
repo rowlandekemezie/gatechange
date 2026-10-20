@@ -603,7 +603,7 @@ describe("enrichment storage", () => {
   );
 
   it.effect(
-    "replacing a feed issues two statements per job plus two, as before enrichment",
+    "replacing a company board issues four statements per job (listing, history, intel reopen, intel sighting) plus two",
     () =>
       withStore(
         Effect.gen(function* statementCount() {
@@ -629,7 +629,7 @@ describe("enrichment storage", () => {
           yield* store.replaceFeed("greenhouse:acme", jobs, NOW);
 
           expect(batches.map((batch) => batch.length)).toStrictEqual([
-            80, 2, 2,
+            160, 4, 2,
           ]);
         })
       )

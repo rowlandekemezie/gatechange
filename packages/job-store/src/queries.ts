@@ -1,11 +1,14 @@
 import {
+  companySlugOf,
   DAY_MILLIS,
   fingerprintOf,
   MAX_AGE_DAYS,
   paidFeatureSources,
+  paidFeaturesAllowed,
   RECENCY_PENALTY_PER_DAY,
   REPOST_GAP,
   SourceName,
+  sourceOfFeedKey,
 } from "@rat-stack/core";
 import type {
   EnrichmentSkip,
@@ -19,6 +22,7 @@ import type {
   SourceNameValue,
   UnenrichedSweep,
 } from "@rat-stack/core";
+import { Option } from "effect";
 
 import { statement } from "./sql-executor.js";
 import type { SqlStatement, SqlValue } from "./sql-executor.js";
@@ -194,6 +198,44 @@ LIMIT ? OFFSET ?`,
   );
 };
 
+export const companyOpenRolesStatement = (
+  slug: string,
+  now: number
+): SqlStatement => {
+  const sources = paidFeatureSources();
+
+  return statement(
+    `WITH ranked AS (
+  SELECT jobs.id, jobs.company, jobs.title, jobs.role, jobs.source, jobs.first_seen_at, jobs.fingerprint,
+    job_enrichment.salary_currency, job_enrichment.salary_min, job_enrichment.salary_max,
+    ROW_NUMBER() OVER (PARTITION BY jobs.fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
+  FROM ${enrichedJobs}
+  WHERE jobs.company_slug = ? AND posted_at >= ? AND source IN (${placeholders(sources.length)})
+)
+SELECT ranked.id, ranked.company, ranked.title, ranked.role, ranked.source,
+  ranked.salary_currency, ranked.salary_min, ranked.salary_max,
+  COALESCE(history.stint_started_at, ranked.first_seen_at) AS opened_at,
+  COALESCE(history.reposts, 0) AS reposts
+FROM ranked LEFT JOIN intel_history AS history ON history.company_slug = ? AND history.fingerprint = ranked.fingerprint
+WHERE duplicate_rank = 1`,
+    [slug, now - MAX_AGE_DAYS * DAY_MILLIS, ...sources, slug]
+  );
+};
+
+export const companyHistoryStatement = (
+  slug: string,
+  since: number
+): SqlStatement =>
+  statement(
+    "SELECT company, last_seen_feed, stint_started_at, last_seen_at, previous_started_at, previous_ended_at FROM intel_history WHERE company_slug = ? AND last_seen_at > ?",
+    [slug, since]
+  );
+
+export const trackedSinceStatement = statement(
+  "SELECT MIN(first_seen_at) AS since FROM intel_history",
+  []
+);
+
 export const findJobStatement = (id: string): SqlStatement =>
   statement(
     `SELECT ${jobColumns}, ${enrichmentColumns} FROM ${enrichedJobs} WHERE id = ? LIMIT 1`,
@@ -277,8 +319,8 @@ SELECT COUNT(*) AS total FROM ranked WHERE duplicate_rank = 1`,
 
 export const upsertJobStatement = (job: JobValue): SqlStatement =>
   statement(
-    `INSERT INTO jobs (${jobColumns}, fingerprint)
-VALUES (${placeholders(16)})
+    `INSERT INTO jobs (${jobColumns}, fingerprint, company_slug)
+VALUES (${placeholders(17)})
 ON CONFLICT (id) DO UPDATE SET
   title = excluded.title,
   company = excluded.company,
@@ -291,7 +333,8 @@ ON CONFLICT (id) DO UPDATE SET
   relevance = excluded.relevance,
   posted_at = MIN(jobs.posted_at, excluded.posted_at),
   last_seen_at = MAX(jobs.last_seen_at, excluded.last_seen_at),
-  fingerprint = excluded.fingerprint`,
+  fingerprint = excluded.fingerprint,
+  company_slug = excluded.company_slug`,
     [
       job.id,
       job.feed,
@@ -309,6 +352,7 @@ ON CONFLICT (id) DO UPDATE SET
       job.firstSeenAt,
       job.lastSeenAt,
       fingerprintOf(job),
+      Option.getOrElse(companySlugOf(job.company), () => ""),
     ]
   );
 
@@ -347,6 +391,69 @@ ON CONFLICT (fingerprint) DO UPDATE SET
       seenAt,
     ]
   );
+
+const reopenIntelStatement = (job: Sighted, seenAt: number): SqlStatement =>
+  statement(
+    `UPDATE intel_history SET
+  reposts = reposts + 1,
+  previous_started_at = stint_started_at,
+  previous_ended_at = last_seen_at,
+  stint_started_at = ?
+WHERE company_slug = ? AND fingerprint = ?
+  AND last_seen_at < ? - ?
+  AND last_seen_at < COALESCE((
+    SELECT CASE
+      WHEN last_success_at < ? THEN last_success_at
+      WHEN previous_success_at < ? THEN previous_success_at
+    END
+    FROM feeds WHERE key = intel_history.last_seen_feed
+  ), 0)`,
+    [
+      seenAt,
+      Option.getOrElse(companySlugOf(job.company), () => ""),
+      fingerprintOf(job),
+      seenAt,
+      REPOST_GAP,
+      seenAt,
+      seenAt,
+    ]
+  );
+
+const seenIntelStatement = (job: Sighted, seenAt: number): SqlStatement =>
+  statement(
+    `INSERT INTO intel_history (company_slug, fingerprint, company, first_seen_at, stint_started_at, last_seen_at, last_seen_feed, reposts)
+VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+ON CONFLICT (company_slug, fingerprint) DO UPDATE SET
+  company = CASE
+    WHEN intel_history.last_seen_at < excluded.last_seen_at THEN excluded.company
+    ELSE intel_history.company
+  END,
+  last_seen_at = MAX(intel_history.last_seen_at, excluded.last_seen_at),
+  last_seen_feed = CASE
+    WHEN intel_history.last_seen_at < excluded.last_seen_at THEN excluded.last_seen_feed
+    WHEN intel_history.last_seen_at = excluded.last_seen_at THEN MIN(intel_history.last_seen_feed, excluded.last_seen_feed)
+    ELSE intel_history.last_seen_feed
+  END`,
+    [
+      Option.getOrElse(companySlugOf(job.company), () => ""),
+      fingerprintOf(job),
+      job.company,
+      seenAt,
+      seenAt,
+      seenAt,
+      job.feed,
+    ]
+  );
+
+export const intelSightingStatements = (
+  job: Sighted,
+  seenAt: number
+): readonly SqlStatement[] =>
+  Option.exists(sourceOfFeedKey(job.feed), (source) =>
+    paidFeaturesAllowed(source)
+  )
+    ? [reopenIntelStatement(job, seenAt), seenIntelStatement(job, seenAt)]
+    : [];
 
 export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
   statement(

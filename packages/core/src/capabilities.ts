@@ -10,9 +10,11 @@ import { MAX_SAVED_SEARCHES } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
 import { BillingStore } from "./billing-store.js";
 import { Billing, entitlementOfAccount } from "./billing.js";
+import { companyIntelOf } from "./company-intel.js";
 import {
   accountContract,
   boardStatsContract,
+  companyIntelContract,
   deleteSearchContract,
   getJobContract,
   importShortlistContract,
@@ -265,6 +267,24 @@ export const setInstantAlerts = implement(
 
 export const freeAgentCapabilities = [listJobs, boardStats, getJob] as const;
 
+export const companyIntel = implement(companyIntelContract, ({ slug }) =>
+  Effect.gen(function* companyIntelHandler() {
+    const member = yield* currentMember;
+
+    if (!isPro(yield* entitlementOfAccount(member.id))) {
+      return yield* new ProRequired();
+    }
+
+    const now = yield* Clock.currentTimeMillis;
+
+    const records = yield* JobStore.use((store) =>
+      store.companyRecords(slug, now)
+    );
+
+    return companyIntelOf(slug, records, now);
+  })
+);
+
 export const capabilities = [
   listJobs,
   boardStats,
@@ -283,4 +303,5 @@ export const capabilities = [
   startCheckout,
   openBillingPortal,
   setInstantAlerts,
+  companyIntel,
 ] as const;
