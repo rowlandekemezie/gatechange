@@ -467,7 +467,7 @@ describe("board over MCP", () => {
         ]) {
           const response = yield* send("/mcp", {
             body,
-            headers: MCP_HEADERS,
+            headers: { ...MCP_HEADERS, "mcp-protocol-version": "2025-11-25" },
             method: "POST",
           });
 
