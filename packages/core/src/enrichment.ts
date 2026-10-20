@@ -845,7 +845,7 @@ const roleStatesOtherPolicy = (
 
 const statedArrangement = (word: string) =>
   new RegExp(
-    String.raw`\bwork(?:ing)? arrangement\s*:\s*${word}\b|\b${word} work(?:ing)? arrangement\b|\bthis is an? ${word} (?:role|position)\b`,
+    String.raw`\bwork(?:ing)? arrangement\s*:\s*${word}\b|(?:^|:)\s*${word} work(?:ing)? arrangement\b|\bthis is an? ${word} (?:role|position)\b`,
     "iu"
   );
 
@@ -859,7 +859,15 @@ const arrangementStatements: readonly (readonly [RemotePolicyValue, RegExp])[] =
 const arrangementStated = (posting: SearchableText) =>
   pipe(
     arrangementStatements,
-    Array.findFirst(([, statement]) => statement.test(posting.flat)),
+    Array.findFirst(([, statement]) =>
+      Array.some(
+        posting.lines.split(/[\n.!?;]/u),
+        (sentence) =>
+          statement.test(sentence) &&
+          !pastExperience.test(sentence) &&
+          !negationOf(statement).test(sentence)
+      )
+    ),
     Option.map(([stated]) => stated)
   );
 

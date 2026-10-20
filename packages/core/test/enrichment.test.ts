@@ -1886,6 +1886,18 @@ describe("enrichListing", () => {
       "Hybrid",
     ],
     [
+      "a work arrangement label after benefits prose",
+      "Remote",
+      "Great compensation package and bonus plan Work Arrangement: Hybrid.",
+      "Hybrid",
+    ],
+    [
+      "a role declaration after its location requirement",
+      "Remote",
+      "Must live in Washington DC or Sacramento as this is a hybrid role.",
+      "Hybrid",
+    ],
+    [
       "an arrangement named before the word",
       "Remote",
       "Hybrid work arrangement: home and office.",
@@ -1899,6 +1911,48 @@ describe("enrichListing", () => {
     ],
     ["only a model answer", "Hybrid", "This role is fully remote.", "Hybrid"],
     ["a negated statement", "Hybrid", "This is not a remote role.", "Hybrid"],
+    [
+      "a negated arrangement beside a remote tag",
+      "Remote",
+      "This is not a hybrid work arrangement. #LI-Remote",
+      "Remote",
+    ],
+    [
+      "a remote role beside a separately negated arrangement",
+      "Remote",
+      "This is a remote role. We do not offer a hybrid work arrangement.",
+      "Remote",
+    ],
+    [
+      "experience in another arrangement",
+      "Remote",
+      "Experience working in a hybrid work arrangement is required. This is a remote role.",
+      "Remote",
+    ],
+    [
+      "an arrangement offered in the past",
+      "Remote",
+      "We previously offered a hybrid work arrangement. This is a remote role.",
+      "Remote",
+    ],
+    [
+      "an arrangement phrase split across sentences",
+      "Remote",
+      "Experience with hybrid\nwork arrangement: leadership across distributed teams.",
+      "Remote",
+    ],
+    [
+      "a negated arrangement label",
+      "Remote",
+      "Work arrangement: hybrid is not available.",
+      "Remote",
+    ],
+    [
+      "an affirmative remote role declaration",
+      "Hybrid",
+      "This is a remote role. #LI-Hybrid",
+      "Remote",
+    ],
   ] as const)(
     "a listed workplace beside %s saves the policy the posting states",
     (_name, workplace, text, saved) => {
