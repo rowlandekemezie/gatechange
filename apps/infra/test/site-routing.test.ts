@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { siteIndexing, siteRouting } from "../src/site-routing.js";
+import {
+  siteIndexing,
+  siteRouting,
+  siteWorkerFirst,
+} from "../src/site-routing.js";
 
 describe("siteRouting", () => {
   it("attaches the production domain only to the prod stage, with workers.dev off", () => {
@@ -13,7 +17,7 @@ describe("siteRouting", () => {
     });
   });
 
-  it.each(["verify-j4-perf", "dev", "production", "Prod"])(
+  it.each(["preview", "verify-j4-perf", "dev", "production", "Prod"])(
     "leaves %s off the custom domain and serves it on its own workers.dev name",
     (stage) => {
       expect(siteRouting(stage)).toStrictEqual({
@@ -29,9 +33,43 @@ describe("siteIndexing", () => {
     expect(siteIndexing("prod")).toBe("index");
   });
 
-  it.each(["verify-j4r5", "dev", "production", "Prod"])(
+  it.each(["preview", "verify-j4r5", "dev", "production", "Prod"])(
     "keeps crawlers off %s",
     (stage) => {
+      expect(siteIndexing(stage)).toBe("noindex");
+    }
+  );
+});
+
+describe("siteWorkerFirst", () => {
+  it("preserves production's existing selected paths", () => {
+    expect(siteWorkerFirst("prod")).toStrictEqual([
+      "/rpc",
+      "/rpc/*",
+      "/mcp",
+      "/mcp/*",
+      "/.well-known/mcp.json",
+      "/.well-known/mcp.json/*",
+      "/api/auth",
+      "/api/auth/*",
+      "/unsubscribe",
+      "/unsubscribe/*",
+      "/webhooks/stripe",
+      "/webhooks/stripe/*",
+      "/account",
+      "/account/*",
+      "/jobs/*",
+      "/companies/*",
+      "/roles/*",
+      "/sitemap.xml",
+      "/robots.txt",
+    ]);
+  });
+
+  it.each(["preview", "verify-x", "dev", "Prod"])(
+    "routes all %s pages and static assets through the noindex handler",
+    (stage) => {
+      expect(siteWorkerFirst(stage)).toBe(true);
       expect(siteIndexing(stage)).toBe("noindex");
     }
   );

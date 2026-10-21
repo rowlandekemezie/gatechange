@@ -365,6 +365,8 @@ describe("robots", () => {
   it.each([
     `${ORIGIN}/robots.txt`,
     `${ORIGIN}/sitemap.xml`,
+    `${ORIGIN}/assets/application.js`,
+    `${ORIGIN}/favicon.svg`,
     ROLE_PAGE,
     `${ORIGIN}/`,
   ])("keeps crawlers off %s on a non-prod stage", async (url) => {

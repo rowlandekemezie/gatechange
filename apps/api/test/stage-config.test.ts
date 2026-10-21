@@ -1,0 +1,109 @@
+import { describe, expect, it } from "@effect/vitest";
+import { publicOriginOf, siteHostsOf, sweepLimitOf } from "@rat-stack/core";
+import { ConfigProvider, Effect, Option } from "effect";
+
+import { stageConfig } from "../src/stage-config.js";
+
+const configured = (stage: string, values: Record<string, string> = {}) =>
+  stageConfig(stage).parse(ConfigProvider.fromUnknown(values));
+
+const previewOrigin = "https://jobs-preview.rowland-ekemezie.workers.dev";
+
+describe("persistent preview defaults", () => {
+  it.effect("uses its own trusted origin and bounded mail and AI budgets", () =>
+    Effect.gen(function* previewDefaults() {
+      const config = yield* configured("preview");
+
+      expect(config).toStrictEqual({
+        billingEnabled: true,
+        dailyNeurons: 0,
+        digestDailySendLimit: 5,
+        digestSendsPerRun: 1,
+        digestSiteOrigin: previewOrigin,
+        magicLinkDailySendLimit: 10,
+        subdomain: Option.some("rowland-ekemezie"),
+      });
+      expect(publicOriginOf("preview", config.subdomain)).toStrictEqual(
+        Option.some(previewOrigin)
+      );
+      expect(
+        siteHostsOf("preview", {
+          localHosts: [],
+          workersSubdomain: config.subdomain,
+        }).allowedHosts
+      ).toStrictEqual([new URL(previewOrigin).host]);
+      expect(
+        sweepLimitOf({ configured: Option.none(), stage: "preview" })
+      ).toBe(0);
+    })
+  );
+
+  it.effect.each(["prod", "dev", "verify-x", "Preview", "production"])(
+    "preserves defaults for exact stage %s",
+    (stage) =>
+      Effect.gen(function* otherStages() {
+        const config = yield* configured(stage);
+
+        expect(config).toStrictEqual({
+          billingEnabled: false,
+          dailyNeurons: 29_000,
+          digestDailySendLimit: 50,
+          digestSendsPerRun: 25,
+          digestSiteOrigin: "https://jobs.rowlandekemezie.com",
+          magicLinkDailySendLimit: 900,
+          subdomain: Option.none(),
+        });
+        expect(
+          siteHostsOf(stage, {
+            localHosts: [],
+            workersSubdomain: config.subdomain,
+          }).allowedHosts
+        ).toStrictEqual(stage === "prod" ? ["jobs.rowlandekemezie.com"] : []);
+      })
+  );
+
+  it.effect(
+    "honors explicit overrides including disabling preview billing",
+    () =>
+      Effect.gen(function* explicitOverrides() {
+        const config = yield* configured("preview", {
+          BILLING_ENABLED: "false",
+          DIGEST_DAILY_SEND_LIMIT: "0",
+          DIGEST_SENDS_PER_RUN: "0",
+          DIGEST_SITE_ORIGIN: "https://preview.example.test",
+          ENRICHMENT_DAILY_NEURONS: "12",
+          MAGIC_LINK_DAILY_SEND_LIMIT: "0",
+          WORKERS_SUBDOMAIN: "rowland-ekemezie",
+        });
+
+        expect(config).toStrictEqual({
+          billingEnabled: false,
+          dailyNeurons: 12,
+          digestDailySendLimit: 0,
+          digestSendsPerRun: 0,
+          digestSiteOrigin: "https://preview.example.test",
+          magicLinkDailySendLimit: 0,
+          subdomain: Option.some("rowland-ekemezie"),
+        });
+        expect(
+          sweepLimitOf({ configured: Option.some(2), stage: "preview" })
+        ).toBe(2);
+        expect(
+          (yield* configured("prod", { BILLING_ENABLED: "true" }))
+            .billingEnabled
+        ).toBe(true);
+      })
+  );
+
+  it.effect("refuses a mismatched preview account instead of hiding it", () =>
+    configured("preview", { WORKERS_SUBDOMAIN: "other-account" }).pipe(
+      Effect.flip,
+      Effect.tap((failure) =>
+        Effect.sync(() => {
+          expect(failure.message).toContain("SITE_WORKERS_SUBDOMAIN");
+        })
+      ),
+      Effect.asVoid
+    )
+  );
+});
