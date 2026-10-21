@@ -131,7 +131,7 @@ jobs:
       group: deploy-preview
       cancel-in-progress: false
     env:
-      ALCHEMY_HOME: ${{ runner.temp }}/alchemy-preview
+      ALCHEMY_HOME: /tmp/alchemy-preview-${{ github.run_id }}-${{ github.run_attempt }}
       ALCHEMY_PROFILE: preview
     steps:
       - uses: actions/checkout@v4
