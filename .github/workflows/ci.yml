@@ -118,3 +118,99 @@ jobs:
           done
           echo "/api/auth/ok did not answer 200 after deploy"
           exit 1
+
+  preview:
+    name: Deploy persistent preview
+    needs: check
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+      url: https://jobs-preview.rowland-ekemezie.workers.dev
+    concurrency:
+      group: deploy-preview
+      cancel-in-progress: false
+    env:
+      ALCHEMY_HOME: /tmp/alchemy-preview-${{ github.run_id }}-${{ github.run_attempt }}
+      ALCHEMY_PROFILE: preview
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm turbo run build
+
+      - name: Prepare isolated preview profile
+        working-directory: apps/infra
+        env:
+          PREVIEW_BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+          PREVIEW_STRIPE_TEST_API_KEY: ${{ secrets.PREVIEW_STRIPE_TEST_API_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          import { spawnSync } from 'node:child_process';
+          import { existsSync, mkdirSync } from 'node:fs';
+          const secret = process.env.PREVIEW_BETTER_AUTH_SECRET;
+          const key = process.env.PREVIEW_STRIPE_TEST_API_KEY;
+          if (!secret || secret.length < 32) throw new Error('PREVIEW_BETTER_AUTH_SECRET must contain at least 32 characters');
+          if (!key || !/^(sk|rk)_test_.+$/.test(key)) throw new Error('PREVIEW_STRIPE_TEST_API_KEY must be a Stripe test key');
+          if (existsSync(process.env.ALCHEMY_HOME)) throw new Error('Preview profile directory must be fresh');
+          mkdirSync(process.env.ALCHEMY_HOME, { mode: 0o700 });
+          const env = { ...process.env, CI: 'false' };
+          delete env.STRIPE_API_KEY;
+          delete env.STRIPE_API_BASE_URL;
+          const run = (args, input) => {
+            const result = spawnSync('pnpm', ['exec', 'alchemy', ...args, '--no-input'], { env, input, stdio: ['pipe', 'inherit', 'inherit'] });
+            if (result.error || result.status !== 0) throw new Error('Preview profile setup failed');
+          };
+          run(['profile', 'create', 'preview']);
+          run(['profile', 'edit', '--profile', 'preview', '--add', 'Stripe', '--method', 'stored', '--set', 'apiKey=-'], key);
+          JS
+
+      - name: Check Cloudflare credentials
+        working-directory: apps/infra
+        run: pnpm exec alchemy provider check-env --provider Cloudflare --no-input
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Plan and deploy preview
+        working-directory: apps/infra
+        env:
+          CI: "false"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+        run: |
+          unset STRIPE_API_KEY STRIPE_API_BASE_URL
+          pnpm exec alchemy plan --stage preview --profile preview --no-input
+          pnpm exec alchemy deploy --stage preview --profile preview --yes --no-input
+
+      - name: Smoke test preview
+        run: |
+          for path in / /api/auth/ok; do
+            healthy=false
+            for attempt in 1 2 3 4 5 6; do
+              status=$(curl --connect-timeout 10 --max-time 30 -s -o /dev/null -w "%{http_code}" "https://jobs-preview.rowland-ekemezie.workers.dev$path") || status=000
+              if [ "$status" = "200" ]; then healthy=true; break; fi
+              echo "Preview $path answered $status, retrying in 10 seconds"
+              sleep 10
+            done
+            if [ "$healthy" != true ]; then exit 1; fi
+          done
+          curl --connect-timeout 10 --max-time 30 -fsS -D "$RUNNER_TEMP/preview-headers" -o /dev/null https://jobs-preview.rowland-ekemezie.workers.dev/
+          grep -iq '^x-robots-tag:.*noindex' "$RUNNER_TEMP/preview-headers"
+          curl --connect-timeout 10 --max-time 30 -fsS https://jobs-preview.rowland-ekemezie.workers.dev/robots.txt > "$RUNNER_TEMP/preview-robots"
+          grep -q '^Disallow: /$' "$RUNNER_TEMP/preview-robots"
+
+      - name: Remove ephemeral preview credentials
+        if: always()
+        run: node --input-type=module -e 'import { rmSync } from "node:fs"; rmSync(process.env.ALCHEMY_HOME, { recursive:true, force:true });'

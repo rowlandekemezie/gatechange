@@ -3,7 +3,6 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import {
   authOptions,
   authSecret,
-  DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT,
   logSendFailure,
   magicLinkEmail,
   makeAccountStore,
@@ -17,7 +16,6 @@ import {
   Billing,
   capabilities,
   CurrentViewer,
-  DEFAULT_DAILY_NEURONS,
   DEFAULT_FEEDS_PER_RUN,
   DigestMailer,
   enqueueUnenriched,
@@ -76,7 +74,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { handleRoutes } from "./route.js";
-import { workersSubdomain } from "./site-config.js";
+import { stageConfig } from "./stage-config.js";
 import { stripeBilling } from "./stripe.js";
 
 export const rpcProjection = toRpc(capabilities);
@@ -130,9 +128,10 @@ export const DIGEST_SENDER = "digest@jobs.rowlandekemezie.com";
 
 export const DIGEST_SCHEDULE = "7 * * * *";
 
-export const DEFAULT_DIGEST_SENDS_PER_RUN = 25;
-
-export const DEFAULT_DIGEST_DAILY_SEND_LIMIT = 50;
+export {
+  DEFAULT_DIGEST_DAILY_SEND_LIMIT,
+  DEFAULT_DIGEST_SENDS_PER_RUN,
+} from "./stage-config.js";
 
 export const INSTANT_ALERT_SCHEDULE = "10,30,50 * * * *";
 
@@ -184,6 +183,8 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     workersDev: false,
   },
   Effect.gen(function* jobsBackend() {
+    const stage = yield* currentStage;
+    const configuration = yield* stageConfig(stage);
     const database = yield* JobsDatabase;
     const client = yield* Cloudflare.D1.QueryDatabase(database);
     const storeLayer = d1JobStoreLayer(client);
@@ -209,9 +210,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       stage: deployedStage,
     });
 
-    const dailyNeurons = yield* Config.Int("ENRICHMENT_DAILY_NEURONS").pipe(
-      Config.withDefault(DEFAULT_DAILY_NEURONS)
-    );
+    const { dailyNeurons } = configuration;
 
     const sweepHours = yield* Config.Int("ENRICHMENT_SWEEP_HOURS").pipe(
       Config.withDefault(DEFAULT_ENRICHMENT_SWEEP_HOURS)
@@ -319,17 +318,14 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       google: yield* socialCredentials("GOOGLE"),
     });
 
-    const stage = yield* currentStage;
-    const subdomain = yield* workersSubdomain;
+    const { subdomain } = configuration;
 
     const hosts = siteHostsOf(stage, {
       localHosts: yield* localAuthHosts,
       workersSubdomain: subdomain,
     });
 
-    const billingEnabled = yield* Config.Boolean("BILLING_ENABLED").pipe(
-      Config.withDefault(false)
-    );
+    const { billingEnabled } = configuration;
 
     const stripe = yield* stripeBilling({
       hostId: "JobsBackend",
@@ -353,17 +349,11 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       })
     );
 
-    const digestSiteOrigin = yield* Config.String("DIGEST_SITE_ORIGIN").pipe(
-      Config.withDefault(SITE_ORIGIN)
-    );
+    const { digestSiteOrigin } = configuration;
 
     const digestPlan = {
-      dailySendLimit: yield* Config.Int("DIGEST_DAILY_SEND_LIMIT").pipe(
-        Config.withDefault(DEFAULT_DIGEST_DAILY_SEND_LIMIT)
-      ),
-      sendsPerRun: yield* Config.Int("DIGEST_SENDS_PER_RUN").pipe(
-        Config.withDefault(DEFAULT_DIGEST_SENDS_PER_RUN)
-      ),
+      dailySendLimit: configuration.digestDailySendLimit,
+      sendsPerRun: configuration.digestSendsPerRun,
     };
 
     const unsubscribeTokenVersion = yield* Config.Int(
@@ -415,9 +405,7 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
 
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
-    const magicLinkDailySendLimit = yield* Config.Int(
-      "MAGIC_LINK_DAILY_SEND_LIMIT"
-    ).pipe(Config.withDefault(DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT));
+    const { magicLinkDailySendLimit } = configuration;
 
     const auth = yield* BetterAuth({
       ...authOptions({

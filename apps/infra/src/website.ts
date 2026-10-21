@@ -3,12 +3,11 @@ import {
   ANONYMOUS_MCP_CALLS_PER_MINUTE,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "@rat-stack/core";
-import { workerFirstPaths } from "@rat-stack/web/edge-routes";
 import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
-import { siteIndexing, siteRouting } from "./site-routing.js";
+import { siteIndexing, siteRouting, siteWorkerFirst } from "./site-routing.js";
 
 export class Website extends Cloudflare.Website.Foldkit<Website>()(
   "Website",
@@ -18,14 +17,7 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
     return {
       assets: {
         notFoundHandling: "single-page-application" as const,
-        runWorkerFirst: [
-          ...workerFirstPaths,
-          "/jobs/*",
-          "/companies/*",
-          "/roles/*",
-          "/sitemap.xml",
-          "/robots.txt",
-        ],
+        runWorkerFirst: siteWorkerFirst(stage),
       },
       ...siteRouting(stage),
       env: {

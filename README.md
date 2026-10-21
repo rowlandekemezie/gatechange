@@ -79,6 +79,43 @@ Alchemy creates the D1 database and applies `packages/job-store/migrations/`, de
 
 The board fills over the first couple of hours: each cron run fetches 20 due feeds, so all 125 feeds are covered after about seven runs.
 
+### Persistent preview
+
+`preview` deploys the same application code as production with separate Website and JobsBackend Workers, D1, queue, authentication sessions, and Stripe test resources. Its stable URL is <https://jobs-preview.rowland-ekemezie.workers.dev>. Production keeps its custom domain and existing defaults. Native Worker version preview URLs do not isolate this application's service bindings, queue consumers, and scheduled tasks.
+
+Only the exact `preview` stage changes these defaults; explicit environment configuration still overrides them:
+
+| Setting | `preview` | Other stages |
+| --- | --- | --- |
+| `BILLING_ENABLED` | `true`, test mode required | `false` |
+| `WORKERS_SUBDOMAIN` | `rowland-ekemezie` | Unset |
+| `DIGEST_SITE_ORIGIN` | Preview URL above | Production origin |
+| `ENRICHMENT_DAILY_NEURONS` | `0` | `29000` |
+| `ENRICHMENT_SWEEP_LIMIT` | `0` | `8` on `prod`, otherwise `0` |
+| `MAGIC_LINK_DAILY_SEND_LIMIT` | `10` | `900` |
+| `DIGEST_DAILY_SEND_LIMIT` | `5` | `50` |
+| `DIGEST_SENDS_PER_RUN` | `1` | `25` |
+
+Preview retains ingestion and scheduled mail delivery. Its zero AI budgets prevent automatic model calls, including queued deliveries. Preview mail remains real email, so use test accounts you control. Production's default 950 sends plus preview's 15 leave 35 of the observed 1000-per-day account allowance. These separate D1 budgets are not an atomic cross-database account quota; other stages, callers, overrides, or a changed provider allowance can consume that room. Recheck the account allowance before increasing them. Preview sends use the existing verified sender domain, while login, job, billing, and unsubscribe links use the preview origin.
+
+The `preview` GitHub environment must contain a unique `PREVIEW_BETTER_AUTH_SECRET` (at least 32 characters) and `PREVIEW_STRIPE_TEST_API_KEY` (`sk_test_` or `rk_test_`). Use a different auth secret from production. The preview job explicitly uses the existing repository Cloudflare credentials; it never substitutes production auth or Stripe secrets. OAuth remains disabled until separate preview apps and callback URLs are configured. With no `STRIPE_RESTRICTED_KEY` override, the Worker uses this test profile key for billing; choose a suitably scoped test key.
+
+CI deploys both stages after a successful check on a push to `main`. A manual CI run on `main` deploys preview only. Preview gets its own deployment concurrency group. It validates both preview secrets before profile creation, stores the Stripe test key through `alchemy profile edit --add Stripe --method stored --set apiKey=- --no-input` using stdin, plans, deploys, and checks the homepage, auth health, and crawler exclusions. The profile lives in a private ephemeral `ALCHEMY_HOME` removed on success or failure. Only Alchemy profile/plan/deploy subprocesses use `CI=false`, because the pinned CLI otherwise ignores profiles; checks, tests, and builds retain CI behavior. No `STRIPE_API_KEY` environment fallback is used.
+
+For a local deployment, configure a separate profile with the existing Cloudflare account and a Stripe **test** key. Set a unique `BETTER_AUTH_SECRET` through the declared local configuration before planning:
+
+```sh
+pnpm alchemy profile create preview
+pnpm alchemy profile edit --profile preview --add Cloudflare
+pnpm alchemy profile edit --profile preview --add Stripe
+ALCHEMY_PROFILE=preview pnpm infra:plan --stage preview --no-input
+ALCHEMY_PROFILE=preview pnpm infra:deploy --stage preview --yes --no-input
+```
+
+Review the plan before deploying: preview should create or update only its stage-owned resources, with its own D1 and queue, Stripe test objects and webhook, and no production-domain or production-database change. Keep credentials out of command arguments and logs. If running these Alchemy commands inside a CI environment, scope `CI=false` to those subprocesses so the stored Stripe profile can resolve.
+
+Every non-production stage routes pages and static assets through the Worker so they receive `X-Robots-Tag: noindex`; production retains its selected Worker paths and direct asset serving. Preview disallows crawling in `robots.txt`, and has no sitemap entries. These crawler signals do not restrict access: the preview is public, and private account data still requires its own preview session.
+
 ### Workers plan
 
 Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse 20 large job boards. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.
