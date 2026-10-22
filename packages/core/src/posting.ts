@@ -9,6 +9,9 @@ import { offSiteHref } from "./site.js";
 
 export const Posting = Schema.Struct({
   company: Schema.String,
+  country: Schema.optional(
+    Schema.String.check(Schema.isPattern(/^[A-Z]{2}$/u))
+  ),
   externalId: Schema.NonEmptyString,
   location: Schema.String,
   postedAt: Schema.NullOr(EpochMillis),
@@ -58,6 +61,7 @@ export const normalizePosting = (
       const location = collapseWhitespace(posting.location);
 
       const placement = classifyPlacement({
+        country: posting.country,
         text: location,
         workplace: posting.workplace,
       });

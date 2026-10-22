@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { listingsFromPostings } from "@rat-stack/core";
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -126,6 +127,121 @@ describe("company boards", () => {
                 max: 220_000,
                 min: 180_000,
               },
+              text: "Director of Engineering",
+              workplaceType: "remote",
+            },
+          ])
+        )
+      )
+    )
+  );
+
+  it.effect.each([
+    { country: "IN", location: "Chennai", region: "Elsewhere" },
+    { country: "IN", location: "Hyderabad", region: "Elsewhere" },
+    { country: "US", location: "Boise", region: "RemoteUnitedStates" },
+    { country: "CA", location: "Whitehorse", region: "RemoteCanada" },
+    { country: "AU", location: "Victoria", region: "Elsewhere" },
+    { country: "US", location: "Victoria", region: "RemoteUnitedStates" },
+    { country: "IN", location: "Worldwide", region: "RemoteGlobal" },
+    { country: "IN", location: "North America", region: "RemoteNorthAmerica" },
+    { country: "US", location: "US and Canada", region: "RemoteNorthAmerica" },
+    { country: "IN", location: "Canada and India", region: "RemoteCanada" },
+    { country: undefined, location: "Undisclosed", region: "RemoteGlobal" },
+    { country: null, location: "Undisclosed", region: "RemoteGlobal" },
+  ])(
+    "Lever country $country classifies $location without rewriting it",
+    ({ country, location, region }) =>
+      Effect.gen(function* classifyLeverCountry() {
+        const postings = yield* leverPostings("lever:acme", "acme");
+
+        const { jobs } = listingsFromPostings(
+          {
+            company: Option.some("Acme"),
+            key: "lever:acme",
+            minIntervalMinutes: 180,
+            source: "Lever",
+          },
+          postings,
+          1_760_000_000_000
+        );
+
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]?.location).toBe(location);
+        expect(jobs[0]?.region).toBe(region);
+      }).pipe(
+        Effect.provide(
+          respondWith(
+            JSON.stringify([
+              {
+                categories: { allLocations: [location], location },
+                country,
+                hostedUrl: "https://jobs.lever.co/acme/1",
+                id: "1",
+                text: "Director of Engineering",
+                workplaceType: "remote",
+              },
+            ])
+          )
+        )
+      )
+  );
+
+  it.effect.each(["", "USA", "in", 42, { country: "IN" }])(
+    "ignores malformed country evidence %j without dropping a valid listing",
+    (country) =>
+      Effect.gen(function* invalidCountry() {
+        const postings = yield* leverPostings("lever:acme", "acme");
+
+        expect(postings).toHaveLength(1);
+        expect(postings[0]).not.toHaveProperty("country");
+      }).pipe(
+        Effect.provide(
+          respondWith(
+            JSON.stringify([
+              {
+                country,
+                hostedUrl: "https://jobs.lever.co/acme/1",
+                id: "1",
+                text: "Director of Engineering",
+                workplaceType: "remote",
+              },
+            ])
+          )
+        )
+      )
+  );
+
+  it.effect("does not narrow secondary locations to the primary country", () =>
+    Effect.gen(function* severalCountries() {
+      const postings = yield* leverPostings("lever:acme", "acme");
+
+      expect(postings[0]).not.toHaveProperty("country");
+      expect(postings[0]?.location).toBe("Chennai; Whitehorse");
+      expect(
+        listingsFromPostings(
+          {
+            company: Option.some("Acme"),
+            key: "lever:acme",
+            minIntervalMinutes: 180,
+            source: "Lever",
+          },
+          postings,
+          1_760_000_000_000
+        ).jobs[0]?.region
+      ).toBe("RemoteGlobal");
+    }).pipe(
+      Effect.provide(
+        respondWith(
+          JSON.stringify([
+            {
+              categories: {
+                allLocations: ["Chennai", "Whitehorse"],
+                location: "Chennai",
+              },
+              country: "IN",
+              hostedUrl: "https://jobs.lever.co/acme/1",
+              id: "1",
               text: "Director of Engineering",
               workplaceType: "remote",
             },

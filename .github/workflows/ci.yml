@@ -103,7 +103,7 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5 6; do
             status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/) && [ "$status" = "200" ] && exit 0
-            echo "Site answered $status, retrying in 10 seconds"
+            echo "Site answered $status on attempt $attempt, retrying in 10 seconds"
             sleep 10
           done
           echo "jobs.rowlandekemezie.com did not answer 200 after deploy"
@@ -113,11 +113,22 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5 6; do
             status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/api/auth/ok) && [ "$status" = "200" ] && exit 0
-            echo "/api/auth/ok answered $status, retrying in 10 seconds"
+            echo "/api/auth/ok answered $status on attempt $attempt, retrying in 10 seconds"
             sleep 10
           done
           echo "/api/auth/ok did not answer 200 after deploy"
           exit 1
+
+      - name: Verify public HTML and filter exclusions
+        run: |
+          for path in / /pricing /about /privacy /terms /contact; do
+            curl --connect-timeout 10 --max-time 30 -fsS "https://jobs.rowlandekemezie.com$path" > "$RUNNER_TEMP/public-page.html"
+            grep -q 'data-foldkit-app' "$RUNNER_TEMP/public-page.html"
+            grep -q 'rel="canonical"' "$RUNNER_TEMP/public-page.html"
+          done
+          curl --connect-timeout 10 --max-time 30 -fsS -D "$RUNNER_TEMP/filter-headers" -o /dev/null 'https://jobs.rowlandekemezie.com/?age=30'
+          grep -iq '^x-robots-tag:.*noindex' "$RUNNER_TEMP/filter-headers"
+          grep -iq '^cache-control:.*no-store' "$RUNNER_TEMP/filter-headers"
 
   preview:
     name: Deploy persistent preview
@@ -201,7 +212,7 @@ jobs:
             for attempt in 1 2 3 4 5 6; do
               status=$(curl --connect-timeout 10 --max-time 30 -s -o /dev/null -w "%{http_code}" "https://jobs-preview.rowland-ekemezie.workers.dev$path") || status=000
               if [ "$status" = "200" ]; then healthy=true; break; fi
-              echo "Preview $path answered $status, retrying in 10 seconds"
+              echo "Preview $path answered $status on attempt $attempt, retrying in 10 seconds"
               sleep 10
             done
             if [ "$healthy" != true ]; then exit 1; fi
@@ -210,6 +221,11 @@ jobs:
           grep -iq '^x-robots-tag:.*noindex' "$RUNNER_TEMP/preview-headers"
           curl --connect-timeout 10 --max-time 30 -fsS https://jobs-preview.rowland-ekemezie.workers.dev/robots.txt > "$RUNNER_TEMP/preview-robots"
           grep -q '^Disallow: /$' "$RUNNER_TEMP/preview-robots"
+          curl --connect-timeout 10 --max-time 30 -fsS https://jobs-preview.rowland-ekemezie.workers.dev/sitemap.xml > "$RUNNER_TEMP/preview-sitemap"
+          if grep -q '<url>' "$RUNNER_TEMP/preview-sitemap"; then
+            echo "Preview sitemap must not advertise URLs"
+            exit 1
+          fi
 
       - name: Remove ephemeral preview credentials
         if: always()

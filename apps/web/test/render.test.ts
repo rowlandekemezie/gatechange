@@ -14,8 +14,11 @@ import { fromString } from "foldkit/url";
 
 import indexHtml from "../index.html?raw";
 import { application } from "../src/client/application.js";
+import { defaultFilters } from "../src/client/board/filters.js";
 import {
+  Flags,
   ImportOffer,
+  JobsState,
   Preload,
   TrackerState,
 } from "../src/client/board/model.js";
@@ -23,8 +26,9 @@ import type {
   MarkedJobValue,
   PreloadValue,
 } from "../src/client/board/model.js";
+import { init } from "../src/client/board/update.js";
 import { collectListing, LISTING_ROWS } from "../src/client/listing.js";
-import { jobRouter, Route, routeOfUrl } from "../src/client/route.js";
+import { boardUrl, jobRouter, Route, routeOfUrl } from "../src/client/route.js";
 import { allowedOnly, allowedOrUnstated } from "../src/server/markup.js";
 import type { MarkupPolicy } from "../src/server/markup.js";
 import { renderPage } from "../src/server/render.js";
@@ -320,6 +324,104 @@ const acmeDirector = jobFrom("Greenhouse", "greenhouse:acme/1");
 const acmeVp = jobFrom("Lever", "lever:acme/2", {
   role: "VicePresident",
   title: "VP Engineering",
+});
+
+const FLAGS_PAYLOAD =
+  /<script type="application\/json" data-foldkit-flags="[^"]*">(?<flags>.*?)<\/script>/su;
+
+describe("public landing hydration", () => {
+  it.effect(
+    "hands the public board snapshot and URL filters to client init without a second listing fetch",
+    () =>
+      Effect.gen(function* boardHydration() {
+        const filters = {
+          ...defaultFilters,
+          roles: ["Director"] as const,
+          search: "Acme </script><script>",
+        };
+
+        const path = boardUrl(filters);
+
+        const preload = Preload.Board({
+          filters,
+          generatedAt: 1_760_500_000_000,
+          jobs: [acmeDirector],
+          total: 45,
+        });
+
+        const { html, status } = yield* render(path, preload);
+
+        const match = Option.getOrThrow(
+          Option.fromNullishOr(FLAGS_PAYLOAD.exec(html))
+        );
+
+        const flags = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(Flags)
+        )(match.groups?.flags);
+
+        const started = init(
+          flags,
+          Option.getOrThrow(fromString(`${ORIGIN}${path}`))
+        );
+
+        expect(status).toBe(200);
+        expect(html).toContain("Director of Engineering");
+        expect(html).toContain('content="noindex"');
+        expect(html).not.toContain("</script><script>");
+        expect(html).toContain(`href="${jobRouter({ id: acmeDirector.id })}"`);
+        expect(started.model.filters).toStrictEqual(filters);
+        expect(started.model.draftSearch).toBe(filters.search);
+        expect(started.model.jobs).toStrictEqual(
+          JobsState.Loaded({
+            generatedAt: 1_760_500_000_000,
+            jobs: [acmeDirector],
+            total: 45,
+          })
+        );
+        expect(started.commands?.map((command) => command.name)).not.toContain(
+          "FetchJobs"
+        );
+        expect(started.model.marks).toStrictEqual([]);
+        expect(started.model.account.session._tag).not.toBe("SignedIn");
+      })
+  );
+
+  it("rejects a board snapshot belonging to different URL filters", () => {
+    const started = init(
+      {
+        origin: ORIGIN,
+        preload: Preload.Board({
+          filters: defaultFilters,
+          generatedAt: 0,
+          jobs: [acmeDirector],
+          total: 1,
+        }),
+      },
+      Option.getOrThrow(fromString(`${ORIGIN}/?q=different`))
+    );
+
+    expect(started.model.filters.search).toBe("different");
+    expect(started.model.jobs._tag).toBe("Loading");
+    expect(started.commands?.map((command) => command.name)).toContain(
+      "FetchJobs"
+    );
+  });
+
+  it.effect(
+    "renders pricing metadata and public plan copy without a job preload",
+    () =>
+      Effect.map(render("/pricing", Preload.Nothing()), (page) => {
+        expect(page.status).toBe(200);
+        expect(page.html).toContain("<title>Pro plans</title>");
+        expect(page.html).toContain("Pro for engineering leaders");
+        expect(page.html).toContain(
+          "Every engineering leadership listing stays free"
+        );
+        expect(page.html).toContain(
+          `<link rel="canonical" href="${ORIGIN}/pricing"`
+        );
+      })
+  );
 });
 
 const markOf = (job: ListedJobValue): MarkedJobValue => ({
@@ -713,6 +815,16 @@ const sitemapRoutes = (jobs: readonly JobValue[]) =>
   );
 
 describe("sitemap", () => {
+  it("omits unobserved modification dates even when a listing was seen again", () => {
+    const first = sitemapXml(ORIGIN, [greenhouse]);
+
+    const unchanged = sitemapXml(ORIGIN, [
+      { ...greenhouse, lastSeenAt: greenhouse.lastSeenAt + 86_400_000 },
+    ]);
+
+    expect(first).not.toContain("<lastmod>");
+    expect(unchanged).toBe(first);
+  });
   it("lists the board, every job, every company, and each role page with roles", () => {
     const jobs = [
       greenhouse,

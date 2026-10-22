@@ -3,6 +3,7 @@ import { Match } from "effect";
 import type { ArrangementValue, RegionValue } from "./job.js";
 
 export interface PlaceEvidence {
+  readonly country?: string | undefined;
   readonly text: string;
   readonly workplace: ArrangementValue;
 }
@@ -77,6 +78,28 @@ const signalsOf = (text: string): Signals => {
   };
 };
 
+const countrySignals = (evidence: PlaceEvidence): Signals => {
+  const signals = signalsOf(evidence.text);
+
+  if (
+    evidence.country === undefined ||
+    signals.global ||
+    signals.northAmerica ||
+    (signals.canada && signals.unitedStates) ||
+    (signals.foreign && (signals.canada || signals.unitedStates))
+  ) {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    britishColumbia: evidence.country === "CA" && signals.britishColumbia,
+    canada: evidence.country === "CA",
+    foreign: evidence.country !== "CA" && evidence.country !== "US",
+    unitedStates: evidence.country === "US",
+  };
+};
+
 const remoteRegion = (signals: Signals): RegionValue => {
   if (signals.northAmerica || (signals.canada && signals.unitedStates)) {
     return "RemoteNorthAmerica";
@@ -115,7 +138,7 @@ const placedRegion = (signals: Signals): RegionValue => {
 
 export const classifyPlacement = (evidence: PlaceEvidence): Placement => {
   const arrangement = arrangementOf(evidence);
-  const signals = signalsOf(evidence.text);
+  const signals = countrySignals(evidence);
 
   return Match.value(arrangement).pipe(
     Match.withReturnType<Placement>(),

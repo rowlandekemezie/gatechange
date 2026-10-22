@@ -253,11 +253,22 @@ const navigatedTo = (model: ModelValue, filters: FiltersValue): UpdateReturn =>
 const followedEntitlement = (
   previous: ModelValue,
   step: UpdateReturn
-): UpdateReturn =>
-  isProMember(previous.billing) &&
-  (Schema.is(SessionState.SignedOut)(step.model.account.session) ||
-    (Schema.is(MembershipState.Loaded)(step.model.billing.membership) &&
-      !isProMember(step.model.billing)))
+): UpdateReturn => {
+  if (
+    !isProMember(previous.billing) &&
+    isProMember(step.model.billing) &&
+    Schema.is(Route.Board)(step.model.route) &&
+    (step.model.filters.salaryListed ||
+      step.model.filters.salaryFloor !== null ||
+      step.model.filters.seniorities.length > 0)
+  ) {
+    return joined(step, (next) => withFilters(next, next.filters));
+  }
+
+  return isProMember(previous.billing) &&
+    (Schema.is(SessionState.SignedOut)(step.model.account.session) ||
+      (Schema.is(MembershipState.Loaded)(step.model.billing.membership) &&
+        !isProMember(step.model.billing)))
     ? joined(step, (next) => {
         const filters = {
           ...next.filters,
@@ -273,6 +284,7 @@ const followedEntitlement = (
           : reset;
       })
     : step;
+};
 
 const listedJob = (model: ModelValue, id: string) =>
   Schema.is(JobsState.Loaded)(model.jobs)
@@ -345,6 +357,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
         : { model: routed },
     Company: (company) => enteredListing(routed, company),
     ConfirmSignIn: () => ({ commands: [ForgetSignInToken()], model: routed }),
+    Information: () => ({ model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
     Pricing: () => enteredBilling(routed, false),
@@ -608,6 +621,14 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
   const { route } = model;
 
   return Preload.match<ModelValue>(preload, {
+    Board: ({ filters, generatedAt, jobs, total }) =>
+      Schema.is(Route.Board)(route) && sameFilters(route.filters, filters)
+        ? modifyFields(model, {
+            draftSearch: () => filters.search,
+            filters: () => filters,
+            jobs: () => JobsState.Loaded({ generatedAt, jobs, total }),
+          })
+        : model,
     Job: ({ job }) =>
       Schema.is(Route.Job)(route) && route.id === job.id
         ? modifyFields(model, { job: () => JobState.Found({ job }) })

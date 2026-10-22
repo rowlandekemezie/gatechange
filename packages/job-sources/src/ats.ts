@@ -1,5 +1,6 @@
+import { Posting } from "@rat-stack/core";
 import type { PostingValue } from "@rat-stack/core";
-import { Array, Effect, pipe, Schema } from "effect";
+import { Array, Effect, Option, pipe, Schema } from "effect";
 
 import { fetchJson } from "./http.js";
 import {
@@ -62,6 +63,9 @@ const LeverJob = Schema.Struct({
       })
     )
   ),
+  country: Posting.fields.country.pipe(
+    Schema.catchDecoding(() => Effect.succeed(Option.none()))
+  ),
   createdAt: OptionalNumber,
   hostedUrl: Schema.NonEmptyString,
   id: Schema.NonEmptyString,
@@ -90,24 +94,34 @@ export const leverPostings = (feed: string, slug: string) =>
         jobs,
         Array.map((item) => Schema.decodeUnknownOption(LeverJob)(item)),
         Array.getSomes,
-        Array.map((job): PostingValue => ({
-          company: "",
-          externalId: job.id,
-          location: nonEmpty([
+        Array.map((job): PostingValue => {
+          const locations = nonEmpty([
             ...(job.categories?.allLocations ?? []),
             job.categories?.location,
-          ]).join("; "),
-          postedAt: epochMillisOf(job.createdAt),
-          salary: salaryRange(
-            job.salaryRange?.min,
-            job.salaryRange?.max,
-            job.salaryRange?.currency,
-            periodOf(job.salaryRange?.interval)
-          ),
-          title: job.text,
-          url: job.hostedUrl,
-          workplace: workplaceOf(job.workplaceType),
-        }))
+          ]);
+
+          const posting: PostingValue = {
+            company: "",
+            externalId: job.id,
+            location: locations.join("; "),
+            postedAt: epochMillisOf(job.createdAt),
+            salary: salaryRange(
+              job.salaryRange?.min,
+              job.salaryRange?.max,
+              job.salaryRange?.currency,
+              periodOf(job.salaryRange?.interval)
+            ),
+            title: job.text,
+            url: job.hostedUrl,
+            workplace: workplaceOf(job.workplaceType),
+          };
+
+          if (locations.length <= 1 && job.country !== undefined) {
+            return { ...posting, country: job.country };
+          }
+
+          return posting;
+        })
       )
     )
   );

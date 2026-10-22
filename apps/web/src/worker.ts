@@ -1,6 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
 
+import { hasNoSelection, queryOf } from "./client/board/filters.js";
 import { Preload } from "./client/board/model.js";
 import { collectListing, isListingRoute } from "./client/listing.js";
 import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
@@ -16,7 +17,12 @@ import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
 import { renderPage } from "./server/render.js";
-import { closedRobotsTxt, robotsTxt, sitemapXml } from "./server/sitemap.js";
+import {
+  closedRobotsTxt,
+  emptySitemapXml,
+  robotsTxt,
+  sitemapXml,
+} from "./server/sitemap.js";
 
 interface RateLimiter {
   readonly limit: (options: {
@@ -77,7 +83,22 @@ const pageKeyOf = (pageUrl: URL, shell: string) =>
 const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
   Effect.scoped(
     Effect.gen(function* fetchPreload() {
+      if (
+        Schema.is(Route.Pricing)(route) ||
+        Schema.is(Route.Information)(route)
+      ) {
+        return Preload.Nothing();
+      }
+
       const client = yield* clientOf(backend);
+
+      if (Schema.is(Route.Board)(route)) {
+        const page = hasNoSelection(route.filters)
+          ? { generatedAt: 0, jobs: [], total: 0 }
+          : yield* client.listJobs(queryOf(route.filters, 0));
+
+        return Preload.Board({ ...page, filters: route.filters });
+      }
 
       if (Schema.is(Route.Job)(route)) {
         const job = yield* client.getJob({ id: route.id });
@@ -107,7 +128,9 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
 const PAGE_PREFIXES = ["/jobs/", "/companies/", "/roles/"];
 
 const isPage = (pathname: string) =>
-  PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  ["/", "/pricing", "/about", "/privacy", "/terms", "/contact"].includes(
+    pathname
+  ) || PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
 const servePage = (
   bindings: EdgeBindings,
@@ -118,27 +141,33 @@ const servePage = (
   Effect.gen(function* serveRenderedPage() {
     const route = routeOfUrl(yield* Effect.fromOption(fromString(url.href)));
 
-    const pageUrl = new URL(
-      Option.getOrElse(canonicalPathOf(route), () => url.pathname),
-      url.origin
-    );
+    const pageUrl = Schema.is(Route.Board)(route)
+      ? url
+      : new URL(
+          Option.getOrElse(canonicalPathOf(route), () => url.pathname),
+          url.origin
+        );
 
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
+
+    const fresh = Effect.gen(function* renderFreshPage() {
+      const preload = yield* preloadOf(bindings.BACKEND, route);
+      const page = yield* renderPage(shell, pageUrl, route, preload);
+
+      return respond(page.html, "text/html", page.status);
+    });
+
+    if (Schema.is(Route.Board)(route) && url.search !== "") {
+      const response = yield* fresh;
+
+      response.headers.set("cache-control", PRIVATE_CACHE_CONTROL);
+
+      return Option.some(response);
+    }
+
     const key = yield* pageKeyOf(pageUrl, shell);
 
-    return Option.some(
-      yield* throughEdgeCache(
-        request,
-        key,
-        lifetime,
-        Effect.gen(function* renderFreshPage() {
-          const preload = yield* preloadOf(bindings.BACKEND, route);
-          const page = yield* renderPage(shell, pageUrl, route, preload);
-
-          return respond(page.html, "text/html", page.status);
-        })
-      )
-    );
+    return Option.some(yield* throughEdgeCache(request, key, lifetime, fresh));
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.as(
@@ -186,6 +215,10 @@ const serveSite = (
   }
 
   if (url.pathname === "/sitemap.xml") {
+    if (bindings.SITE_INDEXING !== "index") {
+      return Effect.succeedSome(respond(emptySitemapXml, "application/xml"));
+    }
+
     return Effect.asSome(serveSitemap(bindings, request, url, lifetime));
   }
 
@@ -268,6 +301,11 @@ export default {
         : await bindings.ASSETS.fetch(request)
     );
 
-    return bindings.SITE_INDEXING === "index" ? response : noindex(response);
+    const url = new URL(request.url);
+    const filteredBoard = url.pathname === "/" && url.search !== "";
+
+    return bindings.SITE_INDEXING === "index" && !filteredBoard
+      ? response
+      : noindex(response);
   },
 };

@@ -776,6 +776,27 @@ a {
   margin-left: 0;
 }
 
+.pro-refinements {
+  min-width: 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.pro-refinements-title {
+  padding: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.pro-refinements .sentence-refine {
+  margin-top: 0.75rem;
+}
+
+.pro-refinements .upgrade-prompt {
+  margin-top: 0.5rem;
+}
+
 .pro-filters {
   display: flex;
   flex-wrap: wrap;
