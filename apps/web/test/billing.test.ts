@@ -238,6 +238,65 @@ describe("billing updates", () => {
     }
   );
 
+  it.each([
+    { salaryListed: true },
+    { salaryFloor: { amount: 200_000, currency: "CAD" } },
+    { seniorities: ["Director"] },
+  ] as const)(
+    "refetches anonymous preloads when Pro is confirmed for %o",
+    (refinement) => {
+      const filters = { ...defaultFilters, ...refinement };
+
+      const started = boardInit(
+        {
+          ...flags,
+          preload: Preload.Board({
+            filters,
+            generatedAt: 1,
+            jobs: [],
+            total: 0,
+          }),
+        },
+        urlAt(boardUrl(filters))
+      );
+
+      const signedIn = boardUpdate(
+        started.model,
+        BoardMessage.GotAccountMessage({
+          message: AccountMessage.CompletedFetchSession({
+            account: Option.some(ada),
+          }),
+        })
+      );
+
+      const confirmed = boardUpdate(
+        signedIn.model,
+        BoardMessage.GotBillingMessage({
+          message: Message.CompletedFetchMembership({
+            membership: Option.some(pro),
+          }),
+        })
+      );
+
+      const repeated = boardUpdate(
+        confirmed.model,
+        BoardMessage.GotBillingMessage({
+          message: Message.CompletedFetchMembership({
+            membership: Option.some(pro),
+          }),
+        })
+      );
+
+      expect(commandNames(started)).not.toContain("FetchJobs");
+      expect(commandNames(confirmed)).toContain("FetchJobs");
+      expect(confirmed.model.generation).toBe(signedIn.model.generation + 1);
+      expect(confirmed.model.filters).toEqual(filters);
+      expect(commandNames(confirmed)).not.toContain("PushUrl");
+      expect(commandNames(confirmed)).not.toContain("ReplaceUrl");
+      expect(commandNames(repeated)).not.toContain("FetchJobs");
+    }
+  );
+
   it("preserves requested paid filters while membership is loading", () => {
     const board = boardInit(
       flags,
@@ -337,9 +396,7 @@ describe("billing pages", () => {
         (html) => {
           const text = textOf(html);
 
-          expect(text).toContain(
-            "Salary filters come with Pro, so the list below still shows every role."
-          );
+          expect(text).toContain("These selections are not applied on Free.");
           expect(text).toContain("Upgrade");
         }
       )
@@ -356,7 +413,7 @@ describe("billing pages", () => {
         ),
         (html) => {
           expect(textOf(html)).toContain(
-            "Salary and seniority filters come with Pro, so the list below still shows every role."
+            "These selections are not applied on Free."
           );
           expect(textOf(html)).toContain("See Pro plans");
         }

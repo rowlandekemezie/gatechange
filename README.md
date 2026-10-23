@@ -116,6 +116,16 @@ Review the plan before deploying: preview should create or update only its stage
 
 Every non-production stage routes pages and static assets through the Worker so they receive `X-Robots-Tag: noindex`; production retains its selected Worker paths and direct asset serving. Preview disallows crawling in `robots.txt`, and has no sitemap entries. These crawler signals do not restrict access: the preview is public, and private account data still requires its own preview session.
 
+### Search visibility and public information
+
+The homepage, pricing, job, company, role and information pages render HTML at the edge using the same Foldkit program as the browser. The homepage preloads one bounded page of public listings. It does not forward a visitor's credentials to the backend. Account pages remain private and are never server-rendered or shared in the page cache.
+
+Filtered homepage URLs preserve the selected filters for sharing and browser history, but carry `noindex` and `private, no-store`. The unfiltered homepage and curated job/company/role pages remain the discovery paths. A sitemap fetch does not imply that Google or Bing has indexed its entries. Sitemap dates are omitted because a feed's last successful observation is not a content-change timestamp.
+
+To measure indexing, use an owner-verified [Google Search Console](https://search.google.com/search-console) and [Bing Webmaster Tools](https://www.bing.com/webmasters/) property for the production origin. Submit `/sitemap.xml` and inspect the homepage, one current job, one company and one role URL. Check the rendered content, selected canonical and indexing status. Verify an arbitrary filtered homepage is excluded and preview remains excluded. Property verification requires access to the owner's search accounts; it is separate from deployment smoke tests.
+
+Public `/about`, `/privacy`, `/terms` and `/contact` pages describe coverage, data handling and support. Account deletion is currently a manual support request, with a link from the account page. It is not an automated deletion flow or subscription cancellation. Google for Jobs markup remains subject to source permission and complete, accurate job data; public-page rendering does not relax those requirements.
+
 ### Workers plan
 
 Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse 20 large job boards. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.

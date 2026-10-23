@@ -3,6 +3,7 @@ import { Match } from "effect";
 import type { ArrangementValue, RegionValue } from "./job.js";
 
 export interface PlaceEvidence {
+  readonly country?: string | undefined;
   readonly text: string;
   readonly workplace: ArrangementValue;
 }
@@ -33,7 +34,7 @@ const unitedStatesWords =
   /\b(?:united states|usa|us|u\.s\.a?\.?|america|new york|nyc|san francisco|sf|bay area|seattle|austin|boston|chicago|los angeles|denver|atlanta|miami|dallas|houston|portland|phoenix|philadelphia|washington,?\s+d\.?c\.?|san jose|san diego|palo alto|mountain view|menlo park|sunnyvale|brooklyn|pittsburgh|minneapolis|salt lake city|raleigh|nashville|detroit|columbus|charlotte|alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|wisconsin|wyoming)\b|,\s*(?:al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy|dc)\b/iu;
 
 const foreignWords =
-  /\b(?:europe|emea|uk|united kingdom|london|germany|berlin|france|paris|spain|portugal|netherlands|amsterdam|ireland|dublin|poland|india|bangalore|bengaluru|singapore|australia|sydney|japan|tokyo|brazil|latam|latin america|mexico|argentina|colombia|israel|apac|asia|africa|nigeria|lagos|philippines|new zealand|sweden|switzerland|italy|romania|ukraine)\b/iu;
+  /\b(?:europe|emea|uk|united kingdom|london|germany|berlin|france|paris|spain|portugal|netherlands|amsterdam|ireland|dublin|poland|india|bangalore|bengaluru|hyderabad|singapore|australia|sydney|japan|tokyo|brazil|latam|latin america|mexico|argentina|colombia|israel|apac|asia|africa|nigeria|lagos|philippines|new zealand|sweden|switzerland|italy|romania|ukraine)\b/iu;
 
 const arrangementOf = (evidence: PlaceEvidence): ArrangementValue => {
   if (evidence.workplace !== "Unspecified") {
@@ -77,6 +78,28 @@ const signalsOf = (text: string): Signals => {
   };
 };
 
+const countrySignals = (evidence: PlaceEvidence): Signals => {
+  const signals = signalsOf(evidence.text);
+
+  if (
+    evidence.country === undefined ||
+    signals.global ||
+    signals.northAmerica ||
+    (signals.canada && signals.unitedStates) ||
+    (signals.foreign && (signals.canada || signals.unitedStates))
+  ) {
+    return signals;
+  }
+
+  return {
+    ...signals,
+    britishColumbia: evidence.country === "CA" && signals.britishColumbia,
+    canada: evidence.country === "CA",
+    foreign: evidence.country !== "CA" && evidence.country !== "US",
+    unitedStates: evidence.country === "US",
+  };
+};
+
 const remoteRegion = (signals: Signals): RegionValue => {
   if (signals.northAmerica || (signals.canada && signals.unitedStates)) {
     return "RemoteNorthAmerica";
@@ -115,7 +138,7 @@ const placedRegion = (signals: Signals): RegionValue => {
 
 export const classifyPlacement = (evidence: PlaceEvidence): Placement => {
   const arrangement = arrangementOf(evidence);
-  const signals = signalsOf(evidence.text);
+  const signals = countrySignals(evidence);
 
   return Match.value(arrangement).pipe(
     Match.withReturnType<Placement>(),

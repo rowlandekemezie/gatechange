@@ -11,7 +11,7 @@ import type {
   ModelValue,
   SessionStateValue,
 } from "../../client/account/model.js";
-import { accountRouter } from "../../client/route.js";
+import { accountRouter, informationRouter } from "../../client/route.js";
 import type { AccountNoticeValue } from "../../client/route.js";
 
 interface AccountViewInputs {
@@ -235,6 +235,15 @@ export const accountView = defineView<
               h.OnClick(Message.ClickedSignOut()),
             ],
             ["Sign out"]
+          ),
+          h.p(
+            [],
+            [
+              h.a(
+                [h.Href(informationRouter("Contact"))],
+                ["Account help or deletion request"]
+              ),
+            ]
           ),
         ]
       ),

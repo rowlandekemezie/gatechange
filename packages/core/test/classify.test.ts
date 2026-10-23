@@ -117,6 +117,8 @@ const placements: readonly (readonly [
   ["Toronto, ON", "Unspecified", "Unspecified", "CanadaOnsite"],
   ["Hybrid - Seattle, WA", "Unspecified", "Hybrid", "UnitedStatesOnsite"],
   ["Remote (EMEA)", "Unspecified", "Remote", "Elsewhere"],
+  ["Hyderabad", "Remote", "Remote", "Elsewhere"],
+  ["Hyderabad - worldwide", "Remote", "Remote", "RemoteGlobal"],
   ["Remote", "Unspecified", "Remote", "RemoteGlobal"],
 ];
 

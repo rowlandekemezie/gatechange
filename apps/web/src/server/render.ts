@@ -8,6 +8,7 @@ import { Preload } from "../client/board/model.js";
 import type { PreloadValue } from "../client/board/model.js";
 import { Route } from "../client/route.js";
 import type { RouteValue } from "../client/route.js";
+import { informationMeta } from "../features/information/view.js";
 import { listingHeading } from "../features/listing/view.js";
 import { jobPostingOf, markupPolicy } from "./markup.js";
 import type { JobPostingLd, MarkupPolicy } from "./markup.js";
@@ -85,6 +86,27 @@ const listingMeta = (route: RouteValue, jobs: readonly JobValue[]) =>
       })
     : missing("There is no page here.");
 
+const publicMeta = (route: RouteValue): PageMeta => {
+  if (Schema.is(Route.Pricing)(route)) {
+    return {
+      description:
+        "Every engineering leadership listing stays free. Compare Jobs Pro plans for faster alerts, salary filters and company intel. Prices in US dollars.",
+      jsonLd: Option.none(),
+      status: 200,
+    };
+  }
+
+  if (Schema.is(Route.Information)(route)) {
+    return {
+      description: informationMeta(route.page).description,
+      jsonLd: Option.none(),
+      status: 200,
+    };
+  }
+
+  return missing("There is no page here.");
+};
+
 export const pageMeta = (
   route: RouteValue,
   preload: PreloadValue,
@@ -92,18 +114,26 @@ export const pageMeta = (
   policy: MarkupPolicy = markupPolicy
 ): PageMeta =>
   Preload.match<PageMeta>(preload, {
+    Board: () => ({
+      description:
+        "Find engineering manager, director, head of engineering and VP roles. Browse current leadership jobs, filter by where you can work, and apply at the original source for free.",
+      jsonLd: Option.none(),
+      status: 200,
+    }),
     Job: ({ job }) => jobMeta(job, canonical, policy),
     JobMissing: () => missing("This role is no longer listed."),
     Listing: ({ jobs }) => listingMeta(route, jobs),
-    Nothing: () => missing("There is no page here."),
+    Nothing: () => publicMeta(route),
   });
 
 const headTags = (
   title: string,
   canonical: string | undefined,
-  meta: PageMeta
+  meta: PageMeta,
+  noindex: boolean
 ) =>
   [
+    ...(noindex ? ['<meta name="robots" content="noindex" />'] : []),
     ...(canonical === undefined
       ? []
       : [
@@ -157,7 +187,12 @@ export const renderPage = (
             `<meta name="description" content="${escapeHtml(meta.description)}" />`
         )
         .replace(HEAD_END, () =>
-          headTags(rendered.title, rendered.canonical, meta)
+          headTags(
+            rendered.title,
+            rendered.canonical,
+            meta,
+            Schema.is(Route.Board)(route) && url.search !== ""
+          )
         ),
       status: meta.status,
     } satisfies RenderedPage;

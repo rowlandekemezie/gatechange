@@ -275,35 +275,56 @@ const searchView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
     ]
   );
 
-const proFilterView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
-  h.div(
-    [h.Class("pro-filters")],
+const proFilterView = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>
+): Html => {
+  const freeViewer = isFreeViewer(model.account.session, model.billing);
+
+  const selected =
+    model.filters.salaryListed ||
+    model.filters.salaryFloor !== null ||
+    model.filters.seniorities.length > 0;
+
+  return h.fieldset(
     [
-      chip(
-        h,
-        model.filters.salaryListed,
-        "Only roles that state a salary",
-        Message.ToggledSalaryListed()
+      h.Class("pro-refinements"),
+      ...(freeViewer ? [h.AriaDescribedBy("pro-refinements-note")] : []),
+    ],
+    [
+      h.legend(
+        [h.Class("pro-refinements-title")],
+        ["Salary and seniority ", h.span([h.Class("pro-badge")], ["Pro"])]
       ),
-      h.span([h.Class("pro-badge")], ["Pro"]),
-      ...((model.filters.salaryListed ||
-        model.filters.salaryFloor !== null ||
-        model.filters.seniorities.length > 0) &&
-      isFreeViewer(model.account.session, model.billing)
+      ...(freeViewer
         ? [
             h.p(
-              [h.Class("upgrade-prompt"), h.Role("status")],
+              [h.Id("pro-refinements-note"), h.Class("upgrade-prompt")],
               [
-                model.filters.seniorities.length > 0
-                  ? "Salary and seniority filters come with Pro, so the list below still shows every role. "
-                  : "Salary filters come with Pro, so the list below still shows every role. ",
+                "Salary and seniority filters come with Pro. ",
+                selected
+                  ? "These selections are not applied on Free. "
+                  : "These filters are not applied on Free. ",
                 h.a([h.Href(pricingRouter())], ["See Pro plans"]),
               ]
             ),
           ]
         : []),
+      refineView(model, h),
+      h.div(
+        [h.Class("pro-filters")],
+        [
+          chip(
+            h,
+            model.filters.salaryListed,
+            "Only roles that state a salary",
+            Message.ToggledSalaryListed()
+          ),
+        ]
+      ),
     ]
   );
+};
 
 const statusLine = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   StatsState.match<Html>(model.stats, {
@@ -333,7 +354,6 @@ export const boardMasthead = (
     [h.Class("masthead")],
     [
       sentenceView(model, h),
-      refineView(model, h),
       searchView(model, h),
       proFilterView(model, h),
       h.submodel({

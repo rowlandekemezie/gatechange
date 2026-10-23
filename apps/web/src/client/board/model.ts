@@ -2,6 +2,7 @@ import {
   BoardStats,
   CompanyIntel,
   JobDetail,
+  JobPage,
   ListedJob,
   Stage,
   TrackedJob,
@@ -55,6 +56,7 @@ export const IntelState = defineTaggedUnion({
 export type IntelStateValue = typeof IntelState.Type;
 
 export const Preload = defineTaggedUnion({
+  Board: { ...JobPage.fields, filters: Filters },
   Job: { job: JobDetail },
   JobMissing: {},
   Listing: Listing.fields,

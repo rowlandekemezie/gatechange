@@ -1,6 +1,6 @@
 import { companySlugOf, roleLevels } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
-import { Array, DateTime, pipe } from "effect";
+import { Array, pipe } from "effect";
 
 import { regionGroups, regionsOfGroup } from "../client/board/filters.js";
 import { companyRouter, jobRouter, roleRouter } from "../client/route.js";
@@ -8,12 +8,13 @@ import { companyRouter, jobRouter, roleRouter } from "../client/route.js";
 const escapeXml = (text: string) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-const urlEntry = (origin: string, path: string, lastSeenAt?: number) =>
-  `<url><loc>${escapeXml(`${origin}${path}`)}</loc>${
-    lastSeenAt === undefined
-      ? ""
-      : `<lastmod>${DateTime.formatIso(DateTime.makeUnsafe(lastSeenAt))}</lastmod>`
-  }</url>`;
+const urlEntry = (origin: string, path: string) =>
+  `<url><loc>${escapeXml(`${origin}${path}`)}</loc></url>`;
+
+export const emptySitemapXml = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',
+].join("\n");
 
 const companyPaths = (jobs: readonly JobValue[]) =>
   pipe(
@@ -47,9 +48,7 @@ export const sitemapXml = (origin: string, jobs: readonly JobValue[]) =>
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     urlEntry(origin, "/"),
-    ...jobs.map((job) =>
-      urlEntry(origin, jobRouter({ id: job.id }), job.lastSeenAt)
-    ),
+    ...jobs.map((job) => urlEntry(origin, jobRouter({ id: job.id }))),
     ...companyPaths(jobs).map((path) => urlEntry(origin, path)),
     ...rolePaths(jobs).map((path) => urlEntry(origin, path)),
     "</urlset>",

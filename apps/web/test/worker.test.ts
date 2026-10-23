@@ -1,7 +1,7 @@
 // @effect-diagnostics asyncFunction:off -- The module Worker fetch handler, its bindings, and the Cache API are Promise-based.
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
-import type { ListedJobValue } from "@rat-stack/core/contracts";
+import type { JobQueryValue, ListedJobValue } from "@rat-stack/core/contracts";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
@@ -50,6 +50,18 @@ const unlimited = {
   limit: async () => await Promise.resolve({ success: true }),
 };
 
+const publicJobs = vi.fn((query: JobQueryValue) =>
+  Effect.succeed({
+    generatedAt: 1_760_500_000_000,
+    jobs:
+      query.search === "absent" || !query.roles.includes(director.role)
+        ? []
+        : [director],
+    total:
+      query.search === "absent" || !query.roles.includes(director.role) ? 0 : 1,
+  })
+);
+
 const backend = HttpRouter.toWebHandler(
   RpcServer.layerHttp({ group, path: "/rpc", protocol: "http" }).pipe(
     Layer.provide([
@@ -69,12 +81,7 @@ const backend = HttpRouter.toWebHandler(
         getJob: () => Effect.succeedNone,
         importShortlist: () => Effect.die("the tracker is not served here"),
         issueAgentToken: () => Effect.die("agent tokens are not served here"),
-        listJobs: () =>
-          Effect.succeed({
-            generatedAt: 1_760_500_000_000,
-            jobs: [director],
-            total: 1,
-          }),
+        listJobs: publicJobs,
         membership: () => Effect.die("billing is not served here"),
         noteTrackedJob: () => Effect.die("the tracker is not served here"),
         openBillingPortal: () => Effect.die("billing is not served here"),
@@ -101,6 +108,7 @@ interface EdgeOptions {
 
 const edge = (shell: string, options: EdgeOptions = {}) => {
   const calls = { assets: 0, backend: 0 };
+  const backendCredentials: boolean[] = [];
   const pending: Promise<unknown>[] = [];
   const backendStatus = options.backendStatus ?? 200;
 
@@ -115,9 +123,14 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     BACKEND: {
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.backend += 1;
+        const request = new Request(input, init);
+
+        backendCredentials.push(
+          request.headers.has("cookie") || request.headers.has("authorization")
+        );
 
         return backendStatus === 200
-          ? await backend.handler(new Request(input, init))
+          ? await backend.handler(request)
           : new Response("down", { status: backendStatus });
       },
     },
@@ -146,7 +159,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     return { headers: response.headers, html, status: response.status };
   };
 
-  return { calls, get };
+  return { backendCredentials, calls, get };
 };
 
 const stored = new Map<string, Response>();
@@ -160,9 +173,128 @@ const pageCache = {
 };
 
 beforeEach(() => {
+  publicJobs.mockClear();
   vi.stubGlobal("caches", {
     open: async () => await Promise.resolve(pageCache),
   });
+});
+
+describe("public landing pages", () => {
+  it.each([
+    ["/about", "About this board"],
+    ["/privacy", "Privacy"],
+    ["/terms", "Using this board"],
+    ["/contact", "Contact and support"],
+  ])(
+    "serves public information at %s without backend data",
+    async (path, title) => {
+      const site = edge(indexHtml, { backendStatus: 503 });
+      const page = await site.get(`${ORIGIN}${path}`);
+
+      expect(page.status).toBe(200);
+      expect(page.html).toContain(`<title>${title}</title>`);
+      expect(page.html).toContain(
+        `<link rel="canonical" href="${ORIGIN}${path}"`
+      );
+      expect(page.html).toContain("data-foldkit-app");
+      expect(site.calls.backend).toBe(0);
+    }
+  );
+
+  it("serves useful homepage roles, links and metadata before JavaScript", async () => {
+    const site = edge(indexHtml);
+    const page = await site.get(`${ORIGIN}/`);
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain("data-foldkit-app");
+    expect(page.html).toContain("Director of Engineering");
+    expect(page.html).toContain(`href="${jobRouter({ id: director.id })}"`);
+    expect(page.html).toContain(`href="${director.url}"`);
+    expect(page.html).toContain(`<link rel="canonical" href="${ORIGIN}/"`);
+    expect(page.html).toContain('property="og:description"');
+    expect(page.html).not.toContain('<meta name="robots" content="noindex"');
+    expect(page.headers.has("x-robots-tag")).toBe(false);
+    expect(publicJobs.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ limit: 40, offset: 0, search: "" })
+    );
+    expect(site.calls.backend).toBe(1);
+  });
+
+  it("renders public pricing without requesting account, membership or any backend data", async () => {
+    const site = edge(indexHtml, { backendStatus: 503 });
+    const page = await site.get(`${ORIGIN}/pricing`);
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain("Pro for engineering leaders");
+    expect(page.html).toContain(
+      "Every listing, with links to apply at the source"
+    );
+    expect(page.html).toContain("$19");
+    expect(page.html).toContain("$49");
+    expect(page.html).toContain("$149");
+    expect(page.html).toContain(
+      `<link rel="canonical" href="${ORIGIN}/pricing"`
+    );
+    expect(page.html).toContain('property="og:description"');
+    expect(site.calls.backend).toBe(0);
+  });
+
+  it("retains URL filters without sharing the filtered response with the root", async () => {
+    const site = edge(indexHtml);
+    const plain = await site.get(`${ORIGIN}/`);
+    const filtered = await site.get(`${ORIGIN}/?q=absent&role=director&age=30`);
+    const plainAgain = await site.get(`${ORIGIN}/`);
+
+    expect(filtered.html).toContain("No roles match");
+    expect(filtered.html).not.toContain("Director of Engineering");
+    expect(filtered.html).toContain('value="absent"');
+    expect(filtered.html).toContain('<meta name="robots" content="noindex"');
+    expect(filtered.headers.get("x-robots-tag")).toBe("noindex");
+    expect(filtered.headers.get("cache-control")).toBe("private, no-store");
+    expect(plainAgain.html).toBe(plain.html);
+    expect(publicJobs.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        maxAgeDays: 30,
+        roles: ["Director"],
+        search: "absent",
+      })
+    );
+    expect(stored.size).toBe(1);
+    expect(site.calls.backend).toBe(2);
+  });
+
+  it.each(["?utm_source=feed", "?shell=0", "?role="])(
+    "keeps query variant %s noindex and out of the root cache",
+    async (query) => {
+      const site = edge(indexHtml);
+      const variant = await site.get(`${ORIGIN}/${query}`);
+      const plain = await site.get(`${ORIGIN}/`);
+
+      expect(variant.headers.get("x-robots-tag")).toBe("noindex");
+      expect(variant.html).toContain('<meta name="robots" content="noindex"');
+      expect(plain.headers.has("x-robots-tag")).toBe(false);
+      expect(plain.html).not.toContain('<meta name="robots" content="noindex"');
+      expect(stored.size).toBe(1);
+    }
+  );
+
+  it.each([
+    { cookie: "session=private-member" },
+    { authorization: "Bearer private-member" },
+  ])(
+    "preloads only public anonymous data for credentials %o",
+    async (credentials) => {
+      const site = edge(indexHtml);
+      const page = await site.get(`${ORIGIN}/`, credentials);
+
+      expect(page.html).toContain("Director of Engineering");
+      expect(page.html).not.toContain("private-member");
+      expect(page.html).not.toContain("You have Pro");
+      expect(page.headers.get("cache-control")).toBe("private, no-store");
+      expect(site.backendCredentials).toStrictEqual([false]);
+      expect(stored.size).toBe(0);
+    }
+  );
 });
 
 afterEach(() => {
@@ -313,7 +445,6 @@ describe("per-viewer requests", () => {
 
   it.each([
     `${ORIGIN}/account/confirm?token=secret`,
-    `${ORIGIN}/`,
     `${ORIGIN}/shortlist`,
     `${ORIGIN}/jobs`,
   ])("passes %s to the assets without rendering or caching", async (url) => {
@@ -328,6 +459,17 @@ describe("per-viewer requests", () => {
 });
 
 describe("sitemap", () => {
+  it("serves a closed preview with an empty sitemap and no catalog query", async () => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+    const page = await site.get(`${ORIGIN}/sitemap.xml`);
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain("<urlset");
+    expect(page.html).not.toContain("<loc>");
+    expect(page.headers.get("x-robots-tag")).toBe("noindex");
+    expect(site.calls.backend).toBe(0);
+    expect(stored.size).toBe(0);
+  });
   it("serves repeat sitemap requests from the cache", async () => {
     const site = edge(indexHtml);
 

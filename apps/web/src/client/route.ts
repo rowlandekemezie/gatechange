@@ -52,6 +52,15 @@ export const AccountNotice = Schema.Literals([
 
 export type AccountNoticeValue = typeof AccountNotice.Type;
 
+export const InformationPage = Schema.Literals([
+  "About",
+  "Privacy",
+  "Terms",
+  "Contact",
+]);
+
+export type InformationPageValue = typeof InformationPage.Type;
+
 export const CompanySlug = Schema.String.check(
   Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
 );
@@ -61,6 +70,7 @@ export const Route = defineRouteUnion({
   Board: { filters: Filters },
   Company: { slug: CompanySlug },
   ConfirmSignIn: { token: Schema.String },
+  Information: { page: InformationPage },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
   Pricing: {},
@@ -311,6 +321,28 @@ export const confirmSignInRouter = pipe(
 
 export const pricingRouter = pipe(literal("pricing"), mapTo(Route.Pricing));
 
+const informationRoutes = {
+  About: pipe(
+    literal("about"),
+    mapTo({ make: () => Route.Information({ page: "About" }) })
+  ),
+  Contact: pipe(
+    literal("contact"),
+    mapTo({ make: () => Route.Information({ page: "Contact" }) })
+  ),
+  Privacy: pipe(
+    literal("privacy"),
+    mapTo({ make: () => Route.Information({ page: "Privacy" }) })
+  ),
+  Terms: pipe(
+    literal("terms"),
+    mapTo({ make: () => Route.Information({ page: "Terms" }) })
+  ),
+};
+
+export const informationRouter = (page: InformationPageValue) =>
+  informationRoutes[page]({ page });
+
 export const shortlistRouter = pipe(
   literal("shortlist"),
   mapTo(Route.Shortlist)
@@ -340,6 +372,10 @@ export const routeOfUrl = parseUrlWithFallback(
     jobRouter,
     companyRouter,
     roleRouter,
+    informationRoutes.About,
+    informationRoutes.Contact,
+    informationRoutes.Privacy,
+    informationRoutes.Terms,
     pricingRouter,
     shortlistRouter,
     confirmSignInRouter,
@@ -357,6 +393,7 @@ export const canonicalPathOf = (route: RouteValue) =>
     Board: ({ filters }) => Option.some(boardUrl(filters)),
     Company: ({ slug }) => Option.some(companyRouter({ slug })),
     ConfirmSignIn: () => Option.none(),
+    Information: ({ page }) => Option.some(informationRouter(page)),
     Job: ({ id }) => Option.some(jobRouter({ id })),
     NotFound: () => Option.none(),
     Pricing: () => Option.some(pricingRouter()),

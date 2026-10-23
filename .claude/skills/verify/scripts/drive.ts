@@ -354,13 +354,20 @@ const waitForRows = async (
   accept: (state: BoardStateValue) => boolean
 ) =>
   await waitFor(label, async () => {
+    const interactive = await evaluate(
+      Schema.Boolean,
+      `document.readyState === "complete" &&
+        document.querySelector("[data-foldkit-app]") === null &&
+        getComputedStyle(document.body).backgroundColor !== "rgba(0, 0, 0, 0)"`
+    );
+
     const state = await boardState();
 
     if (state.error.length > 0) {
       throw new Error(`board shows an error: ${state.error.trim()}`);
     }
 
-    return accept(state) ? state : undefined;
+    return interactive && accept(state) ? state : undefined;
   });
 
 const LayoutMetrics = Schema.Struct({

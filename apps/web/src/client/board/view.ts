@@ -15,6 +15,10 @@ import {
   boardPage,
   boardTitle,
 } from "../../features/board/view.js";
+import {
+  informationMeta,
+  informationPage,
+} from "../../features/information/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
 import {
@@ -28,7 +32,13 @@ import {
   trackerNotices,
 } from "../../features/shortlist/view.js";
 import { SessionState } from "../account/model.js";
-import { boardUrl, canonicalPathOf, Route, shortlistRouter } from "../route.js";
+import {
+  boardUrl,
+  canonicalPathOf,
+  informationRouter,
+  Route,
+  shortlistRouter,
+} from "../route.js";
 import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
@@ -123,6 +133,9 @@ const footer = (h: H): Html =>
       h.p(
         [],
         [
+          ...(["About", "Privacy", "Terms", "Contact"] as const).flatMap(
+            (page) => [h.a([h.Href(informationRouter(page))], [page]), " · "]
+          ),
           h.a(
             [h.Href("https://rowlandekemezie.com")],
             ["Made by Rowland Ekemezie"]
@@ -196,6 +209,7 @@ export const view = (model: ModelValue, h: H): Document =>
           Board: () => boardPage(model, h),
           Company: () => listingPage(model, h),
           ConfirmSignIn: ({ token }) => confirmSignInPage(token, h),
+          Information: ({ page }) => informationPage(page, h),
           Job: () => jobPage(model, h),
           NotFound: () => notFoundPage(model, h),
           Pricing: () =>
@@ -218,6 +232,7 @@ export const view = (model: ModelValue, h: H): Document =>
       Board: () => boardTitle(model),
       Company: () => listingTitle(model),
       ConfirmSignIn: () => "Finish signing in",
+      Information: ({ page }) => informationMeta(page).title,
       Job: () => jobTitle(model),
       NotFound: () => "Page not found",
       Pricing: () => "Pro plans",

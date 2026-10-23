@@ -21,6 +21,12 @@ export const siteWorkerFirst = (stage: string) =>
   stage === PROD_STAGE
     ? [
         ...workerFirstPaths,
+        "/",
+        "/pricing",
+        "/about",
+        "/privacy",
+        "/terms",
+        "/contact",
         "/jobs/*",
         "/companies/*",
         "/roles/*",
