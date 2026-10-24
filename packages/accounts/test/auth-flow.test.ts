@@ -153,6 +153,7 @@ interface Call {
   readonly body?: string;
   readonly cookie?: string;
   readonly fetchSite?: string | undefined;
+  readonly forwardedFor?: string;
   readonly from?: string;
   readonly ip?: string;
 }
@@ -165,6 +166,7 @@ const call = (
     body,
     cookie = "",
     fetchSite,
+    forwardedFor,
     from = at,
     ip = "203.0.113.7",
   }: Call = {}
@@ -181,6 +183,10 @@ const call = (
 
       if (fetchSite !== undefined) {
         headers.set("sec-fetch-site", fetchSite);
+      }
+
+      if (forwardedFor !== undefined) {
+        headers.set("x-forwarded-for", forwardedFor);
       }
 
       return await auth.handler(
@@ -211,7 +217,7 @@ const requestLink = (
   auth: Auth,
   email: string,
   ip = "203.0.113.7",
-  where: Pick<Call, "at" | "from"> = {}
+  where: Pick<Call, "at" | "forwardedFor" | "from"> = {}
 ) =>
   call(auth, "/api/auth/sign-in/magic-link", {
     ...where,
@@ -1083,6 +1089,28 @@ const Group = Schema.Int.check(
 
 const hex = (group: number) => group.toString(16);
 
+const fillClientBudget = (
+  auth: Auth,
+  ip: string,
+  prefix: string,
+  forwardedFor: (index: number) => string | undefined = () => {}
+) =>
+  Effect.forEach(
+    Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, (_, index) => index),
+    (index) => {
+      travelTo(T0 + index * 2 * MINUTE);
+
+      const spoof = forwardedFor(index);
+
+      return requestLink(
+        auth,
+        `${prefix}${index}@example.com`,
+        ip,
+        spoof === undefined ? {} : { forwardedFor: spoof }
+      ).pipe(Effect.map(({ status }) => status));
+    }
+  );
+
 describe("per-client daily send limit", () => {
   it.effect.prop(
     `sends at most ${CLIENT_DAILY_SEND_LIMIT} links a UTC day to one IPv6 /64, whatever its interface ids`,
@@ -1175,6 +1203,140 @@ describe("per-client daily send limit", () => {
         expect(other.status).toBe(200);
       }),
     { arbitrary: { runs: 4 }, timeout: 60_000 }
+  );
+
+  it.effect(
+    "gives a client its daily send back when the site-wide cap refuses it",
+    () =>
+      Effect.gen(function* globalRefusalRefundsClient() {
+        travelTo(T0);
+
+        const database = migratedDatabase();
+        const capped = makeAuth(LOCAL_HOSTS, database, () => true, 1);
+
+        yield* requestLink(capped.auth, "first@example.com", "2001:db8:1::1");
+
+        const refused = yield* fillClientBudget(
+          capped.auth,
+          "198.51.100.20",
+          "refused"
+        );
+
+        const open = makeAuth(LOCAL_HOSTS, database);
+
+        travelTo(T0 + CLIENT_DAILY_SEND_LIMIT * 2 * MINUTE);
+
+        const after = yield* requestLink(
+          open.auth,
+          "after@example.com",
+          "198.51.100.20"
+        );
+
+        expect(refused).toStrictEqual(
+          Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () => 429)
+        );
+        expect(after.status).toBe(200);
+      })
+  );
+
+  it.effect(
+    "gives a client its daily send back when Email Sending refuses the send",
+    () =>
+      Effect.gen(function* rejectedSendRefundsClient() {
+        travelTo(T0);
+
+        let refusing = true;
+
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+          refusing ? cloudflareSendError("E_DAILY_LIMIT_EXCEEDED") : true
+        );
+
+        const failed = yield* fillClientBudget(auth, "198.51.100.21", "failed");
+
+        refusing = false;
+        travelTo(T0 + CLIENT_DAILY_SEND_LIMIT * 2 * MINUTE);
+
+        const after = yield* requestLink(
+          auth,
+          "after@example.com",
+          "198.51.100.21"
+        );
+
+        expect(failed).toStrictEqual(
+          Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () => 500)
+        );
+        expect(after.status).toBe(200);
+        expect(sent.map(({ email }) => email)).toStrictEqual([
+          "after@example.com",
+        ]);
+      })
+  );
+
+  it.effect(
+    "counts a client by cf-connecting-ip alone, whatever x-forwarded-for claims",
+    () =>
+      Effect.gen(function* spoofedForwardedFor() {
+        travelTo(T0);
+
+        const { auth, database } = makeAuth();
+
+        const statuses = yield* fillClientBudget(
+          auth,
+          "198.51.100.22",
+          "spoof",
+          (index) => `192.0.2.${index + 1}`
+        );
+
+        travelTo(T0 + CLIENT_DAILY_SEND_LIMIT * 2 * MINUTE);
+
+        const over = yield* requestLink(
+          auth,
+          "over@example.com",
+          "198.51.100.22",
+          { forwardedFor: "192.0.2.200" }
+        );
+
+        expect(statuses).toStrictEqual(
+          Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () => 200)
+        );
+        expect(over.status).toBe(429);
+        expect(
+          database
+            .prepare(
+              "SELECT key FROM \"rateLimit\" WHERE key LIKE 'magic-link-client:%'"
+            )
+            .all()
+            .map(({ key }) => String(key))
+        ).toStrictEqual(["magic-link-client:2026-10-17:198.51.100.22"]);
+      })
+  );
+
+  it.effect(
+    "deletes a past day's client and site-wide counters once they are a day stale",
+    () =>
+      Effect.gen(function* prunesDayKeys() {
+        travelTo(T0);
+
+        const { auth, database } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        travelTo(T0 + 2 * 24 * 60 * MINUTE);
+
+        yield* requestLink(auth, "bob@example.com");
+
+        expect(
+          database
+            .prepare(
+              "SELECT key FROM \"rateLimit\" WHERE key LIKE 'magic-link-client:%' OR key LIKE 'magic-link-global:%' ORDER BY key"
+            )
+            .all()
+            .map(({ key }) => String(key))
+        ).toStrictEqual([
+          "magic-link-client:2026-10-19:203.0.113.7",
+          "magic-link-global:2026-10-19",
+        ]);
+      })
   );
 });
 

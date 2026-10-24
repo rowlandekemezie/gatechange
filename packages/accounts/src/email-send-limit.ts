@@ -196,9 +196,16 @@ export const limitSends =
     const day = utcDayOf(now);
     const source = ctx.request ?? ctx.headers;
 
-    const client =
-      (source === undefined ? null : getIP(source, ctx.context.options)) ??
-      "unknown";
+    const address =
+      source === undefined ? null : getIP(source, ctx.context.options);
+
+    if (address === null) {
+      ctx.context.logger.warn(
+        "magic link request has no client address; counting it in the shared unknown bucket"
+      );
+    }
+
+    const client = address ?? "unknown";
 
     const clientKey = `magic-link-client:${day}:${client}`;
     const globalKey = `magic-link-global:${day}`;
