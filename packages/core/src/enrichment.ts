@@ -1245,7 +1245,7 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
   const skip = (reason: SkipReasonValue, detail: string) =>
     EnrichmentOutcome.Skipped({ detail: detail.slice(0, 300), id, reason });
 
-  const found = yield* store.find(id);
+  const found = yield* store.findIncludingDeparted(id);
 
   if (Option.isNone(found)) {
     return skip("Gone", "the listing is no longer on the board");

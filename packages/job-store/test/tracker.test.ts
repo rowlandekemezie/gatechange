@@ -211,12 +211,30 @@ describe("tracker", () => {
 
           expect(listed?.listed).toBe(true);
 
-          yield* store.pruneOlderThan(1);
+          yield* store.prune({ departedBefore: 1, unseenBefore: 1 });
 
           const [pruned] = yield* trackedJobs.handler({});
 
           expect(pruned?.listed).toBe(false);
           expect(pruned?.snapshot).toStrictEqual(request("g:1").snapshot);
+        }).pipe(as(ada))
+      )
+  );
+
+  it.effect(
+    "a tracked job reads as unlisted as soon as its feed stops listing it",
+    () =>
+      withStore(
+        Effect.gen(function* departedListing() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed("greenhouse:acme", [listing("g:1")], 0);
+          yield* trackJob.handler(request("g:1"));
+          yield* store.replaceFeed("greenhouse:acme", [], 10);
+
+          const [departed] = yield* trackedJobs.handler({});
+
+          expect(departed?.listed).toBe(false);
         }).pipe(as(ada))
       )
   );

@@ -6,6 +6,7 @@ import {
   IngestOutcome,
   JobStore,
   JobStoreUnavailable,
+  listingStatus,
   Region,
   RoleLevel,
   SourceName,
@@ -43,6 +44,7 @@ import {
   intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
+  markListedStatement,
   newTodayStatement,
   pruneJobsStatement,
   neuronsClaimedStatement,
@@ -55,7 +57,7 @@ import {
   recordSkipStatement,
   regionCountsStatement,
   releaseIngestStatement,
-  removeUnseenStatement,
+  departUnseenStatement,
   roleCountsStatement,
   saveEnrichmentStatement,
   sightingStatement,
@@ -108,6 +110,7 @@ type EnrichedJobRowValue = typeof EnrichedJobRow.Type;
 
 const ListedJobRow = Schema.Struct({
   ...EnrichedJobRow.fields,
+  departed_at: Schema.NullOr(Count),
   opened_at: Count,
   reposts: Count,
 });
@@ -275,6 +278,14 @@ const listedJobOfRow = (now: number) => (row: typeof ListedJobRow.Type) =>
       ...detail,
       daysOpen: daysOpen(row.opened_at, now),
       reposts: row.reposts,
+      status: listingStatus(
+        {
+          departedAt: row.departed_at,
+          firstSeenAt: row.first_seen_at,
+          postedAt: row.posted_at,
+        },
+        now
+      ),
     }))
   );
 
@@ -311,6 +322,17 @@ const totalOf = (rows: readonly (typeof TotalRow.Type)[]) =>
 
 export const makeJobStore = Effect.gen(function* makeJobStore() {
   const sql = yield* SqlExecutor;
+
+  const findJob = (id: string, includeDeparted: boolean) =>
+    sql
+      .all("findJob", findJobStatement(id, includeDeparted), EnrichedJobRow)
+      .pipe(
+        Effect.flatMap((rows) =>
+          Effect.transposeOption(
+            Option.map(Array.head(rows), jobDetailOfRow("findJob"))
+          )
+        )
+      );
 
   return JobStore.of({
     claimIngest: (startedAt, heldUntil) =>
@@ -393,16 +415,9 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
 
-    find: (id) =>
-      sql
-        .all("findJob", findJobStatement(id), EnrichedJobRow)
-        .pipe(
-          Effect.flatMap((rows) =>
-            Effect.transposeOption(
-              Option.map(Array.head(rows), jobDetailOfRow("findJob"))
-            )
-          )
-        ),
+    find: (id) => findJob(id, false),
+
+    findIncludingDeparted: (id) => findJob(id, true),
 
     historyOf: (job) =>
       sql
@@ -431,6 +446,13 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         )
       ),
 
+    markListed: (feedKey, ids, seenAt) =>
+      ids.length === 0
+        ? Effect.void
+        : sql
+            .batch("markListed", [markListedStatement(feedKey, ids, seenAt)])
+            .pipe(Effect.asVoid),
+
     neuronsClaimed: (day) =>
       sql.all("neuronsClaimed", neuronsClaimedStatement(day), TotalRow).pipe(
         Effect.map((rows) =>
@@ -441,14 +463,14 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         )
       ),
 
-    pruneOlderThan: (cutoff) =>
+    prune: (retention) =>
       sql
-        .batch("pruneOlderThan", [
-          pruneJobsStatement(cutoff),
-          pruneRunsStatement(cutoff),
+        .batch("prune", [
+          pruneJobsStatement(retention),
+          pruneRunsStatement(retention.unseenBefore),
           pruneOrphanEnrichmentStatement,
           pruneOrphanSkipStatement,
-          pruneNeuronsStatement(cutoff),
+          pruneNeuronsStatement(retention.unseenBefore),
         ])
         .pipe(
           Effect.map((results) =>
@@ -522,12 +544,12 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           }
         );
 
-        const [removed] = yield* sql.batch("replaceFeed", [
-          removeUnseenStatement(feedKey, seenAt),
+        const [departed] = yield* sql.batch("replaceFeed", [
+          departUnseenStatement(feedKey, seenAt),
           feedSucceededStatement(feedKey, seenAt),
         ]);
 
-        return { removed: removed?.changes ?? 0, upserted: jobs.length };
+        return { departed: departed?.changes ?? 0, upserted: jobs.length };
       }),
 
     saveEnrichment: (id, enrichment) =>

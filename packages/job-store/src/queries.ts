@@ -19,6 +19,7 @@ import type {
   JobValue,
   NeuronClaim,
   NeuronUsage,
+  Retention,
   Sighted,
   SourceNameValue,
   UnenrichedSweep,
@@ -101,7 +102,9 @@ const servedJobsSince = (
 
   return {
     params: [since, ...served.params],
-    where: [`${column} >= ?`, ...served.conditions].join(" AND "),
+    where: [`${column} >= ?`, "departed_at IS NULL", ...served.conditions].join(
+      " AND "
+    ),
   };
 };
 
@@ -111,7 +114,7 @@ const filteredJobs = (
   sources: readonly SourceNameValue[],
   companySlug?: string
 ) => {
-  const conditions = ["posted_at >= ?"];
+  const conditions = ["posted_at >= ?", "departed_at IS NULL"];
   const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
 
   if (companySlug !== undefined) {
@@ -167,7 +170,7 @@ const filteredJobs = (
   return {
     params,
     sql: `WITH ranked AS (
-  SELECT ${jobColumns}, ${enrichmentColumns}, fingerprint,
+  SELECT ${jobColumns}, ${enrichmentColumns}, fingerprint, departed_at,
     ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM ${enrichedJobs}
   WHERE ${conditions.join(" AND ")}
@@ -190,7 +193,7 @@ export const listJobsStatement = (
 
   return statement(
     `${filtered.sql}
-SELECT ${rankedColumns},
+SELECT ${rankedColumns}, ranked.departed_at,
   COALESCE(history.first_seen_at, ranked.first_seen_at) AS opened_at,
   COALESCE(history.reposts, 0) AS reposts
 FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
@@ -246,7 +249,7 @@ export const companyOpenRolesStatement = (
     job_enrichment.salary_currency, job_enrichment.salary_min, job_enrichment.salary_max,
     ROW_NUMBER() OVER (PARTITION BY jobs.fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM ${enrichedJobs}
-  WHERE jobs.company_slug = ? AND posted_at >= ? AND source IN (${placeholders(sources.length)})
+  WHERE jobs.company_slug = ? AND jobs.departed_at IS NULL AND posted_at >= ? AND source IN (${placeholders(sources.length)})
 )
 SELECT ranked.id, ranked.company, ranked.title, ranked.role, ranked.source,
   ranked.salary_currency, ranked.salary_min, ranked.salary_max,
@@ -272,9 +275,12 @@ export const trackedSinceStatement = statement(
   []
 );
 
-export const findJobStatement = (id: string): SqlStatement =>
+export const findJobStatement = (
+  id: string,
+  includeDeparted: boolean
+): SqlStatement =>
   statement(
-    `SELECT ${jobColumns}, ${enrichmentColumns} FROM ${enrichedJobs} WHERE id = ? LIMIT 1`,
+    `SELECT ${jobColumns}, ${enrichmentColumns} FROM ${enrichedJobs} WHERE id = ?${includeDeparted ? "" : " AND departed_at IS NULL"} LIMIT 1`,
     [id]
   );
 
@@ -284,7 +290,7 @@ export const unenrichedListingsStatement = (
   statement(
     `SELECT jobs.id FROM jobs
 LEFT JOIN job_enrichment_skip AS skip ON skip.job_id = jobs.id
-WHERE jobs.first_seen_at >= ? AND jobs.source IN (${placeholders(sweep.sources.length)})
+WHERE jobs.first_seen_at >= ? AND jobs.departed_at IS NULL AND jobs.source IN (${placeholders(sweep.sources.length)})
   AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id)
   AND (skip.reason IS NULL OR skip.reason NOT IN (${placeholders(sweep.finalSkips.length)}))
 ORDER BY skip.reason IS NOT NULL, jobs.first_seen_at DESC, jobs.id
@@ -369,6 +375,7 @@ ON CONFLICT (id) DO UPDATE SET
   relevance = excluded.relevance,
   posted_at = MIN(jobs.posted_at, excluded.posted_at),
   last_seen_at = MAX(jobs.last_seen_at, excluded.last_seen_at),
+  departed_at = NULL,
   fingerprint = excluded.fingerprint,
   company_slug = excluded.company_slug`,
     [
@@ -497,14 +504,24 @@ export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
     [fingerprintOf(job)]
   );
 
-export const removeUnseenStatement = (
+export const departUnseenStatement = (
   feedKey: string,
   seenAt: number
 ): SqlStatement =>
-  statement("DELETE FROM jobs WHERE feed = ? AND last_seen_at < ?", [
-    feedKey,
-    seenAt,
-  ]);
+  statement(
+    "UPDATE jobs SET departed_at = ? WHERE feed = ? AND last_seen_at < ? AND departed_at IS NULL",
+    [seenAt, feedKey, seenAt]
+  );
+
+export const markListedStatement = (
+  feedKey: string,
+  ids: readonly string[],
+  seenAt: number
+): SqlStatement =>
+  statement(
+    "UPDATE jobs SET last_seen_at = MAX(last_seen_at, ?), departed_at = NULL WHERE feed = ? AND id IN (SELECT value FROM json_each(?))",
+    [seenAt, feedKey, JSON.stringify(ids)]
+  );
 
 export const feedSucceededStatement = (
   feedKey: string,
@@ -582,8 +599,14 @@ export const releaseIngestStatement = (startedAt: number) =>
     [startedAt]
   );
 
-export const pruneJobsStatement = (cutoff: number) =>
-  statement("DELETE FROM jobs WHERE posted_at < ?", [cutoff]);
+export const pruneJobsStatement = ({
+  departedBefore,
+  unseenBefore,
+}: Retention) =>
+  statement("DELETE FROM jobs WHERE departed_at < ? OR last_seen_at < ?", [
+    departedBefore,
+    unseenBefore,
+  ]);
 
 export const pruneOrphanEnrichmentStatement = statement(
   "DELETE FROM job_enrichment WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.id = job_enrichment.job_id)"

@@ -6,6 +6,7 @@ import { JobStore } from "./job-store.js";
 import type { Sighted } from "./job-store.js";
 import { MAX_AGE_DAYS } from "./job.js";
 import type { IngestReceiptValue, JobValue } from "./job.js";
+import { retentionAt } from "./listing-status.js";
 import { PostingFeeds } from "./posting-feeds.js";
 import { DAY_MILLIS, normalizePosting } from "./posting.js";
 import type { PostingValue } from "./posting.js";
@@ -22,10 +23,11 @@ export class IngestInProgress extends Schema.TaggedError<IngestInProgress>()(
   { startedAt: Schema.Finite }
 ) {}
 
-export const retentionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
+export const admissionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
 
 export interface FeedListings {
   readonly jobs: readonly JobValue[];
+  readonly stillListed: readonly string[];
   readonly unlinked: readonly Sighted[];
   readonly historySightings: readonly Sighted[];
 }
@@ -46,18 +48,20 @@ export const listingsFromPostings = (
       )
     ),
     Array.getSomes,
-    Array.filter(({ listing }) => listing.postedAt >= retentionCutoff(seenAt)),
     Array.dedupeWith((left, right) => left.listing.id === right.listing.id)
   );
 
   const jobs: JobValue[] = [];
+  const stillListed: string[] = [];
   const unlinked: Sighted[] = [];
   const historySightings: Sighted[] = [];
 
   for (const { listing, fromCatalog } of listings) {
     const { url, ...sighting } = listing;
 
-    if (Option.isSome(url)) {
+    if (listing.postedAt < admissionCutoff(seenAt)) {
+      stillListed.push(listing.id);
+    } else if (Option.isSome(url)) {
       jobs.push({ ...sighting, url: url.value });
     } else {
       unlinked.push(sighting);
@@ -68,7 +72,7 @@ export const listingsFromPostings = (
     }
   }
 
-  return { historySightings, jobs, unlinked };
+  return { historySightings, jobs, stillListed, unlinked };
 };
 
 const warnOfUnlinked = (feed: FeedRef, unlinked: readonly Sighted[]) =>
@@ -92,27 +96,25 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
       onFailure: (failure) =>
         store.recordFeedFailure(feed.key, seenAt, failure.message).pipe(
           Effect.as<FeedOutcomeValue>({
+            departed: 0,
             error: failure.message,
             key: feed.key,
-            pruned: 0,
             source: feed.source,
             upserted: 0,
           })
         ),
       onSuccess: (postings) => {
-        const { jobs, unlinked, historySightings } = listingsFromPostings(
-          feed,
-          postings,
-          seenAt
-        );
+        const { jobs, stillListed, unlinked, historySightings } =
+          listingsFromPostings(feed, postings, seenAt);
 
         return store.recordSightings(historySightings, seenAt).pipe(
+          Effect.andThen(store.markListed(feed.key, stillListed, seenAt)),
           Effect.andThen(store.replaceFeed(feed.key, jobs, seenAt)),
           Effect.tap(() => warnOfUnlinked(feed, unlinked)),
           Effect.map((replacement): FeedOutcomeValue => ({
+            departed: replacement.departed,
             error: null,
             key: feed.key,
-            pruned: replacement.removed,
             source: feed.source,
             upserted: replacement.upserted,
           }))
@@ -160,7 +162,7 @@ const ingestDueFeeds = Effect.fn("ingestDueFeeds")(function* ingestDueFeeds(
     }
   );
 
-  const expired = yield* store.pruneOlderThan(retentionCutoff(startedAt));
+  const expired = yield* store.prune(retentionAt(startedAt));
   const finishedAt = yield* Clock.currentTimeMillis;
 
   const failed = pipe(
@@ -172,9 +174,7 @@ const ingestDueFeeds = Effect.fn("ingestDueFeeds")(function* ingestDueFeeds(
     feedsAttempted: outcomes.length,
     feedsFailed: failed,
     finishedAt,
-    jobsPruned:
-      expired +
-      Array.reduce(outcomes, 0, (total, outcome) => total + outcome.pruned),
+    jobsPruned: expired,
     jobsUpserted: Array.reduce(
       outcomes,
       0,

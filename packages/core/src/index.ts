@@ -240,14 +240,25 @@ export {
 export type { FeedOutcomeValue, FeedRef, FeedStateValue } from "./feed.js";
 
 export {
+  admissionCutoff,
   INGEST_LEASE_MILLIS,
   IngestInProgress,
   listingsFromPostings,
-  retentionCutoff,
   runIngest,
 } from "./ingest.js";
 
 export type { IngestPlan } from "./ingest.js";
+
+export {
+  BOARDING_WINDOW_MILLIS,
+  DEPARTED_RETENTION_MILLIS,
+  listingStatus,
+  NEW_WINDOW_MILLIS,
+  retentionAt,
+  UNSEEN_RETENTION_MILLIS,
+} from "./listing-status.js";
+
+export type { Lifecycle, Retention } from "./listing-status.js";
 
 export {
   daysOpen,
@@ -322,6 +333,7 @@ export {
   JobStoreUnavailable,
   ListedJob,
   ListingDetails,
+  ListingStatus,
   listJobsContract,
   MAX_AGE_DAYS,
   membershipContract,
@@ -365,6 +377,7 @@ export type {
   JobValue,
   ListedJobValue,
   ListingDetailsValue,
+  ListingStatusValue,
   RegionValue,
   RemotePolicyValue,
   RoleLevelValue,

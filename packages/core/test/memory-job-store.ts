@@ -7,6 +7,7 @@ import {
   fingerprintOf,
   isRepost,
   JobStore,
+  listingStatus,
   MAX_AGE_DAYS,
   paidFeaturesAllowed,
   sourceOfFeedKey,
@@ -34,6 +35,7 @@ interface IntelHistory {
 }
 
 export interface MemoryJobStore {
+  readonly departed: () => ReadonlyMap<string, number>;
   readonly enrichments: () => ReadonlyMap<string, EnrichmentValue>;
   readonly feedStates: () => readonly FeedStateValue[];
   readonly history: () => ReadonlyMap<string, ListingHistory>;
@@ -47,6 +49,7 @@ export interface MemoryJobStore {
 
 export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const jobs = new Map<string, JobValue>();
+  const departed = new Map<string, number>();
   const states = new Map<string, FeedStateValue>();
   const runs: IngestReceiptValue[] = [];
   const history = new Map<string, ListingHistory>();
@@ -228,6 +231,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         const matching = [...jobs.values()]
           .flatMap((job) =>
             Option.contains(companySlugOf(job.company), slug) &&
+            !departed.has(job.id) &&
             job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
               ? [
                   {
@@ -294,6 +298,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           );
 
           return Option.contains(companySlugOf(job.company), slug) &&
+            !departed.has(job.id) &&
             job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
             ? [
                 {
@@ -321,6 +326,14 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       Effect.sync(() =>
         pipe(
           Option.fromNullishOr(jobs.get(id)),
+          Option.filter(() => !departed.has(id)),
+          Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
+        )
+      ),
+    findIncludingDeparted: (id) =>
+      Effect.sync(() =>
+        pipe(
+          Option.fromNullishOr(jobs.get(id)),
           Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
         )
       ),
@@ -333,6 +346,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           Array.filter(
             (job) =>
               job.postedAt >= now - query.maxAgeDays * 86_400_000 &&
+              !departed.has(job.id) &&
               sources.includes(job.source)
           ),
           Array.filter(matchesEnrichment(query))
@@ -349,22 +363,49 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
                 daysOpen: daysOpen(found?.firstSeenAt ?? job.firstSeenAt, now),
                 enrichment: enrichmentOf(job.id),
                 reposts: found?.reposts ?? 0,
+                status: listingStatus(
+                  {
+                    departedAt: departed.get(job.id) ?? null,
+                    firstSeenAt: job.firstSeenAt,
+                    postedAt: job.postedAt,
+                  },
+                  now
+                ),
               };
             })
           ),
           total: matching.length,
         };
       }),
+    markListed: (feedKey, ids, seenAt) =>
+      Effect.sync(() => {
+        for (const id of ids) {
+          const job = jobs.get(id);
+
+          if (job?.feed === feedKey) {
+            jobs.set(id, {
+              ...job,
+              lastSeenAt: Math.max(job.lastSeenAt, seenAt),
+            });
+            departed.delete(id);
+          }
+        }
+      }),
     neuronsClaimed: (day) => Effect.sync(() => neurons.get(day) ?? 0),
-    pruneOlderThan: (cutoff) =>
+    prune: ({ departedBefore, unseenBefore }) =>
       Effect.sync(() => {
         const expired = pipe(
           [...jobs.values()],
-          Array.filter((job) => job.postedAt < cutoff)
+          Array.filter(
+            (job) =>
+              (departed.get(job.id) ?? Number.POSITIVE_INFINITY) <
+                departedBefore || job.lastSeenAt < unseenBefore
+          )
         );
 
         for (const job of expired) {
           jobs.delete(job.id);
+          departed.delete(job.id);
         }
 
         for (const kept of [enrichments, skips]) {
@@ -434,6 +475,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           Array.filter(
             (job) =>
               job.feed === feedKey &&
+              job.lastSeenAt < seenAt &&
+              !departed.has(job.id) &&
               !pipe(
                 incoming,
                 Array.some((next) => next.id === job.id)
@@ -453,15 +496,20 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               onNone: () => job.firstSeenAt,
               onSome: (found) => found.firstSeenAt,
             }),
+            lastSeenAt: Option.match(existing, {
+              onNone: () => job.lastSeenAt,
+              onSome: (found) => Math.max(found.lastSeenAt, job.lastSeenAt),
+            }),
             postedAt: Option.match(existing, {
               onNone: () => job.postedAt,
               onSome: (found) => Math.min(found.postedAt, job.postedAt),
             }),
           });
+          departed.delete(job.id);
         }
 
         for (const job of stale) {
-          jobs.delete(job.id);
+          departed.set(job.id, seenAt);
         }
 
         const previous = stateOf(feedKey);
@@ -487,7 +535,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           lastSuccessAt: Math.max(lastSuccessAt, seenAt),
         });
 
-        return { removed: stale.length, upserted: incoming.length };
+        return { departed: stale.length, upserted: incoming.length };
       }),
     saveEnrichment: (id, enrichment) =>
       Effect.sync(() => {
@@ -496,8 +544,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       }),
     stats: (_now, sources, catalogKeys) =>
       Effect.sync(() => ({
-        activeJobs: [...jobs.values()].filter((job) =>
-          sources.includes(job.source)
+        activeJobs: [...jobs.values()].filter(
+          (job) => sources.includes(job.source) && !departed.has(job.id)
         ).length,
         feedsFailing: pipe(
           [...states.values()],
@@ -523,6 +571,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
             return (
               job.firstSeenAt >= since &&
+              !departed.has(job.id) &&
               sources.includes(job.source) &&
               !enrichments.has(job.id) &&
               (skip === undefined || !finalSkips.includes(skip.reason))
@@ -542,6 +591,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   });
 
   return {
+    departed: () => departed,
     enrichments: () => enrichments,
     feedStates: () => [...states.values()],
     history: () => history,

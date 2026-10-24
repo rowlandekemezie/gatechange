@@ -9,12 +9,12 @@ export { billingStoreLayer, makeBillingStore } from "./billing-store.js";
 
 export {
   countJobsStatement,
+  departUnseenStatement,
   feedFailedStatement,
   feedSucceededStatement,
   findJobStatement,
   listJobsStatement,
   pruneJobsStatement,
-  removeUnseenStatement,
   UPSERT_CHUNK,
   upsertJobStatement,
 } from "./queries.js";

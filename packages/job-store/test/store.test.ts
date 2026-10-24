@@ -6,6 +6,7 @@ import {
   DAY_MILLIS,
   JobStore,
   PostingFeeds,
+  retentionAt,
   SourceName,
 } from "@rat-stack/core";
 import type { JobQueryValue, JobValue } from "@rat-stack/core";
@@ -212,7 +213,7 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
-    "replacing a feed keeps listed jobs, drops unlisted ones, and leaves other feeds alone",
+    "replacing a feed keeps listed jobs, takes unlisted ones off the board, and leaves other feeds alone",
     () =>
       withStore(
         Effect.gen(function* replaceFeeds() {
@@ -253,8 +254,17 @@ describe("D1 job store queries", () => {
             SourceName.literals
           );
 
-          expect(replaced).toStrictEqual({ removed: 1, upserted: 1 });
-          expect(ids(listing.jobs)).toStrictEqual(["a:2", "b:1"]);
+          expect(replaced).toStrictEqual({ departed: 1, upserted: 1 });
+          expect(
+            pipe(
+              listing.jobs,
+              Array.map((found) => [found.id, found.status])
+            )
+          ).toStrictEqual([
+            ["a:2", "new"],
+            ["b:1", "new"],
+          ]);
+          expect(listing.total).toBe(2);
 
           const kept = pipe(
             Array.findFirst(listing.jobs, (found) => found.id === "a:2"),
@@ -262,6 +272,71 @@ describe("D1 job store queries", () => {
           );
 
           expect(kept).toStrictEqual(Option.some([NOW, NOW]));
+        })
+      )
+  );
+
+  it.effect(
+    "a departed role leaves the board, its counts and its company page while the row waits to be pruned",
+    () =>
+      withStore(
+        Effect.gen(function* departedEverywhere() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({
+                feed: "greenhouse:acme",
+                id: "g:1",
+                role: "Director",
+                title: "Director of Platform",
+              }),
+              job({
+                feed: "greenhouse:acme",
+                id: "g:2",
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({
+                feed: "greenhouse:acme",
+                id: "g:2",
+                lastSeenAt: NOW + 10,
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW + 10
+          );
+
+          const listing = yield* store.list(
+            query(),
+            NOW + 20,
+            SourceName.literals
+          );
+
+          const stats = yield* store.stats(NOW + 20, SourceName.literals, []);
+          const company = yield* store.companyJobs("acme", NOW + 20);
+          const records = yield* store.companyRecords("acme", NOW + 20);
+
+          expect(ids(listing.jobs)).toStrictEqual(["g:2"]);
+          expect(listing.total).toBe(1);
+          expect([stats.activeJobs, stats.newToday]).toStrictEqual([1, 1]);
+          expect(
+            stats.roles.map(({ count, role }) => [role, count])
+          ).toStrictEqual([["EngineeringManager", 1]]);
+          expect(ids(company.jobs)).toStrictEqual(["g:2"]);
+          expect([company.total, company.summary.openRoles]).toStrictEqual([
+            1, 1,
+          ]);
+          expect(records.open.map(({ id }) => id)).toStrictEqual(["g:2"]);
+          expect(Option.isSome(yield* store.findIncludingDeparted("g:1"))).toBe(
+            true
+          );
         })
       )
   );
@@ -406,7 +481,7 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
-    "pruning removes roles past the retention window and failures accumulate on a feed",
+    "pruning keeps a role its feed still lists however old its posting, and failures accumulate on a feed",
     () =>
       withStore(
         Effect.gen(function* prune() {
@@ -421,7 +496,7 @@ describe("D1 job store queries", () => {
             NOW
           );
 
-          const pruned = yield* store.pruneOlderThan(NOW - 30 * DAY_MILLIS);
+          const pruned = yield* store.prune(retentionAt(NOW));
 
           yield* store.recordFeedFailure("b", NOW, "timeout");
           yield* store.recordFeedFailure("b", NOW + 1, "timeout");
@@ -433,7 +508,7 @@ describe("D1 job store queries", () => {
             "b",
           ]);
 
-          expect(pruned).toBe(1);
+          expect(pruned).toBe(0);
           expect(
             pipe(
               states,
@@ -558,10 +633,16 @@ describe("D1 job store queries", () => {
       withStore(
         Effect.gen(function* pruneKeepsHistory() {
           const store = yield* JobStore;
-          const expired = job({ feed: "a", id: "a:1", title: "Director" });
+
+          const expired = job({
+            feed: "a",
+            id: "a:1",
+            lastSeenAt: NOW - 40 * DAY_MILLIS,
+            title: "Director",
+          });
 
           yield* store.replaceFeed("a", [expired], NOW - 40 * DAY_MILLIS);
-          yield* store.pruneOlderThan(NOW + DAY_MILLIS);
+          yield* store.prune(retentionAt(NOW));
 
           const listing = yield* store.list(query(), NOW, SourceName.literals);
           const kept = yield* store.historyOf(expired);
@@ -719,7 +800,7 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
-    "finding a job by id returns it while listed and nothing once its feed drops it",
+    "finding a job by id returns it while listed, a departed job only when asked for, and nothing once pruned",
     () =>
       withStore(
         Effect.gen(function* findJob() {
@@ -733,13 +814,20 @@ describe("D1 job store queries", () => {
 
           yield* store.replaceFeed("a", [], NOW + 10);
 
-          const dropped = yield* store.find("a:1");
+          const departed = yield* store.find("a:1");
+          const asked = yield* store.findIncludingDeparted("a:1");
+
+          yield* store.prune(retentionAt(NOW + 11 + DAY_MILLIS));
+
+          const pruned = yield* store.find("a:1");
 
           expect(found).toStrictEqual(
             Option.some({ ...listed, enrichment: null })
           );
           expect(unknown).toStrictEqual(Option.none());
-          expect(dropped).toStrictEqual(Option.none());
+          expect(departed).toStrictEqual(Option.none());
+          expect(asked).toStrictEqual(found);
+          expect(pruned).toStrictEqual(Option.none());
         })
       )
   );

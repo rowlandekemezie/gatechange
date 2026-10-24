@@ -21,9 +21,9 @@ export const FeedState = Schema.Struct({
 export type FeedStateValue = typeof FeedState.Type;
 
 export const FeedOutcome = Schema.Struct({
+  departed: Schema.Int,
   error: Schema.NullOr(Schema.String),
   key: Schema.String,
-  pruned: Schema.Int,
   source: SourceName,
   upserted: Schema.Int,
 });

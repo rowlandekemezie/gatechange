@@ -28,6 +28,7 @@ import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "../src/mcp.js";
 import { handleRoutes } from "../src/route.js";
+import { migratedDatabase, storeOn } from "./sqlite-job-store.js";
 
 const ORIGIN = "https://jobs.example";
 
@@ -88,208 +89,216 @@ const board = [job("Greenhouse", "g:1"), job("Remotive", "r:1")];
 const served = (sources: readonly SourceNameValue[]) =>
   board.filter((row) => sources.includes(row.source));
 
-const fixture = Effect.gen(function* fixture() {
-  const listedSources: (readonly SourceNameValue[])[] = [];
-  const countedSources: (readonly SourceNameValue[])[] = [];
-  const countedCatalogs: (readonly string[])[] = [];
+const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
+  Effect.gen(function* fixture() {
+    const listedSources: (readonly SourceNameValue[])[] = [];
+    const countedSources: (readonly SourceNameValue[])[] = [];
+    const countedCatalogs: (readonly string[])[] = [];
 
-  const attempted = [
-    { failing: false, key: "Greenhouse:all" },
-    { failing: true, key: "Remotive:all" },
-    { failing: true, key: "Greenhouse:removed" },
-  ];
+    const attempted = [
+      { failing: false, key: "Greenhouse:all" },
+      { failing: true, key: "Remotive:all" },
+      { failing: true, key: "Greenhouse:removed" },
+    ];
 
-  const savedBy: string[] = [];
+    const savedBy: string[] = [];
 
-  const hashes = new Map<string, AccountValue>([
-    [yield* secretHashOf(PRO_SECRET), pro],
-    [yield* secretHashOf(OTHER_PRO_SECRET), otherPro],
-    [yield* secretHashOf(FREE_SECRET), free],
-  ]);
+    const hashes = new Map<string, AccountValue>([
+      [yield* secretHashOf(PRO_SECRET), pro],
+      [yield* secretHashOf(OTHER_PRO_SECRET), otherPro],
+      [yield* secretHashOf(FREE_SECRET), free],
+    ]);
 
-  const stores = Layer.mergeAll(
-    Layer.succeed(PostingFeeds, {
-      catalog: [
-        ...board.map((row) => ({
-          company: Option.some(row.company),
-          key: row.feed,
-          minIntervalMinutes: 60,
-          source: row.source,
-        })),
-        {
-          company: Option.none(),
-          key: "Greenhouse:unattempted",
-          minIntervalMinutes: 60,
-          source: "Greenhouse" as const,
-        },
-      ],
-      fetch: () => Effect.die("MCP stats must not fetch postings"),
-    }),
-    Layer.succeed(
-      JobStore,
-      JobStore.of({
-        claimIngest: unserved("claimIngest"),
-        claimNeurons: unserved("claimNeurons"),
-        companyJobs: unserved("companyJobs"),
-        companyRecords: unserved("companyRecords"),
-        feedStates: Effect.die("feedStates is not served here"),
-        find: (id) =>
-          Effect.succeed(
-            Option.fromNullishOr(board.find((row) => row.id === id)).pipe(
-              Option.map((row) => ({ ...row, enrichment: null }))
-            )
-          ),
-        historyOf: unserved("historyOf"),
-        list: (_query, _now, sources) => {
-          listedSources.push(sources);
+    const stores = Layer.mergeAll(
+      Layer.succeed(PostingFeeds, {
+        catalog: [
+          ...board.map((row) => ({
+            company: Option.some(row.company),
+            key: row.feed,
+            minIntervalMinutes: 60,
+            source: row.source,
+          })),
+          {
+            company: Option.none(),
+            key: "Greenhouse:unattempted",
+            minIntervalMinutes: 60,
+            source: "Greenhouse" as const,
+          },
+        ],
+        fetch: () => Effect.die("MCP stats must not fetch postings"),
+      }),
+      boardStore ??
+        Layer.succeed(
+          JobStore,
+          JobStore.of({
+            claimIngest: unserved("claimIngest"),
+            claimNeurons: unserved("claimNeurons"),
+            companyJobs: unserved("companyJobs"),
+            companyRecords: unserved("companyRecords"),
+            feedStates: Effect.die("feedStates is not served here"),
+            find: (id) =>
+              Effect.succeed(
+                Option.fromNullishOr(board.find((row) => row.id === id)).pipe(
+                  Option.map((row) => ({ ...row, enrichment: null }))
+                )
+              ),
+            findIncludingDeparted: unserved("findIncludingDeparted"),
+            historyOf: unserved("historyOf"),
+            list: (_query, _now, sources) => {
+              listedSources.push(sources);
 
-          const jobs = served(sources).map((row) => ({
-            ...row,
-            daysOpen: 0,
-            enrichment: null,
-            reposts: 0,
-          }));
+              const jobs = served(sources).map((row) => ({
+                ...row,
+                daysOpen: 0,
+                enrichment: null,
+                reposts: 0,
+                status: "on_time" as const,
+              }));
 
-          return Effect.succeed({ jobs, total: jobs.length });
-        },
-        neuronsClaimed: unserved("neuronsClaimed"),
-        pruneOlderThan: unserved("pruneOlderThan"),
-        recordFeedFailure: unserved("recordFeedFailure"),
-        recordNeuronsUsed: unserved("recordNeuronsUsed"),
-        recordRun: unserved("recordRun"),
-        recordSightings: unserved("recordSightings"),
-        recordSkip: unserved("recordSkip"),
-        releaseIngest: unserved("releaseIngest"),
-        replaceFeed: unserved("replaceFeed"),
-        saveEnrichment: unserved("saveEnrichment"),
-        stats: (_now, sources, catalogKeys) => {
-          countedCatalogs.push(catalogKeys);
+              return Effect.succeed({ jobs, total: jobs.length });
+            },
+            markListed: unserved("markListed"),
+            neuronsClaimed: unserved("neuronsClaimed"),
+            prune: unserved("prune"),
+            recordFeedFailure: unserved("recordFeedFailure"),
+            recordNeuronsUsed: unserved("recordNeuronsUsed"),
+            recordRun: unserved("recordRun"),
+            recordSightings: unserved("recordSightings"),
+            recordSkip: unserved("recordSkip"),
+            releaseIngest: unserved("releaseIngest"),
+            replaceFeed: unserved("replaceFeed"),
+            saveEnrichment: unserved("saveEnrichment"),
+            stats: (_now, sources, catalogKeys) => {
+              countedCatalogs.push(catalogKeys);
 
-          const current = attempted.filter((feed) =>
-            catalogKeys.includes(feed.key)
-          );
+              const current = attempted.filter((feed) =>
+                catalogKeys.includes(feed.key)
+              );
 
-          countedSources.push(sources);
+              countedSources.push(sources);
 
-          return Effect.succeed({
-            activeJobs: served(sources).length,
-            feedsFailing: current.filter((feed) => feed.failing).length,
-            feedsTotal: current.length,
-            lastRun: null,
-            newToday: 0,
-            regions: [],
-            roles: [],
-          });
-        },
-        unenrichedListings: unserved("unenrichedListings"),
-      })
-    ),
-    Layer.succeed(
-      BillingStore,
-      BillingStore.of({
-        accountOfCustomer: unserved("accountOfCustomer"),
-        applySubscription: unserved("applySubscription"),
-        customerOf: unserved("customerOf"),
-        linkCustomer: unserved("linkCustomer"),
-        subscriptionsOf: (account) =>
-          Effect.succeed(
-            account === pro.id || account === otherPro.id
-              ? [activeSubscription(account)]
-              : []
-          ),
-      })
-    ),
-    Layer.succeed(
-      AlertStore,
-      AlertStore.of({
-        claimDigest: unserved("claimDigest"),
-        deleteSearch: unserved("deleteSearch"),
-        dueRecipients: unserved("dueRecipients"),
-        instantAlertsOf: unserved("instantAlertsOf"),
-        jobsSeenSince: unserved("jobsSeenSince"),
-        markSent: unserved("markSent"),
-        releaseDigest: unserved("releaseDigest"),
-        saveSearch: (owner, filters, createdAt) => {
-          savedBy.push(owner);
-
-          return Effect.succeed(
-            Option.some({
-              createdAt,
-              filters,
-              frequency: "Weekly" as const,
-              id: SavedSearchId.make("s1"),
-              owner,
-            })
-          );
-        },
-        searchesOf: unserved("searchesOf"),
-        sendsSince: unserved("sendsSince"),
-        setInstantAlerts: unserved("setInstantAlerts"),
-        unsubscribe: unserved("unsubscribe"),
-      })
-    ),
-    Layer.succeed(
-      TrackerStore,
-      TrackerStore.of({
-        importMissing: unserved("importMissing"),
-        list: unserved("list"),
-        note: unserved("note"),
-        track: unserved("track"),
-        untrack: unserved("untrack"),
-      })
-    )
-  );
-
-  const tokens = Layer.succeed(
-    AgentTokenStore,
-    AgentTokenStore.of({
-      holderOf: (hash) =>
-        Effect.succeed(Option.fromNullishOr(hashes.get(hash))),
-      issue: unserved("issue"),
-      revoke: unserved("revoke"),
-      tokensOf: unserved("tokensOf"),
-    })
-  );
-
-  const mcpHttp = yield* HttpRouter.toHttpEffect(mcpAppLayer(stores));
-
-  const accountStore: AccountStore["Service"] = {
-    signInOptions: { socialProviders: [] },
-    viewerOf: () => Effect.succeed(Viewer.Anonymous()),
-  };
-
-  const webHandler = HttpEffect.toWebHandler(
-    handleRoutes({
-      accountStore,
-      auth: Effect.succeed(HttpServerResponse.text("auth")),
-      mcp: (request) =>
-        serveMcp(mcpHttp)(request).pipe(
-          Effect.provide(Layer.mergeAll(tokens, stores))
+              return Effect.succeed({
+                activeJobs: served(sources).length,
+                feedsFailing: current.filter((feed) => feed.failing).length,
+                feedsTotal: current.length,
+                lastRun: null,
+                newToday: 0,
+                regions: [],
+                roles: [],
+              });
+            },
+            unenrichedListings: unserved("unenrichedListings"),
+          })
         ),
-      mcpDiscovery: serveMcpDiscovery,
-      rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
-      stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
-      unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsubscribe")),
-    })
-  );
+      Layer.succeed(
+        BillingStore,
+        BillingStore.of({
+          accountOfCustomer: unserved("accountOfCustomer"),
+          applySubscription: unserved("applySubscription"),
+          customerOf: unserved("customerOf"),
+          linkCustomer: unserved("linkCustomer"),
+          subscriptionsOf: (account) =>
+            Effect.succeed(
+              account === pro.id || account === otherPro.id
+                ? [activeSubscription(account)]
+                : []
+            ),
+        })
+      ),
+      Layer.succeed(
+        AlertStore,
+        AlertStore.of({
+          claimDigest: unserved("claimDigest"),
+          deleteSearch: unserved("deleteSearch"),
+          dueRecipients: unserved("dueRecipients"),
+          instantAlertsOf: unserved("instantAlertsOf"),
+          jobsSeenSince: unserved("jobsSeenSince"),
+          markSent: unserved("markSent"),
+          releaseDigest: unserved("releaseDigest"),
+          saveSearch: (owner, filters, createdAt) => {
+            savedBy.push(owner);
 
-  const send = (path: string, init: RequestInit = {}) =>
-    Effect.gen(function* sent() {
-      const web = yield* Effect.promise(
-        // @effect-diagnostics-next-line asyncFunction:off -- The Web handler is Promise-based.
-        async () => await webHandler(new Request(`${ORIGIN}${path}`, init))
-      );
+            return Effect.succeed(
+              Option.some({
+                createdAt,
+                filters,
+                frequency: "Weekly" as const,
+                id: SavedSearchId.make("s1"),
+                owner,
+              })
+            );
+          },
+          searchesOf: unserved("searchesOf"),
+          sendsSince: unserved("sendsSince"),
+          setInstantAlerts: unserved("setInstantAlerts"),
+          unsubscribe: unserved("unsubscribe"),
+        })
+      ),
+      Layer.succeed(
+        TrackerStore,
+        TrackerStore.of({
+          importMissing: unserved("importMissing"),
+          list: unserved("list"),
+          note: unserved("note"),
+          track: unserved("track"),
+          untrack: unserved("untrack"),
+        })
+      )
+    );
 
-      const text = yield* Effect.promise(
-        // @effect-diagnostics-next-line asyncFunction:off -- Web Response bodies are Promise-based.
-        async () => await web.text()
-      );
+    const tokens = Layer.succeed(
+      AgentTokenStore,
+      AgentTokenStore.of({
+        holderOf: (hash) =>
+          Effect.succeed(Option.fromNullishOr(hashes.get(hash))),
+        issue: unserved("issue"),
+        revoke: unserved("revoke"),
+        tokensOf: unserved("tokensOf"),
+      })
+    );
 
-      return { headers: web.headers, status: web.status, text };
-    });
+    const mcpHttp = yield* HttpRouter.toHttpEffect(mcpAppLayer(stores));
 
-  return { countedCatalogs, countedSources, listedSources, savedBy, send };
-});
+    const accountStore: AccountStore["Service"] = {
+      signInOptions: { socialProviders: [] },
+      viewerOf: () => Effect.succeed(Viewer.Anonymous()),
+    };
+
+    const webHandler = HttpEffect.toWebHandler(
+      handleRoutes({
+        accountStore,
+        auth: Effect.succeed(HttpServerResponse.text("auth")),
+        mcp: (request) =>
+          serveMcp(mcpHttp)(request).pipe(
+            Effect.provide(Layer.mergeAll(tokens, stores))
+          ),
+        mcpDiscovery: serveMcpDiscovery,
+        rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
+        stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
+        unsubscribe: () =>
+          Effect.succeed(HttpServerResponse.text("unsubscribe")),
+      })
+    );
+
+    const send = (path: string, init: RequestInit = {}) =>
+      Effect.gen(function* sent() {
+        const web = yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- The Web handler is Promise-based.
+          async () => await webHandler(new Request(`${ORIGIN}${path}`, init))
+        );
+
+        const text = yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- Web Response bodies are Promise-based.
+          async () => await web.text()
+        );
+
+        return { headers: web.headers, status: web.status, text };
+      });
+
+    return { countedCatalogs, countedSources, listedSources, savedBy, send };
+  });
+
+const fixture = fixtureWith();
 
 type Send = Effect.Success<typeof fixture>["send"];
 
@@ -726,6 +735,50 @@ describe("board over MCP", () => {
 
         expect(remotive.isError).toBe(false);
         expect(textOf(remotive)).toBe("null");
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "never serves a role its feed has stopped listing through listJobs, getJob or boardStats",
+    () =>
+      Effect.gen(function* departedOverMcp() {
+        const boardStore = storeOn(migratedDatabase());
+        const director = job("Greenhouse", "g:2");
+
+        yield* JobStore.use((store) =>
+          Effect.andThen(
+            store.replaceFeed(
+              director.feed,
+              [
+                { ...job("Greenhouse", "g:1"), title: "VP of Engineering" },
+                director,
+              ],
+              NOW
+            ),
+            store.replaceFeed(
+              director.feed,
+              [{ ...director, lastSeenAt: NOW + 10 }],
+              NOW + 10
+            )
+          )
+        ).pipe(Effect.provide(boardStore));
+
+        const { send } = yield* fixtureWith(boardStore);
+        const { tool } = client(send);
+
+        const listing = yield* tool("listJobs", {
+          ...listQuery,
+          regions: [],
+          roles: [],
+        });
+
+        const departed = yield* tool("getJob", { id: "g:1" });
+        const stats = yield* tool("boardStats", {});
+
+        expect(JSON.stringify(listing.structuredContent)).toContain("g:2");
+        expect(JSON.stringify(listing.structuredContent)).not.toContain("g:1");
+        expect(textOf(departed)).toBe("null");
+        expect(stats.structuredContent).toMatchObject({ activeJobs: 1 });
       }).pipe(Effect.scoped)
   );
 

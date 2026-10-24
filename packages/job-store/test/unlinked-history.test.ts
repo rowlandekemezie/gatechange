@@ -193,8 +193,8 @@ describe("unlinked company-history provenance", () => {
           expect(
             (yield* store.companyRecords("another-company", now)).history
           ).toHaveLength(0);
-          expect(listed.jobs.map((job) => job.id)).toStrictEqual([
-            `${feed.key}:visible`,
+          expect(listed.jobs.map((job) => [job.id, job.status])).toStrictEqual([
+            [`${feed.key}:visible`, "new"],
           ]);
           expect(run.receipt).toMatchObject({
             feedsAttempted: 1,
@@ -204,9 +204,9 @@ describe("unlinked company-history provenance", () => {
             outcome: "Succeeded",
           });
           expect(run.outcomes[0]).toMatchObject({
+            departed: 1,
             error: null,
             key: feed.key,
-            pruned: 1,
             upserted: 1,
           });
         }).pipe(Effect.provide(database));

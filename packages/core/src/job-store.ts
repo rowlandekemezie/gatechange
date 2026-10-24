@@ -16,10 +16,11 @@ import type {
   ListedJobValue,
   SourceNameValue,
 } from "./job.js";
+import type { Retention } from "./listing-status.js";
 import { DAY_MILLIS } from "./posting.js";
 
 export const FeedReplacement = Schema.Struct({
-  removed: Schema.Int,
+  departed: Schema.Int,
   upserted: Schema.Int,
 });
 
@@ -112,6 +113,9 @@ export class JobStore extends Context.Service<
     readonly find: (
       id: string
     ) => Effect.Effect<Option.Option<JobDetailValue>, JobStoreUnavailable>;
+    readonly findIncludingDeparted: (
+      id: string
+    ) => Effect.Effect<Option.Option<JobDetailValue>, JobStoreUnavailable>;
     readonly historyOf: (
       job: Pick<JobValue, "company" | "title">
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;
@@ -123,8 +127,13 @@ export class JobStore extends Context.Service<
     readonly neuronsClaimed: (
       day: number
     ) => Effect.Effect<number, JobStoreUnavailable>;
-    readonly pruneOlderThan: (
-      cutoff: number
+    readonly markListed: (
+      feedKey: string,
+      ids: readonly string[],
+      seenAt: number
+    ) => Effect.Effect<void, JobStoreUnavailable>;
+    readonly prune: (
+      retention: Retention
     ) => Effect.Effect<number, JobStoreUnavailable>;
     readonly recordFeedFailure: (
       feedKey: string,

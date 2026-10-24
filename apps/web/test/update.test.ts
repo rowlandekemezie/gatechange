@@ -81,6 +81,7 @@ const listed: ListedJobValue = {
   role: "EngineeringManager",
   salary: null,
   source: "Himalayas",
+  status: "on_time",
   title: "Engineering Manager",
   url: "https://himalayas.app/companies/moniepoint/jobs/engineering-manager-9245044553",
 };

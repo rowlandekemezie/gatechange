@@ -236,7 +236,7 @@ describe("listing history through runIngest on the SQL store", () => {
   );
 
   it.effect(
-    "an undated role the feed keeps listing past the 30-day prune is never a repost",
+    "an undated role the feed keeps listing past 30 days keeps its row and is never a repost",
     () =>
       withSqlStore(
         Effect.gen(function* listedThroughPrune() {
@@ -250,12 +250,12 @@ describe("listing history through runIngest on the SQL store", () => {
 
           const page = yield* store.list(
             listAll,
-            NOW + 40 * DAY_MILLIS,
+            NOW + 29 * DAY_MILLIS,
             SourceName.literals
           );
 
           expect(Array.reduce(pruned, 0, (total, count) => total + count)).toBe(
-            1
+            0
           );
           expect(yield* historyOfRole).toStrictEqual(
             Option.some({
@@ -270,7 +270,7 @@ describe("listing history through runIngest on the SQL store", () => {
               page.jobs,
               Array.map((job) => [job.daysOpen, job.reposts])
             )
-          ).toStrictEqual([[40, 0]]);
+          ).toStrictEqual([[29, 0]]);
         })
       )
   );

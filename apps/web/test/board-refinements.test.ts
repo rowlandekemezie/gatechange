@@ -48,6 +48,7 @@ const job = (id: string, salary: string | null): ListedJobValue => ({
   role: "Director",
   salary,
   source: "Greenhouse",
+  status: "on_time",
   title: `Director of Engineering ${id}`,
   url: `https://boards.example/${id}`,
 });
