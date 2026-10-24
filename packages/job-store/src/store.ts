@@ -450,7 +450,15 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       ids.length === 0
         ? Effect.void
         : sql
-            .batch("markListed", [markListedStatement(feedKey, ids, seenAt)])
+            .batch(
+              "markListed",
+              pipe(
+                Array.chunksOf(ids, UPSERT_CHUNK),
+                Array.map((chunk) =>
+                  markListedStatement(feedKey, chunk, seenAt)
+                )
+              )
+            )
             .pipe(Effect.asVoid),
 
     neuronsClaimed: (day) =>
