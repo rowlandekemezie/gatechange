@@ -323,6 +323,17 @@ const totalOf = (rows: readonly (typeof TotalRow.Type)[]) =>
 export const makeJobStore = Effect.gen(function* makeJobStore() {
   const sql = yield* SqlExecutor;
 
+  const findJob = (id: string, includeDeparted: boolean) =>
+    sql
+      .all("findJob", findJobStatement(id, includeDeparted), EnrichedJobRow)
+      .pipe(
+        Effect.flatMap((rows) =>
+          Effect.transposeOption(
+            Option.map(Array.head(rows), jobDetailOfRow("findJob"))
+          )
+        )
+      );
+
   return JobStore.of({
     claimIngest: (startedAt, heldUntil) =>
       sql
@@ -404,16 +415,9 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
       .all("feedStates", feedStatesStatement, FeedStateRow)
       .pipe(Effect.map(Array.map(feedStateOfRow))),
 
-    find: (id) =>
-      sql
-        .all("findJob", findJobStatement(id), EnrichedJobRow)
-        .pipe(
-          Effect.flatMap((rows) =>
-            Effect.transposeOption(
-              Option.map(Array.head(rows), jobDetailOfRow("findJob"))
-            )
-          )
-        ),
+    find: (id) => findJob(id, false),
+
+    findIncludingDeparted: (id) => findJob(id, true),
 
     historyOf: (job) =>
       sql

@@ -298,6 +298,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           );
 
           return Option.contains(companySlugOf(job.company), slug) &&
+            !departed.has(job.id) &&
             job.postedAt >= now - MAX_AGE_DAYS * 86_400_000
             ? [
                 {
@@ -325,6 +326,14 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
       Effect.sync(() =>
         pipe(
           Option.fromNullishOr(jobs.get(id)),
+          Option.filter(() => !departed.has(id)),
+          Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
+        )
+      ),
+    findIncludingDeparted: (id) =>
+      Effect.sync(() =>
+        pipe(
+          Option.fromNullishOr(jobs.get(id)),
           Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
         )
       ),
@@ -337,6 +346,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           Array.filter(
             (job) =>
               job.postedAt >= now - query.maxAgeDays * 86_400_000 &&
+              !departed.has(job.id) &&
               sources.includes(job.source)
           ),
           Array.filter(matchesEnrichment(query))

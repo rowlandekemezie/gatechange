@@ -213,7 +213,7 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
-    "replacing a feed keeps listed jobs, departs unlisted ones, and leaves other feeds alone",
+    "replacing a feed keeps listed jobs, takes unlisted ones off the board, and leaves other feeds alone",
     () =>
       withStore(
         Effect.gen(function* replaceFeeds() {
@@ -261,10 +261,10 @@ describe("D1 job store queries", () => {
               Array.map((found) => [found.id, found.status])
             )
           ).toStrictEqual([
-            ["a:1", "departed"],
             ["a:2", "new"],
             ["b:1", "new"],
           ]);
+          expect(listing.total).toBe(2);
 
           const kept = pipe(
             Array.findFirst(listing.jobs, (found) => found.id === "a:2"),
@@ -272,6 +272,71 @@ describe("D1 job store queries", () => {
           );
 
           expect(kept).toStrictEqual(Option.some([NOW, NOW]));
+        })
+      )
+  );
+
+  it.effect(
+    "a departed role leaves the board, its counts and its company page while the row waits to be pruned",
+    () =>
+      withStore(
+        Effect.gen(function* departedEverywhere() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({
+                feed: "greenhouse:acme",
+                id: "g:1",
+                role: "Director",
+                title: "Director of Platform",
+              }),
+              job({
+                feed: "greenhouse:acme",
+                id: "g:2",
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({
+                feed: "greenhouse:acme",
+                id: "g:2",
+                lastSeenAt: NOW + 10,
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW + 10
+          );
+
+          const listing = yield* store.list(
+            query(),
+            NOW + 20,
+            SourceName.literals
+          );
+
+          const stats = yield* store.stats(NOW + 20, SourceName.literals, []);
+          const company = yield* store.companyJobs("acme", NOW + 20);
+          const records = yield* store.companyRecords("acme", NOW + 20);
+
+          expect(ids(listing.jobs)).toStrictEqual(["g:2"]);
+          expect(listing.total).toBe(1);
+          expect([stats.activeJobs, stats.newToday]).toStrictEqual([1, 1]);
+          expect(
+            stats.roles.map(({ count, role }) => [role, count])
+          ).toStrictEqual([["EngineeringManager", 1]]);
+          expect(ids(company.jobs)).toStrictEqual(["g:2"]);
+          expect([company.total, company.summary.openRoles]).toStrictEqual([
+            1, 1,
+          ]);
+          expect(records.open.map(({ id }) => id)).toStrictEqual(["g:2"]);
+          expect(Option.isSome(yield* store.findIncludingDeparted("g:1"))).toBe(
+            true
+          );
         })
       )
   );
@@ -735,7 +800,7 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
-    "finding a job by id returns it while listed or departed and nothing once pruned",
+    "finding a job by id returns it while listed, a departed job only when asked for, and nothing once pruned",
     () =>
       withStore(
         Effect.gen(function* findJob() {
@@ -750,6 +815,7 @@ describe("D1 job store queries", () => {
           yield* store.replaceFeed("a", [], NOW + 10);
 
           const departed = yield* store.find("a:1");
+          const asked = yield* store.findIncludingDeparted("a:1");
 
           yield* store.prune(retentionAt(NOW + 11 + DAY_MILLIS));
 
@@ -759,7 +825,8 @@ describe("D1 job store queries", () => {
             Option.some({ ...listed, enrichment: null })
           );
           expect(unknown).toStrictEqual(Option.none());
-          expect(departed).toStrictEqual(found);
+          expect(departed).toStrictEqual(Option.none());
+          expect(asked).toStrictEqual(found);
           expect(pruned).toStrictEqual(Option.none());
         })
       )

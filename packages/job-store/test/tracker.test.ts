@@ -222,6 +222,24 @@ describe("tracker", () => {
   );
 
   it.effect(
+    "a tracked job reads as unlisted as soon as its feed stops listing it",
+    () =>
+      withStore(
+        Effect.gen(function* departedListing() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed("greenhouse:acme", [listing("g:1")], 0);
+          yield* trackJob.handler(request("g:1"));
+          yield* store.replaceFeed("greenhouse:acme", [], 10);
+
+          const [departed] = yield* trackedJobs.handler({});
+
+          expect(departed?.listed).toBe(false);
+        }).pipe(as(ada))
+      )
+  );
+
+  it.effect(
     "one member can never read, note, move, or remove another member's tracked jobs",
     () =>
       withStore(

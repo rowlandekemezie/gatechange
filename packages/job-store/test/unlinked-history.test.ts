@@ -195,7 +195,6 @@ describe("unlinked company-history provenance", () => {
           ).toHaveLength(0);
           expect(listed.jobs.map((job) => [job.id, job.status])).toStrictEqual([
             [`${feed.key}:visible`, "new"],
-            ["old", "departed"],
           ]);
           expect(run.receipt).toMatchObject({
             feedsAttempted: 1,

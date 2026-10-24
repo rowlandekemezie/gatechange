@@ -113,7 +113,7 @@ export const makeTrackerStore = Effect.gen(function* makeTrackerStore() {
           statement(
             `SELECT t.job_id, t.stage, t.notes, t.title, t.company, t.location,
                     t.url, t.saved_at, t.moved_at,
-                    EXISTS (SELECT 1 FROM jobs WHERE jobs.id = t.job_id) AS listed
+                    EXISTS (SELECT 1 FROM jobs WHERE jobs.id = t.job_id AND jobs.departed_at IS NULL) AS listed
                FROM tracked_jobs t
               WHERE t.account_id = ?
               ORDER BY t.moved_at DESC, t.job_id`,

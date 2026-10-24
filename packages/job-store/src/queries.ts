@@ -114,11 +114,11 @@ const filteredJobs = (
   sources: readonly SourceNameValue[],
   companySlug?: string
 ) => {
-  const conditions = ["posted_at >= ?"];
+  const conditions = ["posted_at >= ?", "departed_at IS NULL"];
   const params: SqlValue[] = [now - query.maxAgeDays * DAY_MILLIS];
 
   if (companySlug !== undefined) {
-    conditions.push("jobs.company_slug = ?", "departed_at IS NULL");
+    conditions.push("jobs.company_slug = ?");
     params.push(companySlug);
   }
 
@@ -171,7 +171,7 @@ const filteredJobs = (
     params,
     sql: `WITH ranked AS (
   SELECT ${jobColumns}, ${enrichmentColumns}, fingerprint, departed_at,
-    ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY departed_at IS NOT NULL, ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
+    ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM ${enrichedJobs}
   WHERE ${conditions.join(" AND ")}
 )`,
@@ -275,9 +275,12 @@ export const trackedSinceStatement = statement(
   []
 );
 
-export const findJobStatement = (id: string): SqlStatement =>
+export const findJobStatement = (
+  id: string,
+  includeDeparted: boolean
+): SqlStatement =>
   statement(
-    `SELECT ${jobColumns}, ${enrichmentColumns} FROM ${enrichedJobs} WHERE id = ? LIMIT 1`,
+    `SELECT ${jobColumns}, ${enrichmentColumns} FROM ${enrichedJobs} WHERE id = ?${includeDeparted ? "" : " AND departed_at IS NULL"} LIMIT 1`,
     [id]
   );
 

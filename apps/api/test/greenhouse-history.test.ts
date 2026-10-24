@@ -1,25 +1,12 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- The test loads checked-in migrations into an isolated SQLite database.
-import { readdirSync, readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-
 import { describe, expect, it } from "@effect/vitest";
-import {
-  DAY_MILLIS,
-  JobStore,
-  JobStoreUnavailable,
-  PostingFeeds,
-  runIngest,
-} from "@rat-stack/core";
+import { DAY_MILLIS, JobStore, PostingFeeds, runIngest } from "@rat-stack/core";
 import type { FeedRef } from "@rat-stack/core";
 import { greenhousePostings } from "@rat-stack/job-sources";
-import {
-  jobStoreLayer,
-  jobStoreMigrationDirectory,
-  SqlExecutor,
-} from "@rat-stack/job-store";
-import { Array, DateTime, Effect, Layer, Option, pipe, Schema } from "effect";
+import { Array, DateTime, Effect, Option, pipe } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
+
+import { migratedDatabase, storeOn } from "./sqlite-job-store.js";
 
 const NOW = 1_760_000_000_000;
 
@@ -31,61 +18,6 @@ const feed: FeedRef = {
 };
 
 const iso = (time: number) => DateTime.formatIso(DateTime.makeUnsafe(time));
-
-const migratedDatabase = () => {
-  const database = new DatabaseSync(":memory:");
-  const directory = jobStoreMigrationDirectory();
-
-  for (const file of readdirSync(directory)
-    .filter((name) => name.endsWith(".sql"))
-    .toSorted()) {
-    database.exec(readFileSync(`${directory}${file}`, "utf-8"));
-  }
-
-  return database;
-};
-
-const storeOn = (database: DatabaseSync) =>
-  jobStoreLayer.pipe(
-    Layer.provide(
-      Layer.succeed(
-        SqlExecutor,
-        SqlExecutor.of({
-          all: (operation, sql, row) =>
-            Schema.decodeEffect(Schema.Array(row))(
-              database.prepare(sql.sql).all(...sql.params)
-            ).pipe(
-              Effect.mapError(
-                (failure) =>
-                  new JobStoreUnavailable({
-                    message: failure.message,
-                    operation,
-                  })
-              )
-            ),
-          batch: (_operation, statements) =>
-            Effect.sync(() => {
-              database.exec("BEGIN");
-
-              try {
-                const results = statements.map((sql) => ({
-                  changes: Number(
-                    database.prepare(sql.sql).run(...sql.params).changes
-                  ),
-                }));
-
-                database.exec("COMMIT");
-
-                return results;
-              } catch (error) {
-                database.exec("ROLLBACK");
-                throw error;
-              }
-            }),
-        })
-      )
-    )
-  );
 
 const ingestAt = Effect.fnUntraced(function* ingestAt(
   day: number,

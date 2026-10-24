@@ -178,6 +178,29 @@ describe("instant alerts", () => {
     }
   );
 
+  it.effect("never emails a match its feed has stopped listing", () => {
+    const sent: Digest[] = [];
+
+    return withStores(
+      Effect.gen(function* departed() {
+        yield* setUp;
+        yield* JobStore.use((store) =>
+          store.replaceFeed(
+            "jobicy:all",
+            [{ ...job("old", NOW - 2 * DAY_MILLIS), lastSeenAt: NOW - 60_000 }],
+            NOW - 60_000
+          )
+        );
+
+        const receipt = yield* runInstantAlerts(PLAN, NOW);
+
+        expect(sent).toEqual([]);
+        expect(receipt.sent).toBe(0);
+      }),
+      sent
+    );
+  });
+
   it.effect(
     "never emails a Free or lapsed member, even with alerts left on",
     () => {

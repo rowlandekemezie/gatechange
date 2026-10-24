@@ -319,6 +319,44 @@ describe("weekly saved-search digests", () => {
     )
   );
 
+  it.effect("a role its feed stopped listing never appears", () =>
+    withStores(
+      Effect.gen(function* departed() {
+        const outbox = makeOutbox();
+
+        yield* addMember(ada);
+        yield* saveSearch(ada);
+        yield* listJobs([
+          job({ feed: "jobicy:all", id: "jobicy:1" }),
+          job({
+            feed: "jobicy:all",
+            id: "jobicy:2",
+            title: "Director of Engineering",
+          }),
+        ]);
+        yield* JobStore.use((store) =>
+          store.replaceFeed(
+            "jobicy:all",
+            [
+              job({
+                feed: "jobicy:all",
+                id: "jobicy:2",
+                lastSeenAt: NOW - HOUR,
+                title: "Director of Engineering",
+              }),
+            ],
+            NOW - HOUR
+          )
+        );
+        yield* runAt(NOW, outbox.layer);
+
+        expect(
+          outbox.sent.map((digest) => digest.jobs.map((listed) => listed.id))
+        ).toEqual([["jobicy:2"]]);
+      })
+    )
+  );
+
   it.effect(
     "an empty week sends and claims nothing, so a later week can send",
     () =>

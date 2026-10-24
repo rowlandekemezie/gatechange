@@ -297,10 +297,6 @@ interface ModelRow {
 }
 
 const expectedStatus = (row: ModelRow, now: number): ListingStatusValue => {
-  if (row.departedAt !== null) {
-    return "departed";
-  }
-
   if (now - row.firstSeenAt < DAY_MILLIS) {
     return "new";
   }
@@ -398,7 +394,9 @@ const replayLifecycle = (
         pipe(
           [...model],
           Array.filter(
-            ([, row]) => row.postedAt >= now - listAll.maxAgeDays * DAY_MILLIS
+            ([, row]) =>
+              row.departedAt === null &&
+              row.postedAt >= now - listAll.maxAgeDays * DAY_MILLIS
           ),
           Array.map(([id, row]) => [id, expectedStatus(row, now)] as const)
         ).toSorted(([left], [right]) => left.localeCompare(right))
@@ -455,7 +453,7 @@ describe("ingest", () => {
   );
 
   it.effect.prop(
-    "a role its feed stops listing departs, stays one day, then goes; a failed fetch changes nothing; a listed role outlives the 30-day posting window; and each listing reports its status",
+    "a role its feed stops listing departs, stays one day, then goes; a failed fetch changes nothing; a listed role outlives the 30-day posting window; and the board shows only roles still listed, each with its status",
     { schedule: lifecycleRuns },
     ({ schedule }) => replayLifecycle(schedule)
   );

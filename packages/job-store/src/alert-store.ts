@@ -212,9 +212,10 @@ ORDER BY s.account_id, s.created_at`,
       sql
         .all(
           "jobsSeenSince",
-          statement(`SELECT ${jobColumns} FROM jobs WHERE first_seen_at >= ?`, [
-            since,
-          ]),
+          statement(
+            `SELECT ${jobColumns} FROM jobs WHERE first_seen_at >= ? AND departed_at IS NULL`,
+            [since]
+          ),
           JobRow
         )
         .pipe(Effect.map(Array.map(jobOfRow))),
