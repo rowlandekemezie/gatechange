@@ -124,7 +124,7 @@ describe("paid board refinements", () => {
           expect(html).toContain('aria-describedby="pro-refinements-note"');
           expect(html).toContain('id="search"');
           expect(html).toContain("remote in Canada");
-          expect(html.match(/class="job"/gu)).toHaveLength(2);
+          expect(html.match(/class="departure"/gu)).toHaveLength(2);
         }
       )
   );
@@ -151,7 +151,7 @@ describe("paid board refinements", () => {
           expect(group).toMatch(
             /aria-pressed="true"[^>]*>Only roles that state a salary</u
           );
-          expect(html.match(/class="job"/gu)).toHaveLength(2);
+          expect(html.match(/class="departure"/gu)).toHaveLength(2);
         }
       )
   );

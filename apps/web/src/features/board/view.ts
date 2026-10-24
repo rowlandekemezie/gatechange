@@ -18,6 +18,7 @@ import {
   bandLabel,
   dayHeading,
   postedAgo,
+  postedShort,
   refreshedAgo,
   regionGroupChip,
   regionLabel,
@@ -25,6 +26,7 @@ import {
   roleCount,
   seniorityChip,
   sourceLabel,
+  statusLabel,
   thousands,
 } from "../../client/board/copy.js";
 import {
@@ -368,21 +370,58 @@ export const boardMasthead = (
     ]
   );
 
+const whereOf = (job: JobDetailValue) =>
+  job.location.length > 0 ? job.location : regionLabel(job.region);
+
+const payTag = (
+  h: HtmlBuilder<MessageValue>,
+  job: JobDetailValue
+): readonly Html[] =>
+  pipe(
+    Option.fromNullishOr(job.enrichment?.salary),
+    Option.map(bandLabel),
+    Option.orElse(() => Option.fromNullishOr(job.salary)),
+    Option.match({
+      onNone: () => [],
+      onSome: (pay) => [h.span([h.Class("job-pay")], [pay])],
+    })
+  );
+
+const sourceLink = (h: HtmlBuilder<MessageValue>, job: JobDetailValue): Html =>
+  h.a(
+    [
+      h.Class("job-source"),
+      ...Option.toArray(
+        Option.map(offSiteHref(job.url), (href) => h.Href(href))
+      ),
+      h.Target("_blank"),
+      h.Rel("noopener noreferrer"),
+    ],
+    [`From ${sourceLabel(job.source)}`]
+  );
+
+const postedTime = (
+  h: HtmlBuilder<MessageValue>,
+  job: JobDetailValue,
+  label: string
+): Html =>
+  h.time(
+    [h.Datetime(DateTime.formatIso(DateTime.makeUnsafe(job.postedAt)))],
+    [label]
+  );
+
+const isAppliedTo = (model: ModelValue, job: JobDetailValue) =>
+  Option.exists(stageOf(model, job.id), (stage) => stage !== "Saved");
+
 export const jobRow = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
   job: JobDetailValue,
   now: number
 ): Html => {
-  const isApplied = Option.exists(
-    stageOf(model, job.id),
-    (stage) => stage !== "Saved"
-  );
+  const isApplied = isAppliedTo(model, job);
 
   const isNew = now - job.firstSeenAt < NEW_WINDOW;
-
-  const where =
-    job.location.length > 0 ? job.location : regionLabel(job.region);
 
   return h.keyed("li")(
     job.id,
@@ -401,28 +440,10 @@ export const jobRow = (
             [
               h.span(
                 [h.Class("job-where"), h.Title(regionLabel(job.region))],
-                [where]
+                [whereOf(job)]
               ),
-              ...pipe(
-                Option.fromNullishOr(job.enrichment?.salary),
-                Option.map(bandLabel),
-                Option.orElse(() => Option.fromNullishOr(job.salary)),
-                Option.match({
-                  onNone: () => [],
-                  onSome: (pay) => [h.span([h.Class("job-pay")], [pay])],
-                })
-              ),
-              h.a(
-                [
-                  h.Class("job-source"),
-                  ...Option.toArray(
-                    Option.map(offSiteHref(job.url), (href) => h.Href(href))
-                  ),
-                  h.Target("_blank"),
-                  h.Rel("noopener noreferrer"),
-                ],
-                [`From ${sourceLabel(job.source)}`]
-              ),
+              ...payTag(h, job),
+              sourceLink(h, job),
             ]
           ),
         ]
@@ -434,14 +455,7 @@ export const jobRow = (
             [h.Class("job-age")],
             [
               ...(isNew ? [h.span([h.Class("fresh")], ["New"])] : []),
-              h.time(
-                [
-                  h.Datetime(
-                    DateTime.formatIso(DateTime.makeUnsafe(job.postedAt))
-                  ),
-                ],
-                [postedAgo(now, job.postedAt)]
-              ),
+              postedTime(h, job, postedAgo(now, job.postedAt)),
             ]
           ),
           markButtons(model, h, job),
@@ -450,6 +464,79 @@ export const jobRow = (
     ]
   );
 };
+
+const departureRow = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>,
+  job: ListedJobValue,
+  now: number
+): Html =>
+  h.keyed("li")(
+    job.id,
+    [
+      h.Class(
+        isAppliedTo(model, job) ? "departure departure-applied" : "departure"
+      ),
+    ],
+    [
+      h.a(
+        [h.Class("departure-tiles"), h.Href(jobRouter({ id: job.id }))],
+        [
+          h.span([h.Class("tile cell-role")], [job.title]),
+          h.span([h.Class("tile cell-company")], [job.company]),
+          h.span(
+            [h.Class("tile cell-where"), h.Title(regionLabel(job.region))],
+            [whereOf(job)]
+          ),
+          h.span(
+            [h.Class(`tile cell-status status-${job.status}`)],
+            [statusLabel(job.status)]
+          ),
+          h.span(
+            [h.Class("tile cell-posted")],
+            [postedTime(h, job, postedShort(now, job.postedAt))]
+          ),
+        ]
+      ),
+      h.div(
+        [h.Class("departure-meta")],
+        [...payTag(h, job), sourceLink(h, job), markButtons(model, h, job)]
+      ),
+    ]
+  );
+
+const boardHead = (h: HtmlBuilder<MessageValue>): Html =>
+  h.div(
+    [h.Class("board-head"), h.AriaHidden(true)],
+    [
+      h.span([h.Class("cell-posted")], ["Posted"]),
+      h.span([h.Class("cell-role")], ["Role"]),
+      h.span([h.Class("cell-company")], ["Company"]),
+      h.span([h.Class("cell-where")], ["Remote"]),
+      h.span([h.Class("cell-status")], ["Status"]),
+    ]
+  );
+
+const legendView = (h: HtmlBuilder<MessageValue>): Html =>
+  h.ul(
+    [h.Class("board-legend")],
+    [
+      h.li(
+        [],
+        [
+          h.span([h.Class("status-new")], ["New"]),
+          " · first seen in the last 24 hours",
+        ]
+      ),
+      h.li(
+        [],
+        [
+          h.span([h.Class("status-boarding")], ["Boarding"]),
+          " · posted this week",
+        ]
+      ),
+    ]
+  );
 
 const groupedRows = (
   model: ModelValue,
@@ -463,7 +550,7 @@ const groupedRows = (
         [h.Class("jobs")],
         pipe(
           jobs,
-          Array.map((job) => jobRow(model, h, job, now))
+          Array.map((job) => departureRow(model, h, job, now))
         )
       ),
     ];
@@ -493,7 +580,7 @@ const groupedRows = (
             [h.Class("jobs")],
             pipe(
               group,
-              Array.map((job) => jobRow(model, h, job, now))
+              Array.map((job) => departureRow(model, h, job, now))
             )
           ),
         ]
@@ -601,7 +688,11 @@ export const boardPage = (
             [],
             [
               h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
-              ...groupedRows(model, h, jobs, generatedAt),
+              h.div(
+                [h.Class("board")],
+                [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
+              ),
+              legendView(h),
               moreView(model, h, jobs.length, total),
             ]
           ),

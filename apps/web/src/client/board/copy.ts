@@ -1,4 +1,5 @@
 import type {
+  ListingStatusValue,
   RegionValue,
   RemotePolicyValue,
   RoleLevelValue,
@@ -130,6 +131,20 @@ export const postedAgo = (now: number, at: number) => {
 
   return `${days} days ago`;
 };
+
+export const postedShort = (now: number, at: number) => {
+  const days = daysAgo(now, at);
+
+  return days === 0 ? "Today" : `${days}d ago`;
+};
+
+export const statusLabel = Match.type<ListingStatusValue>().pipe(
+  Match.when("new", () => "New"),
+  Match.when("boarding", () => "Boarding"),
+  Match.when("on_time", () => "On time"),
+  Match.when("departed", () => "Departed"),
+  Match.exhaustive
+);
 
 export const refreshedAgo = (now: number, at: number) => {
   const minutes = Math.max(0, Math.round((now - at) / MINUTE));
