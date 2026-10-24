@@ -10,6 +10,8 @@
   --marigold: #e5b53a;
   --marigold-ink: #3a2a00;
   --focus: #1d6f7a;
+  --new-ink: #0b6b57;
+  --boarding-ink: #8a5a00;
   --display:
     "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", sans-serif;
   --text: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
@@ -30,6 +32,8 @@
     --marigold: #e5b53a;
     --marigold-ink: #2b1f00;
     --focus: #8fd3dc;
+    --new-ink: #7fe0c2;
+    --boarding-ink: #ffd23f;
     color-scheme: dark;
   }
 }
@@ -1019,4 +1023,240 @@ a {
 
 .intel-role-facts {
   color: var(--ink-soft);
+}
+
+.board {
+  --ink: #f2f2ee;
+  --ink-soft: #b4b5af;
+  --rule: #4a4c52;
+  --pine: #7fe0c2;
+  --paper: #050506;
+  --focus: #ffd23f;
+  --new-ink: #7fe0c2;
+  --boarding-ink: #ffd23f;
+  --seam: linear-gradient(
+    #1c1d20 calc(50% - 0.5px),
+    #151618 calc(50% - 0.5px) calc(50% + 0.5px),
+    #1a1b1e calc(50% + 0.5px)
+  );
+  padding: 0.75rem;
+  border: 1px solid #2a2c30;
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Chivo Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+.board-head,
+.departure-tiles {
+  display: grid;
+  grid-template-columns:
+    5rem minmax(0, 2.6fr) minmax(0, 1.6fr) minmax(0, 1.5fr)
+    6.25rem;
+  grid-template-areas: "posted role company where status";
+  gap: 0.5rem;
+}
+
+.cell-posted {
+  grid-area: posted;
+}
+
+.cell-role {
+  grid-area: role;
+}
+
+.cell-company {
+  grid-area: company;
+}
+
+.cell-where {
+  grid-area: where;
+}
+
+.cell-status {
+  grid-area: status;
+}
+
+.board-head {
+  padding: 0 0.5rem 0.75rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.board .day + .day {
+  margin-top: 1.25rem;
+}
+
+.board .day-heading {
+  margin: 0 0 0.5rem;
+  padding: 0 0.375rem;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.departure {
+  margin-bottom: 0.5rem;
+}
+
+.departure-tiles {
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.tile {
+  min-width: 0;
+  padding: 0.625rem 0.5rem 0;
+  overflow: hidden;
+  border-bottom: 0.625rem solid transparent;
+  border-radius: 4px;
+  background: var(--seam) border-box;
+  overflow-wrap: break-word;
+}
+
+.tile.cell-role,
+.tile.cell-company {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tile.cell-posted,
+.tile.cell-status {
+  white-space: nowrap;
+}
+
+.departure-tiles:hover .cell-role {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.tile.cell-posted {
+  color: #ffd23f;
+}
+
+.departure-applied .cell-role {
+  color: var(--ink-soft);
+}
+
+.status-new {
+  color: var(--new-ink);
+}
+
+.status-boarding {
+  color: var(--boarding-ink);
+}
+
+.status-on_time {
+  color: var(--ink);
+}
+
+.status-departed {
+  color: #8e8f89;
+}
+
+.departure-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1rem;
+  padding: 0 0.375rem 0.25rem;
+  color: var(--ink-soft);
+  font-family: Archivo, var(--text);
+  font-size: 0.875rem;
+}
+
+.departure-meta .job-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+.departure-meta .job-actions {
+  margin-left: auto;
+}
+
+.board .mark {
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+}
+
+.board-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  color: var(--ink-soft);
+  font-family: Archivo, var(--text);
+  font-size: 0.875rem;
+  list-style: none;
+}
+
+.board-legend span {
+  font-family: "Chivo Mono", ui-monospace, monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media (max-width: 45rem) {
+  .board {
+    padding: 0.625rem;
+  }
+
+  .board-head {
+    display: none;
+  }
+
+  .departure-tiles {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "role role status"
+      "company where posted";
+    gap: 0.5rem 1rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+    background: var(--seam);
+    font-size: 0.9375rem;
+  }
+
+  .tile {
+    padding: 0;
+    border-bottom: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .tile.cell-role {
+    -webkit-line-clamp: 3;
+  }
+
+  .tile.cell-company,
+  .tile.cell-where,
+  .tile.cell-posted {
+    color: var(--ink-soft);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-transform: none;
+  }
+
+  .tile.cell-where::before {
+    content: "· ";
+  }
+
+  .tile.cell-posted,
+  .tile.cell-status {
+    text-align: right;
+  }
 }

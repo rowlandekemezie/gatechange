@@ -127,7 +127,7 @@ const footer = (h: H): Html =>
               h.a([h.Href(creditUrl)], [label])
             )
           ),
-          ". Each listing links to its original posting. Roles leave the board when their source removes them or after 30 days.",
+          ". Each listing links to its original posting. Roles leave the board when their company takes them down, and listings unseen for 30 days are removed.",
         ]
       ),
       h.p(
