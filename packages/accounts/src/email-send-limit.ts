@@ -1,7 +1,7 @@
 import type { BetterAuthPlugin, DBAdapter, Where } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, getIP } from "better-auth/api";
 import type { MagicLinkOptions } from "better-auth/plugins";
-import { Schema } from "effect";
+import { DateTime, Schema } from "effect";
 
 import type { MagicLinkRequest } from "./options.js";
 
@@ -15,9 +15,9 @@ const WINDOW_MILLIS = EMAIL_SEND_LIMIT.windowSeconds * 1000;
 
 export const DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT = 900;
 
-const GLOBAL_WINDOW_MILLIS = 24 * 60 * 60 * 1000;
+export const CLIENT_DAILY_SEND_LIMIT = 20;
 
-const GLOBAL_KEY = "magic-link-global";
+const DAY_MILLIS = 24 * 60 * 60 * 1000;
 
 const REJECTED_SEND_CODES: ReadonlySet<string> = new Set([
   "E_DAILY_LIMIT_EXCEEDED",
@@ -53,18 +53,19 @@ const CodedSendError = Schema.Struct({
   cause: Schema.Struct({ code: Schema.String }),
 });
 
-const inboxOf = (email: string) => {
+export const inboxOf = (email: string) => {
   const address = email.toLowerCase();
   const at = address.lastIndexOf("@");
-
-  if (!GMAIL_DOMAINS.has(address.slice(at + 1))) {
-    return address;
-  }
-
+  const domain = address.slice(at + 1);
   const [tagless = ""] = address.slice(0, at).split("+");
 
-  return `${tagless.replaceAll(".", "")}@gmail.com`;
+  return GMAIL_DOMAINS.has(domain)
+    ? `${tagless.replaceAll(".", "")}@gmail.com`
+    : `${tagless}@${domain}`;
 };
+
+const utcDayOf = (now: number) =>
+  DateTime.formatIsoDateUtc(DateTime.makeUnsafe(now));
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
 const createFirst = async (adapter: DBAdapter, key: string, now: number) => {
@@ -161,7 +162,7 @@ const refund = async (adapter: DBAdapter, key: string) => {
 const keepSendRowsForTheWindow = {
   max: EMAIL_SEND_LIMIT.max,
   pathMatcher: () => false,
-  window: GLOBAL_WINDOW_MILLIS / 1000,
+  window: DAY_MILLIS / 1000,
 };
 
 export const emailSendLimit = (): BetterAuthPlugin => ({
@@ -192,6 +193,15 @@ export const limitSends =
     const sendKey = `magic-link-email:${inbox}`;
     // @effect-diagnostics-next-line globalDate:off -- better-auth's limiter rows are stamped with the same wall clock.
     const now = Date.now();
+    const day = utcDayOf(now);
+    const source = ctx.request ?? ctx.headers;
+
+    const client =
+      (source === undefined ? null : getIP(source, ctx.context.options)) ??
+      "unknown";
+
+    const clientKey = `magic-link-client:${day}:${client}`;
+    const globalKey = `magic-link-global:${day}`;
 
     const allowed =
       (await consume(adapter, attemptKey, EMAIL_SEND_LIMIT.attempts, now)) &&
@@ -206,12 +216,23 @@ export const limitSends =
     if (
       !(await consume(
         adapter,
-        GLOBAL_KEY,
-        dailySendLimit,
+        clientKey,
+        CLIENT_DAILY_SEND_LIMIT,
         now,
-        GLOBAL_WINDOW_MILLIS
+        DAY_MILLIS
       ))
     ) {
+      await refund(adapter, sendKey);
+      await refund(adapter, attemptKey);
+
+      throw new APIError("TOO_MANY_REQUESTS", {
+        message:
+          "Too many sign-in links were requested from this network today.",
+      });
+    }
+
+    if (!(await consume(adapter, globalKey, dailySendLimit, now, DAY_MILLIS))) {
+      await refund(adapter, clientKey);
       await refund(adapter, sendKey);
       await refund(adapter, attemptKey);
 
@@ -230,7 +251,8 @@ export const limitSends =
         Schema.is(CodedSendError)(error) &&
         REJECTED_SEND_CODES.has(error.cause.code)
       ) {
-        await refund(adapter, GLOBAL_KEY);
+        await refund(adapter, globalKey);
+        await refund(adapter, clientKey);
       }
 
       if (
