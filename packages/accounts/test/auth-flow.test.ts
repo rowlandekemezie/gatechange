@@ -23,6 +23,7 @@ import { DateTime, Effect, Layer, Option, Schema } from "effect";
 import { HttpServerResponse } from "effect/http";
 import { vi } from "vitest";
 
+import { CLIENT_DAILY_SEND_LIMIT } from "../src/email-send-limit.js";
 import {
   authOptions,
   EMAIL_SEND_LIMIT,
@@ -480,6 +481,8 @@ describe("magic link storage and lifetime", () => {
 
   it.effect("keeps the per-client limiter in the database", () =>
     Effect.gen(function* databaseLimiter() {
+      travelTo(T0);
+
       const { auth, database } = makeAuth();
 
       yield* requestLink(auth, "ada@example.com");
@@ -492,8 +495,9 @@ describe("magic link storage and lifetime", () => {
       expect(keys).toStrictEqual([
         "203.0.113.7|/sign-in/magic-link",
         "magic-link-attempt:ada@example.com",
+        "magic-link-client:2026-10-17:203.0.113.7",
         "magic-link-email:ada@example.com",
-        "magic-link-global",
+        "magic-link-global:2026-10-17",
       ]);
     })
   );
@@ -576,9 +580,9 @@ describe("per-email send limit", () => {
 
         const before = database
           .prepare('SELECT count, lastRequest FROM "rateLimit" WHERE key = ?')
-          .get("magic-link-global");
+          .get("magic-link-global:2026-10-17");
 
-        travelTo(T0 + 23 * 60 * MINUTE);
+        travelTo(T0 + 11 * 60 * MINUTE + 59 * MINUTE);
         expect(
           (yield* requestLink(auth, "late@example.com", "2001:db8:ff::1"))
             .status
@@ -586,14 +590,83 @@ describe("per-email send limit", () => {
         expect(
           database
             .prepare('SELECT count, lastRequest FROM "rateLimit" WHERE key = ?')
-            .get("magic-link-global")
+            .get("magic-link-global:2026-10-17")
         ).toEqual(before);
-        travelTo(T0 + 24 * 60 * MINUTE + 1);
+        travelTo(T0 + 12 * 60 * MINUTE);
         expect(
           (yield* requestLink(auth, "next@example.com", "2001:db8:fe::1"))
             .status
         ).toBe(200);
         expect(sent).toHaveLength(4);
+      })
+  );
+
+  it.effect(
+    "resets the global budget at UTC midnight, so a send 23 hours after the cap filled goes out",
+    () =>
+      Effect.gen(function* midnightReset() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          1
+        );
+
+        const first = yield* requestLink(
+          auth,
+          "first@example.com",
+          "2001:db8:1::1"
+        );
+
+        const refused = yield* requestLink(
+          auth,
+          "second@example.com",
+          "2001:db8:2::1"
+        );
+
+        travelTo(T0 + 23 * 60 * MINUTE);
+
+        const nextDay = yield* requestLink(
+          auth,
+          "third@example.com",
+          "2001:db8:3::1"
+        );
+
+        expect([first.status, refused.status, nextDay.status]).toStrictEqual([
+          200, 429, 200,
+        ]);
+        expect(sent).toHaveLength(2);
+      })
+  );
+
+  it.effect(
+    "never lets steady traffic carry the global count past one UTC day",
+    () =>
+      Effect.gen(function* steadyTraffic() {
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          3
+        );
+
+        const statuses: number[] = [];
+
+        for (const index of Array.from({ length: 21 }, (_, at) => at)) {
+          travelTo(T0 + index * 8 * 60 * MINUTE);
+          statuses.push(
+            (yield* requestLink(
+              auth,
+              `member${index}@example.com`,
+              `2001:db8:${index}::1`
+            )).status
+          );
+        }
+
+        expect(statuses).toStrictEqual(Array.from({ length: 21 }, () => 200));
+        expect(sent).toHaveLength(21);
       })
   );
 
@@ -679,75 +752,30 @@ describe("per-email send limit", () => {
   );
 
   it.effect(
-    "gives each +tag address outside Gmail its own budget, so tags cannot spend the base address's",
+    "counts every +tag spelling of an inbox together on any domain, so throwaway tags share one budget",
     () =>
-      Effect.gen(function* plusTagsElsewhere() {
+      Effect.gen(function* plusTagsEverywhere() {
         travelTo(T0);
 
         const { auth, sent } = makeAuth();
-        const tagged: number[] = [];
+        const statuses: number[] = [];
 
-        for (const index of [1, 2, 3]) {
-          tagged.push(
-            (yield* requestLink(
-              auth,
-              `victim+${index}@corp.com`,
-              `2001:db8:${index}::1`
-            )).status
+        for (const [index, email] of [
+          "victim+1@corp.com",
+          "victim+2@corp.com",
+          "Victim+news@Corp.com",
+          "victim@corp.com",
+        ].entries()) {
+          statuses.push(
+            (yield* requestLink(auth, email, `2001:db8:${index}::1`)).status
           );
         }
 
-        const real = yield* requestLink(
-          auth,
-          "victim@corp.com",
-          "2001:db8:9::1"
-        );
-
-        expect(tagged).toStrictEqual([200, 200, 200]);
-        expect(real.status).toBe(200);
-        expect(
-          sent.filter(({ email }) => email === "victim@corp.com")
-        ).toHaveLength(1);
-      })
-  );
-
-  it.effect(
-    "keeps a base address usable when the mailer rejects one of its +tag addresses",
-    () =>
-      Effect.gen(function* suppressedTag() {
-        travelTo(T0);
-
-        const { auth, sent } = makeAuth(
-          LOCAL_HOSTS,
-          migratedDatabase(),
-          ({ email }) => email !== "victim+x@corp.com"
-        );
-
-        const rejected: number[] = [];
-
-        for (const index of Array.from(
-          { length: EMAIL_SEND_LIMIT.attempts },
-          (_, at) => at
-        )) {
-          rejected.push(
-            yield* statusOf(
-              requestLink(auth, "victim+x@corp.com", `2001:db8:${index}::1`)
-            )
-          );
-        }
-
-        const real = yield* requestLink(
-          auth,
-          "victim@corp.com",
-          "2001:db8:9::1"
-        );
-
-        expect(rejected).toStrictEqual(
-          Array.from({ length: EMAIL_SEND_LIMIT.attempts }, () => 500)
-        );
-        expect(real.status).toBe(200);
+        expect(statuses).toStrictEqual([200, 200, 200, 429]);
         expect(sent.map(({ email }) => email)).toStrictEqual([
-          "victim@corp.com",
+          "victim+1@corp.com",
+          "victim+2@corp.com",
+          "Victim+news@Corp.com",
         ]);
       })
   );
@@ -1002,6 +1030,8 @@ describe("per-email send limit", () => {
     "counts a first request that loses the insert race for a new address against the row that won",
     () =>
       Effect.gen(function* firstInsertRace() {
+        travelTo(T0);
+
         const database = losingFirstCountRace();
         const { auth, sent } = makeAuth(LOCAL_HOSTS, database);
 
@@ -1020,8 +1050,13 @@ describe("per-email send limit", () => {
         expect(sent).toHaveLength(1);
         expect(counts).toStrictEqual([
           { count: 2, key: RACED_KEY, racer: 1 },
+          {
+            count: 1,
+            key: "magic-link-client:2026-10-17:2001:0db8:0001:0000:0000:0000:0000:0000",
+            racer: 0,
+          },
           { count: 1, key: "magic-link-email:victim@example.com", racer: 0 },
-          { count: 1, key: "magic-link-global", racer: 0 },
+          { count: 1, key: "magic-link-global:2026-10-17", racer: 0 },
         ]);
       })
   );
@@ -1039,6 +1074,107 @@ describe("per-email send limit", () => {
         expect(status).toBe(500);
         expect(sent).toHaveLength(0);
       })
+  );
+});
+
+const Group = Schema.Int.check(
+  Schema.isBetween({ maximum: 0xff_ff, minimum: 0 })
+);
+
+const hex = (group: number) => group.toString(16);
+
+describe("per-client daily send limit", () => {
+  it.effect.prop(
+    `sends at most ${CLIENT_DAILY_SEND_LIMIT} links a UTC day to one IPv6 /64, whatever its interface ids`,
+    {
+      network: Schema.Tuple([Group, Group]),
+      suffix: Schema.Tuple([Group, Group, Group, Group]),
+    },
+    ({ network: [high, low], suffix: [a, b, c, d] }) =>
+      Effect.gen(function* perNetwork() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth();
+        const prefix = `2001:db8:${hex(high)}:${hex(low)}`;
+        const neighbour = `2001:db8:${hex(high)}:${hex((low + 1) % 0x1_00_00)}::1`;
+        const statuses: number[] = [];
+
+        for (const index of Array.from(
+          { length: CLIENT_DAILY_SEND_LIMIT + 1 },
+          (_, at) => at
+        )) {
+          travelTo(T0 + index * 2 * MINUTE);
+          statuses.push(
+            (yield* requestLink(
+              auth,
+              `member${index}@example.com`,
+              `${prefix}:${hex((a + index) % 0x1_00_00)}:${hex(b)}:${hex(c)}:${hex(d)}`
+            )).status
+          );
+        }
+
+        const refusedAddress = yield* requestLink(
+          auth,
+          `member${CLIENT_DAILY_SEND_LIMIT}@example.com`,
+          neighbour
+        );
+
+        travelTo(T0 + 12 * 60 * MINUTE);
+
+        const nextDay = yield* requestLink(
+          auth,
+          "tomorrow@example.com",
+          `${prefix}::1`
+        );
+
+        expect(statuses).toStrictEqual([
+          ...Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () => 200),
+          429,
+        ]);
+        expect(refusedAddress.status).toBe(200);
+        expect(nextDay.status).toBe(200);
+        expect(sent).toHaveLength(CLIENT_DAILY_SEND_LIMIT + 2);
+      }),
+    { arbitrary: { runs: 8 }, timeout: 60_000 }
+  );
+
+  it.effect.prop(
+    "counts an IPv4 client on its own and never against another",
+    { last: Schema.Int.check(Schema.isBetween({ maximum: 254, minimum: 1 })) },
+    ({ last }) =>
+      Effect.gen(function* perAddress() {
+        travelTo(T0);
+
+        const { auth } = makeAuth();
+        const statuses: number[] = [];
+
+        for (const index of Array.from(
+          { length: CLIENT_DAILY_SEND_LIMIT + 1 },
+          (_, at) => at
+        )) {
+          travelTo(T0 + index * 2 * MINUTE);
+          statuses.push(
+            (yield* requestLink(
+              auth,
+              `member${index}@example.com`,
+              `198.51.100.${last}`
+            )).status
+          );
+        }
+
+        const other = yield* requestLink(
+          auth,
+          "other@example.com",
+          `198.51.100.${last === 254 ? 1 : last + 1}`
+        );
+
+        expect(statuses.at(-1)).toBe(429);
+        expect(statuses.filter((status) => status === 200)).toHaveLength(
+          CLIENT_DAILY_SEND_LIMIT
+        );
+        expect(other.status).toBe(200);
+      }),
+    { arbitrary: { runs: 4 }, timeout: 60_000 }
   );
 });
 
