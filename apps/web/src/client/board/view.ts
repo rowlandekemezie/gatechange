@@ -11,6 +11,7 @@ import {
 } from "../../features/account/view.js";
 import { agentTokensPanel } from "../../features/agent-tokens/view.js";
 import {
+  boardAfterword,
   boardMasthead,
   boardPage,
   boardTitle,
@@ -224,6 +225,9 @@ export const view = (model: ModelValue, h: H): Document =>
           Role: () => listingPage(model, h),
           Shortlist: () => shortlistPage(model, h),
         }),
+        ...(Schema.is(Route.Board)(model.route)
+          ? [boardAfterword(model, h)]
+          : []),
         footer(h),
       ]
     ),

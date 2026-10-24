@@ -1,37 +1,41 @@
 :root {
-  --paper: #eef1ec;
-  --paper-raised: #f7f9f6;
-  --ink: #14231c;
-  --ink-soft: #4d5e55;
-  --pine: #2f5d46;
-  --rule: #c9d3cc;
-  --glacier: #bfdde0;
-  --glacier-ink: #123c42;
-  --marigold: #e5b53a;
-  --marigold-ink: #3a2a00;
-  --focus: #1d6f7a;
+  --paper: #f4f3ef;
+  --paper-raised: #ffffff;
+  --ink: #111214;
+  --ink-soft: #4a4c52;
+  --pine: #0b6b57;
+  --rule: #d4d3cc;
+  --field: #7a7b76;
+  --glacier: #ffd23f;
+  --glacier-ink: #111214;
+  --marigold: #ffd23f;
+  --marigold-ink: #111214;
+  --label: #8a5a00;
+  --focus: #8a5a00;
   --new-ink: #0b6b57;
   --boarding-ink: #8a5a00;
-  --display:
-    "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", sans-serif;
-  --text: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
-  --measure: 46rem;
+  --display: Archivo, "Segoe UI", system-ui, sans-serif;
+  --text: Archivo, "Segoe UI", system-ui, sans-serif;
+  --mono: "Chivo Mono", ui-monospace, monospace;
+  --measure: 62rem;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #101a15;
-    --paper-raised: #16231c;
-    --ink: #e4ece6;
-    --ink-soft: #9fb1a6;
-    --pine: #8ec3a4;
-    --rule: #2a3a31;
-    --glacier: #1f4b51;
-    --glacier-ink: #d8f1f3;
-    --marigold: #e5b53a;
-    --marigold-ink: #2b1f00;
-    --focus: #8fd3dc;
+    --paper: #111214;
+    --paper-raised: #1a1b1e;
+    --ink: #f2f2ee;
+    --ink-soft: #b4b5af;
+    --pine: #7fe0c2;
+    --rule: #2a2c30;
+    --field: #6b6d72;
+    --glacier: #ffd23f;
+    --glacier-ink: #111214;
+    --marigold: #ffd23f;
+    --marigold-ink: #111214;
+    --label: #ffd23f;
+    --focus: #ffd23f;
     --new-ink: #7fe0c2;
     --boarding-ink: #ffd23f;
     color-scheme: dark;
@@ -86,14 +90,47 @@ a {
   margin-bottom: 2.25rem;
 }
 
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 54rem;
+  padding: clamp(0rem, 4vw, 2.5rem) 0 clamp(2rem, 5vw, 3.5rem);
+}
+
+.kicker {
+  margin: 0;
+  color: var(--label);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hero-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(2.5rem, 7vw, 5.25rem);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.hero-lede {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--ink-soft);
+  font-size: clamp(1.125rem, 2.2vw, 1.25rem);
+  line-height: 1.5;
+}
+
 .sentence {
   margin: 0 0 1.75rem;
   font-family: var(--display);
   font-size: clamp(1.3rem, 3.4vw, 1.95rem);
-  font-weight: 560;
-  font-variation-settings:
-    "wdth" 88,
-    "opsz" 72;
+  font-weight: 600;
   line-height: 1.45;
   letter-spacing: -0.012em;
   text-wrap: pretty;
@@ -128,6 +165,7 @@ a {
   background: var(--glacier);
   color: var(--glacier-ink);
   border-bottom: 0.08em solid transparent;
+  font-weight: 800;
 }
 
 .phrase-on:hover {
@@ -153,8 +191,9 @@ a {
 .search input {
   flex: 1;
   min-width: 0;
+  min-height: 2.75rem;
   padding: 0.6rem 0.8rem;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--field);
   border-radius: 0.5rem;
   background: var(--paper-raised);
   color: var(--ink);
@@ -165,19 +204,28 @@ a {
 .more,
 .tab,
 .mark {
-  border: 1px solid var(--ink);
-  border-radius: 999px;
+  min-height: 2.75rem;
+  border: 1px solid var(--field);
+  border-radius: 0.5rem;
   background: transparent;
   color: var(--ink);
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .search-button {
-  padding: 0.6rem 1.1rem;
-  background: var(--ink);
-  color: var(--paper);
-  font-weight: 700;
+  padding: 0.6rem 1.25rem;
+  border-color: var(--marigold);
+  background: var(--marigold);
+  color: var(--marigold-ink);
+  font-weight: 800;
+}
+
+.search-button:hover,
+.more:hover,
+.mark:hover {
+  border-color: var(--ink);
 }
 
 .status {
@@ -195,16 +243,22 @@ a {
 }
 
 .tab {
-  padding: 0.4rem 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1rem;
   border-color: transparent;
   color: var(--ink-soft);
   text-decoration: none;
 }
 
+.tab:hover {
+  color: var(--ink);
+}
+
 .tab-on {
   border-color: var(--ink);
   color: var(--ink);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .count {
@@ -406,12 +460,76 @@ a {
 }
 
 .apply {
-  padding: 0.55rem 1.2rem;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  border-radius: 0.5rem;
+  background: var(--marigold);
+  color: var(--marigold-ink);
+  font-weight: 800;
   text-decoration: none;
+}
+
+.afterword {
+  display: grid;
+  gap: clamp(3rem, 8vw, 5.5rem);
+  margin-top: clamp(4rem, 10vw, 6.5rem);
+}
+
+.afterword h2 {
+  margin: 0 0 0.75rem;
+  font-family: var(--display);
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.afterword p {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1.125rem;
+}
+
+.agents {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: center;
+  gap: 1.5rem 2.5rem;
+}
+
+.agents-command {
+  min-width: 0;
+  margin: 0;
+  padding: 1.25rem;
+  overflow-x: auto;
+  border: 1px solid #2a2c30;
+  border-radius: 12px;
+  background: #050506;
+  color: #f2f2ee;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  margin-top: 1.25rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--field);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.repo-link:hover {
+  border-color: var(--ink);
 }
 
 .footer {
@@ -847,7 +965,7 @@ a {
 }
 
 .tier-pro {
-  border-color: var(--pine);
+  border-color: var(--marigold);
 }
 
 .tier-lede,
@@ -902,12 +1020,13 @@ a {
 
 .plan-button {
   display: inline-block;
+  min-height: 2.75rem;
   margin-top: 0.5rem;
-  padding: 0.55rem 1rem;
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
+  padding: 0.55rem 1.25rem;
+  border: 1px solid var(--marigold);
+  border-radius: 0.5rem;
+  background: var(--marigold);
+  color: var(--marigold-ink);
   font: inherit;
   font-weight: 700;
   text-decoration: none;

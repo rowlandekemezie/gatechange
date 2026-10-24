@@ -8,6 +8,8 @@ export const SITE_ZONE = "rowlandekemezie.com";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
 
+export const SOURCE_REPOSITORY_URL = "https://github.com/rowlandekemezie/jobs";
+
 export const SITE_WORKERS_SUBDOMAIN = "rowland-ekemezie";
 
 const OWN_DOMAINS = [
