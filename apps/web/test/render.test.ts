@@ -60,6 +60,7 @@ const jobFrom = (
   role: "Director",
   salary: "$200k",
   source,
+  status: "on_time",
   title: "Director of Engineering",
   url: `https://boards.example/${id}`,
   ...overrides,

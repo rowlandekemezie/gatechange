@@ -211,7 +211,7 @@ describe("tracker", () => {
 
           expect(listed?.listed).toBe(true);
 
-          yield* store.pruneOlderThan(1);
+          yield* store.prune({ departedBefore: 1, unseenBefore: 1 });
 
           const [pruned] = yield* trackedJobs.handler({});
 

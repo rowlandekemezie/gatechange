@@ -148,12 +148,14 @@ const fixture = Effect.gen(function* fixture() {
             daysOpen: 0,
             enrichment: null,
             reposts: 0,
+            status: "on_time" as const,
           }));
 
           return Effect.succeed({ jobs, total: jobs.length });
         },
+        markListed: unserved("markListed"),
         neuronsClaimed: unserved("neuronsClaimed"),
-        pruneOlderThan: unserved("pruneOlderThan"),
+        prune: unserved("prune"),
         recordFeedFailure: unserved("recordFeedFailure"),
         recordNeuronsUsed: unserved("recordNeuronsUsed"),
         recordRun: unserved("recordRun"),

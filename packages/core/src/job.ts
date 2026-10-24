@@ -189,10 +189,20 @@ export type JobQueryValue = typeof JobQuery.Type;
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+export const ListingStatus = Schema.Literals([
+  "new",
+  "boarding",
+  "on_time",
+  "departed",
+]);
+
+export type ListingStatusValue = typeof ListingStatus.Type;
+
 export const ListedJob = Schema.Struct({
   ...JobDetail.fields,
   daysOpen: Count,
   reposts: Count,
+  status: ListingStatus,
 });
 
 export type ListedJobValue = typeof ListedJob.Type;

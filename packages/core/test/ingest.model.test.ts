@@ -16,6 +16,7 @@ import { TestClock } from "effect/testing";
 
 import {
   DAY_MILLIS,
+  DEPARTED_RETENTION_MILLIS,
   FeedUnavailable,
   fingerprintOf,
   JobStore,
@@ -24,8 +25,14 @@ import {
   REPOST_GAP,
   runIngest,
   SourceName,
+  UNSEEN_RETENTION_MILLIS,
 } from "../src/index.js";
-import type { FeedRef, JobQueryValue, PostingValue } from "../src/index.js";
+import type {
+  FeedRef,
+  JobQueryValue,
+  ListingStatusValue,
+  PostingValue,
+} from "../src/index.js";
 import { makeMemoryJobStore } from "./memory-job-store.js";
 import type { MemoryJobStore } from "./memory-job-store.js";
 
@@ -124,7 +131,8 @@ const postingFor = (id: string): PostingValue => ({
 const ingestResponses = (
   memory: MemoryJobStore,
   responses: typeof Run.Type,
-  catalog: readonly FeedRef[] = catalogIn(feedKeys)
+  catalog: readonly FeedRef[] = catalogIn(feedKeys),
+  postingOf: (id: string) => PostingValue = postingFor
 ) => {
   const feeds = PostingFeeds.of({
     catalog,
@@ -141,7 +149,7 @@ const ingestResponses = (
           ),
         onSome: (found) =>
           Predicate.isTagged(found, "Listed")
-            ? Effect.succeed(pipe(found.ids, Array.map(postingFor)))
+            ? Effect.succeed(pipe(found.ids, Array.map(postingOf)))
             : Effect.fail(
                 new FeedUnavailable({ feed: feed.key, message: "down" })
               ),
@@ -268,9 +276,139 @@ const replayHistory = (schedule: readonly ScheduledRun[]) =>
 
 const WEEKLY_LISTINGS_TIMEOUT_MILLIS = 30_000;
 
+const hours = (maximum: number) =>
+  Schema.Int.check(Schema.isBetween({ maximum, minimum: 1 }));
+
+const lifecycleRuns = Arbitrary.array(
+  Arbitrary.schema(Schema.Tuple([Run, hours(24 * 12)])),
+  { maxLength: 14, minLength: 1 }
+);
+
+const datedPostingFor = (id: string): PostingValue => ({
+  ...postingFor(id),
+  postedAt: id === "e" || id === "f" ? 0 : null,
+});
+
+interface ModelRow {
+  readonly departedAt: number | null;
+  readonly firstSeenAt: number;
+  readonly lastSeenAt: number;
+  readonly postedAt: number;
+}
+
+const expectedStatus = (row: ModelRow, now: number): ListingStatusValue => {
+  if (row.departedAt !== null) {
+    return "departed";
+  }
+
+  if (now - row.firstSeenAt < DAY_MILLIS) {
+    return "new";
+  }
+
+  return now - row.postedAt < 7 * DAY_MILLIS ? "boarding" : "on_time";
+};
+
+const replayLifecycle = (
+  schedule: readonly (readonly [typeof Run.Type, number])[]
+) =>
+  Effect.gen(function* replayLifecycleSchedule() {
+    const memory = yield* makeMemoryJobStore;
+    const model = new Map<string, ModelRow>();
+
+    for (const [responses, gapHours] of schedule) {
+      yield* TestClock.adjust(`${gapHours} hours`);
+
+      const now = yield* Clock.currentTimeMillis;
+
+      yield* ingestResponses(
+        memory,
+        responses,
+        catalogIn(feedKeys),
+        datedPostingFor
+      );
+
+      for (const [index, key] of feedKeys.entries()) {
+        const response = responses[index];
+
+        if (response === undefined || !Predicate.isTagged(response, "Listed")) {
+          continue;
+        }
+
+        for (const external of uniqueIds(response.ids)) {
+          const id = `${key}:${external}`;
+          const postedAt = datedPostingFor(external).postedAt ?? now;
+          const row = model.get(id);
+
+          if (row !== undefined) {
+            model.set(id, {
+              ...row,
+              departedAt: null,
+              lastSeenAt: now,
+              postedAt: Math.min(row.postedAt, postedAt),
+            });
+          } else if (postedAt >= now - MAX_AGE_DAYS * DAY_MILLIS) {
+            model.set(id, {
+              departedAt: null,
+              firstSeenAt: now,
+              lastSeenAt: now,
+              postedAt,
+            });
+          }
+        }
+
+        for (const [id, row] of model) {
+          if (
+            id.startsWith(`${key}:`) &&
+            row.lastSeenAt < now &&
+            row.departedAt === null
+          ) {
+            model.set(id, { ...row, departedAt: now });
+          }
+        }
+      }
+
+      for (const [id, row] of model) {
+        if (
+          (row.departedAt ?? Number.POSITIVE_INFINITY) <
+            now - DEPARTED_RETENTION_MILLIS ||
+          row.lastSeenAt < now - UNSEEN_RETENTION_MILLIS
+        ) {
+          model.delete(id);
+        }
+      }
+
+      const page = yield* Effect.gen(function* readBoard() {
+        const store = yield* JobStore;
+
+        return yield* store.list(listAll, now, SourceName.literals);
+      }).pipe(Effect.provide(memory.layer));
+
+      expect(
+        pipe(
+          memory.jobs(),
+          Array.map((job) => job.id)
+        ).toSorted()
+      ).toStrictEqual([...model.keys()].toSorted());
+      expect(
+        pipe(
+          page.jobs,
+          Array.map((job) => [job.id, job.status] as const)
+        ).toSorted(([left], [right]) => left.localeCompare(right))
+      ).toStrictEqual(
+        pipe(
+          [...model],
+          Array.filter(
+            ([, row]) => row.postedAt >= now - listAll.maxAgeDays * DAY_MILLIS
+          ),
+          Array.map(([id, row]) => [id, expectedStatus(row, now)] as const)
+        ).toSorted(([left], [right]) => left.localeCompare(right))
+      );
+    }
+  });
+
 describe("ingest", () => {
   it.effect.prop(
-    "each feed holds exactly its last successful listing, and a feed that goes down keeps what it had",
+    "each feed's live rows are exactly its last successful listing, and a feed that goes down keeps what it had",
     { schedule: runs },
     ({ schedule }) =>
       Effect.gen(function* replayRuns() {
@@ -294,7 +432,9 @@ describe("ingest", () => {
           for (const key of feedKeys) {
             const stored = pipe(
               memory.jobs(),
-              Array.filter((job) => job.feed === key)
+              Array.filter(
+                (job) => job.feed === key && !memory.departed().has(job.id)
+              )
             );
 
             expect(
@@ -312,6 +452,12 @@ describe("ingest", () => {
 
         expect(memory.runs().length).toBe(schedule.length);
       })
+  );
+
+  it.effect.prop(
+    "a role its feed stops listing departs, stays one day, then goes; a failed fetch changes nothing; a listed role outlives the 30-day posting window; and each listing reports its status",
+    { schedule: lifecycleRuns },
+    ({ schedule }) => replayLifecycle(schedule)
   );
 
   it.effect.prop(

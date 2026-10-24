@@ -17,7 +17,7 @@ import {
   jobStoreMigrationDirectory,
   SqlExecutor,
 } from "@rat-stack/job-store";
-import { Array, DateTime, Effect, Layer, Option, Schema } from "effect";
+import { Array, DateTime, Effect, Layer, Option, pipe, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 
@@ -188,21 +188,26 @@ describe("Greenhouse dates through adapter, ingest and SQL history", () => {
   );
 
   it.effect(
-    "an old actual publication still expires despite a fresh edit date",
+    "a role published over 30 days ago stays while its board lists it, without fresh upserts or sightings",
     () =>
       withStore(
         Effect.gen(function* truePublication() {
           const published = iso(NOW - 31 * DAY_MILLIS);
           yield* ingestAt(-8, published, NOW - 31 * DAY_MILLIS);
-          const expired = yield* ingestAt(0, published, NOW);
+          const aged = yield* ingestAt(0, published, NOW);
           const edited = yield* ingestAt(8, published, NOW + 8 * DAY_MILLIS);
           const store = yield* JobStore;
 
-          expect(expired.receipt.jobsUpserted).toBe(0);
+          expect(aged.receipt.jobsUpserted).toBe(0);
           expect(edited.receipt.jobsUpserted).toBe(0);
-          expect(yield* store.find("greenhouse:acme:42")).toStrictEqual(
-            Option.none()
-          );
+          const kept = yield* store.find("greenhouse:acme:42");
+
+          expect(
+            pipe(
+              kept,
+              Option.map((job) => job.lastSeenAt)
+            )
+          ).toStrictEqual(Option.some(NOW + 8 * DAY_MILLIS));
           expect(yield* store.historyOf(identity)).toStrictEqual(
             Option.some({
               firstSeenAt: NOW - 8 * DAY_MILLIS,

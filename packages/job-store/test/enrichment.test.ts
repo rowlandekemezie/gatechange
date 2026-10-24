@@ -6,6 +6,7 @@ import {
   DAY_MILLIS,
   finalSkips,
   JobStore,
+  retentionAt,
   SalaryBand,
   SalaryFloor,
   SourceName,
@@ -471,7 +472,7 @@ describe("enrichment storage", () => {
             [job("kept", { lastSeenAt: NOW + 1 })],
             NOW + 1
           );
-          yield* store.pruneOlderThan(NOW - DAY_MILLIS);
+          yield* store.prune(retentionAt(NOW + 2 * DAY_MILLIS));
 
           const rows = yield* sql.all(
             "skips",
@@ -551,10 +552,10 @@ describe("enrichment storage", () => {
             NOW + 1
           );
 
-          const pruned = yield* store.pruneOlderThan(cutoff);
+          const pruned = yield* store.prune(retentionAt(NOW + 2 * DAY_MILLIS));
 
           expect(pruned).toBe(1);
-          expect(yield* enrichedIds).toStrictEqual(["kept"]);
+          expect(yield* enrichedIds).toStrictEqual(["kept", "old"]);
         })
       )
   );
@@ -834,7 +835,7 @@ describe("claimNeurons", () => {
 
         yield* store.claimNeurons({ budget: 10, day: today - 40, neurons: 1 });
         yield* store.claimNeurons({ budget: 10, day: today, neurons: 1 });
-        yield* store.pruneOlderThan(NOW - 30 * DAY_MILLIS);
+        yield* store.prune(retentionAt(NOW));
 
         const days = yield* sql.all(
           "neuronDays",

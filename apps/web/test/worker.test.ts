@@ -40,6 +40,7 @@ const director: ListedJobValue = {
   role: "Director",
   salary: null,
   source: "Greenhouse",
+  status: "on_time",
   title: "Director of Engineering",
   url: "https://boards.example/acme/1",
 };

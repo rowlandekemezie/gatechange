@@ -18,6 +18,7 @@ import {
   BillingStore,
   CurrentViewer,
   DEFAULT_ENRICHMENT_SWEEP_LIMIT,
+  DEPARTED_RETENTION_MILLIS,
   detailsOfAnswer,
   EnricherUnavailable,
   EnrichmentOutcome,
@@ -2344,6 +2345,8 @@ const postingFor =
 
 const RUN_GAP_HOURS = 2;
 
+const HOUR_MILLIS = 3_600_000;
+
 const WINDOW_HOURS = 3;
 
 interface SweepOptions {
@@ -2431,16 +2434,23 @@ describe("enqueueUnenriched", () => {
         const queued = yield* ingestAndSweep(runs, { limit });
 
         const firstSeen = new Map<string, number>();
+        const lastListed = new Map<string, number>();
 
         const expected = pipe(
           runs,
           Array.map((current, index) => {
-            const previous = new Set(runs[index - 1]?.board);
-
             for (const id of Array.dedupe(current.board)) {
-              if (!previous.has(id)) {
+              const last = lastListed.get(id);
+
+              if (
+                last === undefined ||
+                (index - last - 2) * RUN_GAP_HOURS * HOUR_MILLIS >
+                  DEPARTED_RETENTION_MILLIS
+              ) {
                 firstSeen.set(id, index);
               }
+
+              lastListed.set(id, index);
             }
 
             return pipe(

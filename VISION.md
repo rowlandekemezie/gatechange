@@ -13,7 +13,7 @@ The customer is the engineering leader running their own job search. They manage
 What this person needs from the board:
 
 - Only leadership titles, filtered by role and by where they can work.
-- The freshest roles first. The board keeps 30 days of listings and ranks by relevance minus age.
+- The freshest roles first. The board admits roles posted in the last 30 days, keeps each while its source lists it, and ranks by relevance minus age.
 - One link to the real posting, preferring the company's own board over an aggregator copy.
 - A place to keep a shortlist and track applications.
 

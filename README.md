@@ -1,6 +1,6 @@
 # Engineering leadership jobs
 
-A job board for engineering managers, directors, heads of engineering and VPs of engineering. It collects roles from public company job boards and remote-job aggregators, keeps the last 30 days, and opens on the freshest, most relevant roles that are remote in Canada, remote in the US, or in Vancouver and BC.
+A job board for engineering managers, directors, heads of engineering and VPs of engineering. It collects roles from public company job boards and remote-job aggregators, admits roles posted in the last 30 days, keeps each one while its source still lists it, and opens on the freshest, most relevant roles that are remote in Canada, remote in the US, or in Vancouver and BC.
 
 Live at `jobs.rowlandekemezie.com` once deployed. Built on [rat-stack](https://ratstack.sh): Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.
 
@@ -10,8 +10,8 @@ Live at `jobs.rowlandekemezie.com` once deployed. Built on [rat-stack](https://r
 cron (every 20 min) ─▶ JobsBackend.runIngest
                          ├─ picks the feeds that are due (oldest first, backoff on failure)
                          ├─ fetches each feed and keeps only leadership titles
-                         ├─ upserts what a feed listed, deletes what it stopped listing
-                         └─ prunes roles older than 30 days and records a run receipt
+                         ├─ upserts what a feed listed, marks what it stopped listing departed
+                         └─ prunes roles departed over a day or unseen for 30 days and records a run receipt
 
 browser ─▶ Website ─▶ /rpc ─▶ JobsBackend.listJobs / boardStats ─▶ D1
 ```
