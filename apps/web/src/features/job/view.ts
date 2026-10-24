@@ -160,7 +160,9 @@ const missingView = (
       h.h1([h.Class("detail-title")], ["This role is no longer on the board"]),
       h.p(
         [],
-        ["Its source took the posting down, or it is older than 30 days."]
+        [
+          "Its company took the posting down, or the board has not seen it for 30 days.",
+        ]
       ),
       ...Option.match(entryOf(model, id), {
         onNone: () => [],

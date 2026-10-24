@@ -21,7 +21,7 @@ const pages = {
         heading: "Coverage and freshness",
         paragraphs: [
           "The board reads public company boards and job feeds. It classifies titles and locations, removes duplicate company/title matches, and prefers the company board when the same role appears in multiple sources.",
-          "Fetches follow each source's schedule and back off after failures. A successful fetch replaces that feed's listings. Roles older than 30 days are removed during ingestion. The board's refresh status describes ingestion, not a guarantee that an employer is still accepting applications.",
+          "Fetches follow each source's schedule and back off after failures. When a successful fetch no longer lists a role, the role leaves the board. Listings unseen for 30 days are removed. The board's refresh status describes ingestion, not a guarantee that an employer is still accepting applications.",
           "Location and salary information may be incomplete or classified incorrectly. Check work eligibility, compensation and availability on the original posting before applying. Report a mismatch with the job link and the source evidence.",
         ],
       },
