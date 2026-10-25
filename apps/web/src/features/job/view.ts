@@ -78,7 +78,7 @@ const enrichmentView = (
     h.section(
       [h.Class("detail-extracted")],
       [
-        h.h2([h.Class("detail-subhead")], ["From the posting"]),
+        h.h2([h.Class("detail-subhead")], ["About the role"]),
         h.dl([h.Class("detail-facts")], facts),
         h.p(
           [h.Class("detail-note")],
