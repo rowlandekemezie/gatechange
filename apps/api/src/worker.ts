@@ -185,7 +185,7 @@ const socialCredentials = (prefix: string) =>
 export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
   "JobsBackend",
   Effect.gen(function* backendProps() {
-    const stage = yield* Stage;
+    const stage = yield* currentStage;
 
     return {
       main: import.meta.url,

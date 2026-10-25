@@ -20,6 +20,7 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
 
     const routing = pullRequest
       ? {
+          compatibility: { flags: ["global_fetch_strictly_public"] },
           preview: {
             name: stage,
             of: yield* Cloudflare.Worker.ref("Website", { stage: "preview" }),
