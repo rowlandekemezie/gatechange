@@ -194,7 +194,7 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
         ? {
             preview: {
               name: stage,
-              of: yield* Cloudflare.Worker.ref("JobsBackend", {
+              of: yield* Cloudflare.Worker.ref("PullRequestBackend", {
                 stage: "preview",
               }),
             },

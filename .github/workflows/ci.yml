@@ -5,6 +5,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      preview_plan_only:
+        description: Plan the selected branch against persistent preview without deploying
+        type: boolean
+        default: false
+      preview_parent_only:
+        description: Limit the preview plan/deploy to the shared PR backend parent
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -133,7 +142,7 @@ jobs:
   preview:
     name: Deploy persistent preview
     needs: check
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: preview
@@ -144,6 +153,7 @@ jobs:
     env:
       ALCHEMY_HOME: /tmp/alchemy-preview-${{ github.run_id }}-${{ github.run_attempt }}
       ALCHEMY_PROFILE: preview
+      PREVIEW_PARENT_ONLY: ${{ inputs.preview_parent_only }}
     steps:
       - uses: actions/checkout@v4
 
@@ -193,7 +203,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Plan and deploy preview
+      - name: Plan persistent preview
         working-directory: apps/infra
         env:
           CI: "false"
@@ -202,10 +212,26 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
         run: |
           unset STRIPE_API_KEY STRIPE_API_BASE_URL
-          pnpm exec alchemy plan --stage preview --profile preview --no-input
-          pnpm exec alchemy deploy --stage preview --profile preview --yes --no-input
+          selection=()
+          if [ "$PREVIEW_PARENT_ONLY" = true ]; then selection=(--include PullRequestBackend); fi
+          pnpm exec alchemy plan --stage preview --profile preview --no-input "${selection[@]}"
+
+      - name: Deploy persistent preview
+        if: ${{ !inputs.preview_plan_only }}
+        working-directory: apps/infra
+        env:
+          CI: "false"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+        run: |
+          unset STRIPE_API_KEY STRIPE_API_BASE_URL
+          selection=()
+          if [ "$PREVIEW_PARENT_ONLY" = true ]; then selection=(--include PullRequestBackend); fi
+          pnpm exec alchemy deploy --stage preview --profile preview --yes --no-input "${selection[@]}"
 
       - name: Smoke test preview
+        if: ${{ !inputs.preview_plan_only }}
         run: |
           for path in / /api/auth/ok; do
             healthy=false
