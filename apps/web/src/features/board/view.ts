@@ -3,6 +3,7 @@ import {
   offSiteHref,
   roleLevels,
   seniorities,
+  SOURCE_REPOSITORY_URL,
 } from "@rat-stack/core/contracts";
 import type {
   JobDetailValue,
@@ -45,6 +46,7 @@ import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
 import { jobRouter, pricingRouter } from "../../client/route.js";
+import { addServerCommandOf } from "../agent-tokens/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
 
 const NEW_WINDOW = 86_400_000;
@@ -129,7 +131,7 @@ const sentenceView = (
     )
   );
 
-  return h.h1(
+  return h.p(
     [h.Class("sentence")],
     [
       "Show me ",
@@ -355,6 +357,22 @@ export const boardMasthead = (
   h.header(
     [h.Class("masthead")],
     [
+      h.div(
+        [h.Class("hero")],
+        [
+          h.p(
+            [h.Class("kicker")],
+            ["Remote · US & Canada · Checked every 20 min"]
+          ),
+          h.h1([h.Class("hero-title")], ["Your next move is on the board."]),
+          h.p(
+            [h.Class("hero-lede")],
+            [
+              "Director, VP and Head of Engineering roles, straight from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
+            ]
+          ),
+        ]
+      ),
       sentenceView(model, h),
       searchView(model, h),
       proFilterView(model, h),
@@ -367,6 +385,53 @@ export const boardMasthead = (
         viewInputs: { filters: model.filters, session: model.account.session },
       }),
       statusLine(model, h),
+    ]
+  );
+
+export const boardAfterword = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>
+): Html =>
+  h.div(
+    [h.Class("afterword")],
+    [
+      h.section(
+        [h.Class("agents"), h.AriaLabelledBy("agents-title")],
+        [
+          h.div(
+            [h.Class("agents-copy")],
+            [
+              h.h2([h.Id("agents-title")], ["For agents"]),
+              h.p(
+                [],
+                [
+                  "Let your agent watch the board. Connect over MCP and ask Claude Code, Cursor or any MCP client which roles fit you. No key needed to start; Pro agent tokens get higher limits.",
+                ]
+              ),
+            ]
+          ),
+          h.pre(
+            [h.Class("agents-command"), h.Tabindex(0)],
+            [h.code([], [addServerCommandOf(model.origin)])]
+          ),
+        ]
+      ),
+      h.section(
+        [h.Class("open-source"), h.AriaLabelledBy("open-source-title")],
+        [
+          h.h2([h.Id("open-source-title")], ["Open source"]),
+          h.p(
+            [],
+            [
+              "The board, the crawler and the agent tools are MIT licensed. Read the code, file an issue or send a fix.",
+            ]
+          ),
+          h.a(
+            [h.Class("repo-link"), h.Href(SOURCE_REPOSITORY_URL)],
+            ["View the code on GitHub"]
+          ),
+        ]
+      ),
     ]
   );
 

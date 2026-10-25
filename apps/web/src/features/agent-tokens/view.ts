@@ -36,8 +36,11 @@ const LABEL_ID = "agent-token-label";
 
 export const mcpUrlOf = (origin: string) => `${origin}${MCP_PATH}`;
 
+export const addServerCommandOf = (origin: string) =>
+  `claude mcp add --transport http jobs ${mcpUrlOf(origin)}`;
+
 export const connectCommandOf = (origin: string, secret: string) =>
-  `claude mcp add --transport http jobs ${mcpUrlOf(origin)} --header "Authorization: Bearer ${secret}"`;
+  `${addServerCommandOf(origin)} --header "Authorization: Bearer ${secret}"`;
 
 const problemText: Record<Exclude<IssueProblemValue, "ProRequired">, string> = {
   AtLimit: `You can hold ${MAX_AGENT_TOKENS} tokens. Revoke one to create another.`,

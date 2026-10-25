@@ -854,3 +854,20 @@ describe("sitemap", () => {
     );
   });
 });
+
+describe("home page render", () => {
+  it.effect(
+    "leads with one headline and ends with agent and source links",
+    () =>
+      Effect.map(render("/", Preload.Nothing()), ({ html }) => {
+        expect(html.match(/<h1[\s>]/gu)).toHaveLength(1);
+        expect(html).toMatch(/<h1[^>]*>Your next move is on the board.<\/h1>/u);
+        expect(html).toContain(
+          `claude mcp add --transport http jobs ${ORIGIN}/mcp`
+        );
+        expect(html).toContain(
+          'href="https://github.com/rowlandekemezie/jobs"'
+        );
+      })
+  );
+});
