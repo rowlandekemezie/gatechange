@@ -12,6 +12,7 @@ import {
   sourceOfFeedKey,
 } from "@rat-stack/core";
 import type {
+  BoardFactsRow,
   EnrichmentSkip,
   EnrichmentValue,
   IngestReceiptValue,
@@ -74,7 +75,10 @@ const enrichmentColumnNames = [
   "remote_policy",
   "model",
   "enriched_at",
+  "board",
 ] as const;
+
+export const BOARD_MODEL_PREFIX = "source:";
 
 const enrichmentColumns = enrichmentColumnNames.join(", ");
 
@@ -291,7 +295,7 @@ export const unenrichedListingsStatement = (
     `SELECT jobs.id FROM jobs
 LEFT JOIN job_enrichment_skip AS skip ON skip.job_id = jobs.id
 WHERE jobs.first_seen_at >= ? AND jobs.departed_at IS NULL AND jobs.source IN (${placeholders(sweep.sources.length)})
-  AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id)
+  AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id AND job_enrichment.model NOT LIKE '${BOARD_MODEL_PREFIX}%')
   AND (skip.reason IS NULL OR skip.reason NOT IN (${placeholders(sweep.finalSkips.length)}))
 ORDER BY skip.reason IS NOT NULL, jobs.first_seen_at DESC, jobs.id
 LIMIT ?`,
@@ -314,6 +318,9 @@ ON CONFLICT (job_id) DO UPDATE SET
 export const clearSkipStatement = (id: string) =>
   statement("DELETE FROM job_enrichment_skip WHERE job_id = ?", [id]);
 
+const keepBoardFact = (column: string, presence: string) =>
+  `${column} = CASE WHEN job_enrichment.board IS NOT NULL AND job_enrichment.${presence} IS NOT NULL THEN job_enrichment.${column} ELSE excluded.${column} END`;
+
 export const saveEnrichmentStatement = (
   id: string,
   enrichment: EnrichmentValue
@@ -322,15 +329,16 @@ export const saveEnrichmentStatement = (
     `INSERT INTO job_enrichment (job_id, ${enrichmentColumns})
 VALUES (${placeholders(enrichmentColumnNames.length + 1)})
 ON CONFLICT (job_id) DO UPDATE SET
-  salary_currency = excluded.salary_currency,
-  salary_min = excluded.salary_min,
-  salary_max = excluded.salary_max,
-  seniority = excluded.seniority,
+  ${keepBoardFact("salary_currency", "salary_currency")},
+  ${keepBoardFact("salary_min", "salary_currency")},
+  ${keepBoardFact("salary_max", "salary_currency")},
+  ${keepBoardFact("seniority", "seniority")},
   team_size = excluded.team_size,
   reports_to = excluded.reports_to,
-  remote_policy = excluded.remote_policy,
+  ${keepBoardFact("remote_policy", "remote_policy")},
   model = excluded.model,
-  enriched_at = excluded.enriched_at`,
+  enriched_at = excluded.enriched_at,
+  board = COALESCE(job_enrichment.board, excluded.board)`,
     [
       id,
       enrichment.salary?.currency ?? null,
@@ -340,8 +348,39 @@ ON CONFLICT (job_id) DO UPDATE SET
       enrichment.teamSize,
       enrichment.reportsTo,
       enrichment.remotePolicy,
-      enrichment.model,
+      enrichment.model ?? `${BOARD_MODEL_PREFIX}${enrichment.board}`,
       enrichment.enrichedAt,
+      enrichment.board,
+    ]
+  );
+
+const takeBoardFact = (column: string, presence: string) =>
+  `${column} = CASE WHEN excluded.${presence} IS NULL THEN job_enrichment.${column} ELSE excluded.${column} END`;
+
+export const saveBoardFactsStatement = (
+  { board, facts, id }: BoardFactsRow,
+  seenAt: number
+): SqlStatement =>
+  statement(
+    `INSERT INTO job_enrichment (job_id, ${enrichmentColumns})
+VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
+ON CONFLICT (job_id) DO UPDATE SET
+  ${takeBoardFact("salary_currency", "salary_currency")},
+  ${takeBoardFact("salary_min", "salary_currency")},
+  ${takeBoardFact("salary_max", "salary_currency")},
+  ${takeBoardFact("seniority", "seniority")},
+  ${takeBoardFact("remote_policy", "remote_policy")},
+  board = excluded.board`,
+    [
+      id,
+      facts.salary?.currency ?? null,
+      facts.salary?.min ?? null,
+      facts.salary?.max ?? null,
+      facts.seniority,
+      facts.remotePolicy,
+      `${BOARD_MODEL_PREFIX}${board}`,
+      seenAt,
+      board,
     ]
   );
 

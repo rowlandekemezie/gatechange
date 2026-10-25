@@ -303,6 +303,7 @@ describe("listJobs for Free and Pro viewers", () => {
               ["gh-1", "gh-2", "rm-1"],
               (id) =>
                 store.saveEnrichment(id, {
+                  board: null,
                   enrichedAt: NOW,
                   model: "test-model",
                   remotePolicy: "Remote",

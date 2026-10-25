@@ -1,7 +1,7 @@
 import { Option, Schema, pipe } from "effect";
 
 import type { FeedRef } from "./feed.js";
-import { Arrangement, EpochMillis } from "./job.js";
+import { Arrangement, EpochMillis, SalaryBand } from "./job.js";
 import type { JobValue } from "./job.js";
 import { classifyPlacement, regionWeight } from "./location.js";
 import { classifyRole, roleWeight } from "./role.js";
@@ -16,6 +16,7 @@ export const Posting = Schema.Struct({
   location: Schema.String,
   postedAt: Schema.NullOr(EpochMillis),
   salary: Schema.NullOr(Schema.String),
+  salaryBand: Schema.optional(SalaryBand),
   title: Schema.String,
   url: Schema.NonEmptyString,
   workplace: Arrangement,

@@ -59,6 +59,8 @@ import {
   releaseIngestStatement,
   departUnseenStatement,
   roleCountsStatement,
+  BOARD_MODEL_PREFIX,
+  saveBoardFactsStatement,
   saveEnrichmentStatement,
   sightingStatement,
   trackedSinceStatement,
@@ -95,6 +97,7 @@ const CompanySummaryRow = Schema.Struct({
 
 const EnrichedJobRow = Schema.Struct({
   ...JobRow.fields,
+  board: Schema.NullOr(Schema.String),
   enriched_at: Schema.NullOr(Count),
   model: Schema.NullOr(Schema.String),
   remote_policy: Schema.NullOr(Schema.String),
@@ -235,8 +238,9 @@ const enrichmentOfRow = (
     row.model === null
       ? null
       : {
+          board: row.board,
           enrichedAt: row.enriched_at,
-          model: row.model,
+          model: row.model.startsWith(BOARD_MODEL_PREFIX) ? null : row.model,
           remotePolicy: row.remote_policy,
           reportsTo: row.reports_to,
           salary:
@@ -559,6 +563,17 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
         return { departed: departed?.changes ?? 0, upserted: jobs.length };
       }),
+
+    saveBoardFacts: (rows, seenAt) =>
+      Effect.forEach(
+        Array.chunksOf(rows, UPSERT_CHUNK),
+        (chunk) =>
+          sql.batch(
+            "saveBoardFacts",
+            chunk.map((row) => saveBoardFactsStatement(row, seenAt))
+          ),
+        { discard: true }
+      ),
 
     saveEnrichment: (id, enrichment) =>
       sql

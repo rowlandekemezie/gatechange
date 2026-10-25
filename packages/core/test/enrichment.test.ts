@@ -371,6 +371,7 @@ describe("enrichListing", () => {
         const now = yield* Clock.currentTimeMillis;
 
         const expected: EnrichmentValue = {
+          board: null,
           enrichedAt: now,
           model: MODEL,
           remotePolicy: "RemoteInRegion",
@@ -1089,6 +1090,7 @@ describe("enrichListing", () => {
     () =>
       Effect.gen(function* alreadyEnriched() {
         const earlier: EnrichmentValue = {
+          board: null,
           enrichedAt: 0,
           model: "earlier-model",
           remotePolicy: null,
@@ -1107,6 +1109,47 @@ describe("enrichListing", () => {
         expect(result.requests).toStrictEqual([]);
         expect(result.after).toStrictEqual(
           Option.some({ ...boardJob, enrichment: earlier })
+        );
+      })
+  );
+
+  it.effect(
+    "board facts still ask the model, which fills only the facts the board left empty",
+    () =>
+      Effect.gen(function* boardFirst() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          enrichedBefore: {
+            board: "Greenhouse",
+            enrichedAt: 0,
+            model: null,
+            remotePolicy: "Hybrid",
+            reportsTo: null,
+            salary: { currency: "USD", max: 170_000, min: 150_000 },
+            seniority: null,
+            teamSize: null,
+          },
+        });
+
+        expect(reasonOf(result.outcome)).toBe("Enriched");
+        expect(
+          result.after.pipe(
+            Option.map(({ enrichment }) => ({
+              board: enrichment?.board,
+              remotePolicy: enrichment?.remotePolicy,
+              reportsTo: enrichment?.reportsTo,
+              salary: enrichment?.salary,
+              seniority: enrichment?.seniority,
+            }))
+          )
+        ).toStrictEqual(
+          Option.some({
+            board: "Greenhouse",
+            remotePolicy: "Hybrid",
+            reportsTo: "VP of Engineering",
+            salary: { currency: "USD", max: 170_000, min: 150_000 },
+            seniority: "Director",
+          })
         );
       })
   );
@@ -2502,6 +2545,7 @@ describe("enqueueUnenriched", () => {
                     const store = yield* JobStore;
 
                     yield* store.saveEnrichment(boardId("a"), {
+                      board: null,
                       enrichedAt: 0,
                       model: MODEL,
                       remotePolicy: null,

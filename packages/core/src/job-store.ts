@@ -1,6 +1,7 @@
 import { Context, Schema } from "effect";
 import type { Effect, Option } from "effect";
 
+import type { BoardFactsRow } from "./board-facts.js";
 import type { CompanyRecords } from "./company-intel.js";
 import type { CompanyJobsValue } from "./company-jobs.js";
 import type { SkipReasonValue } from "./enrichment.js";
@@ -162,6 +163,10 @@ export class JobStore extends Context.Service<
       jobs: readonly JobValue[],
       seenAt: number
     ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
+    readonly saveBoardFacts: (
+      rows: readonly BoardFactsRow[],
+      seenAt: number
+    ) => Effect.Effect<void, JobStoreUnavailable>;
     readonly saveEnrichment: (
       id: string,
       enrichment: EnrichmentValue
