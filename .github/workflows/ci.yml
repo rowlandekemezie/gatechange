@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   check:
@@ -228,5 +228,120 @@ jobs:
           fi
 
       - name: Remove ephemeral preview credentials
+        if: always()
+        run: node --input-type=module -e 'import { rmSync } from "node:fs"; rmSync(process.env.ALCHEMY_HOME, { recursive:true, force:true });'
+
+  pr-preview:
+    name: Deploy PR preview
+    needs: check
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      deployments: write
+    environment:
+      name: preview
+      url: ${{ steps.preview.outputs.url }}
+    concurrency:
+      group: deploy-pr-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      ALCHEMY_HOME: /tmp/alchemy-pr-${{ github.run_id }}-${{ github.run_attempt }}
+      ALCHEMY_PROFILE: preview
+      PR_STAGE: pr-${{ github.event.pull_request.number }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm turbo run build
+
+      - name: Prepare PR credentials
+        env:
+          PREVIEW_BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+        run: |
+          node --input-type=module <<'JS'
+          import { createHmac } from 'node:crypto';
+          import { appendFileSync } from 'node:fs';
+          const key = process.env.PREVIEW_BETTER_AUTH_SECRET;
+          if (!key || key.length < 32) throw new Error('Missing preview auth secret');
+          if (!/^pr-[1-9][0-9]*$/.test(process.env.PR_STAGE)) throw new Error('Invalid PR stage');
+          const secret = createHmac('sha256', key).update(`backend-transport:${process.env.PR_STAGE}`).digest('hex');
+          console.log(`::add-mask::${secret}`);
+          appendFileSync(process.env.GITHUB_ENV, `PR_PREVIEW_SECRET=${secret}\n`);
+          JS
+          pnpm --filter @rat-stack/infra exec alchemy profile create preview --no-input
+
+      - name: Plan and deploy native previews
+        working-directory: apps/infra
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+        run: |
+          state=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state)
+          if [ "$state" != OPEN ]; then echo 'PR closed before deploy; skipping'; exit 1; fi
+          pnpm exec alchemy provider check-env --provider Cloudflare --no-input
+          pnpm exec alchemy plan --stage "$PR_STAGE" --profile preview --no-input
+          pnpm exec alchemy deploy --stage "$PR_STAGE" --profile preview --yes --no-input
+          pnpm exec alchemy state read "JobBoard/$PR_STAGE/output" --backend cloudflare --profile preview --no-input > "$RUNNER_TEMP/pr-preview-output.json"
+
+      - name: Verify preview and backend routing
+        id: preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          url=$(jq -er '.websiteUrl' "$RUNNER_TEMP/pr-preview-output.json")
+          expected="https://$PR_STAGE-jobs-preview.rowland-ekemezie.workers.dev"
+          if [ "$url" != "$expected" ]; then echo 'Unexpected native preview URL'; exit 1; fi
+          for path in / /api/auth/ok; do
+            curl --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 10 --max-time 30 -fsS -D "$RUNNER_TEMP/pr-headers" "$url$path" > "$RUNNER_TEMP/pr-body"
+            if [ "$path" = / ]; then
+              grep -q 'data-foldkit-app' "$RUNNER_TEMP/pr-body"
+              grep -iq '^x-robots-tag:.*noindex' "$RUNNER_TEMP/pr-headers"
+            else
+              grep -iq "^x-jobs-preview-stage: $PR_STAGE" "$RUNNER_TEMP/pr-headers"
+            fi
+          done
+          curl --connect-timeout 10 --max-time 30 -fsS "$url/robots.txt" | grep -q '^Disallow: /$'
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### PR preview: [$PR_STAGE]($url)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish deployment link and update PR comment
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          const { HEAD_SHA, PR_STAGE, PREVIEW_URL, RUNNER_TEMP } = process.env;
+          writeFileSync(`${RUNNER_TEMP}/deployment.json`, JSON.stringify({ ref: HEAD_SHA, environment: PR_STAGE, auto_merge: false, required_contexts: [], production_environment: false, transient_environment: true, description: 'Cloudflare native PR preview' }));
+          writeFileSync(`${RUNNER_TEMP}/deployment-status.json`, JSON.stringify({ state: 'success', environment_url: PREVIEW_URL, auto_inactive: true, log_url: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` }));
+          writeFileSync(`${RUNNER_TEMP}/preview-comment.json`, JSON.stringify({ body: `<!-- jobs-pr-preview -->\nPreview ready: **[Open PR preview](${PREVIEW_URL})**\n\nCommit: \`${HEAD_SHA.slice(0, 7)}\` · Cloudflare native Worker Previews.\nUses shared preview data. Checkout and scheduled jobs are disabled. This URL updates on pushes and is removed when the PR closes.` }));
+          JS
+          deployment=$(gh api "repos/$GITHUB_REPOSITORY/deployments" --input "$RUNNER_TEMP/deployment.json" --jq '.id')
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment/statuses" --input "$RUNNER_TEMP/deployment-status.json" > /dev/null
+          comment=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jobs-pr-preview -->"))) | .id' | head -1)
+          if [ -n "$comment" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment" --input "$RUNNER_TEMP/preview-comment.json" > /dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input "$RUNNER_TEMP/preview-comment.json" > /dev/null
+          fi
+
+      - name: Remove ephemeral PR credentials
         if: always()
         run: node --input-type=module -e 'import { rmSync } from "node:fs"; rmSync(process.env.ALCHEMY_HOME, { recursive:true, force:true });'

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Option, Schema } from "effect";
 
-import { siteHostsOf, WorkersSubdomain } from "../src/index.js";
+import {
+  isPullRequestStage,
+  publicOriginOf,
+  siteHostsOf,
+  WorkersSubdomain,
+} from "../src/index.js";
 
 const LOCAL = ["localhost:*"];
 
@@ -57,4 +62,30 @@ describe("WorkersSubdomain", () => {
   it("accepts an account subdomain", () => {
     expect(Schema.is(WorkersSubdomain)("rowland-ekemezie")).toBe(true);
   });
+});
+
+describe("pull request origins", () => {
+  it.each(["pr-1", "pr-123"])(
+    "uses the native preview hostname for %s",
+    (stage) => {
+      const origin = `https://${stage}-jobs-preview.acct.workers.dev`;
+      expect(isPullRequestStage(stage)).toBe(true);
+      expect(publicOriginOf(stage, Option.some("acct"))).toEqual(
+        Option.some(origin)
+      );
+      expect(
+        siteHostsOf(stage, {
+          localHosts: [],
+          workersSubdomain: Option.some("acct"),
+        }).allowedHosts
+      ).toEqual([new URL(origin).host]);
+    }
+  );
+
+  it.each(["pr-0", "pr-01", "pr-1/foo", "PR-1", "preview", "prod"])(
+    "does not treat %s as a PR",
+    (stage) => {
+      expect(isPullRequestStage(stage)).toBe(false);
+    }
+  );
 });
