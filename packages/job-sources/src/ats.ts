@@ -1,6 +1,15 @@
-import { Posting } from "@rat-stack/core";
-import type { PostingValue } from "@rat-stack/core";
-import { Array, Effect, Option, pipe, Schema } from "effect";
+import {
+  annualSalaryBandOf,
+  namesVariablePay,
+  Posting,
+  salaryDisagreesWithText,
+} from "@rat-stack/core";
+import type {
+  PostingValue,
+  SalaryBandValue,
+  SalaryPeriodValue,
+} from "@rat-stack/core";
+import { Array, Effect, Match, Option, pipe, Schema } from "effect";
 
 import { fetchJson } from "./http.js";
 import {
@@ -10,6 +19,7 @@ import {
   salaryRange,
   workplaceOf,
 } from "./parse.js";
+import { ashbyBoardSalary, AshbyDetail } from "./posting-text.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
@@ -67,8 +77,10 @@ const LeverJob = Schema.Struct({
     Schema.catchDecoding(() => Effect.succeed(Option.none()))
   ),
   createdAt: OptionalNumber,
+  descriptionPlain: OptionalString,
   hostedUrl: Schema.NonEmptyString,
   id: Schema.NonEmptyString,
+  salaryDescriptionPlain: OptionalString,
   salaryRange: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -82,6 +94,61 @@ const LeverJob = Schema.Struct({
   text: Schema.String,
   workplaceType: OptionalString,
 });
+
+type LeverJobValue = typeof LeverJob.Type;
+
+const LeverSalary = Schema.Struct({
+  currency: Schema.String,
+  interval: Schema.String,
+  max: Schema.Finite,
+  min: Schema.Finite,
+});
+
+const salaryPeriodOf = (interval: string) =>
+  Match.value(periodOf(interval)?.toLowerCase()).pipe(
+    Match.withReturnType<SalaryPeriodValue | null>(),
+    Match.when("hour", () => "Hour"),
+    Match.when("month", () => "Month"),
+    Match.when("year", () => "Year"),
+    Match.orElse(() => null)
+  );
+
+const leverSalaryBand = (job: LeverJobValue): SalaryBandValue | undefined => {
+  const range = Option.getOrNull(
+    Schema.decodeUnknownOption(LeverSalary)(job.salaryRange)
+  );
+
+  const period = range === null ? null : salaryPeriodOf(range.interval);
+
+  if (
+    range === null ||
+    period === null ||
+    namesVariablePay(job.salaryDescriptionPlain ?? "")
+  ) {
+    return undefined;
+  }
+
+  const band = annualSalaryBandOf(
+    { currency: range.currency.toUpperCase(), max: range.max, min: range.min },
+    period,
+    job.text
+  );
+
+  return band === null ||
+    salaryDisagreesWithText(
+      band,
+      [job.descriptionPlain, job.salaryDescriptionPlain].join("\n\n"),
+      job.text
+    )
+    ? undefined
+    : band;
+};
+
+const withSalaryBand = (
+  posting: PostingValue,
+  band: SalaryBandValue | undefined
+): PostingValue =>
+  band === undefined ? posting : { ...posting, salaryBand: band };
 
 export const leverPostings = (feed: string, slug: string) =>
   fetchJson(
@@ -116,11 +183,13 @@ export const leverPostings = (feed: string, slug: string) =>
             workplace: workplaceOf(job.workplaceType),
           };
 
+          const banded = withSalaryBand(posting, leverSalaryBand(job));
+
           if (locations.length <= 1 && job.country !== undefined) {
-            return { ...posting, country: job.country };
+            return { ...banded, country: job.country };
           }
 
-          return posting;
+          return banded;
         })
       )
     )
@@ -148,6 +217,26 @@ const AshbyJob = Schema.Struct({
   workplaceType: OptionalString,
 });
 
+const ashbyPosting = (job: typeof AshbyJob.Type): PostingValue => ({
+  company: "",
+  externalId: job.id,
+  location: nonEmpty([
+    job.location,
+    ...pipe(
+      job.secondaryLocations ?? [],
+      Array.map((secondary) => secondary.location)
+    ),
+  ]).join("; "),
+  postedAt: epochMillisOf(job.publishedAt),
+  salary:
+    job.compensation?.scrapeableCompensationSalarySummary ??
+    job.compensation?.compensationTierSummary ??
+    null,
+  title: job.title,
+  url: job.jobUrl,
+  workplace: job.isRemote === true ? "Remote" : workplaceOf(job.workplaceType),
+});
+
 export const ashbyPostings = (feed: string, slug: string) =>
   fetchJson(
     feed,
@@ -157,29 +246,23 @@ export const ashbyPostings = (feed: string, slug: string) =>
     Effect.map(({ jobs }) =>
       pipe(
         jobs,
-        Array.map((item) => Schema.decodeUnknownOption(AshbyJob)(item)),
+        Array.map((item) =>
+          Schema.decodeUnknownOption(AshbyJob)(item).pipe(
+            Option.filter((job) => job.isListed !== false),
+            Option.map((job) => ({
+              band: pipe(
+                Schema.decodeUnknownOption(AshbyDetail)(item),
+                Option.flatMap((detail) =>
+                  Option.fromNullishOr(ashbyBoardSalary(detail, job.title))
+                ),
+                Option.getOrUndefined
+              ),
+              job,
+            }))
+          )
+        ),
         Array.getSomes,
-        Array.filter((job) => job.isListed !== false),
-        Array.map((job): PostingValue => ({
-          company: "",
-          externalId: job.id,
-          location: nonEmpty([
-            job.location,
-            ...pipe(
-              job.secondaryLocations ?? [],
-              Array.map((secondary) => secondary.location)
-            ),
-          ]).join("; "),
-          postedAt: epochMillisOf(job.publishedAt),
-          salary:
-            job.compensation?.scrapeableCompensationSalarySummary ??
-            job.compensation?.compensationTierSummary ??
-            null,
-          title: job.title,
-          url: job.jobUrl,
-          workplace:
-            job.isRemote === true ? "Remote" : workplaceOf(job.workplaceType),
-        }))
+        Array.map(({ band, job }) => withSalaryBand(ashbyPosting(job), band))
       )
     )
   );

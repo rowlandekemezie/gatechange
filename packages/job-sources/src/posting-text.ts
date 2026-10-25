@@ -9,6 +9,7 @@ import {
 import type {
   JobValue,
   PostingTextValue,
+  SalaryBandValue,
   SalaryPeriodValue,
 } from "@rat-stack/core";
 import {
@@ -65,7 +66,7 @@ const LeverDetail = Schema.Struct({
   workplaceType: OptionalString,
 });
 
-const AshbyDetail = Schema.Struct({
+export const AshbyDetail = Schema.Struct({
   address: Schema.optional(Schema.Unknown),
   compensation: Schema.optional(Schema.Unknown),
   descriptionPlain: OptionalString,
@@ -429,6 +430,39 @@ const ashbySalary = (
     Option.getOrElse(() => ({ salary: null }))
   );
 
+const compensationOf = (job: typeof AshbyDetail.Type) =>
+  pipe(
+    Schema.decodeUnknownOption(AshbyCompensation)(job.compensation),
+    Option.getOrElse((): AshbyCompensationValue => ({}))
+  );
+
+const ashbySalaryEvidence = (
+  job: typeof AshbyDetail.Type,
+  title: string
+): Pick<PostingTextValue, "salary" | "salaryUncertain"> => {
+  const evidence = ashbySalary(
+    compensationOf(job),
+    placesOf(job.location, decodeAshbyAddress(job.address)),
+    title
+  );
+
+  return evidence.salary !== null &&
+    salaryDisagreesWithText(evidence.salary, job.descriptionPlain ?? "", title)
+    ? { ...evidence, salaryUncertain: true }
+    : evidence;
+};
+
+export const ashbyBoardSalary = (
+  job: typeof AshbyDetail.Type,
+  title: string
+): SalaryBandValue | undefined =>
+  pipe(
+    Option.some(ashbySalaryEvidence(job, title)),
+    Option.filter((evidence) => evidence.salaryUncertain !== true),
+    Option.flatMap((evidence) => Option.fromNullishOr(evidence.salary)),
+    Option.getOrUndefined
+  );
+
 const ashbyText = ({ externalId, id, slug, title }: PostingKey) =>
   getJson(
     `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}?includeCompensation=true`,
@@ -451,40 +485,16 @@ const ashbyText = ({ externalId, id, slug, title }: PostingKey) =>
               message: "the posting is no longer on the Ashby board",
             })
           ),
-        onSome: (job) => {
-          const compensation = pipe(
-            Schema.decodeUnknownOption(AshbyCompensation)(job.compensation),
-            Option.getOrElse(() => ({}))
-          );
-
-          const evidence = ashbySalary(
-            compensation,
-            placesOf(job.location, decodeAshbyAddress(job.address)),
-            title
-          );
-
-          const salaryUncertain =
-            evidence.salary !== null &&
-            salaryDisagreesWithText(
-              evidence.salary,
-              job.descriptionPlain ?? "",
-              title
-            );
-
-          const posting: PostingTextValue = {
-            ...evidence,
+        onSome: (job) =>
+          Effect.succeed<PostingTextValue>({
+            ...ashbySalaryEvidence(job, title),
             text: nonEmpty([
               job.descriptionPlain,
-              ashbyCompensation(compensation),
+              ashbyCompensation(compensationOf(job)),
               locationLine(job.location),
             ]).join("\n\n"),
             workplace: workplaceOf(job.workplaceType),
-          };
-
-          return Effect.succeed<PostingTextValue>(
-            salaryUncertain ? { ...posting, salaryUncertain: true } : posting
-          );
-        },
+          }),
       })
     )
   );
