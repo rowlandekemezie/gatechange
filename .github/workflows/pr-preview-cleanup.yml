@@ -54,7 +54,7 @@ jobs:
         run: |
           if [[ ! "$PR_STAGE" =~ ^pr-[1-9][0-9]*$ ]]; then exit 1; fi
           pnpm exec alchemy provider check-env --provider Cloudflare --no-input
-          pnpm exec alchemy state list "JobBoard/$PR_STAGE" --recursive --backend cloudflare --profile preview --no-input > "$RUNNER_TEMP/pr-state-paths"
+          pnpm exec alchemy state list "JobBoard/$PR_STAGE" --recursive --backend cloudflare --profile preview --no-input --log-level error > "$RUNNER_TEMP/pr-state-paths"
           while IFS= read -r path; do
             case "$path" in
               ""|"JobBoard/$PR_STAGE/Website"|"JobBoard/$PR_STAGE/JobsBackend"|"JobBoard/$PR_STAGE/output") ;;

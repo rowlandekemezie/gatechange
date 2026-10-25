@@ -328,7 +328,7 @@ jobs:
           pnpm exec alchemy provider check-env --provider Cloudflare --no-input
           pnpm exec alchemy plan --stage "$PR_STAGE" --profile preview --no-input
           pnpm exec alchemy deploy --stage "$PR_STAGE" --profile preview --yes --no-input
-          pnpm exec alchemy state read "JobBoard/$PR_STAGE/output" --backend cloudflare --profile preview --no-input > "$RUNNER_TEMP/pr-preview-output.json"
+          pnpm exec alchemy state read "JobBoard/$PR_STAGE/output" --backend cloudflare --profile preview --no-input --log-level error > "$RUNNER_TEMP/pr-preview-output.json"
 
       - name: Verify preview and backend routing
         id: preview
