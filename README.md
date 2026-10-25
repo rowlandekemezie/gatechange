@@ -18,7 +18,7 @@ browser ─▶ Website ─▶ /rpc ─▶ JobsBackend.listJobs / boardStats ─�
 
 Sources:
 
-- 116 company boards on Greenhouse, Lever and Ashby (verified list in `packages/job-sources/src/boards.ts`).
+- 406 company boards on Greenhouse, Ashby, Lever, SmartRecruiters and Workable (verified list in `packages/job-sources/src/boards.ts`).
 - Remote OK, Remotive, Himalayas and Jobicy searches for engineering manager, director and VP roles.
 - The monthly Hacker News "Who is hiring?" thread.
 
