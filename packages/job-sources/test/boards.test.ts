@@ -95,6 +95,12 @@ describe("company board registry", () => {
     expect(withoutTerms).toStrictEqual([]);
   });
 
+  it("keeps the registry sorted by company name", () => {
+    const names = companyBoards.map((board) => board.name.toLowerCase());
+
+    expect(names).toStrictEqual(names.toSorted());
+  });
+
   it("refreshes every board within six hours at the default feeds per run, with aggregators and one feed that always fails", () => {
     const catalog = feedSpecs(companyBoards).map(feedRefOf);
 
