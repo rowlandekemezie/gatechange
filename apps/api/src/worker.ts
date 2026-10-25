@@ -182,26 +182,26 @@ const socialCredentials = (prefix: string) =>
     )
   );
 
-export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBackend>()(
+export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
   "JobsBackend",
-  {
-    main: import.meta.url,
-    observability: { enabled: true },
-    preview: Effect.gen(function* backendPreview() {
-      return isPullRequestStage(yield* Stage)
+  Effect.gen(function* backendProps() {
+    const stage = yield* Stage;
+
+    return {
+      main: import.meta.url,
+      observability: { enabled: true },
+      ...(isPullRequestStage(stage)
         ? {
-            name: yield* Stage,
-            of: yield* Cloudflare.Worker.ref("JobsBackend", {
-              stage: "preview",
-            }),
+            preview: {
+              name: stage,
+              of: yield* Cloudflare.Worker.ref("JobsBackend", {
+                stage: "preview",
+              }),
+            },
           }
-        : undefined;
-    }),
-    schema: rpcProjection.group,
-    workersDev: Stage.pipe(
-      Effect.map((stage) => (isPullRequestStage(stage) ? undefined : false))
-    ),
-  },
+        : { workersDev: false }),
+    };
+  }),
   Effect.gen(function* jobsBackend() {
     const stage = yield* currentStage;
     const configuration = yield* stageConfig(stage);
@@ -580,20 +580,22 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       unsubscribe,
     });
 
-    // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.
-    return Effect.succeed(
-      pullRequest
-        ? guardPreviewAccess({
-            handle,
-            publicOrigin: Option.getOrThrow(publicOriginOf(stage, subdomain)),
-            secret: yield* Config.Redacted("PR_PREVIEW_SECRET"),
-            stage,
-          })
-        : handle
-    );
+    return {
+      fetch: Effect.succeed(
+        pullRequest
+          ? guardPreviewAccess({
+              handle,
+              publicOrigin: Option.getOrThrow(publicOriginOf(stage, subdomain)),
+              secret: yield* Config.Redacted("PR_PREVIEW_SECRET"),
+              stage,
+            })
+          : handle
+      ),
+    };
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
+        RuntimeContext.RuntimeContext.phantom,
         Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.Workers.CronEventSourceLive,
         Cloudflare.Queues.WriteQueueBinding,

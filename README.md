@@ -124,7 +124,7 @@ PR code uses the persistent preview D1 and queue bindings, never production data
 
 [Service bindings reach the parent's normal deployment](https://developers.cloudflare.com/workers/previews/resources/), so Website forwards to its matching backend Preview over HTTPS. A per-PR credential protects that endpoint before application routing. The backend restores the exact configured PR website origin for auth and reports its PR stage in the smoke test. Preview credentials remain server-side. The existing preview environment auth secret supplies both auth and a separately derived transport credential; no extra GitHub secrets are needed.
 
-Closing or merging a PR removes only its two native Previews through Alchemy, retires the deployment link and updates the comment. Cleanup runs trusted base code, shares the PR deployment lock and restricts deletion to the Website and JobsBackend resources in a strictly validated `pr-N` stage. The persistent preview Workers, D1, queue and production resources remain owned by their existing stages. Deployment checks the current PR state before writing, so a completed CI run cannot recreate a closed PR's preview.
+Closing or merging a PR removes only its two native Previews through Alchemy, retires the deployment link and updates the comment. Cleanup runs trusted base code, shares the PR deployment lock and validates the `pr-N` stage and refuses cleanup unless its state contains only Website, JobsBackend and stack outputs. The persistent preview Workers, D1, queue and production resources remain owned by their existing stages. Deployment checks the current PR state before writing, so a completed CI run cannot recreate a closed PR's preview.
 
 ### Search visibility and public information
 

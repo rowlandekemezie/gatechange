@@ -251,6 +251,7 @@ jobs:
       ALCHEMY_PROFILE: preview
       PR_STAGE: pr-${{ github.event.pull_request.number }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -292,8 +293,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
         run: |
-          state=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state)
-          if [ "$state" != OPEN ]; then echo 'PR closed before deploy; skipping'; exit 1; fi
+          current=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,headRefOid)
+          if [ "$(jq -r .state <<< "$current")" != OPEN ] || [ "$(jq -r .headRefOid <<< "$current")" != "$PR_HEAD_SHA" ]; then
+            echo 'PR closed or updated before deploy; refusing a stale deployment'
+            exit 1
+          fi
           pnpm exec alchemy provider check-env --provider Cloudflare --no-input
           pnpm exec alchemy plan --stage "$PR_STAGE" --profile preview --no-input
           pnpm exec alchemy deploy --stage "$PR_STAGE" --profile preview --yes --no-input
