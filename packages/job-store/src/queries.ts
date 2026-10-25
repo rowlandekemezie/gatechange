@@ -357,6 +357,11 @@ ON CONFLICT (job_id) DO UPDATE SET
 const takeBoardFact = (column: string, presence: string) =>
   `${column} = CASE WHEN excluded.${presence} IS NULL THEN job_enrichment.${column} ELSE excluded.${column} END`;
 
+const boardFactChanges = (columns: readonly string[], presence: string) =>
+  `(excluded.${presence} IS NOT NULL AND (${columns
+    .map((column) => `job_enrichment.${column} IS NOT excluded.${column}`)
+    .join(" OR ")}))`;
+
 export const saveBoardFactsStatement = (
   { board, facts, id }: BoardFactsRow,
   seenAt: number
@@ -370,7 +375,11 @@ ON CONFLICT (job_id) DO UPDATE SET
   ${takeBoardFact("salary_max", "salary_currency")},
   ${takeBoardFact("seniority", "seniority")},
   ${takeBoardFact("remote_policy", "remote_policy")},
-  board = excluded.board`,
+  board = excluded.board
+WHERE job_enrichment.board IS NOT excluded.board
+  OR ${boardFactChanges(["salary_currency", "salary_min", "salary_max"], "salary_currency")}
+  OR ${boardFactChanges(["seniority"], "seniority")}
+  OR ${boardFactChanges(["remote_policy"], "remote_policy")}`,
     [
       id,
       facts.salary?.currency ?? null,

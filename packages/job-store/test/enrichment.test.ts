@@ -620,6 +620,79 @@ describe("enrichment storage", () => {
   );
 
   it.effect(
+    "repeating unchanged board facts writes no row, and a changed fact or board still writes",
+    () =>
+      withStore(
+        Effect.gen(function* unchangedBoardFacts() {
+          const inner = yield* SqlExecutor;
+          const changes: number[] = [];
+
+          const store = yield* makeJobStore.pipe(
+            Effect.provideService(
+              SqlExecutor,
+              SqlExecutor.of({
+                all: inner.all,
+                batch: (operation, statements) =>
+                  inner.batch(operation, statements).pipe(
+                    Effect.map((results) => {
+                      if (operation === "saveBoardFacts") {
+                        changes.push(
+                          ...results.map((result) => result.changes)
+                        );
+                      }
+
+                      return results;
+                    })
+                  ),
+              })
+            )
+          );
+
+          const facts = {
+            board: "Lever" as const,
+            facts: {
+              remotePolicy: "Hybrid" as const,
+              salary: { currency: "CAD" as const, max: 200_000, min: 170_000 },
+              seniority: "Director" as const,
+            },
+            id: "a",
+          };
+
+          yield* store.replaceFeed("greenhouse:acme", [job("a")], NOW);
+          yield* store.saveBoardFacts([facts], NOW);
+          yield* store.saveBoardFacts([facts], NOW + 5);
+          yield* store.saveBoardFacts(
+            [
+              {
+                ...facts,
+                facts: { remotePolicy: null, salary: null, seniority: null },
+              },
+            ],
+            NOW + 6
+          );
+          yield* store.saveBoardFacts(
+            [{ ...facts, board: "Ashby" as const }],
+            NOW + 7
+          );
+          yield* store.saveBoardFacts(
+            [
+              {
+                ...facts,
+                facts: {
+                  ...facts.facts,
+                  salary: { currency: "CAD", max: 210_000, min: 170_000 },
+                },
+              },
+            ],
+            NOW + 8
+          );
+
+          expect(changes).toStrictEqual([1, 0, 0, 1, 1]);
+        })
+      )
+  );
+
+  it.effect(
     "pruning drops enrichment rows whose job is gone and keeps the rest",
     () =>
       withStore(
