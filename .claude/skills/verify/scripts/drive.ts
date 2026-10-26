@@ -1254,7 +1254,7 @@ const run = async () => {
           })`
           );
 
-          return found.names.length > 0 || found.notOnSale ? found : undefined;
+          return found.prices.length > 0 || found.notOnSale ? found : undefined;
         }
       );
 

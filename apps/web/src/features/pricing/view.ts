@@ -71,8 +71,6 @@ export const savingOf = (
   };
 };
 
-const planName = (plan: PlanValue) => plan.toLowerCase();
-
 export const instantCoverage = (
   labels: readonly string[] = digestSourceLabels()
 ) =>
@@ -140,6 +138,7 @@ const planAction = (
   model: ModelValue,
   session: SessionStateValue,
   plan: PlanValue,
+  isOnlyPlan: boolean,
   h: HtmlBuilder<MessageValue>
 ): Html => {
   if (!Schema.is(SessionState.SignedIn)(session)) {
@@ -162,10 +161,9 @@ const planAction = (
       h.Type("button"),
       h.Class("plan-button"),
       h.Disabled(isBusy),
-      h.AriaLabel(`Choose Pro ${plan}`),
       h.OnClick(Message.ClickedChoosePlan({ plan })),
     ],
-    [`Choose ${planName(plan)}`]
+    [isOnlyPlan ? "Upgrade to Pro" : `Choose ${plan}`]
   );
 };
 
@@ -178,12 +176,13 @@ const planCard = (
 ): Html => {
   const saving = savingOf(offer, offers);
   const best = offers.every((other) => perDay(offer) <= perDay(other));
+  const isOnlyPlan = offers.length === 1;
 
   return h.keyed("li")(
     offer.plan,
-    [h.Class(best && offers.length > 1 ? "plan plan-best" : "plan")],
+    [h.Class(best && !isOnlyPlan ? "plan plan-best" : "plan")],
     [
-      h.h3([h.Class("plan-name")], [offer.plan]),
+      ...(isOnlyPlan ? [] : [h.h3([h.Class("plan-name")], [offer.plan])]),
       h.p(
         [h.Class("plan-price")],
         [h.strong([], [dollars(offer.amountCents)]), ` / ${cadenceOf(offer)}`]
@@ -192,11 +191,11 @@ const planCard = (
         [h.Class("plan-saving")],
         [
           saving.percent > 0
-            ? `Save ${saving.percent}% against ${planName(saving.against)}`
+            ? `Save ${saving.percent}% against ${saving.against}`
             : "Cancel any time",
         ]
       ),
-      planAction(model, session, offer.plan, h),
+      planAction(model, session, offer.plan, isOnlyPlan, h),
     ]
   );
 };
@@ -267,7 +266,7 @@ export const pricingPage = defineView<
 
 const statusOf = (entitlement: EntitlementValue): string =>
   Schema.is(ProEntitlement)(entitlement)
-    ? `You have Pro ${planName(entitlement.plan)}. It ${entitlement.renews ? "renews" : "ends"} on ${calendarDate(entitlement.periodEnd)}.`
+    ? `You have Pro ${entitlement.plan}. It ${entitlement.renews ? "renews" : "ends"} on ${calendarDate(entitlement.periodEnd)}.`
     : "You are on Free.";
 
 const instantToggle = (

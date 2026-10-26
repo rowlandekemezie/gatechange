@@ -407,7 +407,7 @@ describe("billing pages", () => {
           expect(text).toContain("$5 / week");
           expect(text).toContain("$19 / month");
           expect(text).toContain("$149 / year");
-          expect(text).toContain("Save 13% against weekly");
+          expect(text).toContain("Save 13% against Weekly");
           expect(text).toContain("Salary floor and seniority filters");
           expect(text).not.toContain(
             "Salary floor and seniority filters coming soon"
@@ -419,21 +419,70 @@ describe("billing pages", () => {
       )
   );
 
-  it.effect("renders a single weekly plan as five dollars a week", () =>
+  it.effect(
+    "renders a single weekly plan as five dollars a week with no plan picker",
+    () =>
+      Effect.gen(function* singlePlan() {
+        const weeklyOnly: readonly PlanOfferValue[] = [
+          {
+            amountCents: 500,
+            interval: "week",
+            intervalCount: 1,
+            plan: "Weekly",
+          },
+        ];
+
+        const pages = [
+          yield* renderAs(
+            "/pricing",
+            SessionState.SignedOut(),
+            Option.none(),
+            weeklyOnly
+          ),
+          yield* renderAs(
+            "/pricing",
+            SessionState.SignedIn({ account: ada }),
+            Option.some(free),
+            weeklyOnly
+          ),
+        ];
+
+        const [visitor = "", member = ""] = pages.map(textOf);
+
+        expect(visitor).toContain("Free");
+        expect(visitor).toContain("$5 / week Cancel any time");
+        expect(visitor.match(/Sign in to upgrade/gu)?.length).toBe(1);
+        expect(member).toContain("$5 / week Cancel any time Upgrade to Pro");
+        expect(pages.join(" ")).not.toMatch(/Save \d|Choose|plan-name/u);
+      })
+  );
+
+  it.effect("keeps the configured case of a custom plan name", () =>
     Effect.map(
-      renderAs("/pricing", SessionState.SignedOut(), Option.none(), [
-        {
-          amountCents: 500,
-          interval: "week",
-          intervalCount: 1,
-          plan: "Weekly",
-        },
-      ]),
+      renderAs(
+        "/pricing",
+        SessionState.SignedIn({ account: ada }),
+        Option.some(free),
+        [
+          {
+            amountCents: 500,
+            interval: "week",
+            intervalCount: 1,
+            plan: "Founder",
+          },
+          {
+            amountCents: 1500,
+            interval: "month",
+            intervalCount: 1,
+            plan: "Monthly",
+          },
+        ]
+      ),
       (html) => {
         const text = textOf(html);
 
-        expect(text).toContain("Weekly $5 / week Cancel any time");
-        expect(text.match(/Sign in to upgrade/gu)?.length).toBe(1);
+        expect(text).toContain("Choose Founder");
+        expect(text).toContain("against Founder");
       }
     )
   );
@@ -544,7 +593,7 @@ describe("billing pages", () => {
           const text = textOf(html);
 
           expect(text).toContain(
-            "You have Pro monthly. It renews on November 18, 2026."
+            "You have Pro Monthly. It renews on November 18, 2026."
           );
           expect(text).toContain("Instant alerts on");
           expect(text).toContain("Manage billing");

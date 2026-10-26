@@ -61,6 +61,14 @@ describe("PRO_PLANS setting", () => {
       decodePlans('[{"plan":"weekly","amountCents":500,"interval":"week"}]'),
     ]).toEqual([Option.none(), Option.none(), Option.none()]);
   });
+
+  it("refuses a misspelt key instead of keeping the plan on sale", () => {
+    expect(
+      decodePlans(
+        '[{"plan":"Monthly","amountCents":1900,"interval":"month","onsale":false}]'
+      )
+    ).toEqual(Option.none());
+  });
 });
 
 const weekly: ProPlanSettingValue = {

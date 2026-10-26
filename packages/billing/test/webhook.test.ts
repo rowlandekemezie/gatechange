@@ -282,6 +282,45 @@ describe("Stripe events to billing changes", () => {
       })
   );
 
+  it.effect(
+    "warns an operator when a subscription's price matches no configured plan",
+    () =>
+      Effect.gen(function* warnsUnknownPrice() {
+        const entries: unknown[] = [];
+
+        const foreign = created.replaceAll(
+          SANDBOX_MONTHLY,
+          "price_other_product"
+        );
+
+        yield* changeOf(foreign).pipe(
+          Effect.provide(
+            Logger.layer([
+              Logger.make(({ fiber, logLevel, message }) =>
+                entries.push({
+                  fields: fiber.getRef(References.CurrentLogAnnotations),
+                  logLevel,
+                  message,
+                })
+              ),
+            ])
+          )
+        );
+
+        expect(entries).toStrictEqual([
+          {
+            fields: {
+              eventId: "evt_1USIZj0ZnafJYNlYFqQEBJXC",
+              priceIds: ["price_other_product"],
+              subscriptionId: "sub_1USIZh0ZnafJYNlY3wCgw7iV",
+            },
+            logLevel: "Warn",
+            message: ["stripe subscription price matches no plan"],
+          },
+        ]);
+      })
+  );
+
   it.effect("reads a Pro price listed after another product's item", () =>
     Effect.gen(function* secondItem() {
       const twoItems = created.replace(

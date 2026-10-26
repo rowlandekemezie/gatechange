@@ -9,13 +9,25 @@ export const PRO_PRODUCT_NAME = "Pro";
 
 export const PRO_PRODUCT_DESCRIPTION = `Email alerts within 20 minutes of a new match for your saved searches, up to ${INSTANT_SENDS_PER_MEMBER_PER_DAY} a day, salary-floor and seniority filters, a filter for roles that state a salary, and company intel with hiring trends, salary bands and repost history.`;
 
-export const ProPlanSetting = Schema.Struct({
+const ProPlanFields = Schema.Struct({
   ...PlanOffer.fields,
   intervalCount: PlanOffer.fields.intervalCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(1))
   ),
   onSale: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
+
+const proPlanKeys = new Set(Object.keys(ProPlanFields.fields));
+
+export const ProPlanSetting = Schema.Record(Schema.String, Schema.Unknown)
+  .check(
+    Schema.makeFilter((entry) => {
+      const unknown = Object.keys(entry).filter((key) => !proPlanKeys.has(key));
+
+      return unknown.length === 0 || `unknown keys: ${unknown.join(", ")}`;
+    })
+  )
+  .pipe(Schema.decodeTo(ProPlanFields));
 
 export type ProPlanSettingValue = typeof ProPlanSetting.Type;
 
