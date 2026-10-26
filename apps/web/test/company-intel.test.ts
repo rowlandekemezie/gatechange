@@ -233,7 +233,7 @@ describe("company intel on a company page", () => {
         })
       ),
       (html) => {
-        expect(html).not.toContain("<svg");
+        expect(html).not.toContain('class="trend-chart"');
         expect(textOf(html)).toContain("13-week hiring trend");
         expect(textOf(html)).toContain(
           "Not enough history for a trend yet. A trend needs at least 3 roles over 4 weeks, and this company has 1 role over 13 weeks."

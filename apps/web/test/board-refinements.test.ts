@@ -92,10 +92,13 @@ const renderAs = (
     }
   ).pipe(Effect.map(({ html }) => html));
 
-const groupOf = (html: string) =>
-  /<fieldset[^>]*class="pro-refinements"[^>]*>(?<group>.*?)<\/fieldset>/su.exec(
-    html
-  )?.groups?.group ?? "";
+const PRO_GROUP =
+  /(?<tag><details[^>]*class="pro-refinements"[^>]*>)(?<group>.*?)<\/details>/su;
+
+const groupOf = (html: string) => PRO_GROUP.exec(html)?.groups?.group ?? "";
+
+const groupIsOpen = (html: string) =>
+  / open[ =>]/u.test(PRO_GROUP.exec(html)?.groups?.tag ?? "");
 
 describe("paid board refinements", () => {
   it.effect.each(["anonymous", "Free"])(
@@ -125,6 +128,7 @@ describe("paid board refinements", () => {
           expect(html).toContain('id="search"');
           expect(html).toContain("remote in Canada");
           expect(html.match(/class="departure"/gu)).toHaveLength(2);
+          expect(groupIsOpen(html)).toBe(false);
         }
       )
   );
@@ -152,6 +156,7 @@ describe("paid board refinements", () => {
             /aria-pressed="true"[^>]*>Only roles that state a salary</u
           );
           expect(html.match(/class="departure"/gu)).toHaveLength(2);
+          expect(groupIsOpen(html)).toBe(true);
         }
       )
   );

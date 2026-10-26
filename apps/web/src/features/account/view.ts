@@ -40,7 +40,7 @@ export const sessionLink = <M>(
 ): Html =>
   h.a(
     [
-      h.Class(isCurrent ? "tab tab-on account-tab" : "tab account-tab"),
+      h.Class("nav-link nav-account"),
       h.Href(accountRouter({ notice: "None" })),
       ...(isCurrent ? [h.AriaCurrent("page")] : []),
     ],

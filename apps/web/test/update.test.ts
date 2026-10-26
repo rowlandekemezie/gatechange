@@ -213,6 +213,48 @@ describe("URL-driven board state", () => {
     expect(named(elsewhere, "PushUrl")).toHaveLength(1);
   });
 
+  it("a link to a fragment scrolls to it after navigating", () => {
+    const clicked = sent(
+      started("/shortlist"),
+      Message.ClickedLink({
+        request: UrlRequest.Internal({ url: urlAt("/#agents") }),
+      })
+    );
+
+    expect(named(clicked, "PushUrl")).toStrictEqual([
+      expect.objectContaining({ args: { url: "/" } }),
+    ]);
+    expect(named(clicked, "ScrollToFragment")).toStrictEqual([
+      expect.objectContaining({ args: { fragment: "agents" } }),
+    ]);
+    expect(
+      named(
+        sent(
+          started("/"),
+          Message.ClickedLink({
+            request: UrlRequest.Internal({ url: urlAt("/shortlist") }),
+          })
+        ),
+        "ScrollToFragment"
+      )
+    ).toHaveLength(0);
+  });
+
+  it("opens the salary and seniority filters for a link that sets them and remembers a toggle", () => {
+    expect(started("/").model.proFiltersOpen).toBe(false);
+    expect(started("/?pay=200000").model.proFiltersOpen).toBe(true);
+
+    const opened = sent(
+      started("/"),
+      Message.ToggledProFilters({ isOpen: true })
+    );
+
+    expect(
+      sent(opened, Message.UpdatedDraftSearch({ value: "vp" })).model
+        .proFiltersOpen
+    ).toBe(true);
+  });
+
   it("submitting an unchanged search replaces the history entry", () => {
     const opened = started(boardUrl(directorOnly));
 

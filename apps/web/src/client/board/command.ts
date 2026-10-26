@@ -5,7 +5,7 @@ import {
 } from "@rat-stack/core/contracts";
 import type { TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Effect, Option, pipe, Predicate, Schema } from "effect";
-import { Command } from "foldkit";
+import { Command, Dom } from "foldkit";
 import { load, pushUrl, replaceUrl } from "foldkit/navigation";
 
 import { collectListing, ListingRoute } from "../listing.js";
@@ -94,6 +94,15 @@ export const ReplaceUrl = Command.define("ReplaceUrl", {
   args: { url: Schema.String },
   execute: ({ url }) =>
     replaceUrl(url).pipe(Effect.as(Message.CompletedNavigation())),
+  messages: [Message.CompletedNavigation],
+});
+
+export const ScrollToFragment = Command.define("ScrollToFragment", {
+  args: { fragment: Schema.String },
+  execute: ({ fragment }) =>
+    Dom.scrollIntoViewAfterPaint(`#${CSS.escape(fragment)}`, {
+      block: "start",
+    }).pipe(Effect.ignore, Effect.as(Message.CompletedNavigation())),
   messages: [Message.CompletedNavigation],
 });
 

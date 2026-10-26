@@ -402,7 +402,7 @@ export const planLink = <M>(
   return sellsPro(model)
     ? h.a(
         [
-          h.Class(isCurrent ? "tab tab-on" : "tab"),
+          h.Class("nav-link"),
           h.Href(pricingHref),
           ...(isCurrent ? [h.AriaCurrent("page")] : []),
         ],

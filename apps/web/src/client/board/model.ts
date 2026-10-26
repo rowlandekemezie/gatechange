@@ -152,6 +152,7 @@ export const Model = Schema.Struct({
   marks: Shortlist,
   more: MoreState,
   origin: Schema.String,
+  proFiltersOpen: Schema.Boolean,
   route: Route,
   savedSearches: SavedSearchesModel,
   stats: StatsState,

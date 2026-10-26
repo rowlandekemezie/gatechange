@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { SITE_NAME, SOURCE_REPOSITORY_URL } from "@rat-stack/core/contracts";
 import type {
   JobDetailValue,
   JobPageValue,
@@ -887,6 +888,42 @@ describe("sitemap", () => {
       "Sitemap: https://jobs.example/sitemap.xml"
     );
   });
+});
+
+describe("site header", () => {
+  it.effect.each(["/", "/pricing", "/shortlist", "/about"])(
+    "names the site and links every section from %s",
+    (path) =>
+      Effect.map(render(path, Preload.Nothing()), ({ html }) => {
+        const header = html.slice(
+          html.indexOf('<header class="site-header"'),
+          html.indexOf("</header>")
+        );
+
+        expect(header).toContain(SITE_NAME);
+        expect(header).toContain('href="/#agents"');
+        expect(header).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(textOf(header)).toContain("Shortlist (0)");
+        expect(textOf(header)).toContain("Sign in");
+      })
+  );
+
+  it.effect("marks the current page in the site navigation", () =>
+    Effect.map(render("/shortlist", Preload.Nothing()), ({ html }) => {
+      expect(html).toContain(
+        '<a aria-current="page" class="nav-link" href="/shortlist"'
+      );
+      expect(html).not.toContain(
+        '<a aria-current="page" class="nav-link" href="/"'
+      );
+    })
+  );
+
+  it.effect("gives the For agents link a target on the board", () =>
+    Effect.map(render("/", Preload.Nothing()), ({ html }) => {
+      expect(html).toMatch(/<section [^>]*id="agents"/u);
+    })
+  );
 });
 
 describe("home page render", () => {
