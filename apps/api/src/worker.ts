@@ -30,6 +30,7 @@ import {
   skipHandling,
   sweepLimitOf,
   siteHostsOf,
+  SITE_HOSTNAME,
   SITE_ORIGIN,
   SocialProvider,
 } from "@rat-stack/core";
@@ -124,9 +125,9 @@ const enrichMessage =
         ),
     });
 
-export const MAGIC_LINK_SENDER = "sign-in@jobs.rowlandekemezie.com";
+export const MAGIC_LINK_SENDER = `sign-in@${SITE_HOSTNAME}`;
 
-export const DIGEST_SENDER = "digest@jobs.rowlandekemezie.com";
+export const DIGEST_SENDER = `digest@${SITE_HOSTNAME}`;
 
 export const DIGEST_SCHEDULE = "7 * * * *";
 

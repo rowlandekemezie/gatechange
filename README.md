@@ -36,6 +36,41 @@ pnpm turbo run check test build
 
 `pnpm install` refreshes the lockfile for the new packages. `pnpm fix` applies the formatter and safe lint fixes before the first gate.
 
+## Run your own
+
+You can run your own copy of the board on your own Cloudflare account. It is served on your `workers.dev` subdomain, so you do not need a domain. `pnpm self-host` checks your inputs, then runs Alchemy against a new stage that you name. Alchemy creates the D1 database and applies `packages/job-store/migrations/`, creates the enrichment queue, and deploys both Workers with their cron triggers.
+
+A "Deploy to Cloudflare" button cannot do this. The button deploys one Worker, and it needs that Worker's directory to build with no workspace dependencies. This app is two Workers joined by a service binding, and both depend on workspace packages.
+
+1. Install Node 24.18 and pnpm 11.3. Then clone this repository and run `pnpm install`.
+2. Give Alchemy your Cloudflare credentials. Either create a profile (`pnpm alchemy profile create mine`, then `pnpm alchemy profile edit --profile mine --add Cloudflare`), or export `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+3. Find your account's `workers.dev` subdomain in the dashboard under **Workers & Pages**. Set `SITE_WORKERS_SUBDOMAIN` in `packages/core/src/site.ts` to it. The site trusts its own sign-in host and links only on that subdomain.
+4. Copy `.env.example` to `.env.local`. Set `ALCHEMY_PROFILE` (if you made a profile), `WORKERS_SUBDOMAIN`, and `BETTER_AUTH_SECRET` (from `openssl rand -hex 32`). On Workers Free, also set `INGEST_FEEDS_PER_RUN=8`.
+5. Preview the plan, then deploy:
+
+   ```sh
+   pnpm self-host plan --stage self
+   pnpm self-host deploy --stage self
+   ```
+
+The site is at `https://jobs-self.<subdomain>.workers.dev`. It fills over the first few cron runs, which run every 20 minutes. The stage names `prod`, `preview` and `pr-<n>` are reserved. To remove everything the stage created, run `pnpm self-host destroy --stage self`.
+
+### Cost
+
+Workers Paid ($5 a month) is recommended. Workers Free also works if you set `INGEST_FEEDS_PER_RUN=8`, because Free allows 50 subrequests per cron run. D1, the queue and the cron triggers are on both plans. Workers AI on Free stops at 10,000 neurons a day, so if you turn on enrichment there, also set `ENRICHMENT_DAILY_NEURONS=10000`.
+
+### Optional features
+
+Each feature is off when you leave its variables empty. Every variable is described in `.env.example`.
+
+- **Search engines.** Every stage except `prod` sends `noindex`. To be indexed, set `SITE_HOSTNAME` and `SITE_ZONE` in `packages/core/src/site.ts` to a zone on your account, then deploy the `prod` stage as in [Deploying from your machine](#deploying-from-your-machine).
+- **AI enrichment.** This stage makes no Workers AI calls until you set `ENRICHMENT_SWEEP_LIMIT` (8 is the production value). `ENRICHMENT_DAILY_NEURONS` caps daily spend. The default cap of 29000 keeps a month under about $10.
+- **GitHub or Google sign-in.** Set both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, or both Google variables. Leave a pair empty to hide that button.
+- **Email sign-in links and saved-search digests.** These need Cloudflare Email Sending on the zone in `SITE_HOSTNAME`. Mail is sent from `sign-in@` and `digest@` that hostname. Without it, the board still works, but emailed sign-in links and digests fail to send.
+- **Paid plans.** Set `BILLING_ENABLED=true` and add a Stripe test key to your Alchemy profile (`pnpm alchemy profile edit --profile mine --add Stripe`). Billing is off by default.
+
+The page footer, the about, contact, privacy and terms pages, and the crawler's user agent still name this deployment. To rebrand, edit `packages/core/src/site.ts`, `apps/web/src/features/information/view.ts`, `apps/web/src/client/board/view.ts` and `packages/job-sources/src/http.ts`.
+
 ## Deploy to Cloudflare
 
 Deploys run from GitHub Actions. Every pull request and push runs the full check, test and build. A push to `main` that passes deploys the `prod` stage and checks that `jobs.rowlandekemezie.com` answers.

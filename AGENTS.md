@@ -52,6 +52,8 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `pnpm typecheck` | `turbo run typecheck` |
 | `pnpm vendor:agent-sources` | Shallow-clone Effect, effect-solutions, xstate, alchemy, better-auth, and Foldkit mirrors |
 | `pnpm infra:plan` | Preview the Alchemy Stack diff without applying |
+| `pnpm self-host plan\|deploy\|destroy --stage <name>` | Check self-host inputs, then run Alchemy for a stage on the caller's own Cloudflare account |
+| `pnpm env:example` | Regenerate `.env.example` from the `.env.schema` files; `check` fails when it is stale |
 | `pnpm infra:deploy` / `pnpm infra:destroy` | Apply or tear down the Stack (asks for approval) |
 | `pnpm exec lefthook install` | Install git hooks (also via `prepare`) |
 | `pnpm turbo run check test build` | Required validation before claiming a change is ready |
