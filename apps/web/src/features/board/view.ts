@@ -3,7 +3,6 @@ import {
   offSiteHref,
   roleLevels,
   seniorities,
-  SOURCE_REPOSITORY_URL,
 } from "@rat-stack/core/contracts";
 import type {
   JobDetailValue,
@@ -49,6 +48,7 @@ import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
 import { jobRouter, pricingRouter } from "../../client/route.js";
 import { addServerCommandOf } from "../agent-tokens/view.js";
+import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
 
 const NEW_WINDOW = 86_400_000;
@@ -435,22 +435,7 @@ export const boardAfterword = (
           ),
         ]
       ),
-      h.section(
-        [h.Class("open-source"), h.AriaLabelledBy("open-source-title")],
-        [
-          h.h2([h.Id("open-source-title")], ["Open source"]),
-          h.p(
-            [],
-            [
-              "The board, the crawler and the agent tools are MIT licensed. Read the code, file an issue or send a fix.",
-            ]
-          ),
-          h.a(
-            [h.Class("repo-link"), h.Href(SOURCE_REPOSITORY_URL)],
-            ["View the code on GitHub"]
-          ),
-        ]
-      ),
+      pricingSummary(model.billing, h),
     ]
   );
 
