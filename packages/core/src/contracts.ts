@@ -14,7 +14,7 @@ import { AlreadyPro } from "./already-pro.js";
 import { BillingUnavailable } from "./billing-unavailable.js";
 import { CompanyIntel, CompanySlug, TREND_WEEKS } from "./company-intel.js";
 import { CompanyJobs } from "./company-jobs.js";
-import { Membership, Plan } from "./entitlement.js";
+import { Membership, Plan, PlanOffer } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
@@ -178,9 +178,9 @@ export {
   FreeEntitlement,
   isPro,
   Membership,
+  BillingInterval,
   Plan,
-  PLAN_PRICES,
-  plans,
+  PlanOffer,
   paidFeaturesAllowed,
   ProEntitlement,
 } from "./entitlement.js";
@@ -188,7 +188,8 @@ export {
 export type {
   EntitlementValue,
   MembershipValue,
-  PlanPrice,
+  BillingIntervalValue,
+  PlanOfferValue,
   PlanValue,
 } from "./entitlement.js";
 
@@ -397,9 +398,18 @@ export const membershipContract = defineContract("membership", {
   output: Membership,
 });
 
+export const proPlansContract = defineContract("proPlans", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "List the Pro plans on sale with their price and billing interval, or none when this site does not sell Pro",
+  failure: Schema.Never,
+  input: Schema.Struct({}),
+  output: Schema.Array(PlanOffer),
+});
+
 export const startCheckoutContract = defineContract("startCheckout", {
   description:
-    "Start a Stripe Checkout for Pro on the monthly, quarterly, or yearly plan and return the hosted payment page URL",
+    "Start a Stripe Checkout for Pro on one of the plans proPlans lists and return the hosted payment page URL",
   failure: Schema.Union([
     Unauthorized,
     JobStoreUnavailable,
@@ -487,6 +497,7 @@ export const jobBoardContracts = [
   noteTrackedJobContract,
   untrackJobContract,
   membershipContract,
+  proPlansContract,
   startCheckoutContract,
   openBillingPortalContract,
   setInstantAlertsContract,

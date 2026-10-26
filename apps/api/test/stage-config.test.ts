@@ -44,6 +44,7 @@ describe("persistent preview defaults", () => {
         digestSendsPerRun: 1,
         digestSiteOrigin: previewOrigin,
         magicLinkDailySendLimit: 10,
+        proPlans: [],
         subdomain: Option.some("rowland-ekemezie"),
       });
       expect(publicOriginOf("preview", config.subdomain)).toStrictEqual(
@@ -74,6 +75,7 @@ describe("persistent preview defaults", () => {
           digestSendsPerRun: 25,
           digestSiteOrigin: "https://jobs.rowlandekemezie.com",
           magicLinkDailySendLimit: 900,
+          proPlans: [],
           subdomain: Option.none(),
         });
         expect(
@@ -106,6 +108,7 @@ describe("persistent preview defaults", () => {
           digestSendsPerRun: 0,
           digestSiteOrigin: "https://preview.example.test",
           magicLinkDailySendLimit: 0,
+          proPlans: [],
           subdomain: Option.some("rowland-ekemezie"),
         });
         expect(
@@ -116,6 +119,34 @@ describe("persistent preview defaults", () => {
             .billingEnabled
         ).toBe(true);
       })
+  );
+
+  it.effect("reads PRO_PLANS and treats an empty value as no plans", () =>
+    Effect.gen(function* proPlans() {
+      const weekly = yield* configured("preview", {
+        PRO_PLANS: '[{"plan":"Weekly","amountCents":500,"interval":"week"}]',
+      });
+
+      const empty = yield* configured("preview", { PRO_PLANS: "" });
+
+      expect(weekly.proPlans).toStrictEqual([
+        {
+          amountCents: 500,
+          interval: "week",
+          intervalCount: 1,
+          onSale: true,
+          plan: "Weekly",
+        },
+      ]);
+      expect(empty.proPlans).toStrictEqual([]);
+    })
+  );
+
+  it.effect("refuses a PRO_PLANS value that is not valid plan JSON", () =>
+    configured("preview", { PRO_PLANS: '{"plan":"Weekly"}' }).pipe(
+      Effect.flip,
+      Effect.asVoid
+    )
   );
 
   it.effect("refuses a mismatched preview account instead of hiding it", () =>

@@ -1,9 +1,4 @@
-import {
-  AccountId,
-  BillingChange,
-  Plan,
-  SubscriptionStatus,
-} from "@rat-stack/core";
+import { AccountId, BillingChange, SubscriptionStatus } from "@rat-stack/core";
 import type { BillingChangeValue, PlanValue } from "@rat-stack/core";
 import { Array, Data, Effect, Option, Redacted, Schema } from "effect";
 
@@ -205,17 +200,11 @@ const decodeCheckout = Schema.decodeEffect(
 
 export interface StripeEndpoint {
   readonly livemode: boolean;
-  readonly prices: Readonly<Record<PlanValue, string>>;
+  readonly prices: ReadonlyMap<string, PlanValue>;
   readonly secret: Redacted.Redacted;
 }
 
 export type EventTerms = Pick<StripeEndpoint, "livemode" | "prices">;
-
-const planOfPrice = (
-  prices: EventTerms["prices"],
-  price: string
-): Option.Option<PlanValue> =>
-  Array.findFirst(Plan.literals, (plan) => prices[plan] === price);
 
 const subscriptionChangeOf = (
   terms: EventTerms,
@@ -224,7 +213,7 @@ const subscriptionChangeOf = (
   const subscription = event.data.object;
 
   const priced = Array.findFirst(subscription.items.data, (item) =>
-    planOfPrice(terms.prices, item.price.id).pipe(
+    Option.fromNullishOr(terms.prices.get(item.price.id)).pipe(
       Option.map((plan) => ({ item, plan }))
     )
   );

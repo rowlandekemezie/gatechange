@@ -40,14 +40,24 @@ const SANDBOX_MONTHLY = "price_1USIFA0ZnafJYNlYo9bbbD97";
 
 const sandbox: EventTerms = {
   livemode: false,
-  prices: {
-    Monthly: SANDBOX_MONTHLY,
-    Quarterly: "price_sandbox_quarterly",
-    Yearly: "price_sandbox_yearly",
-  },
+  prices: new Map([
+    ["price_sandbox_weekly", "Weekly"],
+    [SANDBOX_MONTHLY, "Monthly"],
+    ["price_sandbox_yearly", "Yearly"],
+  ]),
 };
 
 const endpoint: StripeEndpoint = { ...sandbox, secret };
+
+const monthlyOnSale = {
+  offer: {
+    amountCents: 1900,
+    interval: "month",
+    intervalCount: 1,
+    plan: "Monthly",
+  },
+  priceId: Effect.succeed("price_monthly"),
+} as const;
 
 class InvalidRequestError extends Data.TaggedError("InvalidRequestError")<{
   readonly message: string;
@@ -239,23 +249,21 @@ describe("Stripe events to billing changes", () => {
   );
 
   it.effect(
-    "reads the plan from the stage's price id, whatever the price metadata says",
+    "grants the weekly plan from a configured weekly price id, whatever the price metadata says",
     () =>
       Effect.gen(function* byPrice() {
-        const change = yield* changeOf(created, {
-          ...sandbox,
-          prices: {
-            Monthly: "price_sandbox_monthly",
-            Quarterly: SANDBOX_MONTHLY,
-            Yearly: "price_sandbox_yearly",
-          },
-        });
+        const weekly = created.replaceAll(
+          SANDBOX_MONTHLY,
+          "price_sandbox_weekly"
+        );
+
+        const change = yield* changeOf(weekly);
 
         expect(
           Predicate.isTagged(change, "ApplySubscription")
             ? change.subscription.plan
             : null
-        ).toBe("Quarterly");
+        ).toBe("Weekly");
       })
   );
 
@@ -390,8 +398,8 @@ describe("checkout session request", () => {
             ),
           createCustomer: () => Effect.succeed({ id: "cus_TestAda" }),
           createPortal: () => Effect.succeed({ url: "https://portal.example" }),
+          onSale: [monthlyOnSale],
           portalConfiguration: Effect.succeed("bpc_1"),
-          priceOf: () => Effect.succeed("price_monthly"),
           siteOrigin: "https://jobs.example",
         });
 
@@ -443,8 +451,8 @@ describe("checkout session request", () => {
               })
             ),
           createPortal: () => Effect.succeed({ url: "https://portal.example" }),
+          onSale: [monthlyOnSale],
           portalConfiguration: Effect.succeed("bpc_1"),
-          priceOf: () => Effect.succeed("price_monthly"),
           siteOrigin: "https://jobs.example",
         });
 

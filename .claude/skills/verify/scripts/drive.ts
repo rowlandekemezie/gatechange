@@ -1236,22 +1236,27 @@ const run = async () => {
     pricing: async () => {
       await goTo(new URL("/pricing", url).href);
 
-      const plans = await waitFor("three plan cards", async () => {
-        const found = await evaluate(
-          Schema.Struct({
-            names: Schema.Array(Schema.String),
-            overflow: Schema.Finite,
-            prices: Schema.Array(Schema.String),
-          }),
-          `({
+      const plans = await waitFor(
+        "plan cards or the not-on-sale note",
+        async () => {
+          const found = await evaluate(
+            Schema.Struct({
+              names: Schema.Array(Schema.String),
+              notOnSale: Schema.Boolean,
+              overflow: Schema.Finite,
+              prices: Schema.Array(Schema.String),
+            }),
+            `({
             names: [...document.querySelectorAll("li.plan .plan-name")].map((node) => node.textContent),
+            notOnSale: document.body.textContent.includes("Pro is not on sale on this site."),
             overflow: document.documentElement.scrollWidth - window.innerWidth,
             prices: [...document.querySelectorAll("li.plan .plan-price")].map((node) => node.textContent),
           })`
-        );
+          );
 
-        return found.names.length === 3 ? found : undefined;
-      });
+          return found.names.length > 0 || found.notOnSale ? found : undefined;
+        }
+      );
 
       steps.push({ step: "opened the pricing page", ...plans });
 

@@ -14,6 +14,7 @@ import {
   membership,
   openBillingPortal,
   ProEntitlement,
+  proPlans,
   setInstantAlerts,
   startCheckout,
   Viewer,
@@ -21,6 +22,7 @@ import {
 import type {
   AccountIdValue,
   CheckoutRequest,
+  PlanOfferValue,
   SubscriptionRecordValue,
   SubscriptionStatusValue,
   ViewerValue,
@@ -44,6 +46,13 @@ const subscription = (
   version: { created: 1, eventId: "evt_1", rank: 0 },
   ...overrides,
 });
+
+const onSale: readonly PlanOfferValue[] = [
+  { amountCents: 500, interval: "week", intervalCount: 1, plan: "Weekly" },
+  { amountCents: 1900, interval: "month", intervalCount: 1, plan: "Monthly" },
+  { amountCents: 4900, interval: "month", intervalCount: 3, plan: "Quarterly" },
+  { amountCents: 14_900, interval: "year", intervalCount: 1, plan: "Yearly" },
+];
 
 interface World {
   readonly checkouts: CheckoutRequest[];
@@ -103,6 +112,7 @@ const layerOf = (world: World) =>
 
             return customer;
           }),
+        plans: onSale,
         portal: (customer) =>
           Effect.succeed(`https://billing.stripe.test/${customer}`),
       })
@@ -136,6 +146,7 @@ const layerOf = (world: World) =>
 
 const projection = toRpc([
   membership,
+  proPlans,
   startCheckout,
   openBillingPortal,
   setInstantAlerts,
@@ -257,6 +268,31 @@ describe("billing capabilities", () => {
           { account: ada, customer: "cus_ada", plan: "Quarterly" },
         ]);
         expect(world.created).toEqual([]);
+      })
+  );
+
+  it.effect("lists the plans on sale to an anonymous viewer", () =>
+    Effect.gen(function* listPlans() {
+      const client = yield* clientAs(Viewer.Anonymous(), emptyWorld());
+
+      expect(yield* client.proPlans({})).toEqual(onSale);
+    })
+  );
+
+  it.effect(
+    "refuses a plan that is not on sale before it creates a Stripe customer",
+    () =>
+      Effect.gen(function* offSale() {
+        const world = emptyWorld();
+        const client = yield* clientAs(member, world);
+
+        const failure = yield* Effect.flip(
+          client.startCheckout({ plan: "Daily" })
+        );
+
+        expect(failure._tag).toBe("BillingUnavailable");
+        expect(world.created).toEqual([]);
+        expect(world.checkouts).toEqual([]);
       })
   );
 

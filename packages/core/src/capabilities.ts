@@ -15,6 +15,7 @@ import { AlertStore } from "./alert-store.js";
 import { MAX_SAVED_SEARCHES } from "./alerts.js";
 import { AlreadyPro } from "./already-pro.js";
 import { BillingStore } from "./billing-store.js";
+import { BillingUnavailable } from "./billing-unavailable.js";
 import { Billing, entitlementOfAccount } from "./billing.js";
 import { companyIntelOf } from "./company-intel.js";
 import {
@@ -36,6 +37,7 @@ import {
   noteTrackedJobContract,
   setInstantAlertsContract,
   signInOptionsContract,
+  proPlansContract,
   startCheckoutContract,
   trackedJobsContract,
   trackJobContract,
@@ -244,9 +246,20 @@ const billingCustomerOf = Effect.fn("billingCustomerOf")(
   }
 );
 
+export const proPlans = implement(proPlansContract, () =>
+  Billing.use((billing) => Effect.succeed(billing.plans))
+);
+
 export const startCheckout = implement(startCheckoutContract, ({ plan }) =>
   Effect.gen(function* startCheckoutHandler() {
     const member = yield* currentMember;
+    const billing = yield* Billing;
+
+    if (!billing.plans.some((offer) => offer.plan === plan)) {
+      return yield* new BillingUnavailable({
+        message: "That plan is not on sale. Choose one on the pricing page.",
+      });
+    }
 
     if (isPro(yield* entitlementOfAccount(member.id))) {
       return yield* new AlreadyPro();
@@ -254,9 +267,7 @@ export const startCheckout = implement(startCheckoutContract, ({ plan }) =>
 
     const customer = yield* billingCustomerOf(member);
 
-    const url = yield* Billing.use((billing) =>
-      billing.checkout({ account: member, customer, plan })
-    );
+    const url = yield* billing.checkout({ account: member, customer, plan });
 
     return { url };
   })
@@ -390,6 +401,7 @@ export const capabilities = [
   noteTrackedJob,
   untrackJob,
   membership,
+  proPlans,
   startCheckout,
   openBillingPortal,
   setInstantAlerts,
