@@ -68,12 +68,7 @@ const navItems = (model: ModelValue, h: H): readonly Html[] => [
     "Roles"
   ),
   navLink(h, `${boardUrl(model.filters)}#agents`, false, "For agents"),
-  planLink(
-    model.billing,
-    model.account.session,
-    Schema.is(Route.Pricing)(model.route),
-    h
-  ),
+  planLink(model.billing, Schema.is(Route.Pricing)(model.route), h),
   navLink(h, SOURCE_REPOSITORY_URL, false, "GitHub"),
   navLink(
     h,

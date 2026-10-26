@@ -610,7 +610,7 @@ a {
   margin-top: clamp(4rem, 10vw, 6.5rem);
 }
 
-.afterword h2 {
+.agents h2 {
   margin: 0 0 0.75rem;
   font-family: var(--display);
   font-size: clamp(1.75rem, 4vw, 2.5rem);
@@ -619,7 +619,7 @@ a {
   letter-spacing: -0.01em;
 }
 
-.afterword p {
+.agents p {
   max-width: 34rem;
   margin: 0;
   color: var(--ink-soft);
@@ -647,22 +647,6 @@ a {
   line-height: 1.75;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.repo-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  margin-top: 1.25rem;
-  padding: 0 1.25rem;
-  border: 1px solid var(--field);
-  border-radius: 0.5rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.repo-link:hover {
-  border-color: var(--ink);
 }
 
 .footer {
@@ -1063,14 +1047,96 @@ a {
   max-width: var(--measure);
 }
 
-.tiers {
+.price-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: 1rem;
   margin: 1.5rem 0;
 }
 
-.tier,
+.price-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 1.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+}
+
+.price-card-pro {
+  --ink: #111214;
+  --ink-soft: #3a3b3f;
+  --rule: rgb(17 18 20 / 0.28);
+  --pine: #111214;
+  --focus: #111214;
+  --paper-raised: rgb(255 255 255 / 0.35);
+  border-color: var(--marigold);
+  background: var(--marigold);
+  color: var(--ink);
+}
+
+.price-card-name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.price-card-price {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.price-card-cadence {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.price-card-soon {
+  font-size: 2rem;
+}
+
+.price-card-copy {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.price-card .plan-features,
+.price-card .plans {
+  align-self: stretch;
+}
+
+.price-card-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 3rem;
+  margin-top: auto;
+  padding: 0 1.375rem;
+  border: 1px solid var(--field);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.price-card-button:hover {
+  border-color: var(--ink);
+}
+
+.price-card-pro .price-card-button,
+.price-card-pro .plan-button {
+  border-color: #111214;
+  background: #111214;
+  color: #f2f2ee;
+}
+
 .plan {
   padding: 1rem 1.1rem;
   border: 1px solid var(--rule);
@@ -1079,18 +1145,12 @@ a {
   overflow-wrap: anywhere;
 }
 
-.tier h2,
 .plan-name {
   margin: 0 0 0.5rem;
   font-family: var(--display);
   font-size: 1.25rem;
 }
 
-.tier-pro {
-  border-color: var(--marigold);
-}
-
-.tier-lede,
 .tier-note,
 .plan-saving,
 .plan-note {
@@ -1106,15 +1166,6 @@ a {
 
 .plan-features li + li {
   margin-top: 0.3rem;
-}
-
-.soon {
-  padding: 0 0.4rem;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  color: var(--ink-soft);
-  font-size: 0.8125rem;
-  white-space: nowrap;
 }
 
 .plans {
