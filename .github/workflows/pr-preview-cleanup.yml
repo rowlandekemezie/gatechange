@@ -54,6 +54,19 @@ jobs:
         run: |
           if [[ ! "$PR_STAGE" =~ ^pr-[1-9][0-9]*$ ]]; then exit 1; fi
           pnpm exec alchemy provider check-env --provider Cloudflare --no-input
+          pnpm exec alchemy state list --backend cloudflare --profile preview --no-input --log-level error > /dev/null
+          pnpm exec alchemy state list JobBoard --backend cloudflare --profile preview --no-input --log-level error > "$RUNNER_TEMP/pr-state-stages"
+          present=false
+          while IFS= read -r path; do
+            if [[ -n "$path" && ! "$path" =~ ^JobBoard/[^/]+/$ ]]; then
+              echo "Unexpected stage listing; refusing cleanup: $path"; exit 1
+            fi
+            if [ "$path" = "JobBoard/$PR_STAGE/" ]; then present=true; fi
+          done < "$RUNNER_TEMP/pr-state-stages"
+          if [ "$present" = false ]; then
+            echo "No preview state for $PR_STAGE; nothing to remove."
+            exit 0
+          fi
           pnpm exec alchemy state list "JobBoard/$PR_STAGE" --recursive --backend cloudflare --profile preview --no-input --log-level error > "$RUNNER_TEMP/pr-state-paths"
           while IFS= read -r path; do
             case "$path" in
