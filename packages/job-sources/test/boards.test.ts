@@ -95,6 +95,12 @@ describe("company board registry", () => {
     expect(withoutTerms).toStrictEqual([]);
   });
 
+  it("keeps the registry sorted by company name", () => {
+    const names = companyBoards.map((board) => board.name.toLowerCase());
+
+    expect(names).toStrictEqual(names.toSorted());
+  });
+
   it("refreshes every board within six hours at the default feeds per run, with aggregators and one feed that always fails", () => {
     const catalog = feedSpecs(companyBoards).map(feedRefOf);
 
@@ -103,9 +109,9 @@ describe("company board registry", () => {
     ).toBeLessThanOrEqual(REFRESH_MINUTES);
   });
 
-  it("misses the six hour refresh with 400 boards at the default feeds per run", () => {
-    const fourHundred = feedSpecs(
-      Array.from({ length: 400 }, (_, index) => ({
+  it("misses the six hour refresh with 600 boards at the default feeds per run", () => {
+    const sixHundred = feedSpecs(
+      Array.from({ length: 600 }, (_, index) => ({
         ats: "greenhouse" as const,
         name: `Company ${index}`,
         slug: `company-${index}`,
@@ -113,7 +119,7 @@ describe("company board registry", () => {
     ).map(feedRefOf);
 
     expect(
-      longestBoardGapMinutes(fourHundred, DEFAULT_FEEDS_PER_RUN)
+      longestBoardGapMinutes(sixHundred, DEFAULT_FEEDS_PER_RUN)
     ).toBeGreaterThan(REFRESH_MINUTES);
   });
 });

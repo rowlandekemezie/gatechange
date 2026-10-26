@@ -18,7 +18,7 @@ browser ─▶ Website ─▶ /rpc ─▶ JobsBackend.listJobs / boardStats ─�
 
 Sources:
 
-- 116 company boards on Greenhouse, Lever and Ashby (verified list in `packages/job-sources/src/boards.ts`).
+- 406 company boards on Greenhouse, Ashby, Lever, SmartRecruiters and Workable (verified list in `packages/job-sources/src/boards.ts`).
 - Remote OK, Remotive, Himalayas and Jobicy searches for engineering manager, director and VP roles.
 - The monthly Hacker News "Who is hiring?" thread.
 
@@ -138,7 +138,7 @@ Public `/about`, `/privacy`, `/terms` and `/contact` pages describe coverage, da
 
 ### Workers plan
 
-Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse 20 large job boards. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.
+Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse the default 30 job boards a run. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.
 
 ## Change it
 
