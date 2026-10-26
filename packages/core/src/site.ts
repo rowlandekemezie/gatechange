@@ -10,13 +10,21 @@ export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
 
 export const SOURCE_REPOSITORY_URL = "https://github.com/rowlandekemezie/jobs";
 
-export const SITE_WORKERS_SUBDOMAIN = "rowland-ekemezie";
+export const OWNER_WORKERS_SUBDOMAIN = "rowland-ekemezie";
 
-const OWN_DOMAINS = [
-  SITE_ZONE,
-  `${SITE_WORKERS_SUBDOMAIN}.workers.dev`,
-  "localhost",
-] as const;
+declare const __WORKERS_SUBDOMAIN__: string | undefined;
+
+export const siteWorkersSubdomainOf = (configured: string | undefined) =>
+  configured === undefined || configured === ""
+    ? OWNER_WORKERS_SUBDOMAIN
+    : configured;
+
+export const SITE_WORKERS_SUBDOMAIN = siteWorkersSubdomainOf(
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Bundlers replace this build-time define; Node, which has no define, reads WORKERS_SUBDOMAIN from its environment instead.
+  typeof __WORKERS_SUBDOMAIN__ === "string"
+    ? __WORKERS_SUBDOMAIN__
+    : globalThis.process?.env.WORKERS_SUBDOMAIN
+);
 
 const DNS_NAME = /^[a-z0-9.-]+$/u;
 
@@ -24,31 +32,36 @@ const IPV4_LITERAL = /^[0-9.]+$/u;
 
 const WEB_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
 
-const isOffSiteName = (hostname: string) => {
+const isOffSiteName = (hostname: string, workersSubdomain: string) => {
   const host = hostname.replace(/\.+$/u, "");
 
   return (
     DNS_NAME.test(host) &&
     !IPV4_LITERAL.test(host) &&
-    !OWN_DOMAINS.some(
+    ![SITE_ZONE, `${workersSubdomain}.workers.dev`, "localhost"].some(
       (domain) => host === domain || host.endsWith(`.${domain}`)
     )
   );
 };
 
-export const offSiteHref = (url: string): Option.Option<string> => {
-  const parsed = URL.parse(url);
+export const offSiteHrefOn =
+  (workersSubdomain: string) =>
+  (url: string): Option.Option<string> => {
+    const parsed = URL.parse(url);
 
-  if (parsed === null || !WEB_PROTOCOLS.has(parsed.protocol)) {
-    return Option.none();
-  }
+    if (parsed === null || !WEB_PROTOCOLS.has(parsed.protocol)) {
+      return Option.none();
+    }
 
-  const onOurPage = URL.parse(url, `${parsed.protocol}//${SITE_HOSTNAME}/x/`);
+    const onOurPage = URL.parse(url, `${parsed.protocol}//${SITE_HOSTNAME}/x/`);
 
-  return onOurPage?.href === parsed.href && isOffSiteName(parsed.hostname)
-    ? Option.some(parsed.href)
-    : Option.none();
-};
+    return onOurPage?.href === parsed.href &&
+      isOffSiteName(parsed.hostname, workersSubdomain)
+      ? Option.some(parsed.href)
+      : Option.none();
+  };
+
+export const offSiteHref = offSiteHrefOn(SITE_WORKERS_SUBDOMAIN);
 
 export const WorkersSubdomain = Schema.String.check(
   Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u)

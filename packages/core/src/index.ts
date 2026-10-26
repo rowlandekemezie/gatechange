@@ -447,6 +447,8 @@ export type {
 export {
   isPullRequestStage,
   offSiteHref,
+  offSiteHrefOn,
+  OWNER_WORKERS_SUBDOMAIN,
   previewWorkerName,
   PROD_STAGE,
   publicOriginOf,
@@ -455,6 +457,7 @@ export {
   SITE_WORKERS_SUBDOMAIN,
   SITE_ZONE,
   siteHostsOf,
+  siteWorkersSubdomainOf,
   WorkersSubdomain,
 } from "./site.js";
 

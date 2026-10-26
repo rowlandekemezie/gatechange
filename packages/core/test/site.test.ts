@@ -3,8 +3,12 @@ import { Option, Schema } from "effect";
 
 import {
   isPullRequestStage,
+  offSiteHref,
+  offSiteHrefOn,
+  OWNER_WORKERS_SUBDOMAIN,
   publicOriginOf,
   siteHostsOf,
+  siteWorkersSubdomainOf,
   WorkersSubdomain,
 } from "../src/index.js";
 
@@ -86,6 +90,42 @@ describe("pull request origins", () => {
     "does not treat %s as a PR",
     (stage) => {
       expect(isPullRequestStage(stage)).toBe(false);
+    }
+  );
+});
+
+describe("own-host links", () => {
+  it("drops a listing link to the owner's own Worker when nothing is configured", () => {
+    expect(
+      offSiteHref(
+        `https://jobs-preview.${OWNER_WORKERS_SUBDOMAIN}.workers.dev/api/auth/magic-link/verify?token=synthetic`
+      )
+    ).toStrictEqual(Option.none());
+    expect(
+      offSiteHref("https://jobs.rowlandekemezie.com/jobs/1")
+    ).toStrictEqual(Option.none());
+  });
+
+  it("drops a listing link to a self-host's own Worker on its configured subdomain", () => {
+    const selfHosted = offSiteHrefOn(siteWorkersSubdomainOf("alice"));
+
+    expect(
+      selfHosted(
+        "https://jobs-self.alice.workers.dev/api/auth/magic-link/verify?token=synthetic"
+      )
+    ).toStrictEqual(Option.none());
+    expect(selfHosted("https://alice.workers.dev/")).toStrictEqual(
+      Option.none()
+    );
+    expect(selfHosted("https://someone.workers.dev/jobs/1")).toStrictEqual(
+      Option.some("https://someone.workers.dev/jobs/1")
+    );
+  });
+
+  it.each([undefined, ""])(
+    "falls back to the owner's subdomain when WORKERS_SUBDOMAIN is %o at build",
+    (configured) => {
+      expect(siteWorkersSubdomainOf(configured)).toBe(OWNER_WORKERS_SUBDOMAIN);
     }
   );
 });

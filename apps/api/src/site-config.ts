@@ -7,7 +7,7 @@ export const workersSubdomain = Config.option(
       Schema.makeFilter((value) =>
         value === SITE_WORKERS_SUBDOMAIN
           ? undefined
-          : `WORKERS_SUBDOMAIN must match SITE_WORKERS_SUBDOMAIN (${SITE_WORKERS_SUBDOMAIN}); update the shared site account before deploying under another account`
+          : `WORKERS_SUBDOMAIN must match SITE_WORKERS_SUBDOMAIN (${SITE_WORKERS_SUBDOMAIN}), the subdomain this build trusts; set WORKERS_SUBDOMAIN before building and deploying`
       )
     ),
     "WORKERS_SUBDOMAIN"

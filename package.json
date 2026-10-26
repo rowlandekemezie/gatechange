@@ -11,6 +11,8 @@
     "build": "turbo run build",
     "check": "pnpm run lockfile:check && varlock load && turbo run typecheck && ultracite check && oxfmt --check .",
     "env:check": "varlock load",
+    "env:example": "node scripts/env-example.ts",
+    "env:example-check": "node scripts/env-example.ts --check",
     "fix": "ultracite fix && oxfmt .",
     "lint": "ultracite check && oxfmt --check .",
     "lockfile:check": "pnpm --config.optimistic-repeat-install=false install --frozen-lockfile --offline --lockfile-only --ignore-scripts",
@@ -24,6 +26,7 @@
     "typecheck": "turbo run typecheck",
     "typecheck-scripts": "tsc --noEmit -p tsconfig.json",
     "vendor:agent-sources": "./scripts/vendor-agent-sources.sh",
+    "self-host": "turbo run build --filter=@rat-stack/core && varlock run -- node apps/infra/src/self-host.ts",
     "ingest:logs": "pnpm --filter @rat-stack/infra run logs",
     "infra:ci-credentials": "pnpm --filter @rat-stack/infra exec alchemy deploy --config stacks/github.ts"
   },

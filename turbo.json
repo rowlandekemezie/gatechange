@@ -7,6 +7,7 @@
     },
     "build": {
       "dependsOn": ["^build"],
+      "env": ["WORKERS_SUBDOMAIN"],
       "outputs": ["dist/**"]
     },
     "test": {
@@ -24,6 +25,10 @@
       "dependsOn": ["@rat-stack/job-sources#build"],
       "outputs": []
     },
+    "//#env:example-check": {
+      "cache": false,
+      "outputs": []
+    },
     "//#lockfile:check": {
       "cache": false,
       "outputs": []
@@ -31,6 +36,7 @@
     "check": {
       "dependsOn": [
         "//#lockfile:check",
+        "//#env:example-check",
         "typecheck",
         "//#lint",
         "//#typecheck-scripts"
