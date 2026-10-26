@@ -116,7 +116,7 @@ pnpm infra:deploy --stage prod
 
 Alchemy creates the D1 database and applies `packages/job-store/migrations/`, deploys `JobsBackend` with its cron trigger, builds the Foldkit site, and attaches `jobs.rowlandekemezie.com`.
 
-Prod sells Pro by default, so the deploy also needs `PRO_PLANS`, a live Stripe key on the profile or in `STRIPE_API_KEY`, and an `rk_live_` key in `STRIPE_RESTRICTED_KEY`. Without `PRO_PLANS` it refuses to deploy rather than archive the live prices. Set `BILLING_ENABLED=false` to deploy prod without billing. In CI these come from the `production` environment's `PRO_PLANS` variable and `STRIPE_LIVE_API_KEY` and `STRIPE_LIVE_RESTRICTED_KEY` secrets. Run the CI workflow by hand with `prod_plan_only` to see the prod plan for a branch without deploying.
+Prod sells Pro by default, so the deploy also needs `PRO_PLANS`, a live Stripe key on the profile or in `STRIPE_API_KEY`, and an `rk_live_` key in `STRIPE_RESTRICTED_KEY`. Without `PRO_PLANS` it refuses to deploy rather than archive the live prices. Set `BILLING_ENABLED=false` to deploy prod without billing. In CI these come from the `production` environment's `PRO_PLANS` variable and `STRIPE_LIVE_API_KEY` and `STRIPE_LIVE_RESTRICTED_KEY` secrets.
 
 The board fills over the first couple of hours: each cron run fetches 20 due feeds, so all 125 feeds are covered after about seven runs.
 

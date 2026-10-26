@@ -14,10 +14,6 @@ on:
         description: Limit the preview plan/deploy to the shared PR backend parent
         type: boolean
         default: false
-      prod_plan_only:
-        description: Plan the selected branch against prod with the production environment's live Stripe keys, without deploying either stage
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -69,7 +65,7 @@ jobs:
   deploy:
     name: Deploy to Cloudflare
     needs: check
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.prod_plan_only)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -126,7 +122,6 @@ jobs:
           STRIPE_RESTRICTED_KEY: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY }}
 
       - name: Deploy
-        if: ${{ !inputs.prod_plan_only }}
         working-directory: apps/infra
         run: pnpm exec alchemy deploy --stage prod --yes
         env:
@@ -142,7 +137,6 @@ jobs:
           STRIPE_RESTRICTED_KEY: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY }}
 
       - name: Smoke test
-        if: ${{ !inputs.prod_plan_only }}
         run: |
           for attempt in 1 2 3 4 5 6; do
             status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/) && [ "$status" = "200" ] && exit 0
@@ -153,7 +147,6 @@ jobs:
           exit 1
 
       - name: Smoke test auth
-        if: ${{ !inputs.prod_plan_only }}
         run: |
           for attempt in 1 2 3 4 5 6; do
             status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/api/auth/ok) && [ "$status" = "200" ] && exit 0
@@ -164,7 +157,6 @@ jobs:
           exit 1
 
       - name: Verify public HTML and filter exclusions
-        if: ${{ !inputs.prod_plan_only }}
         run: |
           for path in / /pricing /about /privacy /terms /contact; do
             curl --connect-timeout 10 --max-time 30 -fsS "https://jobs.rowlandekemezie.com$path" > "$RUNNER_TEMP/public-page.html"
@@ -178,7 +170,7 @@ jobs:
   preview:
     name: Deploy persistent preview
     needs: check
-    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && !inputs.prod_plan_only)
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: preview
