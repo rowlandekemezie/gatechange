@@ -132,9 +132,17 @@ export type ListingDetailsValue = typeof ListingDetails.Type;
 
 export const Enrichment = Schema.Struct({
   ...ListingDetails.fields,
+  board: Schema.NullOr(SourceName),
   enrichedAt: EpochMillis,
-  model: Schema.NonEmptyString,
-});
+  model: Schema.NullOr(Schema.NonEmptyString),
+}).check(
+  Schema.makeFilter(
+    (enrichment) =>
+      enrichment.board !== null ||
+      enrichment.model !== null ||
+      "an enrichment needs a board or a model"
+  )
+);
 
 export type EnrichmentValue = typeof Enrichment.Type;
 

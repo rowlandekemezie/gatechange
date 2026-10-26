@@ -208,6 +208,7 @@ describe("company records on the SQL store", () => {
             ] as const,
             ([id, min, max]) =>
               store.saveEnrichment(id, {
+                board: null,
                 enrichedAt: NOW,
                 model: "fixture",
                 remotePolicy: null,

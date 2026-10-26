@@ -1,5 +1,7 @@
 import { Array, Clock, Effect, Option, pipe, Schema } from "effect";
 
+import { boardFactsOf } from "./board-facts.js";
+import type { BoardFactsRow } from "./board-facts.js";
 import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
 import { JobStore } from "./job-store.js";
@@ -26,6 +28,7 @@ export class IngestInProgress extends Schema.TaggedError<IngestInProgress>()(
 export const admissionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
 
 export interface FeedListings {
+  readonly boardFacts: readonly BoardFactsRow[];
   readonly jobs: readonly JobValue[];
   readonly stillListed: readonly string[];
   readonly unlinked: readonly Sighted[];
@@ -44,6 +47,7 @@ export const listingsFromPostings = (
         Option.map((listing) => ({
           fromCatalog: Option.isSome(feed.company) && posting.company === "",
           listing,
+          posting,
         }))
       )
     ),
@@ -51,18 +55,25 @@ export const listingsFromPostings = (
     Array.dedupeWith((left, right) => left.listing.id === right.listing.id)
   );
 
+  const boardFacts: BoardFactsRow[] = [];
   const jobs: JobValue[] = [];
   const stillListed: string[] = [];
   const unlinked: Sighted[] = [];
   const historySightings: Sighted[] = [];
 
-  for (const { listing, fromCatalog } of listings) {
+  for (const { listing, fromCatalog, posting } of listings) {
     const { url, ...sighting } = listing;
 
     if (listing.postedAt < admissionCutoff(seenAt)) {
       stillListed.push(listing.id);
     } else if (Option.isSome(url)) {
       jobs.push({ ...sighting, url: url.value });
+
+      const facts = boardFactsOf(listing, posting);
+
+      if (facts !== null) {
+        boardFacts.push(facts);
+      }
     } else {
       unlinked.push(sighting);
 
@@ -72,7 +83,7 @@ export const listingsFromPostings = (
     }
   }
 
-  return { historySightings, jobs, stillListed, unlinked };
+  return { boardFacts, historySightings, jobs, stillListed, unlinked };
 };
 
 const warnOfUnlinked = (feed: FeedRef, unlinked: readonly Sighted[]) =>
@@ -104,12 +115,13 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
           })
         ),
       onSuccess: (postings) => {
-        const { jobs, stillListed, unlinked, historySightings } =
+        const { boardFacts, jobs, stillListed, unlinked, historySightings } =
           listingsFromPostings(feed, postings, seenAt);
 
         return store.recordSightings(historySightings, seenAt).pipe(
           Effect.andThen(store.markListed(feed.key, stillListed, seenAt)),
           Effect.andThen(store.replaceFeed(feed.key, jobs, seenAt)),
+          Effect.tap(() => store.saveBoardFacts(boardFacts, seenAt)),
           Effect.tap(() => warnOfUnlinked(feed, unlinked)),
           Effect.map((replacement): FeedOutcomeValue => ({
             departed: replacement.departed,

@@ -188,6 +188,7 @@ describe("the companyIntel capability", () => {
             ] as const,
             ([id, min, max]) =>
               store.saveEnrichment(id, {
+                board: null,
                 enrichedAt: NOW,
                 model: "fixture",
                 remotePolicy: null,

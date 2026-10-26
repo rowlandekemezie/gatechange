@@ -54,6 +54,7 @@ const job = (id: string, overrides: Partial<JobValue> = {}): JobValue => ({
 const enrichment = (
   overrides: Partial<EnrichmentValue> = {}
 ): EnrichmentValue => ({
+  board: null,
   enrichedAt: NOW + 1,
   model: "test-model",
   remotePolicy: "RemoteInRegion",
@@ -65,6 +66,7 @@ const enrichment = (
 });
 
 const bare: EnrichmentValue = {
+  board: null,
   enrichedAt: NOW + 2,
   model: "test-model",
   remotePolicy: null,
@@ -517,6 +519,175 @@ describe("enrichment storage", () => {
           expect(found).toStrictEqual(
             Option.some({ ...job("a"), enrichment: second })
           );
+        })
+      )
+  );
+
+  it.effect(
+    "board facts stay through a model answer, which fills only what the board left empty",
+    () =>
+      withStore(
+        Effect.gen(function* boardFirst() {
+          const store = yield* JobStore;
+
+          const sweep = store.unenrichedListings({
+            finalSkips,
+            limit: 10,
+            since: 0,
+            sources: SourceName.literals,
+          });
+
+          const facts = {
+            board: "Lever" as const,
+            facts: {
+              remotePolicy: "Hybrid" as const,
+              salary: { currency: "CAD" as const, max: 200_000, min: 170_000 },
+              seniority: null,
+            },
+            id: "a",
+          };
+
+          yield* store.replaceFeed("greenhouse:acme", [job("a")], NOW);
+          yield* store.saveBoardFacts([facts], NOW);
+          yield* store.saveBoardFacts([facts], NOW + 5);
+
+          const boardOnly = {
+            ...bare,
+            board: "Lever" as const,
+            enrichedAt: NOW,
+            model: null,
+            remotePolicy: "Hybrid" as const,
+            salary: { currency: "CAD" as const, max: 200_000, min: 170_000 },
+          };
+
+          expect(yield* store.find("a")).toStrictEqual(
+            Option.some({ ...job("a"), enrichment: boardOnly })
+          );
+          expect(yield* sweep).toStrictEqual(["a"]);
+
+          yield* store.saveEnrichment("a", enrichment());
+
+          expect(yield* store.find("a")).toStrictEqual(
+            Option.some({
+              ...job("a"),
+              enrichment: enrichment({
+                board: "Lever",
+                remotePolicy: "Hybrid",
+                salary: { currency: "CAD", max: 200_000, min: 170_000 },
+              }),
+            })
+          );
+          expect(yield* sweep).toStrictEqual([]);
+        })
+      )
+  );
+
+  it.effect(
+    "board facts replace a model's guess and keep what only the model found",
+    () =>
+      withStore(
+        Effect.gen(function* boardOverModel() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed("greenhouse:acme", [job("a")], NOW);
+          yield* store.saveEnrichment("a", enrichment());
+          yield* store.saveBoardFacts(
+            [
+              {
+                board: "Greenhouse",
+                facts: {
+                  remotePolicy: "Onsite",
+                  salary: null,
+                  seniority: null,
+                },
+                id: "a",
+              },
+            ],
+            NOW + 5
+          );
+
+          expect(yield* store.find("a")).toStrictEqual(
+            Option.some({
+              ...job("a"),
+              enrichment: enrichment({
+                board: "Greenhouse",
+                remotePolicy: "Onsite",
+              }),
+            })
+          );
+        })
+      )
+  );
+
+  it.effect(
+    "repeating unchanged board facts writes no row, and a changed fact or board still writes",
+    () =>
+      withStore(
+        Effect.gen(function* unchangedBoardFacts() {
+          const inner = yield* SqlExecutor;
+          const changes: number[] = [];
+
+          const store = yield* makeJobStore.pipe(
+            Effect.provideService(
+              SqlExecutor,
+              SqlExecutor.of({
+                all: inner.all,
+                batch: (operation, statements) =>
+                  inner.batch(operation, statements).pipe(
+                    Effect.map((results) => {
+                      if (operation === "saveBoardFacts") {
+                        changes.push(
+                          ...results.map((result) => result.changes)
+                        );
+                      }
+
+                      return results;
+                    })
+                  ),
+              })
+            )
+          );
+
+          const facts = {
+            board: "Lever" as const,
+            facts: {
+              remotePolicy: "Hybrid" as const,
+              salary: { currency: "CAD" as const, max: 200_000, min: 170_000 },
+              seniority: "Director" as const,
+            },
+            id: "a",
+          };
+
+          yield* store.replaceFeed("greenhouse:acme", [job("a")], NOW);
+          yield* store.saveBoardFacts([facts], NOW);
+          yield* store.saveBoardFacts([facts], NOW + 5);
+          yield* store.saveBoardFacts(
+            [
+              {
+                ...facts,
+                facts: { remotePolicy: null, salary: null, seniority: null },
+              },
+            ],
+            NOW + 6
+          );
+          yield* store.saveBoardFacts(
+            [{ ...facts, board: "Ashby" as const }],
+            NOW + 7
+          );
+          yield* store.saveBoardFacts(
+            [
+              {
+                ...facts,
+                facts: {
+                  ...facts.facts,
+                  salary: { currency: "CAD", max: 210_000, min: 170_000 },
+                },
+              },
+            ],
+            NOW + 8
+          );
+
+          expect(changes).toStrictEqual([1, 0, 0, 1, 1]);
         })
       )
   );

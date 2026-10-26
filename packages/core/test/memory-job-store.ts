@@ -537,6 +537,23 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
 
         return { departed: stale.length, upserted: incoming.length };
       }),
+    saveBoardFacts: (rows, seenAt) =>
+      Effect.sync(() => {
+        for (const { board, facts, id } of rows) {
+          const existing = enrichments.get(id);
+
+          enrichments.set(id, {
+            board,
+            enrichedAt: existing?.enrichedAt ?? seenAt,
+            model: existing?.model ?? null,
+            remotePolicy: facts.remotePolicy ?? existing?.remotePolicy ?? null,
+            reportsTo: existing?.reportsTo ?? null,
+            salary: facts.salary ?? existing?.salary ?? null,
+            seniority: facts.seniority ?? existing?.seniority ?? null,
+            teamSize: existing?.teamSize ?? null,
+          });
+        }
+      }),
     saveEnrichment: (id, enrichment) =>
       Effect.sync(() => {
         enrichments.set(id, enrichment);
@@ -573,7 +590,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               job.firstSeenAt >= since &&
               !departed.has(job.id) &&
               sources.includes(job.source) &&
-              !enrichments.has(job.id) &&
+              (enrichments.get(job.id)?.model ?? null) === null &&
               (skip === undefined || !finalSkips.includes(skip.reason))
             );
           }),

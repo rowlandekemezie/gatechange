@@ -409,6 +409,10 @@ export {
   sweepLimitOf,
 } from "./enrichment.js";
 
+export { boardFactsOf, underBoardFacts } from "./board-facts.js";
+
+export type { BoardFactsRow, BoardFactsValue } from "./board-facts.js";
+
 export { EnricherUnavailable } from "./enricher-unavailable.js";
 
 export { EnrichmentQueue } from "./enrichment-queue.js";

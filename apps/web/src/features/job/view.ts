@@ -36,6 +36,28 @@ const fact = <A>(
 ): readonly Html[] =>
   value === null ? [] : [h.dt([], [term]), h.dd([], [label(value)])];
 
+const originNote = (
+  h: HtmlBuilder<MessageValue>,
+  { board, enrichedAt, model }: EnrichmentValue
+): readonly (Html | string)[] => {
+  if (model === null) {
+    return ["From the company's job board. "];
+  }
+
+  const at = DateTime.makeUnsafe(enrichedAt);
+
+  return [
+    board === null
+      ? `Extracted from the posting by Workers AI (${model}) on `
+      : `From the company's job board, with the rest extracted from the posting by Workers AI (${model}) on `,
+    h.time(
+      [h.Datetime(DateTime.formatIso(at))],
+      [DateTime.formatUtc(at, { dateStyle: "long", locale: "en-CA" })]
+    ),
+    ". ",
+  ];
+};
+
 const enrichmentView = (
   h: HtmlBuilder<MessageValue>,
   enrichment: EnrichmentValue
@@ -52,23 +74,17 @@ const enrichmentView = (
     return [];
   }
 
-  const at = DateTime.makeUnsafe(enrichment.enrichedAt);
-
   return [
     h.section(
       [h.Class("detail-extracted")],
       [
-        h.h2([h.Class("detail-subhead")], ["From the posting"]),
+        h.h2([h.Class("detail-subhead")], ["About the role"]),
         h.dl([h.Class("detail-facts")], facts),
         h.p(
           [h.Class("detail-note")],
           [
-            `Extracted from the posting by Workers AI (${enrichment.model}) on `,
-            h.time(
-              [h.Datetime(DateTime.formatIso(at))],
-              [DateTime.formatUtc(at, { dateStyle: "long", locale: "en-CA" })]
-            ),
-            ". Check the posting before you rely on it.",
+            ...originNote(h, enrichment),
+            "Check the posting before you rely on it.",
           ]
         ),
       ]

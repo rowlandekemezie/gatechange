@@ -11,6 +11,7 @@ import {
   Schema,
 } from "effect";
 
+import { underBoardFacts } from "./board-facts.js";
 import type { EnricherUnavailable } from "./enricher-unavailable.js";
 import { EnrichmentQueue } from "./enrichment-queue.js";
 import { JobStore } from "./job-store.js";
@@ -1253,7 +1254,7 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
 
   const job = found.value;
 
-  if (job.enrichment !== null) {
+  if (job.enrichment !== null && job.enrichment.model !== null) {
     return skip("AlreadyEnriched", `enriched at ${job.enrichment.enrichedAt}`);
   }
 
@@ -1348,7 +1349,8 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
     Effect.flatMap((listing) =>
       Effect.gen(function* saveListing() {
         const enrichment: EnrichmentValue = {
-          ...listing,
+          ...underBoardFacts(job.enrichment, listing),
+          board: job.enrichment?.board ?? null,
           enrichedAt: yield* Clock.currentTimeMillis,
           model: enricher.model,
         };

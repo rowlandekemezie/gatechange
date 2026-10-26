@@ -167,6 +167,7 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
             recordSkip: unserved("recordSkip"),
             releaseIngest: unserved("releaseIngest"),
             replaceFeed: unserved("replaceFeed"),
+            saveBoardFacts: unserved("saveBoardFacts"),
             saveEnrichment: unserved("saveEnrichment"),
             stats: (_now, sources, catalogKeys) => {
               countedCatalogs.push(catalogKeys);
