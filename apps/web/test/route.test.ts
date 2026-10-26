@@ -186,7 +186,7 @@ describe("board route", () => {
 describe("board query", () => {
   it("the default filters ask for no pay floor and no level restriction", () => {
     expect(queryOf(defaultFilters, 0)).toStrictEqual({
-      limit: 40,
+      limit: 15,
       maxAgeDays: 7,
       offset: 0,
       regions: [

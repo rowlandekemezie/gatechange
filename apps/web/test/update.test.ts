@@ -274,6 +274,40 @@ describe("URL-driven board state", () => {
 const lastQuery = (step: Step) =>
   pipe(named(step, "FetchJobs"), Array.last, Option.getOrThrow);
 
+describe("board pages", () => {
+  it("asks for 15 roles first and 25 more on each load", () => {
+    const opened = started("/");
+
+    expect(named(opened, "FetchJobs")).toHaveLength(1);
+    expect(lastQuery(opened).args).toMatchObject({
+      query: { limit: 15, offset: 0 },
+    });
+
+    const loaded = sent(
+      opened,
+      Message.SucceededFetchJobs({
+        generation: opened.model.generation,
+        page: {
+          generatedAt: 0,
+          jobs: Array.makeBy(15, (index) => ({
+            ...listed,
+            id: `job-${index}`,
+          })),
+          total: 60,
+        },
+      })
+    );
+
+    const more = named(
+      sent(loaded, Message.ClickedLoadMore()),
+      "FetchMoreJobs"
+    );
+
+    expect(more).toHaveLength(1);
+    expect(more[0]?.args).toMatchObject({ query: { limit: 25, offset: 15 } });
+  });
+});
+
 describe("pay and level filters", () => {
   it("a pay floor keeps the chosen currency and reaches the job query and URL", () => {
     const step = sentAll(started("/"), [
