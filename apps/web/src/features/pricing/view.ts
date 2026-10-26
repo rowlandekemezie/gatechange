@@ -2,13 +2,13 @@ import {
   digestSourceLabels,
   INSTANT_SENDS_PER_MEMBER_PER_DAY,
   isPro,
-  PLAN_PRICES,
-  plans,
   ProEntitlement,
 } from "@rat-stack/core/contracts";
 import type {
+  BillingIntervalValue,
   EntitlementValue,
   MembershipValue,
+  PlanOfferValue,
   PlanValue,
 } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
@@ -23,6 +23,9 @@ import {
   BillingAction,
   isProMember,
   MembershipState,
+  plansOnSale,
+  PlansState,
+  sellsPro,
 } from "../../client/billing/model.js";
 import type { ModelValue } from "../../client/billing/model.js";
 import { accountRouter, pricingRouter } from "../../client/route.js";
@@ -39,26 +42,33 @@ const longDate = new Intl.DateTimeFormat("en-US", {
 
 export const calendarDate = (at: number) => longDate.format(at);
 
-const dollars = (cents: number) => `$${cents / 100}`;
+const dollars = (cents: number) =>
+  `$${cents % 100 === 0 ? cents / 100 : (cents / 100).toFixed(2)}`;
 
-const planCopy: Record<
-  PlanValue,
-  { readonly name: string; readonly per: string }
-> = {
-  Monthly: { name: "Monthly", per: "a month" },
-  Quarterly: { name: "Quarterly", per: "every 3 months" },
-  Yearly: { name: "Yearly", per: "a year" },
+const cadenceOf = ({ interval, intervalCount }: PlanOfferValue) =>
+  intervalCount === 1 ? interval : `${intervalCount} ${interval}s`;
+
+const DAYS: Record<BillingIntervalValue, number> = {
+  day: 1,
+  month: 30.4375,
+  week: 7,
+  year: 365.25,
 };
 
-const monthsOf = (plan: PlanValue) =>
-  PLAN_PRICES[plan].interval === "year"
-    ? 12 * PLAN_PRICES[plan].intervalCount
-    : PLAN_PRICES[plan].intervalCount;
+const perDay = (offer: PlanOfferValue) =>
+  offer.amountCents / (DAYS[offer.interval] * offer.intervalCount);
 
-export const savingOf = (plan: PlanValue) => {
-  const monthly = PLAN_PRICES.Monthly.amountCents * monthsOf(plan);
+export const savingOf = (
+  offer: PlanOfferValue,
+  offers: readonly PlanOfferValue[]
+) => {
+  const highest = Math.max(...offers.map(perDay));
+  const dearest = offers.find((other) => perDay(other) === highest) ?? offer;
 
-  return Math.round((1 - PLAN_PRICES[plan].amountCents / monthly) * 100);
+  return {
+    against: dearest.plan,
+    percent: Math.round((1 - perDay(offer) / perDay(dearest)) * 100),
+  };
 };
 
 export const instantCoverage = (
@@ -128,6 +138,7 @@ const planAction = (
   model: ModelValue,
   session: SessionStateValue,
   plan: PlanValue,
+  isOnlyPlan: boolean,
   h: HtmlBuilder<MessageValue>
 ): Html => {
   if (!Schema.is(SessionState.SignedIn)(session)) {
@@ -150,38 +161,41 @@ const planAction = (
       h.Type("button"),
       h.Class("plan-button"),
       h.Disabled(isBusy),
-      h.AriaLabel(`Choose Pro ${planCopy[plan].name}`),
       h.OnClick(Message.ClickedChoosePlan({ plan })),
     ],
-    [`Choose ${planCopy[plan].name.toLowerCase()}`]
+    [isOnlyPlan ? "Upgrade to Pro" : `Choose ${plan}`]
   );
 };
 
 const planCard = (
   model: ModelValue,
   session: SessionStateValue,
-  plan: PlanValue,
+  offer: PlanOfferValue,
+  offers: readonly PlanOfferValue[],
   h: HtmlBuilder<MessageValue>
 ): Html => {
-  const saving = savingOf(plan);
+  const saving = savingOf(offer, offers);
+  const best = offers.every((other) => perDay(offer) <= perDay(other));
+  const isOnlyPlan = offers.length === 1;
 
   return h.keyed("li")(
-    plan,
-    [h.Class(plan === "Yearly" ? "plan plan-best" : "plan")],
+    offer.plan,
+    [h.Class(best && !isOnlyPlan ? "plan plan-best" : "plan")],
     [
-      h.h3([h.Class("plan-name")], [planCopy[plan].name]),
+      ...(isOnlyPlan ? [] : [h.h3([h.Class("plan-name")], [offer.plan])]),
       h.p(
         [h.Class("plan-price")],
-        [
-          h.strong([], [dollars(PLAN_PRICES[plan].amountCents)]),
-          ` ${planCopy[plan].per}`,
-        ]
+        [h.strong([], [dollars(offer.amountCents)]), ` / ${cadenceOf(offer)}`]
       ),
       h.p(
         [h.Class("plan-saving")],
-        [saving > 0 ? `Save ${saving}% against monthly` : "Cancel any time"]
+        [
+          saving.percent > 0
+            ? `Save ${saving.percent}% against ${saving.against}`
+            : "Cancel any time",
+        ]
       ),
-      planAction(model, session, plan, h),
+      planAction(model, session, offer.plan, isOnlyPlan, h),
     ]
   );
 };
@@ -201,6 +215,34 @@ const actionNote = (
     Saving: () => [],
   });
 
+const planOffers = (
+  model: ModelValue,
+  session: SessionStateValue,
+  h: HtmlBuilder<MessageValue>
+): readonly Html[] => {
+  const offers = plansOnSale(model);
+
+  if (offers.length > 0) {
+    return [
+      h.ul(
+        [h.Class("plans"), h.AriaLabel("Pro plans")],
+        offers.map((offer) => planCard(model, session, offer, offers, h))
+      ),
+      ...actionNote(model, h),
+      h.p(
+        [h.Class("tier-note")],
+        [
+          "Stripe handles payment. Cancel any time from the billing portal, and Pro stays on until the end of the period you paid for. Prices in US dollars.",
+        ]
+      ),
+    ];
+  }
+
+  return Schema.is(PlansState.Loaded)(model.plans)
+    ? [h.p([h.Class("tier-note")], ["Pro is not on sale on this site."])]
+    : [];
+};
+
 export const pricingPage = defineView<
   ModelValue,
   MessageValue,
@@ -217,24 +259,14 @@ export const pricingPage = defineView<
         ]
       ),
       tiers(h),
-      h.ul(
-        [h.Class("plans"), h.AriaLabel("Pro plans")],
-        plans.map((plan) => planCard(model, session, plan, h))
-      ),
-      ...actionNote(model, h),
-      h.p(
-        [h.Class("tier-note")],
-        [
-          "Stripe handles payment. Cancel any time from the billing portal, and Pro stays on until the end of the period you paid for. Prices in US dollars.",
-        ]
-      ),
+      ...planOffers(model, session, h),
     ]
   )
 );
 
 const statusOf = (entitlement: EntitlementValue): string =>
   Schema.is(ProEntitlement)(entitlement)
-    ? `You have Pro ${planCopy[entitlement.plan].name.toLowerCase()}. It ${entitlement.renews ? "renews" : "ends"} on ${calendarDate(entitlement.periodEnd)}.`
+    ? `You have Pro ${entitlement.plan}. It ${entitlement.renews ? "renews" : "ends"} on ${calendarDate(entitlement.periodEnd)}.`
     : "You are on Free.";
 
 const instantToggle = (
@@ -283,6 +315,22 @@ const checkoutNote = (
   ];
 };
 
+const proUpsell = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>
+): readonly Html[] =>
+  sellsPro(model)
+    ? [
+        h.p(
+          [h.Class("account-lede")],
+          [
+            "Pro adds instant alerts and salary filters. ",
+            h.a([h.Href(pricingHref)], ["See Pro plans"]),
+          ]
+        ),
+      ]
+    : [];
+
 const loadedPanel = (
   model: ModelValue,
   membership: MembershipValue,
@@ -308,15 +356,7 @@ const loadedPanel = (
           ["Manage billing"]
         ),
       ]
-    : [
-        h.p(
-          [h.Class("account-lede")],
-          [
-            "Pro adds instant alerts and salary filters. ",
-            h.a([h.Href(pricingHref)], ["See Pro plans"]),
-          ]
-        ),
-      ]),
+    : proUpsell(model, h)),
   ...actionNote(model, h),
 ];
 
@@ -351,14 +391,22 @@ export const planLink = <M>(
   session: SessionStateValue,
   isCurrent: boolean,
   h: HtmlBuilder<M>
-): Html =>
-  isProMember(model)
-    ? h.span([h.Class("pro-badge"), h.AriaLabel("Your plan: Pro")], ["Pro"])
-    : h.a(
+): Html => {
+  if (isProMember(model)) {
+    return h.span(
+      [h.Class("pro-badge"), h.AriaLabel("Your plan: Pro")],
+      ["Pro"]
+    );
+  }
+
+  return sellsPro(model)
+    ? h.a(
         [
           h.Class(isCurrent ? "tab tab-on" : "tab"),
           h.Href(pricingHref),
           ...(isCurrent ? [h.AriaCurrent("page")] : []),
         ],
         [Schema.is(SessionState.SignedIn)(session) ? "Upgrade" : "Pricing"]
-      );
+      )
+    : h.empty;
+};

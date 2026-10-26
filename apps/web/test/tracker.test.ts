@@ -308,6 +308,7 @@ const serverWith = (imports: unknown[]) =>
     membership: Effect.die("unused"),
     noteTrackedJob: () => Effect.die("unused"),
     openBillingPortal: Effect.die("unused"),
+    proPlans: Effect.die("unused"),
     revokeAgentToken: () => Effect.die("unused"),
     saveSearch: () => Effect.die("unused"),
     savedSearches: Effect.die("unused"),

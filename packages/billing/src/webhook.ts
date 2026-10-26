@@ -1,9 +1,4 @@
-import {
-  AccountId,
-  BillingChange,
-  Plan,
-  SubscriptionStatus,
-} from "@rat-stack/core";
+import { AccountId, BillingChange, SubscriptionStatus } from "@rat-stack/core";
 import type { BillingChangeValue, PlanValue } from "@rat-stack/core";
 import { Array, Data, Effect, Option, Redacted, Schema } from "effect";
 
@@ -205,75 +200,86 @@ const decodeCheckout = Schema.decodeEffect(
 
 export interface StripeEndpoint {
   readonly livemode: boolean;
-  readonly prices: Readonly<Record<PlanValue, string>>;
+  readonly prices: ReadonlyMap<string, PlanValue>;
   readonly secret: Redacted.Redacted;
 }
 
 export type EventTerms = Pick<StripeEndpoint, "livemode" | "prices">;
 
-const planOfPrice = (
-  prices: EventTerms["prices"],
-  price: string
-): Option.Option<PlanValue> =>
-  Array.findFirst(Plan.literals, (plan) => prices[plan] === price);
+const subscriptionChangeOf = Effect.fn("subscriptionChangeOf")(
+  function* subscriptionChangeOf(
+    terms: EventTerms,
+    event: typeof SubscriptionEvent.Type
+  ): Effect.fn.Return<BillingChangeValue> {
+    const subscription = event.data.object;
 
-const subscriptionChangeOf = (
-  terms: EventTerms,
-  event: typeof SubscriptionEvent.Type
-): BillingChangeValue => {
-  const subscription = event.data.object;
+    const priced = Array.findFirst(subscription.items.data, (item) =>
+      Option.fromNullishOr(terms.prices.get(item.price.id)).pipe(
+        Option.map((plan) => ({ item, plan }))
+      )
+    );
 
-  const priced = Array.findFirst(subscription.items.data, (item) =>
-    planOfPrice(terms.prices, item.price.id).pipe(
-      Option.map((plan) => ({ item, plan }))
-    )
-  );
+    const periodEnd = Option.fromNullishOr(
+      subscription.current_period_end ??
+        Option.getOrUndefined(priced)?.item.current_period_end
+    );
 
-  const periodEnd = Option.fromNullishOr(
-    subscription.current_period_end ??
-      Option.getOrUndefined(priced)?.item.current_period_end
-  );
+    if (Option.isNone(priced)) {
+      yield* Effect.logWarning(
+        "stripe subscription price matches no plan"
+      ).pipe(
+        Effect.annotateLogs({
+          eventId: event.id,
+          priceIds: subscription.items.data.map((entry) => entry.price.id),
+          subscriptionId: subscription.id,
+        })
+      );
 
-  if (Option.isNone(priced) || Option.isNone(periodEnd)) {
-    return BillingChange.Ignore({ type: event.type });
-  }
+      return BillingChange.Ignore({ type: event.type });
+    }
 
-  const { item, plan } = priced.value;
+    if (Option.isNone(periodEnd)) {
+      return BillingChange.Ignore({ type: event.type });
+    }
 
-  const cancelAt = subscription.cancel_at ?? null;
+    const { item, plan } = priced.value;
 
-  const periodStart =
-    subscription.current_period_start ?? item.current_period_start;
+    const cancelAt = subscription.cancel_at ?? null;
 
-  const graceEnd =
-    subscription.status === "past_due" && periodStart !== undefined
-      ? periodStart + PAST_DUE_GRACE_SECONDS
-      : Number.POSITIVE_INFINITY;
+    const periodStart =
+      subscription.current_period_start ?? item.current_period_start;
 
-  return BillingChange.ApplySubscription({
-    account: Schema.decodeUnknownOption(AccountId)(
-      subscription.metadata.account_id
-    ),
-    customer: subscription.customer,
-    subscription: {
-      cancelAtPeriodEnd: subscription.cancel_at_period_end || cancelAt !== null,
-      periodEnd:
-        Math.min(
-          periodEnd.value,
-          cancelAt ?? Number.POSITIVE_INFINITY,
-          graceEnd
-        ) * 1000,
-      plan,
-      status: subscription.status,
-      subscriptionId: subscription.id,
-      version: {
-        created: event.created,
-        eventId: event.id,
-        rank: SubscriptionEventType.literals.indexOf(event.type),
+    const graceEnd =
+      subscription.status === "past_due" && periodStart !== undefined
+        ? periodStart + PAST_DUE_GRACE_SECONDS
+        : Number.POSITIVE_INFINITY;
+
+    return BillingChange.ApplySubscription({
+      account: Schema.decodeUnknownOption(AccountId)(
+        subscription.metadata.account_id
+      ),
+      customer: subscription.customer,
+      subscription: {
+        cancelAtPeriodEnd:
+          subscription.cancel_at_period_end || cancelAt !== null,
+        periodEnd:
+          Math.min(
+            periodEnd.value,
+            cancelAt ?? Number.POSITIVE_INFINITY,
+            graceEnd
+          ) * 1000,
+        plan,
+        status: subscription.status,
+        subscriptionId: subscription.id,
+        version: {
+          created: event.created,
+          eventId: event.id,
+          rank: SubscriptionEventType.literals.indexOf(event.type),
+        },
       },
-    },
-  });
-};
+    });
+  }
+);
 
 const checkoutChangeOf = (
   event: typeof CheckoutEvent.Type
@@ -312,7 +318,7 @@ export const billingChangeOf = Effect.fn("billingChangeOf")(
     }
 
     if (Schema.is(SubscriptionEventType)(type)) {
-      return subscriptionChangeOf(
+      return yield* subscriptionChangeOf(
         terms,
         yield* decodeSubscription(payload).pipe(Effect.mapError(malformed))
       );

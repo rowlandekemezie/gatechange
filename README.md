@@ -88,6 +88,7 @@ The persistent `preview` stage uses these defaults; explicit environment configu
 | Setting | `preview` | Other stages |
 | --- | --- | --- |
 | `BILLING_ENABLED` | `true`, test mode required | `false` |
+| `PRO_PLANS` | The `preview` environment's `PRO_PLANS` variable in CI | Empty, so no Pro plans |
 | `WORKERS_SUBDOMAIN` | `rowland-ekemezie` | Unset |
 | `DIGEST_SITE_ORIGIN` | Preview URL above | Production origin |
 | `ENRICHMENT_DAILY_NEURONS` | `0` | `29000` |

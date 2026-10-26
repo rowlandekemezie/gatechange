@@ -4,7 +4,11 @@ import type { AccountIdValue, AccountValue } from "./account.js";
 import { BillingStore } from "./billing-store.js";
 import type { BillingUnavailable } from "./billing-unavailable.js";
 import { entitlementOf } from "./entitlement.js";
-import type { PlanValue, SubscriptionRecordValue } from "./entitlement.js";
+import type {
+  PlanOfferValue,
+  PlanValue,
+  SubscriptionRecordValue,
+} from "./entitlement.js";
 
 export interface CheckoutRequest {
   readonly account: AccountValue;
@@ -21,6 +25,7 @@ export class Billing extends Context.Service<
     readonly createCustomer: (
       account: AccountValue
     ) => Effect.Effect<string, BillingUnavailable>;
+    readonly plans: readonly PlanOfferValue[];
     readonly portal: (
       customer: string
     ) => Effect.Effect<string, BillingUnavailable>;

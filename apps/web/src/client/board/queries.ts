@@ -36,6 +36,7 @@ const make = Effect.gen(function* makeJobQueries() {
     noteTrackedJob: (jobId: string, notes: string) =>
       client.noteTrackedJob({ jobId, notes }),
     openBillingPortal: client.openBillingPortal({}),
+    proPlans: client.proPlans({}),
     revokeAgentToken: (id: AgentTokenIdValue) =>
       client.revokeAgentToken({ id }),
     saveSearch: (filters: SearchFiltersValue) => client.saveSearch({ filters }),

@@ -86,6 +86,7 @@ const backend = HttpRouter.toWebHandler(
         membership: () => Effect.die("billing is not served here"),
         noteTrackedJob: () => Effect.die("the tracker is not served here"),
         openBillingPortal: () => Effect.die("billing is not served here"),
+        proPlans: () => Effect.die("billing is not served here"),
         revokeAgentToken: () => Effect.die("agent tokens are not served here"),
         saveSearch: () => Effect.die("saveSearch is not served here"),
         savedSearches: () => Effect.die("savedSearches is not served here"),
@@ -230,9 +231,7 @@ describe("public landing pages", () => {
     expect(page.html).toContain(
       "Every listing, with links to apply at the source"
     );
-    expect(page.html).toContain("$19");
-    expect(page.html).toContain("$49");
-    expect(page.html).toContain("$149");
+    expect(page.html).not.toContain("Pro is not on sale");
     expect(page.html).toContain(
       `<link rel="canonical" href="${ORIGIN}/pricing"`
     );

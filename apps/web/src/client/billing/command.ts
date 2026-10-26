@@ -60,6 +60,16 @@ export const PollMembership = Command.define("PollMembership", {
   messages: [Message.CompletedFetchMembership],
 });
 
+export const FetchPlans = Command.define("FetchPlans", {
+  execute: JobQueries.use((queries) => queries.proPlans).pipe(
+    Effect.match({
+      onFailure: () => Message.CompletedFetchPlans({ plans: [] }),
+      onSuccess: (plans) => Message.CompletedFetchPlans({ plans }),
+    })
+  ),
+  messages: [Message.CompletedFetchPlans],
+});
+
 export const StartCheckout = Command.define("StartCheckout", {
   args: { plan: Plan },
   execute: ({ plan }) =>
