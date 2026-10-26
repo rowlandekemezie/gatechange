@@ -26,7 +26,7 @@
     "typecheck": "turbo run typecheck",
     "typecheck-scripts": "tsc --noEmit -p tsconfig.json",
     "vendor:agent-sources": "./scripts/vendor-agent-sources.sh",
-    "self-host": "turbo run build --filter=@rat-stack/infra... && node apps/infra/src/self-host.ts",
+    "self-host": "turbo run build --filter=@rat-stack/core && varlock run -- node apps/infra/src/self-host.ts",
     "ingest:logs": "pnpm --filter @rat-stack/infra run logs",
     "infra:ci-credentials": "pnpm --filter @rat-stack/infra exec alchemy deploy --config stacks/github.ts"
   },

@@ -42,16 +42,20 @@ You can run your own copy of the board on your own Cloudflare account. It is ser
 
 A "Deploy to Cloudflare" button cannot do this. The button deploys one Worker, and it needs that Worker's directory to build with no workspace dependencies. This app is two Workers joined by a service binding, and both depend on workspace packages.
 
+> **Warning.** `pnpm self-host` deploys to whatever Cloudflare account your credentials resolve to. A `CLOUDFLARE_ACCOUNT_ID` with a `CLOUDFLARE_API_TOKEN` (or `CLOUDFLARE_API_KEY`) in your shell or `.env.local` wins over `ALCHEMY_PROFILE`, and a shell value wins over `.env.local`. Before each run it prints the credential source and the Cloudflare account id it will use. Check that account first. `deploy` and `destroy` then ask you to type `y`.
+
 1. Install Node 24.18 and pnpm 11.3. Then clone this repository and run `pnpm install`.
-2. Give Alchemy your Cloudflare credentials. Either create a profile (`pnpm alchemy profile create mine`, then `pnpm alchemy profile edit --profile mine --add Cloudflare`), or export `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-3. Find your account's `workers.dev` subdomain in the dashboard under **Workers & Pages**. Set `SITE_WORKERS_SUBDOMAIN` in `packages/core/src/site.ts` to it. The site trusts its own sign-in host and links only on that subdomain.
-4. Copy `.env.example` to `.env.local`. Set `ALCHEMY_PROFILE` (if you made a profile), `WORKERS_SUBDOMAIN`, and `BETTER_AUTH_SECRET` (from `openssl rand -hex 32`). On Workers Free, also set `INGEST_FEEDS_PER_RUN=8`.
+2. Give Alchemy your Cloudflare credentials. Either create a profile (`pnpm alchemy profile create mine`, then `pnpm alchemy profile edit --profile mine --add Cloudflare`) and set `ALCHEMY_PROFILE=mine`, or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Alchemy's `default` profile is never used.
+3. Find your account's `workers.dev` subdomain in the dashboard under **Workers & Pages**.
+4. Copy `.env.example` to `.env.local`. Set `ALCHEMY_PROFILE` (if you made a profile), `WORKERS_SUBDOMAIN` (the subdomain from step 3), and `BETTER_AUTH_SECRET` (from `openssl rand -hex 32`). On Workers Free, also set `INGEST_FEEDS_PER_RUN=8`. The build bakes `WORKERS_SUBDOMAIN` in as the site's own host, so the site trusts its own sign-in host and never links a listing back to itself.
 5. Preview the plan, then deploy:
 
    ```sh
    pnpm self-host plan --stage self
    pnpm self-host deploy --stage self
    ```
+
+`pnpm self-host` reads `.env.local` through varlock and checks every input before it builds anything. It stops with a list of what is missing. Without a terminal to answer the prompt, pass `--yes` to `deploy` or `destroy`, after you have checked the account a `plan` run prints.
 
 The site is at `https://jobs-self.<subdomain>.workers.dev`. It fills over the first few cron runs, which run every 20 minutes. The stage names `prod`, `preview` and `pr-<n>` are reserved. To remove everything the stage created, run `pnpm self-host destroy --stage self`.
 

@@ -32,6 +32,7 @@ import {
   siteHostsOf,
   SITE_HOSTNAME,
   SITE_ORIGIN,
+  SITE_WORKERS_SUBDOMAIN,
   SocialProvider,
 } from "@rat-stack/core";
 import type { ViewerValue } from "@rat-stack/core";
@@ -189,6 +190,15 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
     const stage = yield* currentStage;
 
     return {
+      build: {
+        input: {
+          transform: {
+            define: {
+              __WORKERS_SUBDOMAIN__: JSON.stringify(SITE_WORKERS_SUBDOMAIN),
+            },
+          },
+        },
+      },
       main: import.meta.url,
       observability: { enabled: true },
       ...(isPullRequestStage(stage)

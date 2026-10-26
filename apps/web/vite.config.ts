@@ -19,5 +19,8 @@ export default defineConfig(({ command }) => ({
     outDir: "dist/client",
     rolldownOptions: { external: [/^cloudflare:/u] },
   },
+  define: {
+    __WORKERS_SUBDOMAIN__: JSON.stringify(process.env.WORKERS_SUBDOMAIN ?? ""),
+  },
   plugins: [foldkit({ buildId: buildIdFor(command) })],
 }));
