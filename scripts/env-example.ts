@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- This generator runs as Node tooling and reads repository files directly.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const SCHEMAS = [".env.schema", "apps/api/.env.schema"] as const;
 
@@ -30,7 +30,7 @@ const example = `${[
   .trimEnd()}\n`;
 
 if (process.argv.includes("--check")) {
-  if (readFileSync(TARGET, "utf-8") !== example) {
+  if (!existsSync(TARGET) || readFileSync(TARGET, "utf-8") !== example) {
     process.stderr.write(
       `${TARGET} is stale. Run pnpm env:example and commit the result.\n`
     );
