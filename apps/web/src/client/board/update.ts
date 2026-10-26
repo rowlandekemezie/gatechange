@@ -36,6 +36,7 @@ import {
   PushUrl,
   ReadShortlist,
   ReplaceUrl,
+  ScrollToFragment,
   SendTrackerChange,
   SyncTracker,
   WriteShortlist,
@@ -45,6 +46,7 @@ import {
   defaultFilters,
   Filters,
   hasNoSelection,
+  hasProSelection,
   queryOf,
   regionGroups,
   toggled,
@@ -258,9 +260,7 @@ const followedEntitlement = (
     !isProMember(previous.billing) &&
     isProMember(step.model.billing) &&
     Schema.is(Route.Board)(step.model.route) &&
-    (step.model.filters.salaryListed ||
-      step.model.filters.salaryFloor !== null ||
-      step.model.filters.seniorities.length > 0)
+    hasProSelection(step.model.filters)
   ) {
     return joined(step, (next) => withFilters(next, next.filters));
   }
@@ -671,6 +671,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         marks: [],
         more: MoreState.Idle(),
         origin: flags.origin,
+        proFiltersOpen: false,
         route: routeOfUrl(url),
         savedSearches: savedSearches.model,
         stats: StatsState.Unavailable(),
@@ -693,7 +694,9 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         billingChild.toParentMessage
       ),
     ],
-    model: routed.model,
+    model: modifyFields(routed.model, {
+      proFiltersOpen: () => hasProSelection(routed.model.filters),
+    }),
   };
 };
 
@@ -776,12 +779,24 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     ClickedLink: ({ request }) =>
       UrlRequest.match(request, {
         External: ({ href }) => ({ commands: [LoadUrl({ href })], model }),
-        Internal: ({ url }) =>
-          visiting(
+        Internal: ({ url }) => {
+          const step = visiting(
             { model },
             sameRoute(routeOfUrl(url), model.route) ? ReplaceUrl : PushUrl,
             addressOf(url)
-          ),
+          );
+
+          return Option.match(url.hash, {
+            onNone: () => step,
+            onSome: (fragment) => ({
+              ...step,
+              commands: [
+                ...(step.commands ?? []),
+                ScrollToFragment({ fragment }),
+              ],
+            }),
+          });
+        },
       }),
     ClickedLoadMore: () => {
       if (!Schema.is(JobsState.Loaded)(model.jobs)) {
@@ -1031,6 +1046,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     }),
     SucceededTrackerChange: ({ jobs, revision }) =>
       withServerTracker(model, revision, jobs),
+    ToggledProFilters: ({ isOpen }) => ({
+      model: modifyFields(model, { proFiltersOpen: () => isOpen }),
+    }),
     ToggledRegionGroup: ({ group }) =>
       navigatedTo(model, {
         ...model.filters,

@@ -7,7 +7,6 @@ import {
   accountTitle,
   accountView,
   confirmSignInPage,
-  sessionLink,
 } from "../../features/account/view.js";
 import { agentTokensPanel } from "../../features/agent-tokens/view.js";
 import {
@@ -16,17 +15,14 @@ import {
   boardPage,
   boardTitle,
 } from "../../features/board/view.js";
+import { siteHeader } from "../../features/header/view.js";
 import {
   informationMeta,
   informationPage,
 } from "../../features/information/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
-import {
-  billingPanel,
-  planLink,
-  pricingPage,
-} from "../../features/pricing/view.js";
+import { billingPanel, pricingPage } from "../../features/pricing/view.js";
 import { savedSearchesPanel } from "../../features/saved-searches/view.js";
 import {
   shortlistPage,
@@ -38,7 +34,6 @@ import {
   canonicalPathOf,
   informationRouter,
   Route,
-  shortlistRouter,
 } from "../route.js";
 import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
@@ -46,46 +41,6 @@ import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
 
 type H = HtmlBuilder<MessageValue>;
-
-const tab = (h: H, href: string, isOn: boolean, label: string): Html =>
-  h.a(
-    [
-      h.Href(href),
-      h.Class(isOn ? "tab tab-on" : "tab"),
-      ...(isOn ? [h.AriaCurrent("page")] : []),
-    ],
-    [label]
-  );
-
-const tabs = (model: ModelValue, h: H): Html =>
-  h.nav(
-    [h.Class("tabs"), h.AriaLabel("Views")],
-    [
-      tab(
-        h,
-        boardUrl(model.filters),
-        Schema.is(Route.Board)(model.route),
-        "Open roles"
-      ),
-      tab(
-        h,
-        shortlistRouter(),
-        Schema.is(Route.Shortlist)(model.route),
-        `Your shortlist (${shortlistSize(model)})`
-      ),
-      planLink(
-        model.billing,
-        model.account.session,
-        Schema.is(Route.Pricing)(model.route),
-        h
-      ),
-      sessionLink(
-        model.account.session,
-        Schema.is(Route.Account)(model.route),
-        h
-      ),
-    ]
-  );
 
 const notFoundPage = (model: ModelValue, h: H): Html =>
   h.div(
@@ -157,10 +112,10 @@ export const view = (model: ModelValue, h: H): Document =>
     body: h.main(
       [h.Class("page")],
       [
+        siteHeader(model, h),
         ...(Schema.is(Route.Board)(model.route)
           ? [boardMasthead(model, h)]
           : []),
-        tabs(model, h),
         ...trackerNotices(model, h),
         Route.match<Html>(model.route, {
           Account: ({ notice }) =>

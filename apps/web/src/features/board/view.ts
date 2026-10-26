@@ -32,6 +32,7 @@ import {
 } from "../../client/board/copy.js";
 import {
   ageWindows,
+  hasProSelection,
   regionGroups,
   salarySteps,
 } from "../../client/board/filters.js";
@@ -285,44 +286,51 @@ const proFilterView = (
 ): Html => {
   const freeViewer = isFreeViewer(model.account.session, model.billing);
 
-  const selected =
-    model.filters.salaryListed ||
-    model.filters.salaryFloor !== null ||
-    model.filters.seniorities.length > 0;
+  const selected = hasProSelection(model.filters);
 
-  return h.fieldset(
+  return h.details(
     [
       h.Class("pro-refinements"),
-      ...(freeViewer ? [h.AriaDescribedBy("pro-refinements-note")] : []),
+      h.Open(model.proFiltersOpen),
+      h.OnToggle((isOpen) => Message.ToggledProFilters({ isOpen })),
     ],
     [
-      h.legend(
+      h.summary(
         [h.Class("pro-refinements-title")],
         ["Salary and seniority ", h.span([h.Class("pro-badge")], ["Pro"])]
       ),
-      ...(freeViewer
-        ? [
-            h.p(
-              [h.Id("pro-refinements-note"), h.Class("upgrade-prompt")],
-              [
-                "Salary and seniority filters come with Pro. ",
-                selected
-                  ? "These selections are not applied on Free. "
-                  : "These filters are not applied on Free. ",
-                h.a([h.Href(pricingRouter())], ["See Pro plans"]),
-              ]
-            ),
-          ]
-        : []),
-      refineView(model, h),
-      h.div(
-        [h.Class("pro-filters")],
+      h.fieldset(
         [
-          chip(
-            h,
-            model.filters.salaryListed,
-            "Only roles that state a salary",
-            Message.ToggledSalaryListed()
+          h.Class("pro-refinements-fields"),
+          ...(freeViewer ? [h.AriaDescribedBy("pro-refinements-note")] : []),
+        ],
+        [
+          h.legend([h.Class("visually-hidden")], ["Salary and seniority"]),
+          ...(freeViewer
+            ? [
+                h.p(
+                  [h.Id("pro-refinements-note"), h.Class("upgrade-prompt")],
+                  [
+                    "Salary and seniority filters come with Pro. ",
+                    selected
+                      ? "These selections are not applied on Free. "
+                      : "These filters are not applied on Free. ",
+                    h.a([h.Href(pricingRouter())], ["See Pro plans"]),
+                  ]
+                ),
+              ]
+            : []),
+          refineView(model, h),
+          h.div(
+            [h.Class("pro-filters")],
+            [
+              chip(
+                h,
+                model.filters.salaryListed,
+                "Only roles that state a salary",
+                Message.ToggledSalaryListed()
+              ),
+            ]
           ),
         ]
       ),
@@ -373,18 +381,28 @@ export const boardMasthead = (
           ),
         ]
       ),
-      sentenceView(model, h),
-      searchView(model, h),
-      proFilterView(model, h),
-      h.submodel({
-        model: model.savedSearches,
-        slotId: "save-search",
-        toParentMessage: (message) =>
-          Message.GotSavedSearchesMessage({ message }),
-        view: saveSearchControl,
-        viewInputs: { filters: model.filters, session: model.account.session },
-      }),
-      statusLine(model, h),
+      h.div(
+        [h.Class("filters")],
+        [
+          sentenceView(model, h),
+          h.div(
+            [h.Class("filter-tools")],
+            [searchView(model, h), proFilterView(model, h)]
+          ),
+          h.submodel({
+            model: model.savedSearches,
+            slotId: "save-search",
+            toParentMessage: (message) =>
+              Message.GotSavedSearchesMessage({ message }),
+            view: saveSearchControl,
+            viewInputs: {
+              filters: model.filters,
+              session: model.account.session,
+            },
+          }),
+          statusLine(model, h),
+        ]
+      ),
     ]
   );
 
@@ -396,7 +414,7 @@ export const boardAfterword = (
     [h.Class("afterword")],
     [
       h.section(
-        [h.Class("agents"), h.AriaLabelledBy("agents-title")],
+        [h.Id("agents"), h.Class("agents"), h.AriaLabelledBy("agents-title")],
         [
           h.div(
             [h.Class("agents-copy")],

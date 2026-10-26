@@ -73,6 +73,7 @@ export const Message = defineMessageUnion({
   SucceededFetchMoreJobs: { generation: Schema.Finite, page: JobPage },
   SucceededFetchStats: { stats: BoardStats },
   SucceededTrackerChange: { jobs: TrackedJobs, revision: Schema.Finite },
+  ToggledProFilters: { isOpen: Schema.Boolean },
   ToggledRegionGroup: { group: RegionGroup },
   ToggledRole: { role: RoleLevel },
   ToggledSalaryListed: {},

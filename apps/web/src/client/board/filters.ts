@@ -135,6 +135,11 @@ export const queryOf = (
   sort: filters.sort,
 });
 
+export const hasProSelection = (filters: FiltersValue) =>
+  filters.salaryListed ||
+  filters.salaryFloor !== null ||
+  filters.seniorities.length > 0;
+
 export const hasNoSelection = (filters: FiltersValue) =>
   Array.isReadonlyArrayEmpty(filters.roles) ||
   Array.isReadonlyArrayEmpty(filters.regionGroups);

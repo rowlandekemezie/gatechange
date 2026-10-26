@@ -99,7 +99,7 @@ export {
   SocialProvider,
 } from "./account.js";
 
-export { offSiteHref, SOURCE_REPOSITORY_URL } from "./site.js";
+export { offSiteHref, SITE_NAME, SOURCE_REPOSITORY_URL } from "./site.js";
 
 export {
   AgentToken,
