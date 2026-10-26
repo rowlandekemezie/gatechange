@@ -14,6 +14,10 @@ on:
         description: Limit the preview plan/deploy to the shared PR backend parent
         type: boolean
         default: false
+      prod_plan_only:
+        description: Plan the selected branch against prod with the production environment's live Stripe keys, without deploying either stage
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -65,7 +69,7 @@ jobs:
   deploy:
     name: Deploy to Cloudflare
     needs: check
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.prod_plan_only)
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -96,7 +100,33 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Check Stripe live billing inputs
+        env:
+          PRO_PLANS: ${{ vars.PRO_PLANS }}
+          STRIPE_API_KEY: ${{ secrets.STRIPE_LIVE_API_KEY }}
+          STRIPE_RESTRICTED_KEY: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY }}
+        run: |
+          if [ -z "$PRO_PLANS" ]; then echo "::error::Set the PRO_PLANS variable on the production environment. apps/api/.env.schema describes PRO_PLANS."; exit 1; fi
+          if ! printf '%s' "$STRIPE_API_KEY" | grep -Eq '^(sk|rk)_live_.+$'; then echo "::error::Set STRIPE_LIVE_API_KEY on the production environment to an sk_live_ or rk_live_ key."; exit 1; fi
+          if ! printf '%s' "$STRIPE_RESTRICTED_KEY" | grep -Eq '^rk_live_.+$'; then echo "::error::Set STRIPE_LIVE_RESTRICTED_KEY on the production environment to an rk_live_ restricted key."; exit 1; fi
+
+      - name: Plan
+        working-directory: apps/infra
+        run: pnpm exec alchemy plan --stage prod --no-input
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          PRO_PLANS: ${{ vars.PRO_PLANS }}
+          STRIPE_API_KEY: ${{ secrets.STRIPE_LIVE_API_KEY }}
+          STRIPE_RESTRICTED_KEY: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY }}
+
       - name: Deploy
+        if: ${{ !inputs.prod_plan_only }}
         working-directory: apps/infra
         run: pnpm exec alchemy deploy --stage prod --yes
         env:
@@ -107,8 +137,12 @@ jobs:
           GITHUB_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          PRO_PLANS: ${{ vars.PRO_PLANS }}
+          STRIPE_API_KEY: ${{ secrets.STRIPE_LIVE_API_KEY }}
+          STRIPE_RESTRICTED_KEY: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY }}
 
       - name: Smoke test
+        if: ${{ !inputs.prod_plan_only }}
         run: |
           for attempt in 1 2 3 4 5 6; do
             status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/) && [ "$status" = "200" ] && exit 0
@@ -119,6 +153,7 @@ jobs:
           exit 1
 
       - name: Smoke test auth
+        if: ${{ !inputs.prod_plan_only }}
         run: |
           for attempt in 1 2 3 4 5 6; do
             status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/api/auth/ok) && [ "$status" = "200" ] && exit 0
@@ -129,6 +164,7 @@ jobs:
           exit 1
 
       - name: Verify public HTML and filter exclusions
+        if: ${{ !inputs.prod_plan_only }}
         run: |
           for path in / /pricing /about /privacy /terms /contact; do
             curl --connect-timeout 10 --max-time 30 -fsS "https://jobs.rowlandekemezie.com$path" > "$RUNNER_TEMP/public-page.html"
@@ -142,7 +178,7 @@ jobs:
   preview:
     name: Deploy persistent preview
     needs: check
-    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && !inputs.prod_plan_only)
     runs-on: ubuntu-latest
     environment:
       name: preview

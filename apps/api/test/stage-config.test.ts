@@ -62,7 +62,7 @@ describe("persistent preview defaults", () => {
     })
   );
 
-  it.effect.each(["prod", "dev", "verify-x", "Preview", "production"])(
+  it.effect.each(["dev", "verify-x", "Preview", "production"])(
     "preserves defaults for exact stage %s",
     (stage) =>
       Effect.gen(function* otherStages() {
@@ -83,7 +83,7 @@ describe("persistent preview defaults", () => {
             localHosts: [],
             workersSubdomain: config.subdomain,
           }).allowedHosts
-        ).toStrictEqual(stage === "prod" ? ["jobs.rowlandekemezie.com"] : []);
+        ).toStrictEqual([]);
       })
   );
 
@@ -115,8 +115,7 @@ describe("persistent preview defaults", () => {
           sweepLimitOf({ configured: Option.some(2), stage: "preview" })
         ).toBe(2);
         expect(
-          (yield* configured("prod", { BILLING_ENABLED: "true" }))
-            .billingEnabled
+          (yield* configured("dev", { BILLING_ENABLED: "true" })).billingEnabled
         ).toBe(true);
       })
   );
@@ -159,5 +158,73 @@ describe("persistent preview defaults", () => {
       ),
       Effect.asVoid
     )
+  );
+});
+
+const weeklyPlans = '[{"plan":"Weekly","amountCents":500,"interval":"week"}]';
+
+const weekly = {
+  amountCents: 500,
+  interval: "week",
+  intervalCount: 1,
+  onSale: true,
+  plan: "Weekly",
+};
+
+const refusal = (values: Record<string, string>) =>
+  configured("prod", values).pipe(
+    Effect.flip,
+    Effect.map((failure) => failure.message)
+  );
+
+describe("prod billing", () => {
+  it.effect("sells the configured plans on the live site by default", () =>
+    Effect.gen(function* prodBilling() {
+      const config = yield* configured("prod", { PRO_PLANS: weeklyPlans });
+
+      expect(config).toStrictEqual({
+        billingEnabled: true,
+        dailyNeurons: 29_000,
+        digestDailySendLimit: 50,
+        digestSendsPerRun: 25,
+        digestSiteOrigin: "https://jobs.rowlandekemezie.com",
+        magicLinkDailySendLimit: 900,
+        proPlans: [weekly],
+        subdomain: Option.none(),
+      });
+      expect(
+        siteHostsOf("prod", {
+          localHosts: [],
+          workersSubdomain: config.subdomain,
+        }).allowedHosts
+      ).toStrictEqual(["jobs.rowlandekemezie.com"]);
+    })
+  );
+
+  it.effect(
+    "refuses to deploy with no plans instead of hiding billing and archiving the live prices",
+    () =>
+      Effect.gen(function* prodWithoutPlans() {
+        const messages = [
+          yield* refusal({}),
+          yield* refusal({ PRO_PLANS: "" }),
+          yield* refusal({ BILLING_ENABLED: "true", PRO_PLANS: "" }),
+        ];
+
+        for (const message of messages) {
+          expect(message).toContain(
+            "PRO_PLANS must list its plans; deploying without them would archive the live prices"
+          );
+        }
+      })
+  );
+
+  it.effect("deploys without billing only when BILLING_ENABLED=false", () =>
+    Effect.gen(function* prodBillingOff() {
+      const config = yield* configured("prod", { BILLING_ENABLED: "false" });
+
+      expect(config.billingEnabled).toBe(false);
+      expect(config.proPlans).toStrictEqual([]);
+    })
   );
 });
