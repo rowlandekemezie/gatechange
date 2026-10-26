@@ -8,6 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html";
 
 import {
   bandLabel,
+  handsOnLabel,
   postedAgo,
   regionLabel,
   remotePolicyLabel,
@@ -65,7 +66,8 @@ const enrichmentView = (
   const facts = [
     ...fact(h, "Seniority", enrichment.seniority, seniorityLabel),
     ...fact(h, "Team size", enrichment.teamSize, teamSizeLabel),
-    ...fact(h, "Reports to", enrichment.reportsTo, (name) => name),
+    ...fact(h, "Reports to", enrichment.reportsTo, (title) => title),
+    ...fact(h, "Hands-on coding", enrichment.handsOn, handsOnLabel),
     ...fact(h, "Remote policy", enrichment.remotePolicy, remotePolicyLabel),
     ...fact(h, "Salary band", enrichment.salary, bandLabel),
   ];

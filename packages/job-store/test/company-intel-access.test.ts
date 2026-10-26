@@ -190,7 +190,9 @@ describe("the companyIntel capability", () => {
               store.saveEnrichment(id, {
                 board: null,
                 enrichedAt: NOW,
+                handsOn: null,
                 model: "fixture",
+                promptVersion: 2,
                 remotePolicy: null,
                 reportsTo: null,
                 salary: { currency: "USD", max, min },

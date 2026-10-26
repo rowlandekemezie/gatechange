@@ -160,6 +160,40 @@ describe("job page render", () => {
   );
 
   it.effect(
+    "shows the leadership facts in About the role and leaves out the ones the posting did not state",
+    () =>
+      Effect.map(
+        renderJob(
+          {
+            ...greenhouse,
+            enrichment: {
+              board: null,
+              enrichedAt: 1_760_000_000_000,
+              handsOn: "Some",
+              model: "test-model",
+              promptVersion: 2,
+              remotePolicy: null,
+              reportsTo: "VP of Engineering",
+              salary: null,
+              seniority: null,
+              teamSize: 24,
+            },
+          },
+          allowedOnly
+        ),
+        ({ html }) => {
+          const text = textOf(html).replaceAll(/\s+/gu, " ");
+
+          expect(text).toContain("About the role");
+          expect(text).toContain("Team size 24 people");
+          expect(text).toContain("Reports to VP of Engineering");
+          expect(text).toContain("Hands-on coding Part of the job");
+          expect(text).not.toContain("Remote policy");
+        }
+      )
+  );
+
+  it.effect(
     "emits no JobPosting for a Greenhouse job under the Allowed-only policy",
     () =>
       Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {

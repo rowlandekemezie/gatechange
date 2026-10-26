@@ -47,6 +47,25 @@ export interface MemoryJobStore {
   readonly skips: () => ReadonlyMap<string, EnrichmentSkip>;
 }
 
+const noEnrichment: Omit<EnrichmentValue, "board" | "enrichedAt"> = {
+  handsOn: null,
+  model: null,
+  promptVersion: null,
+  remotePolicy: null,
+  reportsTo: null,
+  salary: null,
+  seniority: null,
+  teamSize: null,
+};
+
+const isAi = (enrichment: EnrichmentValue | undefined) =>
+  (enrichment?.model ?? null) !== null;
+
+const isCurrentAi = (
+  enrichment: EnrichmentValue | undefined,
+  promptVersion: number
+) => isAi(enrichment) && (enrichment?.promptVersion ?? 1) >= promptVersion;
+
 export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
   const jobs = new Map<string, JobValue>();
   const departed = new Map<string, number>();
@@ -540,17 +559,17 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
     saveBoardFacts: (rows, seenAt) =>
       Effect.sync(() => {
         for (const { board, facts, id } of rows) {
-          const existing = enrichments.get(id);
+          const existing = enrichments.get(id) ?? {
+            ...noEnrichment,
+            enrichedAt: seenAt,
+          };
 
           enrichments.set(id, {
+            ...existing,
             board,
-            enrichedAt: existing?.enrichedAt ?? seenAt,
-            model: existing?.model ?? null,
-            remotePolicy: facts.remotePolicy ?? existing?.remotePolicy ?? null,
-            reportsTo: existing?.reportsTo ?? null,
-            salary: facts.salary ?? existing?.salary ?? null,
-            seniority: facts.seniority ?? existing?.seniority ?? null,
-            teamSize: existing?.teamSize ?? null,
+            remotePolicy: facts.remotePolicy ?? existing.remotePolicy,
+            salary: facts.salary ?? existing.salary,
+            seniority: facts.seniority ?? existing.seniority,
           });
         }
       }),
@@ -579,7 +598,13 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         regions: [],
         roles: [],
       })),
-    unenrichedListings: ({ finalSkips, limit, since, sources }) =>
+    unenrichedListings: ({
+      finalSkips,
+      limit,
+      promptVersion,
+      since,
+      sources,
+    }) =>
       Effect.sync(() =>
         pipe(
           [...jobs.values()],
@@ -590,7 +615,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
               job.firstSeenAt >= since &&
               !departed.has(job.id) &&
               sources.includes(job.source) &&
-              (enrichments.get(job.id)?.model ?? null) === null &&
+              !isCurrentAi(enrichments.get(job.id), promptVersion) &&
               (skip === undefined || !finalSkips.includes(skip.reason))
             );
           }),
@@ -598,6 +623,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
             found.toSorted(
               (left, right) =>
                 Number(skips.has(left.id)) - Number(skips.has(right.id)) ||
+                Number(isAi(enrichments.get(left.id))) -
+                  Number(isAi(enrichments.get(right.id))) ||
                 right.firstSeenAt - left.firstSeenAt ||
                 left.id.localeCompare(right.id)
             ),

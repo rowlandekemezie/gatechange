@@ -184,6 +184,8 @@ describe("posting texts", () => {
 
         const details = detailsOfAnswer(
           {
+            handsOn: null,
+            handsOnQuote: null,
             remotePolicy: null,
             remotePolicyQuote: null,
             reportsTo: null,

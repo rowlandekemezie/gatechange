@@ -99,7 +99,9 @@ const EnrichedJobRow = Schema.Struct({
   ...JobRow.fields,
   board: Schema.NullOr(Schema.String),
   enriched_at: Schema.NullOr(Count),
+  hands_on: Schema.NullOr(Schema.String),
   model: Schema.NullOr(Schema.String),
+  prompt_version: Schema.NullOr(Count),
   remote_policy: Schema.NullOr(Schema.String),
   reports_to: Schema.NullOr(Schema.String),
   salary_currency: Schema.NullOr(Schema.String),
@@ -240,7 +242,9 @@ const enrichmentOfRow = (
       : {
           board: row.board,
           enrichedAt: row.enriched_at,
+          handsOn: row.hands_on,
           model: row.model.startsWith(BOARD_MODEL_PREFIX) ? null : row.model,
+          promptVersion: row.prompt_version,
           remotePolicy: row.remote_policy,
           reportsTo: row.reports_to,
           salary:
