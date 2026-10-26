@@ -54,8 +54,13 @@ export const WorkersSubdomain = Schema.String.check(
   Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u)
 );
 
+export const isPullRequestStage = (stage: string) =>
+  /^pr-[1-9][0-9]*$/u.test(stage);
+
 export const previewWorkerName = (stage: string) =>
-  `jobs-${stage.toLowerCase()}`;
+  isPullRequestStage(stage)
+    ? `${stage}-jobs-preview`
+    : `jobs-${stage.toLowerCase()}`;
 
 export const publicOriginOf = (
   stage: string,

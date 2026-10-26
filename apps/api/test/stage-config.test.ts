@@ -10,6 +10,29 @@ const configured = (stage: string, values: Record<string, string> = {}) =>
 const previewOrigin = "https://jobs-preview.rowland-ekemezie.workers.dev";
 
 describe("persistent preview defaults", () => {
+  it.effect(
+    "keeps PR resource spending disabled even with explicit overrides",
+    () =>
+      Effect.gen(function* pullRequestDefaults() {
+        const config = yield* configured("pr-7", {
+          BILLING_ENABLED: "true",
+          DIGEST_DAILY_SEND_LIMIT: "50",
+          DIGEST_SENDS_PER_RUN: "25",
+          ENRICHMENT_DAILY_NEURONS: "29000",
+        });
+
+        expect(config.billingEnabled).toBe(false);
+        expect(config.dailyNeurons).toBe(0);
+        expect(config.digestDailySendLimit).toBe(0);
+        expect(config.digestSendsPerRun).toBe(0);
+        expect(config.magicLinkDailySendLimit).toBe(10);
+        expect(config.digestSiteOrigin).toBe(
+          "https://pr-7-jobs-preview.rowland-ekemezie.workers.dev"
+        );
+        expect(config.subdomain).toStrictEqual(Option.some("rowland-ekemezie"));
+      })
+  );
+
   it.effect("uses its own trusted origin and bounded mail and AI budgets", () =>
     Effect.gen(function* previewDefaults() {
       const config = yield* configured("preview");

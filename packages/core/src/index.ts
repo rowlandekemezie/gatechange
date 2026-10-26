@@ -435,6 +435,7 @@ export type {
 } from "./enrichment.js";
 
 export {
+  isPullRequestStage,
   offSiteHref,
   previewWorkerName,
   PROD_STAGE,

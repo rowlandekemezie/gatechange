@@ -1,0 +1,83 @@
+name: Remove PR preview
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Remove closed PR's native previews
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      deployments: write
+    concurrency:
+      group: deploy-pr-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      ALCHEMY_HOME: /tmp/alchemy-pr-cleanup-${{ github.run_id }}-${{ github.run_attempt }}
+      ALCHEMY_PROFILE: preview
+      PR_STAGE: pr-${{ github.event.pull_request.number }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GH_TOKEN: ${{ github.token }}
+      PR_PREVIEW_SECRET: cleanup-only-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      BETTER_AUTH_SECRET: cleanup-only-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install and build trusted base
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm turbo run build
+          pnpm --filter @rat-stack/infra exec alchemy profile create preview --no-input
+
+      - name: Remove only the PR's two native previews
+        working-directory: apps/infra
+        env:
+          CI: "false"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ ! "$PR_STAGE" =~ ^pr-[1-9][0-9]*$ ]]; then exit 1; fi
+          pnpm exec alchemy provider check-env --provider Cloudflare --no-input
+          pnpm exec alchemy state list "JobBoard/$PR_STAGE" --recursive --backend cloudflare --profile preview --no-input --log-level error > "$RUNNER_TEMP/pr-state-paths"
+          while IFS= read -r path; do
+            case "$path" in
+              ""|"JobBoard/$PR_STAGE/Website"|"JobBoard/$PR_STAGE/JobsBackend"|"JobBoard/$PR_STAGE/output") ;;
+              *) echo "Unexpected resource in PR stage; refusing cleanup: $path"; exit 1 ;;
+            esac
+          done < "$RUNNER_TEMP/pr-state-paths"
+          pnpm exec alchemy destroy --stage "$PR_STAGE" --profile preview --dry-run --no-input
+          pnpm exec alchemy destroy --stage "$PR_STAGE" --profile preview --yes --no-input
+
+      - name: Retire deployment link and update PR comment
+        run: |
+          deployment=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=$PR_STAGE&per_page=1" --jq '.[0].id // empty')
+          if [ -n "$deployment" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment/statuses" -f state=inactive > /dev/null
+          fi
+          comment=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jobs-pr-preview -->"))) | .id' | head -1)
+          if [ -n "$comment" ]; then
+            node --input-type=module <<'JS' > "$RUNNER_TEMP/preview-removed.json"
+          console.log(JSON.stringify({body: '<!-- jobs-pr-preview -->\nPR preview removed because this pull request is closed.'}));
+          JS
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment" --input "$RUNNER_TEMP/preview-removed.json" > /dev/null
+          fi
+
+      - name: Remove ephemeral PR credentials
+        if: always()
+        run: node --input-type=module -e 'import { rmSync } from "node:fs"; rmSync(process.env.ALCHEMY_HOME, { recursive:true, force:true });'

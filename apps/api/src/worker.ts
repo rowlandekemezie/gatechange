@@ -22,6 +22,7 @@ import {
   enrichListing,
   EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
+  isPullRequestStage,
   publicOriginOf,
   runDigests,
   runIngest,
@@ -73,6 +74,7 @@ import type { HttpServerRequest } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
+import { guardPreviewAccess } from "./preview-access.js";
 import { handleRoutes } from "./route.js";
 import { stageConfig } from "./stage-config.js";
 import { stripeBilling } from "./stripe.js";
@@ -143,6 +145,12 @@ const currentStage = Effect.gen(function* currentStage() {
     : yield* Config.String("ALCHEMY_STAGE");
 });
 
+const backendDatabase = Effect.gen(function* backendDatabase() {
+  return isPullRequestStage(yield* currentStage)
+    ? yield* Cloudflare.D1.Database.ref("JobsDatabase", { stage: "preview" })
+    : yield* JobsDatabase;
+});
+
 const localAuthHosts = Config.String("AUTH_EXTRA_HOSTS").pipe(
   Config.withDefault(""),
   Config.map((hosts) =>
@@ -174,18 +182,31 @@ const socialCredentials = (prefix: string) =>
     )
   );
 
-export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBackend>()(
+export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
   "JobsBackend",
-  {
-    main: import.meta.url,
-    observability: { enabled: true },
-    schema: rpcProjection.group,
-    workersDev: false,
-  },
+  Effect.gen(function* backendProps() {
+    const stage = yield* currentStage;
+
+    return {
+      main: import.meta.url,
+      observability: { enabled: true },
+      ...(isPullRequestStage(stage)
+        ? {
+            preview: {
+              name: stage,
+              of: yield* Cloudflare.Worker.ref("PullRequestBackend", {
+                stage: "preview",
+              }),
+            },
+          }
+        : { workersDev: false }),
+    };
+  }),
   Effect.gen(function* jobsBackend() {
     const stage = yield* currentStage;
     const configuration = yield* stageConfig(stage);
-    const database = yield* JobsDatabase;
+    const pullRequest = isPullRequestStage(stage);
+    const database = yield* backendDatabase;
     const client = yield* Cloudflare.D1.QueryDatabase(database);
     const storeLayer = d1JobStoreLayer(client);
     const alertLayer = d1AlertStoreLayer(client);
@@ -205,10 +226,14 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
     const deployedStage =
       (yield* yield* stageOutput.bind("ENRICHMENT_STAGE")) ?? "";
 
-    const sweepLimit = sweepLimitOf({
-      configured: yield* Config.option(Config.Int("ENRICHMENT_SWEEP_LIMIT")),
-      stage: deployedStage,
-    });
+    const sweepLimit = pullRequest
+      ? 0
+      : sweepLimitOf({
+          configured: yield* Config.option(
+            Config.Int("ENRICHMENT_SWEEP_LIMIT")
+          ),
+          stage: deployedStage,
+        });
 
     const { dailyNeurons } = configuration;
 
@@ -216,7 +241,12 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       Config.withDefault(DEFAULT_ENRICHMENT_SWEEP_HOURS)
     );
 
-    const queue = yield* EnrichmentQueue;
+    const queue = pullRequest
+      ? yield* Cloudflare.Queues.Queue.ref("EnrichmentQueue", {
+          stage: "preview",
+        })
+      : yield* EnrichmentQueue;
+
     const producer = yield* Cloudflare.Queues.WriteQueue(queue);
     const ai = yield* Cloudflare.Workers.AI();
     const model = yield* enrichmentModel;
@@ -247,69 +277,71 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       postingTextsLayer.pipe(Layer.provide(FetchHttpClient.layer))
     );
 
-    yield* Cloudflare.Workers.cron(INGEST_SCHEDULE, (controller) =>
-      runIngest({ feedConcurrency, feedsPerRun }).pipe(
-        Effect.tap(({ outcomes, receipt }) =>
-          Effect.logInfo(
-            `ingest finished outcome=${receipt.outcome} feeds=${receipt.feedsAttempted} failed=${receipt.feedsFailed} upserted=${receipt.jobsUpserted} pruned=${receipt.jobsPruned} failures=${JSON.stringify(
-              outcomes.flatMap(({ error, key }) =>
-                error === null ? [] : [`${key}: ${error}`]
-              )
-            )}`
-          )
-        ),
-        Effect.tap(({ receipt }) =>
-          enqueueUnenriched({
-            limit: sweepLimit,
-            now: receipt.startedAt,
-            windowHours: sweepHours,
-          }).pipe(
-            Effect.tap((queued) =>
-              Effect.logInfo(
-                `listings queued for enrichment queued=${queued} limit=${sweepLimit} stage=${deployedStage}`
-              )
-            ),
-            Effect.catch((error) =>
-              Effect.logError(
-                `enrichment enqueue failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+    if (!pullRequest) {
+      yield* Cloudflare.Workers.cron(INGEST_SCHEDULE, (controller) =>
+        runIngest({ feedConcurrency, feedsPerRun }).pipe(
+          Effect.tap(({ outcomes, receipt }) =>
+            Effect.logInfo(
+              `ingest finished outcome=${receipt.outcome} feeds=${receipt.feedsAttempted} failed=${receipt.feedsFailed} upserted=${receipt.jobsUpserted} pruned=${receipt.jobsPruned} failures=${JSON.stringify(
+                outcomes.flatMap(({ error, key }) =>
+                  error === null ? [] : [`${key}: ${error}`]
+                )
+              )}`
+            )
+          ),
+          Effect.tap(({ receipt }) =>
+            enqueueUnenriched({
+              limit: sweepLimit,
+              now: receipt.startedAt,
+              windowHours: sweepHours,
+            }).pipe(
+              Effect.tap((queued) =>
+                Effect.logInfo(
+                  `listings queued for enrichment queued=${queued} limit=${sweepLimit} stage=${deployedStage}`
+                )
+              ),
+              Effect.catch((error) =>
+                Effect.logError(
+                  `enrichment enqueue failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+                )
               )
             )
-          )
-        ),
-        Effect.catchTag("IngestInProgress", (busy) =>
-          Effect.logInfo(
-            `ingest skipped: another run holds the lease startedAt=${busy.startedAt}`
-          )
-        ),
-        Effect.tapError((error) =>
-          Effect.logError(
-            `ingest failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
-          )
-        ),
-        Effect.annotateLogs({
-          cron: controller.cron,
-          scheduledTime: controller.scheduledTime,
-        }),
-        Effect.provide(ingestLayer)
-      )
-    );
-
-    yield* Cloudflare.Queues.consumeQueueMessages(
-      queue,
-      {
-        batchSize: ENRICHMENT_BATCH_SIZE,
-        maxRetries: ENRICHMENT_MAX_RETRIES,
-      },
-      (messages) =>
-        messages.pipe(
-          Stream.mapEffect(enrichMessage(dailyNeurons), {
-            concurrency: ENRICHMENT_BATCH_SIZE,
-            unordered: true,
+          ),
+          Effect.catchTag("IngestInProgress", (busy) =>
+            Effect.logInfo(
+              `ingest skipped: another run holds the lease startedAt=${busy.startedAt}`
+            )
+          ),
+          Effect.tapError((error) =>
+            Effect.logError(
+              `ingest failed tag=${error._tag} detail=${JSON.stringify(error.message)}`
+            )
+          ),
+          Effect.annotateLogs({
+            cron: controller.cron,
+            scheduledTime: controller.scheduledTime,
           }),
-          Stream.runDrain,
-          Effect.provide(enrichmentLayer)
+          Effect.provide(ingestLayer)
         )
-    );
+      );
+
+      yield* Cloudflare.Queues.consumeQueueMessages(
+        queue,
+        {
+          batchSize: ENRICHMENT_BATCH_SIZE,
+          maxRetries: ENRICHMENT_MAX_RETRIES,
+        },
+        (messages) =>
+          messages.pipe(
+            Stream.mapEffect(enrichMessage(dailyNeurons), {
+              concurrency: ENRICHMENT_BATCH_SIZE,
+              unordered: true,
+            }),
+            Stream.runDrain,
+            Effect.provide(enrichmentLayer)
+          )
+      );
+    }
 
     const secret = yield* authSecret;
 
@@ -371,37 +403,45 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       unsubscribeTokenVersion,
     });
 
-    yield* Cloudflare.Workers.cron(DIGEST_SCHEDULE, (controller) =>
-      runDigests(digestPlan, controller.scheduledTime).pipe(
-        Effect.tap((receipt) => Effect.logInfo("digests finished", receipt)),
-        Effect.tapError((error) => Effect.logError("digests failed", error)),
-        Effect.annotateLogs({
-          cron: controller.cron,
-          scheduledTime: controller.scheduledTime,
-        }),
-        Effect.provide(
-          Layer.mergeAll(alertLayer, Layer.succeed(DigestMailer, digestMailer))
+    if (!pullRequest) {
+      yield* Cloudflare.Workers.cron(DIGEST_SCHEDULE, (controller) =>
+        runDigests(digestPlan, controller.scheduledTime).pipe(
+          Effect.tap((receipt) => Effect.logInfo("digests finished", receipt)),
+          Effect.tapError((error) => Effect.logError("digests failed", error)),
+          Effect.annotateLogs({
+            cron: controller.cron,
+            scheduledTime: controller.scheduledTime,
+          }),
+          Effect.provide(
+            Layer.mergeAll(
+              alertLayer,
+              Layer.succeed(DigestMailer, digestMailer)
+            )
+          )
         )
-      )
-    );
+      );
 
-    yield* Cloudflare.Workers.cron(INSTANT_ALERT_SCHEDULE, (controller) =>
-      runInstantAlerts(digestPlan, controller.scheduledTime).pipe(
-        Effect.tap((receipt) =>
-          Effect.logInfo("instant alerts finished", receipt)
-        ),
-        Effect.tapError((error) =>
-          Effect.logError("instant alerts failed", error)
-        ),
-        Effect.annotateLogs({
-          cron: controller.cron,
-          scheduledTime: controller.scheduledTime,
-        }),
-        Effect.provide(
-          Layer.mergeAll(alertLayer, Layer.succeed(DigestMailer, digestMailer))
+      yield* Cloudflare.Workers.cron(INSTANT_ALERT_SCHEDULE, (controller) =>
+        runInstantAlerts(digestPlan, controller.scheduledTime).pipe(
+          Effect.tap((receipt) =>
+            Effect.logInfo("instant alerts finished", receipt)
+          ),
+          Effect.tapError((error) =>
+            Effect.logError("instant alerts failed", error)
+          ),
+          Effect.annotateLogs({
+            cron: controller.cron,
+            scheduledTime: controller.scheduledTime,
+          }),
+          Effect.provide(
+            Layer.mergeAll(
+              alertLayer,
+              Layer.succeed(DigestMailer, digestMailer)
+            )
+          )
         )
-      )
-    );
+      );
+    }
 
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
@@ -540,18 +580,29 @@ export default class JobsBackend extends Cloudflare.Workers.RpcWorker<JobsBacken
       unsubscribe,
     });
 
-    // @effect-diagnostics-next-line returnEffectInGen:off -- Alchemy's RPC Worker initialization returns its request Effect.
-    return Effect.succeed(handle);
+    return {
+      fetch: Effect.succeed(
+        pullRequest
+          ? guardPreviewAccess({
+              handle,
+              publicOrigin: Option.getOrThrow(publicOriginOf(stage, subdomain)),
+              secret: yield* Config.Redacted("PR_PREVIEW_SECRET"),
+              stage,
+            })
+          : handle
+      ),
+    };
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
+        RuntimeContext.RuntimeContext.phantom,
         Cloudflare.D1.QueryDatabaseBinding,
         Cloudflare.Workers.CronEventSourceLive,
         Cloudflare.Queues.WriteQueueBinding,
         Cloudflare.Queues.EventSourceLive,
         Cloudflare.Workers.AIBinding,
         Cloudflare.Email.SendBinding,
-        CloudflareD1(JobsDatabase),
+        CloudflareD1(backendDatabase.pipe(Effect.orDie)),
         Stripe.CreateCheckoutSessionHttp,
         Stripe.CreateCustomerHttp,
         Stripe.CreateBillingPortalSessionHttp

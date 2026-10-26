@@ -1,10 +1,13 @@
 import JobsBackend from "@rat-stack/api/worker";
 import {
   ANONYMOUS_MCP_CALLS_PER_MINUTE,
+  isPullRequestStage,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "@rat-stack/core";
 import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Output from "alchemy/Output";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
 import { siteIndexing, siteRouting, siteWorkerFirst } from "./site-routing.js";
@@ -13,15 +16,39 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
   "Website",
   Effect.gen(function* websiteProps() {
     const stage = yield* Stage;
+    const pullRequest = isPullRequestStage(stage);
+
+    const routing = pullRequest
+      ? {
+          compatibility: { flags: ["global_fetch_strictly_public"] },
+          preview: {
+            name: stage,
+            of: yield* Cloudflare.Worker.ref("Website", { stage: "preview" }),
+          },
+        }
+      : siteRouting(stage);
+
+    const backendBindings = pullRequest
+      ? {
+          PR_PREVIEW_BACKEND_URL: JobsBackend.pipe(
+            Effect.map((backend) =>
+              backend.url.pipe(Output.map((url) => url ?? ""))
+            )
+          ),
+          PR_PREVIEW_SECRET: yield* Config.Redacted("PR_PREVIEW_SECRET").pipe(
+            Effect.orDie
+          ),
+        }
+      : { BACKEND: JobsBackend };
 
     return {
       assets: {
         notFoundHandling: "single-page-application" as const,
         runWorkerFirst: siteWorkerFirst(stage),
       },
-      ...siteRouting(stage),
+      ...routing,
       env: {
-        BACKEND: JobsBackend,
+        ...backendBindings,
         MCP_ANONYMOUS_LIMIT: Cloudflare.Workers.RateLimit(
           "MCP_ANONYMOUS_LIMIT",
           {

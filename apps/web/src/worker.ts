@@ -16,6 +16,7 @@ import { clientOf, listedJobs, shellOf } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
+import { backendOf } from "./server/preview-backend.js";
 import { renderPage } from "./server/render.js";
 import {
   closedRobotsTxt,
@@ -36,6 +37,12 @@ interface EdgeBindings {
   readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
   readonly MCP_TOKEN_LIMIT: RateLimiter;
   readonly SITE_INDEXING?: string;
+}
+
+interface WorkerBindings extends Omit<EdgeBindings, "BACKEND"> {
+  readonly BACKEND?: ServiceBinding;
+  readonly PR_PREVIEW_BACKEND_URL?: string;
+  readonly PR_PREVIEW_SECRET?: string;
 }
 
 const withoutSharedCache = (route: EdgeRoute, response: Response) => {
@@ -271,9 +278,16 @@ export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
   fetch: async (
     request: Request,
-    bindings: EdgeBindings,
+    environment: WorkerBindings,
     lifetime: Lifetime
   ): Promise<Response> => {
+    const backend = backendOf(environment, globalThis.fetch);
+
+    if (backend === undefined) {
+      return respond("Preview backend unavailable", "text/plain", 503);
+    }
+
+    const bindings: EdgeBindings = { ...environment, BACKEND: backend };
     const route = edgeRouteOf(new URL(request.url).pathname);
 
     if (route === "agent") {

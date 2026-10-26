@@ -83,7 +83,7 @@ The board fills over the first couple of hours: each cron run fetches 20 due fee
 
 `preview` deploys the same application code as production with separate Website and JobsBackend Workers, D1, queue, authentication sessions, and Stripe test resources. Its stable URL is <https://jobs-preview.rowland-ekemezie.workers.dev>. Production keeps its custom domain and existing defaults. Native Worker version preview URLs do not isolate this application's service bindings, queue consumers, and scheduled tasks.
 
-Only the exact `preview` stage changes these defaults; explicit environment configuration still overrides them:
+The persistent `preview` stage uses these defaults; explicit environment configuration can override them. PR stages use the stricter rules below:
 
 | Setting | `preview` | Other stages |
 | --- | --- | --- |
@@ -100,7 +100,7 @@ Preview retains ingestion and scheduled mail delivery. Its zero AI budgets preve
 
 The `preview` GitHub environment must contain a unique `PREVIEW_BETTER_AUTH_SECRET` (at least 32 characters) and `PREVIEW_STRIPE_TEST_API_KEY` (`sk_test_` or `rk_test_`). Use a different auth secret from production. The preview job explicitly uses the existing repository Cloudflare credentials; it never substitutes production auth or Stripe secrets. OAuth remains disabled until separate preview apps and callback URLs are configured. With no `STRIPE_RESTRICTED_KEY` override, the Worker uses this test profile key for billing; choose a suitably scoped test key.
 
-CI deploys both stages after a successful check on a push to `main`. A manual CI run on `main` deploys preview only. Preview gets its own deployment concurrency group. It validates both preview secrets before profile creation, stores the Stripe test key through `alchemy profile edit --add Stripe --method stored --set apiKey=- --no-input` using stdin, plans, deploys, and checks the homepage, auth health, and crawler exclusions. The profile lives in a private ephemeral `ALCHEMY_HOME` removed on success or failure. Only Alchemy profile/plan/deploy subprocesses use `CI=false`, because the pinned CLI otherwise ignores profiles; checks, tests, and builds retain CI behavior. No `STRIPE_API_KEY` environment fallback is used.
+CI deploys both stages after a successful check on a push to `main`. A manual CI run deploys its selected branch to persistent preview only; select `preview_plan_only` to inspect the plan without deploying. Select `preview_parent_only` to bootstrap only the shared PR backend parent. Preview gets its own deployment concurrency group. It validates both preview secrets before profile creation, stores the Stripe test key through `alchemy profile edit --add Stripe --method stored --set apiKey=- --no-input` using stdin, plans, deploys, and checks the homepage, auth health, and crawler exclusions. The profile lives in a private ephemeral `ALCHEMY_HOME` removed on success or failure. Only Alchemy profile/plan/deploy subprocesses use `CI=false`, because the pinned CLI otherwise ignores profiles; checks, tests, and builds retain CI behavior. No `STRIPE_API_KEY` environment fallback is used.
 
 For a local deployment, configure a separate profile with the existing Cloudflare account and a Stripe **test** key. Set a unique `BETTER_AUTH_SECRET` through the declared local configuration before planning:
 
@@ -115,6 +115,16 @@ ALCHEMY_PROFILE=preview pnpm infra:deploy --stage preview --yes --no-input
 Review the plan before deploying: preview should create or update only its stage-owned resources, with its own D1 and queue, Stripe test objects and webhook, and no production-domain or production-database change. Keep credentials out of command arguments and logs. If running these Alchemy commands inside a CI environment, scope `CI=false` to those subprocesses so the stored Stripe profile can resolve.
 
 Every non-production stage routes pages and static assets through the Worker so they receive `X-Robots-Tag: noindex`; production retains its selected Worker paths and direct asset serving. Preview disallows crawling in `robots.txt`, and has no sitemap entries. These crawler signals do not restrict access: the preview is public, and private account data still requires its own preview session.
+
+### Pull request previews
+
+Same-repository PRs deploy after the full CI gate passes. Each PR gets stable [Cloudflare native Worker Previews](https://developers.cloudflare.com/workers/previews/) for Website and JobsBackend. Website uses the persistent preview Website as its parent. Backend Previews use one shared `jobs-pr-backend` parent. The frontend URL is `https://pr-<number>-jobs-preview.rowland-ekemezie.workers.dev`. GitHub shows it in deployments and in one bot comment updated after each successful deployment, with the deployed commit. Fork PRs run CI without deployment credentials.
+
+PR code uses the persistent preview D1 and queue bindings, never production data. Cloudflare does not automatically isolate D1 data per Preview; shared preview accounts and edits are visible across PRs. Only the persistent preview owns migrations, ingestion, queue consumption and scheduled delivery. Schema changes that cannot coexist with the shared preview schema need a separate data migration plan. PRs cannot enable Checkout, scheduled mail or AI spend; test Stripe Checkout on the persistent preview.
+
+[Service bindings reach the parent's normal deployment](https://developers.cloudflare.com/workers/previews/resources/), so Website forwards to its matching backend Preview over HTTPS. A per-PR credential protects that endpoint before application routing. The backend restores the exact configured PR website origin for auth and reports its PR stage in the smoke test. Preview credentials remain server-side. The shared backend parent serves only a denial response and enables preview routing while its stable public URL stays disabled. Its historical versions contain no application endpoints. This leaves the existing preview backend and its historical versions private. The existing preview environment auth secret supplies both auth and a separately derived transport credential; no extra GitHub secrets are needed.
+
+Closing or merging a PR removes only its two native Previews through Alchemy, retires the deployment link and updates the comment. Cleanup runs trusted base code, shares the PR deployment lock and validates the `pr-N` stage and refuses cleanup unless its state contains only Website, JobsBackend and stack outputs. The persistent preview Workers, shared backend parent, D1, queue and production resources remain owned by their existing stages. Deployment checks the current PR state before writing, so a completed CI run cannot recreate a closed PR's preview.
 
 ### Search visibility and public information
 
