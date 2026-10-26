@@ -8,6 +8,7 @@ import {
   Option,
   pipe,
   Schema,
+  Struct,
 } from "effect";
 import * as Arbitrary from "effect/Arbitrary";
 import { TestClock } from "effect/testing";
@@ -250,7 +251,9 @@ const reasonOf = (outcome: EnrichmentOutcomeValue) =>
     Skipped: (skipped) => skipped.reason,
   });
 
-const answerFields = Object.keys(ModelAnswer.fields);
+const answerFields = Object.keys(ModelAnswer.fields).filter(
+  (field) => !field.startsWith("handsOn")
+);
 
 const malformedAnswers = Arbitrary.map(
   Arbitrary.all([
@@ -2436,36 +2439,78 @@ describe("leadership facts", () => {
     ).toBeNull();
   });
 
-  it("a handsOn outside the closed set does not decode", () => {
+  it.each([
+    [
+      "You bring experience writing code in Go and Python.",
+      "experience writing code in Go",
+    ],
+    [
+      "Experience in coding with Rust is preferred.",
+      "Experience in coding with Rust",
+    ],
+    ["You have strong coding skills in Java.", "strong coding skills in Java"],
+    [
+      "Proficiency in programming with TypeScript is required.",
+      "Proficiency in programming with TypeScript",
+    ],
+    [
+      "A background in coding or programming is a plus.",
+      "background in coding or programming",
+    ],
+  ])("handsOn quoted from the requirement %j is not saved", (text, quote) => {
     expect(
-      Option.isNone(
-        Schema.decodeUnknownOption(ModelAnswer)({
-          ...validAnswer,
-          handsOn: "lots",
-        })
-      )
-    ).toBe(true);
-    expect(
-      Option.isNone(
-        Schema.decodeUnknownOption(ModelAnswer)({
-          ...validAnswer,
-          handsOn: undefined,
-        })
-      )
-    ).toBe(true);
+      detailsOf(text, { handsOn: "Significant", handsOnQuote: quote }).handsOn
+    ).toBeNull();
   });
+
+  it.effect.each([
+    ["a handsOn outside the closed set", { ...validAnswer, handsOn: "lots" }],
+    [
+      "no handsOn at all",
+      Struct.omit(validAnswer, ["handsOn", "handsOnQuote"]),
+    ],
+  ])(
+    "an answer with %s keeps every other fact and saves handsOn as null",
+    ([, answer]) =>
+      Effect.gen(function* lenientHandsOn() {
+        const result = yield* enrich({ answer: Answer.Answers({ answer }) });
+
+        expect(reasonOf(result.outcome)).toBe("Enriched");
+        expect(
+          pipe(
+            result.after,
+            Option.map(({ enrichment }) => ({
+              handsOn: enrichment?.handsOn,
+              salary: enrichment?.salary,
+              teamSize: enrichment?.teamSize,
+            }))
+          )
+        ).toStrictEqual(
+          Option.some({
+            handsOn: null,
+            salary: { currency: "USD", max: 220_000, min: 180_000 },
+            teamSize: 24,
+          })
+        );
+      })
+  );
 
   it.each([
     ["Jane Smith, VP of Engineering", "VP of Engineering"],
+    ["Jane Smith - Director of Engineering", "Director of Engineering"],
     ["the CTO (Jane Smith)", "CTO"],
+    ["the CTO", "CTO"],
+    ["VP, Engineering", "VP, Engineering"],
+    ["Director - Engineering", "Director - Engineering"],
+    ["Sr. Director, Engineering", "Sr. Director, Engineering"],
+    ["Product Owner", "Product Owner"],
+    ["Executive Chairman", "Executive Chairman"],
     ["Jane Smith", null],
   ])("reportsTo %j is saved as %j", (answered, saved) => {
-    const text = "You will report to Jane Smith, VP of Engineering and CTO.";
-
     expect(
-      detailsOf(text, {
+      detailsOf(`You will report to ${answered}.`, {
         reportsTo: answered,
-        reportsToQuote: "report to Jane Smith, VP of Engineering and CTO",
+        reportsToQuote: `report to ${answered}`,
       }).reportsTo
     ).toBe(saved);
   });

@@ -13,7 +13,7 @@ export const enrichmentModel = Config.String("ENRICHMENT_MODEL").pipe(
   Config.withDefault(DEFAULT_ENRICHMENT_MODEL)
 );
 
-export const MAX_ANSWER_TOKENS = 320;
+export const MAX_ANSWER_TOKENS = 448;
 
 export const MAX_INPUT_TOKENS = 16_000;
 

@@ -330,7 +330,7 @@ export const clearSkipStatement = (id: string) =>
   statement("DELETE FROM job_enrichment_skip WHERE job_id = ?", [id]);
 
 const keepBoardFact = (column: string, presence: string) =>
-  `${column} = CASE WHEN job_enrichment.board IS NOT NULL AND job_enrichment.${presence} IS NOT NULL THEN job_enrichment.${column} ELSE excluded.${column} END`;
+  `${column} = CASE WHEN excluded.${presence} IS NULL OR (job_enrichment.board IS NOT NULL AND job_enrichment.${presence} IS NOT NULL) THEN job_enrichment.${column} ELSE excluded.${column} END`;
 
 export const saveEnrichmentStatement = (
   id: string,
@@ -344,13 +344,13 @@ ON CONFLICT (job_id) DO UPDATE SET
   ${keepBoardFact("salary_min", "salary_currency")},
   ${keepBoardFact("salary_max", "salary_currency")},
   ${keepBoardFact("seniority", "seniority")},
-  team_size = excluded.team_size,
-  reports_to = excluded.reports_to,
+  team_size = COALESCE(excluded.team_size, job_enrichment.team_size),
+  reports_to = COALESCE(excluded.reports_to, job_enrichment.reports_to),
   ${keepBoardFact("remote_policy", "remote_policy")},
   model = excluded.model,
   enriched_at = excluded.enriched_at,
   board = COALESCE(job_enrichment.board, excluded.board),
-  hands_on = excluded.hands_on,
+  hands_on = COALESCE(excluded.hands_on, job_enrichment.hands_on),
   prompt_version = excluded.prompt_version`,
     [
       id,

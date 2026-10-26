@@ -633,6 +633,32 @@ describe("enrichment storage", () => {
   );
 
   it.effect(
+    "a newer prompt's answer that finds nothing keeps what the older prompt found",
+    () =>
+      withStore(
+        Effect.gen(function* rerunKeeps() {
+          const store = yield* JobStore;
+          const first = enrichment({ handsOn: "Some", promptVersion: 1 });
+
+          yield* store.replaceFeed("greenhouse:acme", [job("a")], NOW);
+          yield* store.saveEnrichment("a", first);
+          yield* store.saveEnrichment("a", {
+            ...bare,
+            enrichedAt: NOW + 9,
+            promptVersion: 2,
+          });
+
+          expect(yield* store.find("a")).toStrictEqual(
+            Option.some({
+              ...job("a"),
+              enrichment: { ...first, enrichedAt: NOW + 9, promptVersion: 2 },
+            })
+          );
+        })
+      )
+  );
+
+  it.effect(
     "board facts stay through a model answer, which fills only what the board left empty",
     () =>
       withStore(

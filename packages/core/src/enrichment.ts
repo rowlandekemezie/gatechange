@@ -58,6 +58,18 @@ export const ModelAnswer = Schema.Struct({
 
 export type ModelAnswerValue = typeof ModelAnswer.Type;
 
+const ReceivedAnswer = Schema.Struct({
+  ...ModelAnswer.fields,
+  handsOn: ModelAnswer.fields.handsOn.pipe(
+    Schema.catchDecoding(() => Effect.succeedSome(null)),
+    Schema.withDecodingDefault(Effect.succeed(null))
+  ),
+  handsOnQuote: ModelAnswer.fields.handsOnQuote.pipe(
+    Schema.catchDecoding(() => Effect.succeedSome(null)),
+    Schema.withDecodingDefault(Effect.succeed(null))
+  ),
+});
+
 export interface PostingRequest {
   readonly company: string;
   readonly salary: SalaryBandValue | null;
@@ -869,6 +881,9 @@ const plainNegation = (sentence: string) =>
 const codingWork =
   /\b(?:hands[\s-]on|cod(?:e|es|ing)|programming|individual contributor|pull requests?)\b/iu;
 
+const codingRequirement =
+  /\b(?:experience\s+(?:writing|in|with|coding|programming)|(?:coding|programming|engineering|technical)\s+(?:skills?|abilit(?:y|ies)|background|experience)|proficien(?:cy|t)\s+(?:in|with|at)|background\s+in)\b/iu;
+
 const handsOnOf = (
   answer: ModelAnswerValue,
   posting: SearchableText
@@ -881,6 +896,7 @@ const handsOnOf = (
         Option.exists(
           ({ sentence }) =>
             !pastExperience.test(sentence) &&
+            !codingRequirement.test(sentence) &&
             negationOf(codingWork).test(plainNegation(sentence)) ===
               (claimed === "None")
         )
@@ -1195,19 +1211,34 @@ const reportsAsRole = (sentence: string, postingTitle: string) => {
   });
 };
 
-const managerTitle =
-  /\b(?:chief|c[a-z]o|vp|evp|svp|vice|president|director|head|manager|lead|founder|co-founder|officer|principal|partner|gm|architect|engineer)s?\b/iu;
+const titleWord =
+  /\b(?:chief|c[a-z]o|vp|evp|svp|vice|president|director|head|manager|lead|leader|founder|co-founder|officer|principal|partner|gm|architect|engineer|owner|chair(?:man|woman|person)?|executive|supervisor|counsel)s?\b/iu;
 
-const reportsToTitleOf = (said: string) =>
-  pipe(
-    said.replaceAll(/\s+/gu, " ").split(/\s*(?:[,;()]|\s[-–—]\s)\s*/u),
-    Array.findFirst((part) =>
-      managerTitle.test(part)
-        ? Option.some(part.replace(/^(?:the|our|your|a|an)\s+/iu, "").trim())
-        : Option.none()
-    ),
-    Option.getOrElse(() => "")
-  );
+const withoutNames = (said: string) => {
+  const title = said
+    .replaceAll(/\s*\((?<inner>[^)]*)\)/gu, (group, inner: string) =>
+      titleWord.test(inner) ? group : ""
+    )
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+
+  const leading =
+    /^(?<first>[^,;]*?)(?:\s*[,;]\s*|\s[-–—]\s)(?<rest>.+)$/u.exec(
+      title
+    )?.groups;
+
+  return leading !== undefined && !titleWord.test(leading.first ?? "")
+    ? (leading.rest ?? "")
+    : title;
+};
+
+const reportsToTitleOf = (said: string) => {
+  const title = withoutNames(said);
+
+  return titleWord.test(title)
+    ? title.replace(/^(?:the|our|your|a|an)\s+/iu, "")
+    : "";
+};
 
 const reportsToOf = (
   answer: ModelAnswerValue,
@@ -1387,7 +1418,7 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
               })
         ),
         Effect.flatMap(({ answer }) =>
-          Schema.decodeUnknownEffect(ModelAnswer)(answer).pipe(
+          Schema.decodeUnknownEffect(ReceivedAnswer)(answer).pipe(
             Effect.mapError((failure) => skip("Malformed", failure.message))
           )
         ),
