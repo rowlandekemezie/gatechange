@@ -217,7 +217,7 @@ describe("public landing pages", () => {
     expect(page.html).not.toContain('<meta name="robots" content="noindex"');
     expect(page.headers.has("x-robots-tag")).toBe(false);
     expect(publicJobs.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ limit: 40, offset: 0, search: "" })
+      expect.objectContaining({ limit: 15, offset: 0, search: "" })
     );
     expect(site.calls.backend).toBe(1);
   });

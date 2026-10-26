@@ -33,6 +33,7 @@ import {
 import {
   ageWindows,
   hasProSelection,
+  MORE_PAGE_SIZE,
   regionGroups,
   salarySteps,
 } from "../../client/board/filters.js";
@@ -710,9 +711,7 @@ const moreView = (
           h.Class("more"),
           h.OnClick(Message.ClickedLoadMore()),
         ],
-        [
-          `Show ${Math.min(40, total - shown)} more of ${total - shown} remaining`,
-        ]
+        [`Show ${Math.min(MORE_PAGE_SIZE, total - shown)} more`]
       ),
     Loading: () =>
       h.p([h.Class("list-end"), h.Role("status")], ["Loading more roles"]),

@@ -6,7 +6,9 @@ import type {
 } from "@rat-stack/core/contracts";
 import { Array, Match, pipe, Schema } from "effect";
 
-export const PAGE_SIZE = 40;
+export const FIRST_PAGE_SIZE = 15;
+
+export const MORE_PAGE_SIZE = 25;
 
 export const RegionGroup = Schema.Literals([
   "RemoteCanada",
@@ -119,7 +121,7 @@ export const queryOf = (
   filters: FiltersValue,
   offset: number
 ): JobQueryValue => ({
-  limit: PAGE_SIZE,
+  limit: offset === 0 ? FIRST_PAGE_SIZE : MORE_PAGE_SIZE,
   maxAgeDays: filters.maxAgeDays,
   offset,
   regions: pipe(

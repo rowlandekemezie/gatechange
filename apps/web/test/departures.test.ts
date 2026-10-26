@@ -35,7 +35,7 @@ const listed = (status: ListingStatusValue): ListedJobValue => ({
   url: `https://boards.example/${status}`,
 });
 
-const renderBoard = (jobs: readonly ListedJobValue[]) =>
+const renderBoard = (jobs: readonly ListedJobValue[], total = jobs.length) =>
   renderToString(
     {
       ...application,
@@ -49,7 +49,7 @@ const renderBoard = (jobs: readonly ListedJobValue[]) =>
             jobs: JobsState.Loaded({
               generatedAt: NOW,
               jobs,
-              total: jobs.length,
+              total,
             }),
           },
         };
@@ -89,6 +89,17 @@ describe("departures board", () => {
     Effect.map(renderBoard([listed("new")]), (html) => {
       expect(html).toContain("first seen in the last 24 hours");
       expect(html).toContain("posted this week");
+    })
+  );
+
+  it.effect.each([
+    [100, "Show 25 more"],
+    [4, "Show 3 more"],
+  ] as const)("offers the next page of %i matches as %s", ([total, label]) =>
+    Effect.map(renderBoard([listed("new")], total), (html) => {
+      expect(html).toMatch(
+        new RegExp(`<button[^>]*class="more"[^>]*>${label}</button>`, "u")
+      );
     })
   );
 });
