@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Account, FREE, ProEntitlement } from "@rat-stack/core/contracts";
-import type { MembershipValue } from "@rat-stack/core/contracts";
+import type {
+  MembershipValue,
+  PlanOfferValue,
+} from "@rat-stack/core/contracts";
 import { Effect, Option, Schema } from "effect";
 import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
@@ -9,7 +12,11 @@ import { Message as AccountMessage } from "../src/client/account/message.js";
 import { SessionState } from "../src/client/account/model.js";
 import { application } from "../src/client/application.js";
 import { Message } from "../src/client/billing/message.js";
-import { BillingAction, MembershipState } from "../src/client/billing/model.js";
+import {
+  BillingAction,
+  MembershipState,
+  PlansState,
+} from "../src/client/billing/model.js";
 import type { ModelValue as BillingModelValue } from "../src/client/billing/model.js";
 import { CHECKOUT_POLLS, init, update } from "../src/client/billing/update.js";
 import { defaultFilters } from "../src/client/board/filters.js";
@@ -47,6 +54,12 @@ const pro: MembershipValue = {
   instantAlerts: true,
 };
 
+const offers: readonly PlanOfferValue[] = [
+  { amountCents: 500, interval: "week", intervalCount: 1, plan: "Weekly" },
+  { amountCents: 1900, interval: "month", intervalCount: 1, plan: "Monthly" },
+  { amountCents: 14_900, interval: "year", intervalCount: 1, plan: "Yearly" },
+];
+
 const commandNames = (step: {
   readonly commands?: readonly { readonly name: string }[];
 }) => (step.commands ?? []).map((command) => command.name);
@@ -54,12 +67,14 @@ const commandNames = (step: {
 const loaded = (membership: MembershipValue): BillingModelValue => ({
   ...init().model,
   membership: MembershipState.Loaded({ membership }),
+  plans: PlansState.Loaded({ plans: offers }),
 });
 
 const renderAs = (
   path: string,
   session: typeof SessionState.Type,
-  membership: Option.Option<MembershipValue>
+  membership: Option.Option<MembershipValue>,
+  plans: readonly PlanOfferValue[] = offers
 ) =>
   renderToString(
     {
@@ -72,10 +87,13 @@ const renderAs = (
           model: {
             ...started.model,
             account: { ...started.model.account, session },
-            billing: Option.match(membership, {
-              onNone: () => started.model.billing,
-              onSome: loaded,
-            }),
+            billing: {
+              ...Option.match(membership, {
+                onNone: () => started.model.billing,
+                onSome: loaded,
+              }),
+              plans: PlansState.Loaded({ plans }),
+            },
           },
         };
       },
@@ -109,6 +127,19 @@ describe("billing routes", () => {
 });
 
 describe("billing updates", () => {
+  it("fetches the plans on sale at start and keeps them once loaded", () => {
+    const started = init();
+
+    const fetched = update(
+      started.model,
+      Message.CompletedFetchPlans({ plans: offers })
+    );
+
+    expect(commandNames(started)).toEqual(["FetchPlans"]);
+    expect(Schema.is(PlansState.Loading)(started.model.plans)).toBe(true);
+    expect(fetched.model.plans).toEqual(PlansState.Loaded({ plans: offers }));
+  });
+
   it("starts one checkout even when a plan is clicked twice", () => {
     const first = update(
       loaded(free),
@@ -349,30 +380,34 @@ describe("billing updates", () => {
       })
     );
 
-    expect(signedOut.model.billing).toEqual(init().model);
+    expect(signedOut.model.billing).toEqual({
+      ...init().model,
+      plans: PlansState.Loaded({ plans: offers }),
+    });
   });
 });
 
 describe("billing pages", () => {
-  it("prices the three plans and saves against monthly", () => {
-    expect([
-      savingOf("Monthly"),
-      savingOf("Quarterly"),
-      savingOf("Yearly"),
-    ]).toEqual([0, 14, 35]);
+  it("saves against the dearest plan per day", () => {
+    expect(offers.map((offer) => savingOf(offer, offers))).toEqual([
+      { against: "Weekly", percent: 0 },
+      { against: "Weekly", percent: 13 },
+      { against: "Weekly", percent: 43 },
+    ]);
   });
 
   it.effect(
-    "shows the three Pro plans to a signed-out visitor with a sign-in link",
+    "shows each configured Pro plan with its interval to a signed-out visitor",
     () =>
       Effect.map(
         renderAs("/pricing", SessionState.SignedOut(), Option.none()),
         (html) => {
           const text = textOf(html);
 
-          expect(text).toContain("$19 a month");
-          expect(text).toContain("$49 every 3 months");
-          expect(text).toContain("$149 a year");
+          expect(text).toContain("$5 / week");
+          expect(text).toContain("$19 / month");
+          expect(text).toContain("$149 / year");
+          expect(text).toContain("Save 13% against Weekly");
           expect(text).toContain("Salary floor and seniority filters");
           expect(text).not.toContain(
             "Salary floor and seniority filters coming soon"
@@ -380,6 +415,114 @@ describe("billing pages", () => {
           expect(text).toContain("Company intel");
           expect(text).not.toContain("Company intel coming soon");
           expect(text.match(/Sign in to upgrade/gu)?.length).toBe(3);
+        }
+      )
+  );
+
+  it.effect(
+    "renders a single weekly plan as five dollars a week with no plan picker",
+    () =>
+      Effect.gen(function* singlePlan() {
+        const weeklyOnly: readonly PlanOfferValue[] = [
+          {
+            amountCents: 500,
+            interval: "week",
+            intervalCount: 1,
+            plan: "Weekly",
+          },
+        ];
+
+        const pages = [
+          yield* renderAs(
+            "/pricing",
+            SessionState.SignedOut(),
+            Option.none(),
+            weeklyOnly
+          ),
+          yield* renderAs(
+            "/pricing",
+            SessionState.SignedIn({ account: ada }),
+            Option.some(free),
+            weeklyOnly
+          ),
+        ];
+
+        const [visitor = "", member = ""] = pages.map(textOf);
+
+        expect(visitor).toContain("Free");
+        expect(visitor).toContain("$5 / week Cancel any time");
+        expect(visitor.match(/Sign in to upgrade/gu)?.length).toBe(1);
+        expect(member).toContain("$5 / week Cancel any time Upgrade to Pro");
+        expect(pages.join(" ")).not.toMatch(/Save \d|Choose|plan-name/u);
+      })
+  );
+
+  it.effect("keeps the configured case of a custom plan name", () =>
+    Effect.map(
+      renderAs(
+        "/pricing",
+        SessionState.SignedIn({ account: ada }),
+        Option.some(free),
+        [
+          {
+            amountCents: 500,
+            interval: "week",
+            intervalCount: 1,
+            plan: "Founder",
+          },
+          {
+            amountCents: 1500,
+            interval: "month",
+            intervalCount: 1,
+            plan: "Monthly",
+          },
+        ]
+      ),
+      (html) => {
+        const text = textOf(html);
+
+        expect(text).toContain("Choose Founder");
+        expect(text).toContain("against Founder");
+      }
+    )
+  );
+
+  it.effect(
+    "hides plans, checkout and the pricing tab when the site sells no plans",
+    () =>
+      Effect.map(
+        renderAs(
+          "/pricing",
+          SessionState.SignedIn({ account: ada }),
+          Option.some(free),
+          []
+        ),
+        (html) => {
+          const text = textOf(html);
+
+          expect(text).toContain("Pro is not on sale on this site.");
+          expect(text).not.toContain("Choose");
+          expect(text).not.toContain("Stripe handles payment");
+          expect(text).not.toContain("Upgrade");
+        }
+      )
+  );
+
+  it.effect(
+    "drops the Pro upsell from a Free account when no plans are on sale",
+    () =>
+      Effect.map(
+        renderAs(
+          "/account",
+          SessionState.SignedIn({ account: ada }),
+          Option.some(free),
+          []
+        ),
+        (html) => {
+          const text = textOf(html);
+
+          expect(text).toContain("You are on Free.");
+          expect(text).not.toContain("Pro adds instant alerts");
         }
       )
   );
@@ -450,7 +593,7 @@ describe("billing pages", () => {
           const text = textOf(html);
 
           expect(text).toContain(
-            "You have Pro monthly. It renews on November 18, 2026."
+            "You have Pro Monthly. It renews on November 18, 2026."
           );
           expect(text).toContain("Instant alerts on");
           expect(text).toContain("Manage billing");

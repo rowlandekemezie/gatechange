@@ -1,8 +1,14 @@
 export {
+  priceBook,
   PRO_PRODUCT_DESCRIPTION,
   PRO_PRODUCT_NAME,
   ProCatalog,
+  ProPlanSetting,
+  proPlansOf,
+  ProPlansSetting,
 } from "./catalog.js";
+
+export type { ProPlanSettingValue } from "./catalog.js";
 
 export { stripeKeyRefusal, StripeKeyRefused, stripeModeOf } from "./keys.js";
 
@@ -19,6 +25,7 @@ export type {
   CheckoutSessionRequest,
   CustomerRequest,
   PortalSessionRequest,
+  SalePrice,
   StripeSessions,
 } from "./live.js";
 

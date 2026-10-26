@@ -69,11 +69,11 @@ const addMember = (id: AccountIdValue) =>
 
 const sandbox = {
   livemode: false,
-  prices: {
-    Monthly: "price_1USIFA0ZnafJYNlYo9bbbD97",
-    Quarterly: "price_sandbox_quarterly",
-    Yearly: "price_sandbox_yearly",
-  },
+  prices: new Map([
+    ["price_1USIFA0ZnafJYNlYo9bbbD97", "Monthly"],
+    ["price_sandbox_quarterly", "Quarterly"],
+    ["price_sandbox_yearly", "Yearly"],
+  ]),
 };
 
 const deliver = (payload: string) =>
@@ -146,6 +146,36 @@ describe("Stripe webhook replay", () => {
 
         expect(doubled).toEqual(once);
       })
+  );
+
+  it.effect(
+    "stores a weekly plan from a configured weekly price and keeps an existing monthly one",
+    () =>
+      withBilling(
+        Effect.gen(function* weeklyAndMonthly() {
+          yield* addMember(ada);
+
+          const [, created = ""] = lifecycle;
+
+          yield* billingChangeOf(
+            {
+              ...sandbox,
+              prices: new Map([...sandbox.prices, ["price_weekly", "Weekly"]]),
+            },
+            created
+              .replaceAll("price_1USIFA0ZnafJYNlYo9bbbD97", "price_weekly")
+              .replaceAll("sub_", "sub_weekly_")
+          ).pipe(Effect.flatMap(applyBillingChange));
+
+          yield* deliver(created);
+
+          const plans = yield* BillingStore.use((store) =>
+            store.subscriptionsOf(ada)
+          ).pipe(Effect.map((rows) => rows.map(({ plan }) => plan).toSorted()));
+
+          expect(plans).toEqual(["Monthly", "Weekly"]);
+        })
+      )
   );
 
   it.effect(

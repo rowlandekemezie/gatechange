@@ -6,23 +6,29 @@ import type { JobQueryValue, SourceNameValue } from "./job.js";
 import { SourceTerms } from "./source-terms.js";
 import type { SourceTermsValue } from "./source-terms.js";
 
-export const Plan = Schema.Literals(["Monthly", "Quarterly", "Yearly"]);
+export const Plan = Schema.String.check(
+  Schema.isPattern(/^[A-Z][A-Za-z0-9]{0,31}$/u)
+);
 
 export type PlanValue = typeof Plan.Type;
 
-export const plans: readonly PlanValue[] = Plan.literals;
+export const BillingInterval = Schema.Literals([
+  "day",
+  "week",
+  "month",
+  "year",
+]);
 
-export interface PlanPrice {
-  readonly amountCents: number;
-  readonly interval: "month" | "year";
-  readonly intervalCount: number;
-}
+export type BillingIntervalValue = typeof BillingInterval.Type;
 
-export const PLAN_PRICES: Readonly<Record<PlanValue, PlanPrice>> = {
-  Monthly: { amountCents: 1900, interval: "month", intervalCount: 1 },
-  Quarterly: { amountCents: 4900, interval: "month", intervalCount: 3 },
-  Yearly: { amountCents: 14_900, interval: "year", intervalCount: 1 },
-};
+export const PlanOffer = Schema.Struct({
+  amountCents: Schema.Int.check(Schema.isGreaterThan(0)),
+  interval: BillingInterval,
+  intervalCount: Schema.Int.check(Schema.isGreaterThan(0)),
+  plan: Plan,
+});
+
+export type PlanOfferValue = typeof PlanOffer.Type;
 
 export const FreeEntitlement = Schema.TaggedStruct("Free", {});
 

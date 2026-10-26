@@ -688,6 +688,10 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
       FetchStats(),
       ReadShortlist(),
       ...Command.mapMessages(account.commands, accountChild.toParentMessage),
+      ...Command.mapMessages(
+        billing.commands ?? [],
+        billingChild.toParentMessage
+      ),
     ],
     model: routed.model,
   };

@@ -372,6 +372,7 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
 
     const stripe = yield* stripeBilling({
       hostId: "JobsBackend",
+      plans: configuration.proPlans,
       restrictedKey: billingEnabled
         ? yield* restrictedStripeKey
         : Option.none(),

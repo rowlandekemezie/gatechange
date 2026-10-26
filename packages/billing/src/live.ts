@@ -1,6 +1,10 @@
 import { Billing, BillingUnavailable } from "@rat-stack/core";
-import type { AccountValue, CheckoutRequest, PlanValue } from "@rat-stack/core";
-import { Effect, Option, Schema } from "effect";
+import type {
+  AccountValue,
+  CheckoutRequest,
+  PlanOfferValue,
+} from "@rat-stack/core";
+import { Array, Effect, Option, Schema } from "effect";
 
 export interface CheckoutSessionRequest {
   readonly cancel_url: string;
@@ -26,6 +30,11 @@ export interface PortalSessionRequest {
   readonly return_url: string;
 }
 
+export interface SalePrice {
+  readonly offer: PlanOfferValue;
+  readonly priceId: Effect.Effect<string>;
+}
+
 export interface StripeSessions<E> {
   readonly createCheckout: (
     request: CheckoutSessionRequest
@@ -36,8 +45,8 @@ export interface StripeSessions<E> {
   readonly createPortal: (
     request: PortalSessionRequest
   ) => Effect.Effect<{ readonly url: string }, E>;
+  readonly onSale: readonly SalePrice[];
   readonly portalConfiguration: Effect.Effect<string>;
-  readonly priceOf: (plan: PlanValue) => Effect.Effect<string>;
   readonly siteOrigin: string;
 }
 
@@ -98,7 +107,19 @@ export const makeBilling = <E>(sessions: StripeSessions<E>) =>
   Billing.of({
     checkout: (request) =>
       Effect.gen(function* checkout() {
-        const price = yield* sessions.priceOf(request.plan);
+        const sale = yield* Effect.fromOption(
+          Array.findFirst(
+            sessions.onSale,
+            ({ offer }) => offer.plan === request.plan
+          )
+        ).pipe(
+          Effect.mapError(
+            () =>
+              new BillingUnavailable({ message: "That plan is not on sale." })
+          )
+        );
+
+        const price = yield* sale.priceId;
 
         const session = yield* sessions
           .createCheckout(
@@ -118,6 +139,7 @@ export const makeBilling = <E>(sessions: StripeSessions<E>) =>
 
         return customer.id;
       }),
+    plans: sessions.onSale.map(({ offer }) => offer),
     portal: (customer) =>
       Effect.gen(function* portal() {
         const session = yield* sessions
@@ -140,5 +162,6 @@ const notOnSale = () =>
 export const billingOff = Billing.of({
   checkout: notOnSale,
   createCustomer: notOnSale,
+  plans: [],
   portal: notOnSale,
 });

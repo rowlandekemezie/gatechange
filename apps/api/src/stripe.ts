@@ -1,12 +1,12 @@
 import {
   billingOff,
   makeBilling,
+  priceBook,
   ProCatalog,
   stripeKeyRefusal,
   stripeModeOf,
 } from "@rat-stack/billing";
-import type { StripeEndpoint } from "@rat-stack/billing";
-import type { PlanValue } from "@rat-stack/core";
+import type { ProPlanSettingValue, StripeEndpoint } from "@rat-stack/billing";
 import * as RuntimeContext from "alchemy/RuntimeContext";
 import * as Stripe from "alchemy/Stripe";
 import { Effect, Option, Redacted } from "effect";
@@ -25,6 +25,7 @@ const profileKey = Effect.serviceOption(Stripe.Credentials).pipe(
 
 export interface StripeHost {
   readonly hostId: string;
+  readonly plans: readonly ProPlanSettingValue[];
   readonly restrictedKey: Option.Option<Redacted.Redacted>;
   readonly siteOrigin: Option.Option<string>;
   readonly stage: string;
@@ -33,7 +34,7 @@ export interface StripeHost {
 export const stripeBilling = Effect.fn("stripeBilling")(function* stripeBilling(
   host: StripeHost
 ) {
-  if (Option.isNone(host.siteOrigin)) {
+  if (Option.isNone(host.siteOrigin) || host.plans.length === 0) {
     return { billing: billingOff, endpoint: NO_ENDPOINT };
   }
 
@@ -55,13 +56,17 @@ export const stripeBilling = Effect.fn("stripeBilling")(function* stripeBilling(
   }
 
   const siteOrigin = host.siteOrigin.value;
-  const catalog = yield* ProCatalog(siteOrigin);
+  const catalog = yield* ProCatalog(siteOrigin, host.plans);
 
-  const prices: Record<PlanValue, Effect.Effect<string>> = {
-    Monthly: yield* catalog.prices.Monthly.id,
-    Quarterly: yield* catalog.prices.Quarterly.id,
-    Yearly: yield* catalog.prices.Yearly.id,
-  };
+  const book = priceBook(
+    yield* Effect.all(
+      catalog.prices.map(({ price, setting }) =>
+        Effect.gen(function* catalogPrice() {
+          return { priceId: yield* price.id, setting };
+        })
+      )
+    )
+  );
 
   const portalConfiguration = yield* catalog.portal.id;
   const secret = yield* catalog.webhook.secret;
@@ -83,22 +88,24 @@ export const stripeBilling = Effect.fn("stripeBilling")(function* stripeBilling(
         createPortal(request).pipe(
           Effect.provide(RuntimeContext.RuntimeContext.phantom)
         ),
+      onSale: book.onSale,
       portalConfiguration,
-      priceOf: (plan) => prices[plan],
       siteOrigin,
     }),
     endpoint: Effect.all({
-      Monthly: prices.Monthly,
-      Quarterly: prices.Quarterly,
-      Yearly: prices.Yearly,
+      planPrices: Effect.all(
+        book.entitled.map(([priceId, plan]) =>
+          priceId.pipe(Effect.map((id) => [id, plan] as const))
+        )
+      ),
       secret,
     }).pipe(
-      Effect.map(({ secret: endpointSecret, ...planPrices }) =>
+      Effect.map(({ planPrices, secret: endpointSecret }) =>
         Option.map(
           Option.fromNullishOr(endpointSecret),
           (webhookSecret): StripeEndpoint => ({
             livemode: stripeModeOf(host.stage) === "live",
-            prices: planPrices,
+            prices: new Map(planPrices),
             secret: webhookSecret,
           })
         )

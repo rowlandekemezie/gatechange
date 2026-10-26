@@ -24,11 +24,11 @@ const secret = Redacted.make("whsec_test_route_secret");
 
 const sandbox: StripeEndpoint = {
   livemode: false,
-  prices: {
-    Monthly: "price_1USIFA0ZnafJYNlYo9bbbD97",
-    Quarterly: "price_sandbox_quarterly",
-    Yearly: "price_sandbox_yearly",
-  },
+  prices: new Map([
+    ["price_1USIFA0ZnafJYNlYo9bbbD97", "Monthly"],
+    ["price_sandbox_quarterly", "Quarterly"],
+    ["price_sandbox_yearly", "Yearly"],
+  ]),
   secret,
 };
 

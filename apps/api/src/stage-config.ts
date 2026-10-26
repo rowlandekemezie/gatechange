@@ -1,4 +1,5 @@
 import { DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT } from "@rat-stack/accounts";
+import { proPlansOf, ProPlansSetting } from "@rat-stack/billing";
 import {
   DEFAULT_DAILY_NEURONS,
   isPullRequestStage,
@@ -47,6 +48,10 @@ export const stageConfig = (stage: string) => {
     ),
     magicLinkDailySendLimit: Config.Int("MAGIC_LINK_DAILY_SEND_LIMIT").pipe(
       Config.withDefault(preview ? 10 : DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT)
+    ),
+    proPlans: Config.schema(ProPlansSetting, "PRO_PLANS").pipe(
+      Config.withDefault(""),
+      Config.map(proPlansOf)
     ),
     subdomain: workersSubdomain.pipe(
       Config.map((configured) =>

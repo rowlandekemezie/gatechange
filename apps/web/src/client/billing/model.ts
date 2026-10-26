@@ -1,4 +1,4 @@
-import { isPro, Membership } from "@rat-stack/core/contracts";
+import { isPro, Membership, PlanOffer } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
@@ -14,6 +14,13 @@ export const MembershipState = defineTaggedUnion({
 
 export type MembershipStateValue = typeof MembershipState.Type;
 
+export const PlansState = defineTaggedUnion({
+  Loaded: { plans: Schema.Array(PlanOffer) },
+  Loading: {},
+});
+
+export type PlansStateValue = typeof PlansState.Type;
+
 export const BillingAction = defineTaggedUnion({
   Idle: {},
   Problem: { message: Schema.String },
@@ -26,6 +33,7 @@ export type BillingActionValue = typeof BillingAction.Type;
 export const Model = Schema.Struct({
   action: BillingAction,
   membership: MembershipState,
+  plans: PlansState,
   pollsLeft: Schema.Finite,
 });
 
@@ -34,6 +42,11 @@ export type ModelValue = typeof Model.Type;
 export const isProMember = (model: ModelValue) =>
   Schema.is(MembershipState.Loaded)(model.membership) &&
   isPro(model.membership.membership.entitlement);
+
+export const plansOnSale = (model: ModelValue) =>
+  Schema.is(PlansState.Loaded)(model.plans) ? model.plans.plans : [];
+
+export const sellsPro = (model: ModelValue) => plansOnSale(model).length > 0;
 
 export const isFreeViewer = (session: SessionStateValue, model: ModelValue) =>
   SessionState.match<boolean>(session, {

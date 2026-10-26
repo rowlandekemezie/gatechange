@@ -7,6 +7,7 @@ import { modifyFields } from "foldkit/struct";
 import type { JobQueries } from "../board/queries.js";
 import {
   FetchMembership,
+  FetchPlans,
   OpenBillingPortal,
   PollMembership,
   SetInstantAlerts,
@@ -14,7 +15,7 @@ import {
 } from "./command.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { BillingAction, MembershipState } from "./model.js";
+import { BillingAction, MembershipState, PlansState } from "./model.js";
 import type { ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
@@ -24,10 +25,14 @@ export const CHECKOUT_POLLS = 15;
 const initial: ModelValue = {
   action: BillingAction.Idle(),
   membership: MembershipState.Unknown(),
+  plans: PlansState.Loading(),
   pollsLeft: 0,
 };
 
-export const init = (): UpdateReturn => ({ model: initial });
+export const init = (): UpdateReturn => ({
+  commands: [FetchPlans()],
+  model: initial,
+});
 
 export const signedIn = (model: ModelValue): UpdateReturn =>
   Schema.is(MembershipState.Unknown)(model.membership)
@@ -39,7 +44,10 @@ export const signedIn = (model: ModelValue): UpdateReturn =>
       }
     : { model };
 
-export const signedOut = (): ModelValue => initial;
+export const signedOut = (model: ModelValue): ModelValue => ({
+  ...initial,
+  plans: model.plans,
+});
 
 export const entered = (
   model: ModelValue,
@@ -106,6 +114,9 @@ export const update = (
             }),
           },
     CompletedFetchMembership: ({ membership }) => fetched(model, membership),
+    CompletedFetchPlans: ({ plans }) => ({
+      model: modifyFields(model, { plans: () => PlansState.Loaded({ plans }) }),
+    }),
     CompletedRedirect: () => ({ model }),
     CompletedSetInstantAlerts: ({ membership }) => ({
       model: modifyFields(model, {
