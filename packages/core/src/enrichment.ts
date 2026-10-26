@@ -16,6 +16,7 @@ import type { EnricherUnavailable } from "./enricher-unavailable.js";
 import { EnrichmentQueue } from "./enrichment-queue.js";
 import { JobStore } from "./job-store.js";
 import {
+  HandsOn,
   ListingDetails,
   RemotePolicy,
   SalaryBand,
@@ -25,6 +26,7 @@ import {
 import type {
   ArrangementValue,
   EnrichmentValue,
+  HandsOnValue,
   ListingDetailsValue,
   RemotePolicyValue,
   SalaryBandValue,
@@ -38,7 +40,11 @@ import { SourceTerms } from "./source-terms.js";
 
 export const MAX_POSTING_CHARS = 12_000;
 
+export const MODEL_ANSWER_VERSION = 2;
+
 export const ModelAnswer = Schema.Struct({
+  handsOn: Schema.NullOr(HandsOn),
+  handsOnQuote: Schema.NullOr(Schema.String),
   remotePolicy: Schema.NullOr(RemotePolicy),
   remotePolicyQuote: Schema.NullOr(Schema.String),
   reportsTo: Schema.NullOr(Schema.String),
@@ -812,7 +818,7 @@ interface QuotedSentence {
   readonly sentence: string;
 }
 
-const quotedSentence = (
+const locatedQuote = (
   posting: SearchableText,
   quote: string | null,
   claim: RegExp
@@ -839,13 +845,49 @@ const quotedSentence = (
               start,
             }),
           });
-    }),
-    Option.filter(
-      ({ sentence }) =>
-        !pastExperience.test(sentence) && !negationOf(claim).test(sentence)
-    )
+    })
   );
 };
+
+const quotedSentence = (
+  posting: SearchableText,
+  quote: string | null,
+  claim: RegExp
+) =>
+  Option.filter(
+    locatedQuote(posting, quote, claim),
+    ({ sentence }) =>
+      !pastExperience.test(sentence) && !negationOf(claim).test(sentence)
+  );
+
+const plainNegation = (sentence: string) =>
+  sentence.replaceAll(
+    /\b(?:do|does|is|are|ca|wo|would|should|could)n['’]t\b|\bcannot\b/giu,
+    "not"
+  );
+
+const codingWork =
+  /\b(?:hands[\s-]on|cod(?:e|es|ing)|programming|individual contributor|pull requests?)\b/iu;
+
+const handsOnOf = (
+  answer: ModelAnswerValue,
+  posting: SearchableText
+): HandsOnValue | null =>
+  pipe(
+    Option.fromNullishOr(answer.handsOn),
+    Option.filter((claimed) =>
+      pipe(
+        locatedQuote(posting, answer.handsOnQuote, codingWork),
+        Option.exists(
+          ({ sentence }) =>
+            !pastExperience.test(sentence) &&
+            negationOf(codingWork).test(plainNegation(sentence)) ===
+              (claimed === "None")
+        )
+      )
+    ),
+    Option.getOrNull
+  );
 
 const peopleCount = (size: number) =>
   new RegExp(
@@ -1002,12 +1044,7 @@ const arrangementStated = (posting: SearchableText) =>
           statement.test(sentence) &&
           !pastExperience.test(sentence) &&
           !/\bexperience\s+(?:working|in|under|within)\b/iu.test(sentence) &&
-          !negationOf(statement).test(
-            sentence.replaceAll(
-              /\b(?:do|does|is|are|ca|wo|would|should|could)n['’]t\b|\bcannot\b/giu,
-              "not"
-            )
-          )
+          !negationOf(statement).test(plainNegation(sentence))
       )
     ),
     Option.map(([stated]) => stated)
@@ -1158,12 +1195,26 @@ const reportsAsRole = (sentence: string, postingTitle: string) => {
   });
 };
 
+const managerTitle =
+  /\b(?:chief|c[a-z]o|vp|evp|svp|vice|president|director|head|manager|lead|founder|co-founder|officer|principal|partner|gm|architect|engineer)s?\b/iu;
+
+const reportsToTitleOf = (said: string) =>
+  pipe(
+    said.replaceAll(/\s+/gu, " ").split(/\s*(?:[,;()]|\s[-–—]\s)\s*/u),
+    Array.findFirst((part) =>
+      managerTitle.test(part)
+        ? Option.some(part.replace(/^(?:the|our|your|a|an)\s+/iu, "").trim())
+        : Option.none()
+    ),
+    Option.getOrElse(() => "")
+  );
+
 const reportsToOf = (
   answer: ModelAnswerValue,
   posting: SearchableText,
   postingTitle: string
 ) => {
-  const title = answer.reportsTo?.replaceAll(/\s+/gu, " ").trim() ?? "";
+  const title = reportsToTitleOf(answer.reportsTo ?? "");
 
   return pipe(
     quotedSentence(posting, answer.reportsToQuote, reportingLine),
@@ -1187,6 +1238,7 @@ export const detailsOfAnswer = (
   const searchable = searchableOf(posting.text);
 
   return {
+    handsOn: handsOnOf(answer, searchable),
     remotePolicy: remotePolicyOf(answer, searchable, posting.workplace),
     reportsTo: reportsToOf(answer, searchable, posting.title),
     salary:
@@ -1224,6 +1276,7 @@ export const enqueueUnenriched = Effect.fn("enqueueUnenriched")(
     const ids = yield* store.unenrichedListings({
       finalSkips,
       limit: sweep.limit,
+      promptVersion: MODEL_ANSWER_VERSION,
       since: sweep.now - sweep.windowHours * HOUR_MILLIS,
       sources: enrichableSources,
     });
@@ -1254,7 +1307,11 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
 
   const job = found.value;
 
-  if (job.enrichment !== null && job.enrichment.model !== null) {
+  if (
+    job.enrichment !== null &&
+    job.enrichment.model !== null &&
+    (job.enrichment.promptVersion ?? 1) >= MODEL_ANSWER_VERSION
+  ) {
     return skip("AlreadyEnriched", `enriched at ${job.enrichment.enrichedAt}`);
   }
 
@@ -1353,6 +1410,7 @@ export const enrichListing = Effect.fn("enrichListing")(function* enrichListing(
           board: job.enrichment?.board ?? null,
           enrichedAt: yield* Clock.currentTimeMillis,
           model: enricher.model,
+          promptVersion: MODEL_ANSWER_VERSION,
         };
 
         yield* store.saveEnrichment(id, enrichment);

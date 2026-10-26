@@ -31,6 +31,7 @@ import {
   ListingEnricher,
   listJobs,
   ModelAnswer,
+  MODEL_ANSWER_VERSION,
   moneyRangesIn,
   PostingFeeds,
   PostingGone,
@@ -114,6 +115,8 @@ const statedPosting =
   "You will lead a team of 24 engineers and report to the VP of Engineering. Base salary US$180,000 - US$220,000 per year, remote in Canada.";
 
 const validAnswer: ModelAnswerValue = {
+  handsOn: null,
+  handsOnQuote: null,
   remotePolicy: "RemoteInRegion",
   remotePolicyQuote: "remote in Canada",
   reportsTo: "  VP   of Engineering ",
@@ -373,7 +376,9 @@ describe("enrichListing", () => {
         const expected: EnrichmentValue = {
           board: null,
           enrichedAt: now,
+          handsOn: null,
           model: MODEL,
+          promptVersion: MODEL_ANSWER_VERSION,
           remotePolicy: "RemoteInRegion",
           reportsTo: "VP of Engineering",
           salary: { currency: "USD", max: 220_000, min: 180_000 },
@@ -894,6 +899,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: answered,
               remotePolicyQuote: quote,
             },
@@ -949,6 +956,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: "Hybrid",
               remotePolicyQuote: quote,
             },
@@ -984,6 +993,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: "Hybrid",
               remotePolicyQuote: quote,
             },
@@ -1092,7 +1103,9 @@ describe("enrichListing", () => {
         const earlier: EnrichmentValue = {
           board: null,
           enrichedAt: 0,
+          handsOn: null,
           model: "earlier-model",
+          promptVersion: MODEL_ANSWER_VERSION,
           remotePolicy: null,
           reportsTo: null,
           salary: null,
@@ -1122,7 +1135,9 @@ describe("enrichListing", () => {
           enrichedBefore: {
             board: "Greenhouse",
             enrichedAt: 0,
+            handsOn: null,
             model: null,
+            promptVersion: null,
             remotePolicy: "Hybrid",
             reportsTo: null,
             salary: { currency: "USD", max: 170_000, min: 150_000 },
@@ -1185,6 +1200,8 @@ describe("enrichListing", () => {
         answer: Answer.Answers({
           answer: {
             ...validAnswer,
+            handsOn: null,
+            handsOnQuote: null,
             remotePolicy: claimed,
             remotePolicyQuote: quote,
           },
@@ -1238,6 +1255,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: claimed,
               remotePolicyQuote: text,
             },
@@ -1364,6 +1383,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: claimed,
               remotePolicyQuote: quote,
             },
@@ -1399,6 +1420,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: null,
               remotePolicyQuote: null,
             },
@@ -1449,6 +1472,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: "Remote",
               remotePolicyQuote: "Workplace type: Remote",
             },
@@ -1475,6 +1500,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: "Remote",
               remotePolicyQuote: "Workplace type: Remote",
             },
@@ -1847,6 +1874,8 @@ describe("enrichListing", () => {
     const details = detailsOfAnswer(
       {
         ...validAnswer,
+        handsOn: "Significant",
+        handsOnQuote: fabricated,
         remotePolicy: "Hybrid",
         remotePolicyQuote: fabricated,
         reportsTo: "CEO",
@@ -1865,6 +1894,7 @@ describe("enrichListing", () => {
 
     expect(performance.now() - started).toBeLessThan(50);
     expect(details).toStrictEqual({
+      handsOn: null,
       remotePolicy: null,
       reportsTo: null,
       salary: null,
@@ -2081,6 +2111,8 @@ describe("enrichListing", () => {
         detailsOfAnswer(
           {
             ...validAnswer,
+            handsOn: null,
+            handsOnQuote: null,
             remotePolicy: "Remote",
             remotePolicyQuote: "This role is fully remote.",
           },
@@ -2135,6 +2167,8 @@ describe("enrichListing", () => {
           answer: Answer.Answers({
             answer: {
               ...validAnswer,
+              handsOn: null,
+              handsOnQuote: null,
               remotePolicy: "Hybrid",
               remotePolicyQuote: sentence,
             },
@@ -2323,6 +2357,157 @@ describe("enrichListing", () => {
         ).toHaveLength(MAX_NEURONS / NEURONS_PER_CALL);
         expect(requests).toHaveLength(MAX_NEURONS / NEURONS_PER_CALL);
         expect(memory.neurons().get(0)).toBe(MAX_NEURONS);
+      })
+  );
+});
+
+const detailsOf = (text: string, answer: Partial<ModelAnswerValue>) =>
+  detailsOfAnswer(
+    { ...validAnswer, ...answer },
+    {
+      company: "Acme",
+      salary: null,
+      text,
+      title: "Director of Engineering",
+      workplace: "Unspecified",
+    }
+  );
+
+describe("leadership facts", () => {
+  it.each([
+    [
+      "Some",
+      "You will spend about a fifth of your time coding alongside the team.",
+      "spend about a fifth of your time coding",
+      "Some",
+    ],
+    [
+      "Significant",
+      "This is a hands-on role: expect to write production code most weeks.",
+      "This is a hands-on role",
+      "Significant",
+    ],
+    [
+      "None",
+      "This role does not involve hands-on coding.",
+      "does not involve hands-on coding",
+      "None",
+    ],
+    [
+      "None",
+      "You won't be writing code day to day.",
+      "won't be writing code day to day",
+      "None",
+    ],
+    [
+      "Significant",
+      "This role does not involve hands-on coding.",
+      "does not involve hands-on coding",
+      null,
+    ],
+    [
+      "None",
+      "You will spend about a fifth of your time coding.",
+      "a fifth of your time coding",
+      null,
+    ],
+    [
+      "Some",
+      "You have 5+ years of hands-on coding experience.",
+      "5+ years of hands-on coding experience",
+      null,
+    ],
+    ["Some", "You will lead the platform team.", "write code every week", null],
+  ] as const)(
+    "handsOn %s quoted from %j is saved as %s",
+    (claimed, text, quote, saved) => {
+      expect(
+        detailsOf(text, { handsOn: claimed, handsOnQuote: quote }).handsOn
+      ).toBe(saved);
+    }
+  );
+
+  it("handsOn with no quote is not saved", () => {
+    expect(
+      detailsOf("This is a hands-on role.", {
+        handsOn: "Significant",
+        handsOnQuote: null,
+      }).handsOn
+    ).toBeNull();
+  });
+
+  it("a handsOn outside the closed set does not decode", () => {
+    expect(
+      Option.isNone(
+        Schema.decodeUnknownOption(ModelAnswer)({
+          ...validAnswer,
+          handsOn: "lots",
+        })
+      )
+    ).toBe(true);
+    expect(
+      Option.isNone(
+        Schema.decodeUnknownOption(ModelAnswer)({
+          ...validAnswer,
+          handsOn: undefined,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ["Jane Smith, VP of Engineering", "VP of Engineering"],
+    ["the CTO (Jane Smith)", "CTO"],
+    ["Jane Smith", null],
+  ])("reportsTo %j is saved as %j", (answered, saved) => {
+    const text = "You will report to Jane Smith, VP of Engineering and CTO.";
+
+    expect(
+      detailsOf(text, {
+        reportsTo: answered,
+        reportsToQuote: "report to Jane Smith, VP of Engineering and CTO",
+      }).reportsTo
+    ).toBe(saved);
+  });
+
+  it.effect(
+    "a listing enriched by an older prompt is enriched again and records the current prompt version even when handsOn stays null",
+    () =>
+      Effect.gen(function* olderPrompt() {
+        const result = yield* enrich({
+          answer: Answer.Answers({ answer: validAnswer }),
+          enrichedBefore: {
+            board: null,
+            enrichedAt: 0,
+            handsOn: null,
+            model: "earlier-model",
+            promptVersion: null,
+            remotePolicy: null,
+            reportsTo: null,
+            salary: null,
+            seniority: "Manager",
+            teamSize: null,
+          },
+        });
+
+        expect(reasonOf(result.outcome)).toBe("Enriched");
+        expect(result.requests).toHaveLength(1);
+        expect(
+          pipe(
+            result.after,
+            Option.map(({ enrichment }) => ({
+              handsOn: enrichment?.handsOn,
+              promptVersion: enrichment?.promptVersion,
+              teamSize: enrichment?.teamSize,
+            }))
+          )
+        ).toStrictEqual(
+          Option.some({
+            handsOn: null,
+            promptVersion: MODEL_ANSWER_VERSION,
+            teamSize: 24,
+          })
+        );
       })
   );
 });
@@ -2547,7 +2732,9 @@ describe("enqueueUnenriched", () => {
                     yield* store.saveEnrichment(boardId("a"), {
                       board: null,
                       enrichedAt: 0,
+                      handsOn: null,
                       model: MODEL,
+                      promptVersion: MODEL_ANSWER_VERSION,
                       remotePolicy: null,
                       reportsTo: null,
                       salary: null,

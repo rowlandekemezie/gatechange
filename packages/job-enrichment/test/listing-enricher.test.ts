@@ -44,6 +44,8 @@ const inputBytesOf = (request: PostingRequest) => {
 };
 
 const answer = {
+  handsOn: null,
+  handsOnQuote: null,
   remotePolicy: "Remote",
   remotePolicyQuote: null,
   reportsTo: "VP Engineering",
@@ -203,7 +205,7 @@ describe("listing enricher", () => {
       })
   );
 
-  it.effect.each([316, 385])(
+  it.effect.each([PROMPT_TOKEN_FLOOR, PROMPT_TOKEN_FLOOR + 69])(
     "accepts a system-text usage report of %s without counting schema or template tokens",
     (promptTokens) =>
       Effect.gen(function* systemOnlyUsage() {

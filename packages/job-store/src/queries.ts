@@ -76,6 +76,8 @@ const enrichmentColumnNames = [
   "model",
   "enriched_at",
   "board",
+  "hands_on",
+  "prompt_version",
 ] as const;
 
 export const BOARD_MODEL_PREFIX = "source:";
@@ -288,6 +290,9 @@ export const findJobStatement = (
     [id]
   );
 
+const aiEnriched = (id: string) =>
+  `EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = ${id} AND job_enrichment.model NOT LIKE '${BOARD_MODEL_PREFIX}%')`;
+
 export const unenrichedListingsStatement = (
   sweep: UnenrichedSweep
 ): SqlStatement =>
@@ -295,11 +300,17 @@ export const unenrichedListingsStatement = (
     `SELECT jobs.id FROM jobs
 LEFT JOIN job_enrichment_skip AS skip ON skip.job_id = jobs.id
 WHERE jobs.first_seen_at >= ? AND jobs.departed_at IS NULL AND jobs.source IN (${placeholders(sweep.sources.length)})
-  AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id AND job_enrichment.model NOT LIKE '${BOARD_MODEL_PREFIX}%')
+  AND NOT EXISTS (SELECT 1 FROM job_enrichment WHERE job_enrichment.job_id = jobs.id AND job_enrichment.model NOT LIKE '${BOARD_MODEL_PREFIX}%' AND COALESCE(job_enrichment.prompt_version, 1) >= ?)
   AND (skip.reason IS NULL OR skip.reason NOT IN (${placeholders(sweep.finalSkips.length)}))
-ORDER BY skip.reason IS NOT NULL, jobs.first_seen_at DESC, jobs.id
+ORDER BY skip.reason IS NOT NULL, ${aiEnriched("jobs.id")}, jobs.first_seen_at DESC, jobs.id
 LIMIT ?`,
-    [sweep.since, ...sweep.sources, ...sweep.finalSkips, sweep.limit]
+    [
+      sweep.since,
+      ...sweep.sources,
+      sweep.promptVersion,
+      ...sweep.finalSkips,
+      sweep.limit,
+    ]
   );
 
 export const recordSkipStatement = (
@@ -338,7 +349,9 @@ ON CONFLICT (job_id) DO UPDATE SET
   ${keepBoardFact("remote_policy", "remote_policy")},
   model = excluded.model,
   enriched_at = excluded.enriched_at,
-  board = COALESCE(job_enrichment.board, excluded.board)`,
+  board = COALESCE(job_enrichment.board, excluded.board),
+  hands_on = excluded.hands_on,
+  prompt_version = excluded.prompt_version`,
     [
       id,
       enrichment.salary?.currency ?? null,
@@ -351,6 +364,8 @@ ON CONFLICT (job_id) DO UPDATE SET
       enrichment.model ?? `${BOARD_MODEL_PREFIX}${enrichment.board}`,
       enrichment.enrichedAt,
       enrichment.board,
+      enrichment.handsOn,
+      enrichment.promptVersion,
     ]
   );
 
@@ -368,7 +383,7 @@ export const saveBoardFactsStatement = (
 ): SqlStatement =>
   statement(
     `INSERT INTO job_enrichment (job_id, ${enrichmentColumns})
-VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, NULL, NULL)
 ON CONFLICT (job_id) DO UPDATE SET
   ${takeBoardFact("salary_currency", "salary_currency")},
   ${takeBoardFact("salary_min", "salary_currency")},

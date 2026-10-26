@@ -116,7 +116,12 @@ export const RemotePolicy = Schema.Literals([
 
 export type RemotePolicyValue = typeof RemotePolicy.Type;
 
+export const HandsOn = Schema.Literals(["None", "Some", "Significant"]);
+
+export type HandsOnValue = typeof HandsOn.Type;
+
 export const ListingDetails = Schema.Struct({
+  handsOn: Schema.NullOr(HandsOn),
   remotePolicy: Schema.NullOr(RemotePolicy),
   reportsTo: Schema.NullOr(
     Schema.NonEmptyString.check(Schema.isMaxLength(120))
@@ -135,6 +140,7 @@ export const Enrichment = Schema.Struct({
   board: Schema.NullOr(SourceName),
   enrichedAt: EpochMillis,
   model: Schema.NullOr(Schema.NonEmptyString),
+  promptVersion: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
 }).check(
   Schema.makeFilter(
     (enrichment) =>

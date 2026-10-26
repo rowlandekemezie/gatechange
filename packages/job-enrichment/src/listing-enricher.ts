@@ -13,7 +13,7 @@ export const enrichmentModel = Config.String("ENRICHMENT_MODEL").pipe(
   Config.withDefault(DEFAULT_ENRICHMENT_MODEL)
 );
 
-export const MAX_ANSWER_TOKENS = 256;
+export const MAX_ANSWER_TOKENS = 320;
 
 export const MAX_INPUT_TOKENS = 16_000;
 
@@ -36,8 +36,9 @@ export const SYSTEM_PROMPT = [
   "If the posting states a salary amount, salaryMin and salaryMax must be numbers. For a single amount, give it as both.",
   "seniority is the level of the role itself.",
   "remotePolicy says where the person in this role works. Remote: fully remote from anywhere. RemoteInRegion: fully remote but only from named countries or regions. Hybrid: some days a week in an office; occasional office visits or meetups do not make a role Hybrid. Onsite: in an office every working day. Use null when the posting does not say. A city, country or office location alone is not a remote policy, travel is not one, and experience with remote teams is not one either. remotePolicyQuote is the exact words of the posting that state the policy.",
-  "reportsTo is the title of the person this role reports to, only when the posting says the role reports to them. Working or partnering with someone is not reporting to them. reportsToQuote is the exact words of the posting that say whom the role reports to.",
+  "reportsTo is the job title of the person this role reports to, without their name, only when the posting says the role reports to them. Working or partnering with someone is not reporting to them. reportsToQuote is the exact words of the posting that say whom the role reports to.",
   "teamSize is the number of people this role will manage once hired, only when the posting states it. A count of teams, projects or customers is not a number of people. teamSizeQuote is the exact words of the posting that state it. A requirement on the candidate, such as how many people they must have led before, is never the team size: use null for both.",
+  "handsOn is how much coding the person in this role does, only when the posting states it. None: the posting says the role does not write code. Some: the role codes part of the time, such as reviews, prototypes or occasional changes. Significant: the posting says the role writes code as a large part of the job. Past coding experience asked of the candidate is not handsOn. handsOnQuote is the exact words of the posting that state it. If the posting does not say, use null for both.",
 ].join("\n");
 
 export interface ChatMessage {

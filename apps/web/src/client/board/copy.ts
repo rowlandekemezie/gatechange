@@ -1,4 +1,5 @@
 import type {
+  HandsOnValue,
   ListingStatusValue,
   RegionValue,
   RemotePolicyValue,
@@ -65,6 +66,13 @@ export const bandLabel = (band: SalaryBandValue) =>
 
 export const teamSizeLabel = (size: number) =>
   size === 1 ? "1 person" : `${size} people`;
+
+export const handsOnLabel = Match.type<HandsOnValue>().pipe(
+  Match.when("None", () => "Not expected"),
+  Match.when("Some", () => "Part of the job"),
+  Match.when("Significant", () => "A large part of the job"),
+  Match.exhaustive
+);
 
 export const regionGroupChip = Match.type<RegionGroupValue>().pipe(
   Match.when("RemoteCanada", () => "remote in Canada"),

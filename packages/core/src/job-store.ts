@@ -47,6 +47,7 @@ export interface NeuronUsage {
 export interface UnenrichedSweep {
   readonly finalSkips: readonly SkipReasonValue[];
   readonly limit: number;
+  readonly promptVersion: number;
   readonly since: number;
   readonly sources: readonly SourceNameValue[];
 }

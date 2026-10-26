@@ -56,7 +56,9 @@ const enrichment = (
 ): EnrichmentValue => ({
   board: null,
   enrichedAt: NOW + 1,
+  handsOn: null,
   model: "test-model",
+  promptVersion: 2,
   remotePolicy: "RemoteInRegion",
   reportsTo: "VP of Engineering",
   salary: { currency: "USD", max: 220_000, min: 180_000 },
@@ -68,7 +70,9 @@ const enrichment = (
 const bare: EnrichmentValue = {
   board: null,
   enrichedAt: NOW + 2,
+  handsOn: null,
   model: "test-model",
+  promptVersion: 2,
   remotePolicy: null,
   reportsTo: null,
   salary: null,
@@ -399,6 +403,7 @@ describe("enrichment storage", () => {
             store.unenrichedListings({
               finalSkips,
               limit,
+              promptVersion: 2,
               since,
               sources: ["Greenhouse", "Lever"],
             });
@@ -411,6 +416,108 @@ describe("enrichment storage", () => {
             "g:retried",
           ]);
           expect(yield* sweep(2)).toStrictEqual(["g:newest", "l:mid"]);
+        })
+      )
+  );
+
+  it.effect(
+    "the sweep re-queues AI rows from an older prompt after unenriched ones, and stops once the current prompt ran even when it found nothing",
+    () =>
+      withStore(
+        Effect.gen(function* staleSweep() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job("legacy", { firstSeenAt: NOW + 3, lastSeenAt: NOW + 5 }),
+              job("current", { firstSeenAt: NOW + 2, lastSeenAt: NOW + 5 }),
+              job("fresh", { firstSeenAt: NOW + 1, lastSeenAt: NOW + 5 }),
+              job("board-only", { firstSeenAt: NOW + 4, lastSeenAt: NOW + 5 }),
+            ],
+            NOW + 5
+          );
+          yield* store.saveEnrichment(
+            "legacy",
+            enrichment({ handsOn: null, promptVersion: null })
+          );
+          yield* store.saveEnrichment("current", enrichment());
+          yield* store.saveBoardFacts(
+            [
+              {
+                board: "Greenhouse",
+                facts: {
+                  remotePolicy: "Hybrid",
+                  salary: null,
+                  seniority: null,
+                },
+                id: "board-only",
+              },
+            ],
+            NOW
+          );
+
+          const sweep = store.unenrichedListings({
+            finalSkips,
+            limit: 10,
+            promptVersion: 2,
+            since: NOW,
+            sources: ["Greenhouse"],
+          });
+
+          expect(yield* sweep).toStrictEqual(["board-only", "fresh", "legacy"]);
+
+          yield* store.saveEnrichment(
+            "legacy",
+            enrichment({ handsOn: null, promptVersion: 2 })
+          );
+
+          expect(yield* sweep).toStrictEqual(["board-only", "fresh"]);
+        })
+      )
+  );
+
+  it.effect(
+    "handsOn and the prompt version round-trip, and a later board save keeps them",
+    () =>
+      withStore(
+        Effect.gen(function* handsOnRoundTrip() {
+          const store = yield* JobStore;
+          const saved = enrichment({ handsOn: "Some" });
+
+          yield* store.replaceFeed("greenhouse:acme", [job("a")], NOW);
+          yield* store.saveEnrichment("a", saved);
+
+          expect(yield* store.findIncludingDeparted("a")).toStrictEqual(
+            Option.some({ ...job("a"), enrichment: saved })
+          );
+
+          yield* store.saveBoardFacts(
+            [
+              {
+                board: "Greenhouse",
+                facts: {
+                  remotePolicy: "Hybrid",
+                  salary: null,
+                  seniority: null,
+                },
+                id: "a",
+              },
+            ],
+            NOW + 9
+          );
+
+          const after = yield* store.findIncludingDeparted("a");
+
+          expect(
+            pipe(
+              after,
+              Option.map(({ enrichment: found }) => ({
+                handsOn: found?.handsOn,
+                promptVersion: found?.promptVersion,
+              }))
+            )
+          ).toStrictEqual(Option.some({ handsOn: "Some", promptVersion: 2 }));
         })
       )
   );
@@ -501,7 +608,9 @@ describe("enrichment storage", () => {
 
           const second = enrichment({
             enrichedAt: NOW + 9,
+            handsOn: null,
             model: "second-model",
+            promptVersion: 2,
             remotePolicy: "Onsite",
             reportsTo: "CTO",
             salary: { currency: "EUR", max: 150_000, min: 120_000 },
@@ -533,6 +642,7 @@ describe("enrichment storage", () => {
           const sweep = store.unenrichedListings({
             finalSkips,
             limit: 10,
+            promptVersion: 2,
             since: 0,
             sources: SourceName.literals,
           });
@@ -555,7 +665,9 @@ describe("enrichment storage", () => {
             ...bare,
             board: "Lever" as const,
             enrichedAt: NOW,
+            handsOn: null,
             model: null,
+            promptVersion: null,
             remotePolicy: "Hybrid" as const,
             salary: { currency: "CAD" as const, max: 200_000, min: 170_000 },
           };

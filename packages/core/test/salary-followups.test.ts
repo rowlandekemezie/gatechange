@@ -5,6 +5,8 @@ import { detailsOfAnswer } from "../src/enrichment.js";
 const salaryOf = (text: string, min = 150_000, max = 200_000) =>
   detailsOfAnswer(
     {
+      handsOn: null,
+      handsOnQuote: null,
       remotePolicy: null,
       remotePolicyQuote: null,
       reportsTo: null,

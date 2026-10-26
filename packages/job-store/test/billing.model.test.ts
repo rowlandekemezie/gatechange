@@ -305,7 +305,9 @@ describe("listJobs for Free and Pro viewers", () => {
                 store.saveEnrichment(id, {
                   board: null,
                   enrichedAt: NOW,
+                  handsOn: null,
                   model: "test-model",
+                  promptVersion: 2,
                   remotePolicy: "Remote",
                   reportsTo: null,
                   salary: {
