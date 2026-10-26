@@ -120,6 +120,44 @@ const placements: readonly (readonly [
   ["Hyderabad", "Remote", "Remote", "Elsewhere"],
   ["Hyderabad - worldwide", "Remote", "Remote", "RemoteGlobal"],
   ["Remote", "Unspecified", "Remote", "RemoteGlobal"],
+  ["Malta", "Remote", "Remote", "Elsewhere"],
+  ["Iceland", "Remote", "Remote", "Elsewhere"],
+  ["Budapest, HU", "Remote", "Remote", "Elsewhere"],
+  ["Vilnius Office", "Remote", "Remote", "Elsewhere"],
+  ["Kaunas Office", "Remote", "Remote", "Elsewhere"],
+  [
+    "NZ: Auckland: Xero 4 (96 St Georges Bay Rd, Level 2 & 3); NZ: Wellington: Xero One (19-23 Taranaki St)",
+    "Remote",
+    "Remote",
+    "Elsewhere",
+  ],
+  [
+    "REMOTE (CET ±2) | Full-time | https://jupus.de",
+    "Unspecified",
+    "Remote",
+    "Elsewhere",
+  ],
+  ["Remote (International)", "Remote", "Remote", "RemoteGlobal"],
+  ["Europe or US", "Remote", "Remote", "RemoteUnitedStates"],
+  ["LATAM (Remote), US (Remote)", "Remote", "Remote", "RemoteUnitedStates"],
+  [
+    "London, United Kingdom; Sunnyvale, California USA",
+    "Remote",
+    "Remote",
+    "RemoteUnitedStates",
+  ],
+  [
+    "Remote, Canada; Remote, United Kingdom; Remote, United States",
+    "Remote",
+    "Remote",
+    "RemoteNorthAmerica",
+  ],
+  [
+    "Atlanta, Georgia; Toronto, Ontario; Athens, Georgia",
+    "Remote",
+    "Remote",
+    "RemoteNorthAmerica",
+  ],
 ];
 
 describe("seniority from a title", () => {

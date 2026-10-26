@@ -229,7 +229,7 @@ describe("company boards", () => {
           postings,
           1_760_000_000_000
         ).jobs[0]?.region
-      ).toBe("RemoteGlobal");
+      ).toBe("RemoteCanada");
     }).pipe(
       Effect.provide(
         respondWith(
