@@ -8,6 +8,7 @@ import type {
   JobDetailValue,
   ListedJobValue,
   RoleLevelValue,
+  CurrencyValue,
 } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -24,6 +25,7 @@ import {
   regionLabel,
   roleChip,
   roleCount,
+  roleHubTitle,
   seniorityChip,
   sourceLabel,
   statusLabel,
@@ -41,12 +43,18 @@ import type {
   PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
-import { markButtons, stageOf } from "../../client/board/marks.js";
+import { lineIcon, markButtons, stageOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { jobRouter, pricingRouter } from "../../client/route.js";
+import { roleHubsWhere } from "../../client/listing.js";
+import {
+  companyRouter,
+  jobRouter,
+  pricingRouter,
+  roleRouter,
+} from "../../client/route.js";
 import { addServerCommandOf } from "../agent-tokens/view.js";
 import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
@@ -407,6 +415,66 @@ export const boardMasthead = (
     ]
   );
 
+const browseList = (
+  h: HtmlBuilder<MessageValue>,
+  title: string,
+  items: readonly (readonly (Html | string)[])[]
+): Html =>
+  h.div(
+    [h.Class("browse-group")],
+    [
+      h.h3([h.Class("browse-label")], [title]),
+      h.ul(
+        [h.Class("browse-links")],
+        items.map((item) => h.li([], item))
+      ),
+    ]
+  );
+
+const browseView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  StatsState.match<Html>(model.stats, {
+    Loaded: ({ stats }) =>
+      h.nav(
+        [h.Class("browse"), h.AriaLabelledBy("browse-title")],
+        [
+          h.h2(
+            [h.Id("browse-title"), h.Class("browse-title")],
+            ["Browse by role and place"]
+          ),
+          h.div(
+            [h.Class("browse-groups")],
+            [
+              browseList(
+                h,
+                "Role hubs",
+                roleHubsWhere((role, region) =>
+                  stats.placements.some(
+                    (placement) =>
+                      placement.role === role &&
+                      placement.region === region &&
+                      region !== "Elsewhere" &&
+                      placement.count > 0
+                  )
+                ).map((hub) => [
+                  h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)]),
+                ])
+              ),
+              browseList(
+                h,
+                "Most open roles",
+                stats.companies.map(({ company, count, slug }) => [
+                  h.a([h.Href(companyRouter({ slug }))], [company]),
+                  " ",
+                  h.span([h.Class("browse-count")], [String(count)]),
+                ])
+              ),
+            ]
+          ),
+        ]
+      ),
+    Unavailable: () => h.empty,
+  });
+
 export const boardAfterword = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>
@@ -414,6 +482,7 @@ export const boardAfterword = (
   h.div(
     [h.Class("afterword")],
     [
+      browseView(model, h),
       h.section(
         [h.Id("agents"), h.Class("agents"), h.AriaLabelledBy("agents-title")],
         [
@@ -456,17 +525,91 @@ const payTag = (
     })
   );
 
-const sourceLink = (h: HtmlBuilder<MessageValue>, job: JobDetailValue): Html =>
+const payFloor = (currency: CurrencyValue, amount: number) =>
+  `${new Intl.NumberFormat("en-US", {
+    currency,
+    maximumFractionDigits: 0,
+    notation: "compact",
+    style: "currency",
+  }).format(amount)}+`;
+
+const CURRENCY_MARKS = new Map<string, CurrencyValue>([
+  ["$", "USD"],
+  ["CA$", "CAD"],
+  ["C$", "CAD"],
+  ["CAD", "CAD"],
+  ["EUR", "EUR"],
+  ["GBP", "GBP"],
+  ["US$", "USD"],
+  ["USD", "USD"],
+  ["£", "GBP"],
+  ["€", "EUR"],
+]);
+
+const UNITS = new Map([
+  ["k", 1000],
+  ["m", 1_000_000],
+]);
+
+const statedFloor = (salary: string) =>
+  pipe(
+    Option.fromNullishOr(
+      /^(?<mark>CA\$|C\$|US\$|\$|USD|CAD|EUR|GBP|£|€)\s*(?<amount>\d[\d,]*(?:\.\d+)?)\s*(?<unit>[kKmM])?/u.exec(
+        salary
+      )?.groups
+    ),
+    Option.flatMap(({ amount = "", mark = "", unit = "" }) => {
+      const floor =
+        Number(amount.replaceAll(",", "")) *
+        (UNITS.get(unit.toLowerCase()) ?? 1);
+
+      return pipe(
+        Option.fromNullishOr(CURRENCY_MARKS.get(mark)),
+        Option.filter(() => floor >= 10_000),
+        Option.map((currency) => payFloor(currency, floor))
+      );
+    }),
+    Option.getOrElse(() => salary)
+  );
+
+const rolePay = (h: HtmlBuilder<MessageValue>, job: ListedJobValue) =>
+  pipe(
+    Option.fromNullishOr(job.enrichment?.salary),
+    Option.map((band) => payFloor(band.currency, band.min)),
+    Option.orElse(() =>
+      Option.map(Option.fromNullishOr(job.salary), statedFloor)
+    ),
+    Option.match({
+      onNone: () => [],
+      onSome: (pay) => [h.span([h.Class("role-pay")], [pay])],
+    })
+  );
+
+const sourceLink = (
+  h: HtmlBuilder<MessageValue>,
+  job: JobDetailValue,
+  isCompact = false
+): Html =>
   h.a(
     [
       h.Class("job-source"),
+      ...(isCompact
+        ? [
+            h.AriaLabel(`From ${sourceLabel(job.source)}`),
+            h.Title(`From ${sourceLabel(job.source)}`),
+          ]
+        : []),
       ...Option.toArray(
         Option.map(offSiteHref(job.url), (href) => h.Href(href))
       ),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],
-    [`From ${sourceLabel(job.source)}`]
+    [
+      isCompact
+        ? lineIcon(h, "M6.5 13.5l7-7M8 6.5h5.5V12")
+        : `From ${sourceLabel(job.source)}`,
+    ]
   );
 
 const postedTime = (
@@ -551,7 +694,10 @@ const departureRow = (
       h.a(
         [h.Class("departure-tiles"), h.Href(jobRouter({ id: job.id }))],
         [
-          h.span([h.Class("tile cell-role")], [job.title]),
+          h.span(
+            [h.Class("tile cell-role")],
+            [h.span([h.Class("role-title")], [job.title]), ...rolePay(h, job)]
+          ),
           h.span([h.Class("tile cell-company")], [job.company]),
           h.span(
             [h.Class("tile cell-where"), h.Title(regionLabel(job.region))],
@@ -569,7 +715,7 @@ const departureRow = (
       ),
       h.div(
         [h.Class("departure-meta")],
-        [...payTag(h, job), sourceLink(h, job), markButtons(model, h, job)]
+        [sourceLink(h, job, true), markButtons(model, h, job, true)]
       ),
     ]
   );

@@ -290,6 +290,7 @@ describe("billing updates", () => {
             filters,
             generatedAt: 1,
             jobs: [],
+            stats: null,
             total: 0,
           }),
         },
@@ -456,10 +457,14 @@ describe("billing pages", () => {
 
         expect(visitor).toContain("Free");
         expect(visitor).toContain("Pro $5 / week");
-        expect(visitor).toContain("Cancel any time Sign in to upgrade");
+        expect(visitor.match(/Cancel any time/gu)?.length).toBe(1);
+        expect(visitor).toContain(
+          "Instant alerts cover the job sources whose terms allow email alerts."
+        );
         expect(visitor.match(/Sign in to upgrade/gu)?.length).toBe(1);
         expect(member).toContain("Pro $5 / week");
-        expect(member).toContain("Cancel any time Upgrade to Pro");
+        expect(member).toContain("Upgrade to Pro");
+        expect(member.match(/Cancel any time/gu)?.length).toBe(1);
         expect(pages.join(" ")).not.toMatch(/Save \d|Choose|plan-name/u);
       })
   );

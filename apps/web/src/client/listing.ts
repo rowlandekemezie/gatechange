@@ -5,15 +5,19 @@ import {
   JobDetail,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
+  roleLevels,
 } from "@rat-stack/core/contracts";
 import type {
   CompanyJobsValue,
   JobPageValue,
   JobQueryValue,
+  RegionValue,
+  RoleLevelValue,
 } from "@rat-stack/core/contracts";
 import { Array, Effect, pipe, Schema } from "effect";
 
-import { regionsOfGroup } from "./board/filters.js";
+import { regionGroups, regionsOfGroup } from "./board/filters.js";
+import type { RegionGroupValue } from "./board/filters.js";
 import { Route } from "./route.js";
 
 export const ListingRoute = Schema.Union([Route.Company, Route.Role]);
@@ -71,3 +75,24 @@ export const collectListing = <E, R>(
           total: page.total,
         })
       );
+
+export interface RoleHub {
+  readonly place: RegionGroupValue;
+  readonly role: RoleLevelValue;
+}
+
+export const roleHubsWhere = (
+  isOpen: (role: RoleLevelValue, region: RegionValue) => boolean
+): readonly RoleHub[] =>
+  pipe(
+    roleLevels,
+    Array.flatMap((role) =>
+      pipe(
+        regionGroups,
+        Array.filter((place) =>
+          regionsOfGroup(place).some((region) => isOpen(role, region))
+        ),
+        Array.map((place) => ({ place, role }))
+      )
+    )
+  );

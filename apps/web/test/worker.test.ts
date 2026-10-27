@@ -69,7 +69,21 @@ const backend = HttpRouter.toWebHandler(
       group.toLayer({
         account: () => Effect.die("account is not served here"),
         agentTokens: () => Effect.die("agent tokens are not served here"),
-        boardStats: () => Effect.die("boardStats is not served here"),
+        boardStats: () =>
+          Effect.succeed({
+            activeJobs: 1,
+            companies: [{ company: director.company, count: 1, slug: "acme" }],
+            feedsFailing: 0,
+            feedsTotal: 1,
+            generatedAt: 1_760_500_000_000,
+            lastRun: null,
+            newToday: 0,
+            placements: [
+              { count: 1, region: director.region, role: director.role },
+            ],
+            regions: [],
+            roles: [],
+          }),
         companyIntel: () => Effect.die("company intel is not served here"),
         companyJobs: ({ slug }) =>
           Effect.succeed({
@@ -229,10 +243,12 @@ describe("public landing pages", () => {
     expect(page.html).toContain('property="og:description"');
     expect(page.html).not.toContain('<meta name="robots" content="noindex"');
     expect(page.headers.has("x-robots-tag")).toBe(false);
+    expect(page.html).toContain(`href="${ROLE_PAGE.replace(ORIGIN, "")}"`);
+    expect(page.html).toContain('href="/companies/acme"');
     expect(publicJobs.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ limit: 15, offset: 0, search: "" })
     );
-    expect(site.calls.backend).toBe(1);
+    expect(site.calls.backend).toBe(2);
   });
 
   it("renders public pricing without requesting account, membership or any backend data", async () => {
@@ -273,7 +289,7 @@ describe("public landing pages", () => {
       })
     );
     expect(stored.size).toBe(1);
-    expect(site.calls.backend).toBe(2);
+    expect(site.calls.backend).toBe(4);
   });
 
   it.each(["?shell=0", "?role="])(
@@ -304,7 +320,7 @@ describe("public landing pages", () => {
       expect(page.html).not.toContain("private-member");
       expect(page.html).not.toContain("You have Pro");
       expect(page.headers.get("cache-control")).toBe("private, no-store");
-      expect(site.backendCredentials).toStrictEqual([false]);
+      expect(site.backendCredentials).toStrictEqual([false, false]);
       expect(stored.size).toBe(0);
     }
   );

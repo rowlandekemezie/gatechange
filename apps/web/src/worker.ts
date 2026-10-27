@@ -102,11 +102,25 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
       const client = yield* clientOf(backend);
 
       if (Schema.is(Route.Board)(route)) {
-        const page = hasNoSelection(route.filters)
-          ? { generatedAt: 0, jobs: [], total: 0 }
-          : yield* client.listJobs(queryOf(route.filters, 0));
+        const { page, stats } = yield* Effect.all(
+          {
+            page: hasNoSelection(route.filters)
+              ? Effect.succeed({ generatedAt: 0, jobs: [], total: 0 })
+              : client.listJobs(queryOf(route.filters, 0)),
+            stats: client
+              .boardStats({})
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("board stats unavailable", cause).pipe(
+                    Effect.as(null)
+                  )
+                )
+              ),
+          },
+          { concurrency: 2 }
+        );
 
-        return Preload.Board({ ...page, filters: route.filters });
+        return Preload.Board({ ...page, filters: route.filters, stats });
       }
 
       if (Schema.is(Route.Job)(route)) {
