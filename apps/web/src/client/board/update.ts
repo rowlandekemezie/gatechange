@@ -621,12 +621,16 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
   const { route } = model;
 
   return Preload.match<ModelValue>(preload, {
-    Board: ({ filters, generatedAt, jobs, total }) =>
+    Board: ({ filters, generatedAt, jobs, stats, total }) =>
       Schema.is(Route.Board)(route) && sameFilters(route.filters, filters)
         ? modifyFields(model, {
             draftSearch: () => filters.search,
             filters: () => filters,
             jobs: () => JobsState.Loaded({ generatedAt, jobs, total }),
+            stats: () =>
+              stats === null
+                ? StatsState.Unavailable()
+                : StatsState.Loaded({ stats }),
           })
         : model,
     Job: ({ job }) =>

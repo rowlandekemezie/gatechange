@@ -9,7 +9,7 @@ import type {
   ListedJobValue,
   SourceNameValue,
 } from "@rat-stack/core/contracts";
-import { Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
 
@@ -31,7 +31,14 @@ import type {
 import { init } from "../src/client/board/update.js";
 import { brandedTitle } from "../src/client/board/view.js";
 import { collectListing, LISTING_ROWS } from "../src/client/listing.js";
-import { boardUrl, jobRouter, Route, routeOfUrl } from "../src/client/route.js";
+import {
+  boardUrl,
+  companyRouter,
+  jobRouter,
+  roleRouter,
+  Route,
+  routeOfUrl,
+} from "../src/client/route.js";
 import { allowedOnly, allowedOrUnstated } from "../src/server/markup.js";
 import type { MarkupPolicy } from "../src/server/markup.js";
 import { renderPage } from "../src/server/render.js";
@@ -406,6 +413,7 @@ describe("public landing hydration", () => {
           filters,
           generatedAt: 1_760_500_000_000,
           jobs: [acmeDirector],
+          stats: null,
           total: 45,
         });
 
@@ -454,6 +462,7 @@ describe("public landing hydration", () => {
           filters: defaultFilters,
           generatedAt: 0,
           jobs: [acmeDirector],
+          stats: null,
           total: 1,
         }),
       },
@@ -865,6 +874,8 @@ describe("listing queries", () => {
   );
 });
 
+const isoOf = (at: number) => DateTime.formatIso(DateTime.makeUnsafe(at));
+
 const LOC = /<loc>(?<loc>.*?)<\/loc>/gu;
 
 const sitemapRoutes = (jobs: readonly JobValue[]) =>
@@ -877,16 +888,35 @@ const sitemapRoutes = (jobs: readonly JobValue[]) =>
   );
 
 describe("sitemap", () => {
-  it("omits unobserved modification dates even when a listing was seen again", () => {
-    const first = sitemapXml(ORIGIN, [greenhouse]);
+  it("dates each URL by its newest listing's first sighting, not by re-sightings", () => {
+    const newer = jobFrom("Lever", "lever:acme/2", {
+      firstSeenAt: greenhouse.firstSeenAt + 3_600_000,
+    });
 
-    const unchanged = sitemapXml(ORIGIN, [
+    const xml = sitemapXml(ORIGIN, [greenhouse, newer]);
+
+    const resighted = sitemapXml(ORIGIN, [
       { ...greenhouse, lastSeenAt: greenhouse.lastSeenAt + 86_400_000 },
+      newer,
     ]);
 
-    expect(first).not.toContain("<lastmod>");
-    expect(unchanged).toBe(first);
+    const entryOf = (path: string) =>
+      xml.split("\n").find((line) => line.includes(`${ORIGIN}${path}</loc>`));
+
+    expect(resighted).toBe(xml);
+    expect(entryOf(jobRouter({ id: greenhouse.id }))).toContain(
+      `<lastmod>${isoOf(greenhouse.firstSeenAt)}</lastmod>`
+    );
+    expect(entryOf("/companies/acme-robotics")).toContain(
+      `<lastmod>${isoOf(newer.firstSeenAt)}</lastmod>`
+    );
+    expect(
+      entryOf(roleRouter({ place: "RemoteCanada", role: "Director" }))
+    ).toContain(`<lastmod>${isoOf(newer.firstSeenAt)}</lastmod>`);
+    expect(entryOf("/pricing")).not.toContain("<lastmod>");
+    expect(entryOf("/about")).not.toContain("<lastmod>");
   });
+
   it("lists the board, every job, every company, and each role page with roles", () => {
     const jobs = [
       greenhouse,
@@ -901,6 +931,10 @@ describe("sitemap", () => {
 
     expect(sitemapRoutes(jobs)).toEqual([
       routeAt("/"),
+      Route.Pricing(),
+      ...(["About", "Privacy", "Terms", "Contact"] as const).map((page) =>
+        Route.Information({ page })
+      ),
       ...jobs.map((job) => Route.Job({ id: job.id })),
       Route.Company({ slug: "acme-robotics" }),
       Route.Company({ slug: "zeta-sons" }),
@@ -949,6 +983,112 @@ describe("site header", () => {
     Effect.map(render("/", Preload.Nothing()), ({ html }) => {
       expect(html).toMatch(/<section [^>]*id="agents"/u);
     })
+  );
+});
+
+const homeBoard = Preload.Board({
+  filters: defaultFilters,
+  generatedAt: 1_760_500_000_000,
+  jobs: [acmeDirector],
+  stats: null,
+  total: 45,
+});
+
+const boardStats = {
+  activeJobs: 4,
+  companies: [{ company: "Acme <Robotics>", count: 3, slug: "acme-robotics" }],
+  feedsFailing: 0,
+  feedsTotal: 1,
+  generatedAt: 1_760_500_000_000,
+  lastRun: null,
+  newToday: 1,
+  placements: [
+    {
+      count: 3,
+      region: "RemoteNorthAmerica" as const,
+      role: "Director" as const,
+    },
+    { count: 0, region: "Elsewhere" as const, role: "Director" as const },
+    {
+      count: 1,
+      region: "BritishColumbia" as const,
+      role: "VicePresident" as const,
+    },
+  ],
+  regions: [],
+  roles: [],
+};
+
+describe("internal links", () => {
+  it.effect(
+    "links every open role hub and the busiest companies from the home page",
+    () =>
+      Effect.map(
+        render("/", { ...homeBoard, stats: boardStats }),
+        ({ html }) => {
+          const start = html.indexOf('id="browse-title"');
+          const browse = html.slice(start, html.indexOf("</nav>", start));
+
+          const hrefs = [...browse.matchAll(HREF)].map(
+            (match) => match.groups?.href
+          );
+
+          expect(hrefs).toStrictEqual([
+            roleRouter({ place: "BritishColumbia", role: "VicePresident" }),
+            roleRouter({ place: "RemoteCanada", role: "Director" }),
+            roleRouter({ place: "RemoteUnitedStates", role: "Director" }),
+            companyRouter({ slug: "acme-robotics" }),
+          ]);
+          expect(textOf(browse)).toContain("Director roles remote in the US");
+          expect(textOf(browse)).toContain("Acme &lt;Robotics&gt;");
+        }
+      )
+  );
+
+  it.effect("renders no browse section when board stats are unavailable", () =>
+    Effect.map(render("/", homeBoard), ({ html }) => {
+      expect(html).not.toContain('id="browse-title"');
+    })
+  );
+
+  it.effect("links a job page to its company and its role hubs", () =>
+    Effect.map(
+      render(
+        GREENHOUSE_PATH,
+        Preload.Job({
+          job: { ...greenhouse, region: "RemoteNorthAmerica" },
+        })
+      ),
+      ({ html }) => {
+        const more = html.slice(html.indexOf('class="detail-more"'));
+
+        expect(more).toContain(
+          `href="${companyRouter({ slug: "acme-robotics" })}">More at Acme &lt;Robotics&gt;</a>`
+        );
+        expect(more).toContain(
+          `href="${roleRouter({ place: "RemoteCanada", role: "Director" })}">Director roles remote in Canada</a>`
+        );
+        expect(more).toContain(
+          `href="${roleRouter({ place: "RemoteUnitedStates", role: "Director" })}">Director roles remote in the US</a>`
+        );
+        expect(more).not.toContain("on-site in the US");
+      }
+    )
+  );
+
+  it.effect.each(["/", "/about", GREENHOUSE_PATH])(
+    "links the remote US role hubs from the footer on %s",
+    (path) =>
+      Effect.map(render(path, Preload.Nothing()), ({ html }) => {
+        const footer = html.slice(html.indexOf('<footer class="footer"'));
+
+        expect(footer).toContain(
+          `href="${roleRouter({ place: "RemoteUnitedStates", role: "VicePresident" })}"`
+        );
+        expect(footer).toContain(
+          `href="${roleRouter({ place: "RemoteUnitedStates", role: "EngineeringManager" })}"`
+        );
+      })
   );
 });
 
@@ -1017,13 +1157,6 @@ const publicFiles = new Set(
     file.replace("../public", "")
   )
 );
-
-const homeBoard = Preload.Board({
-  filters: defaultFilters,
-  generatedAt: 1_760_500_000_000,
-  jobs: [acmeDirector],
-  total: 45,
-});
 
 describe("share and install metadata", () => {
   it.effect(

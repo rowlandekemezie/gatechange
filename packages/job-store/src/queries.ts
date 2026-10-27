@@ -758,6 +758,40 @@ export const roleCountsStatement = (
   );
 };
 
+export const placementCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `SELECT role, region, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY role, region ORDER BY count DESC`,
+    active.params
+  );
+};
+
+export const TOP_COMPANIES = 12;
+
+export const companyCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `SELECT company_slug AS slug, MIN(company) AS company, COUNT(*) AS count FROM jobs WHERE ${active.where} AND company_slug <> '' GROUP BY company_slug ORDER BY count DESC, slug LIMIT ${TOP_COMPANIES}`,
+    active.params
+  );
+};
+
 export const feedHealthStatement = (catalogKeys: readonly string[]) =>
   statement(
     "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN consecutive_failures > 0 THEN 1 ELSE 0 END), 0) AS failing FROM feeds WHERE key IN (SELECT value FROM json_each(?))",

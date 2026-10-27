@@ -27,6 +27,7 @@ import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
 import {
   activeCountStatement,
+  companyCountsStatement,
   claimIngestStatement,
   claimNeuronsStatement,
   clearSkipStatement,
@@ -55,6 +56,7 @@ import {
   recordNeuronsUsedStatement,
   recordRunStatement,
   recordSkipStatement,
+  placementCountsStatement,
   regionCountsStatement,
   releaseIngestStatement,
   departUnseenStatement,
@@ -199,6 +201,18 @@ const FeedStateRow = Schema.Struct({
 const RegionCountRow = Schema.Struct({ count: Count, region: Region });
 
 const RoleCountRow = Schema.Struct({ count: Count, role: RoleLevel });
+
+const PlacementCountRow = Schema.Struct({
+  count: Count,
+  region: Region,
+  role: RoleLevel,
+});
+
+const CompanyCountRow = Schema.Struct({
+  company: Schema.String,
+  count: Count,
+  slug: Schema.String,
+});
 
 const FeedHealthRow = Schema.Struct({ failing: Count, total: Count });
 
@@ -595,6 +609,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             activeCountStatement(now, sources),
             TotalRow
           ),
+          companies: sql.all(
+            "companyCounts",
+            companyCountsStatement(now, sources),
+            CompanyCountRow
+          ),
           feeds: sql.all(
             "feedHealth",
             feedHealthStatement(catalogKeys),
@@ -605,6 +624,11 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             "newToday",
             newTodayStatement(now, sources),
             TotalRow
+          ),
+          placements: sql.all(
+            "placementCounts",
+            placementCountsStatement(now, sources),
+            PlacementCountRow
           ),
           regions: sql.all(
             "regionCounts",
@@ -619,29 +643,42 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         },
         { concurrency: 3 }
       ).pipe(
-        Effect.map(({ active, feeds, lastRun, newToday, regions, roles }) => {
-          const health = Array.head(feeds);
-
-          return {
-            activeJobs: totalOf(active),
-            feedsFailing: Option.match(health, {
-              onNone: () => 0,
-              onSome: (row) => row.failing,
-            }),
-            feedsTotal: Option.match(health, {
-              onNone: () => 0,
-              onSome: (row) => row.total,
-            }),
-            lastRun: pipe(
-              Array.head(lastRun),
-              Option.map(receiptOfRow),
-              Option.getOrNull
-            ),
-            newToday: totalOf(newToday),
+        Effect.map(
+          ({
+            active,
+            companies,
+            feeds,
+            lastRun,
+            newToday,
+            placements,
             regions,
             roles,
-          };
-        })
+          }) => {
+            const health = Array.head(feeds);
+
+            return {
+              activeJobs: totalOf(active),
+              companies,
+              feedsFailing: Option.match(health, {
+                onNone: () => 0,
+                onSome: (row) => row.failing,
+              }),
+              feedsTotal: Option.match(health, {
+                onNone: () => 0,
+                onSome: (row) => row.total,
+              }),
+              lastRun: pipe(
+                Array.head(lastRun),
+                Option.map(receiptOfRow),
+                Option.getOrNull
+              ),
+              newToday: totalOf(newToday),
+              placements,
+              regions,
+              roles,
+            };
+          }
+        )
       ),
 
     unenrichedListings: (sweep) =>

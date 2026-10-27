@@ -239,6 +239,18 @@ export const RoleCount = Schema.Struct({
   role: RoleLevel,
 });
 
+export const PlacementCount = Schema.Struct({
+  count: Schema.Int,
+  region: Region,
+  role: RoleLevel,
+});
+
+export const CompanyCount = Schema.Struct({
+  company: Schema.String,
+  count: Schema.Int,
+  slug: Schema.String,
+});
+
 export const IngestOutcome = Schema.Literals([
   "Succeeded",
   "Partial",
@@ -259,11 +271,13 @@ export type IngestReceiptValue = typeof IngestReceipt.Type;
 
 export const BoardStats = Schema.Struct({
   activeJobs: Schema.Int,
+  companies: Schema.Array(CompanyCount),
   feedsFailing: Schema.Int,
   feedsTotal: Schema.Int,
   generatedAt: EpochMillis,
   lastRun: Schema.NullOr(IngestReceipt),
   newToday: Schema.Int,
+  placements: Schema.Array(PlacementCount),
   regions: Schema.Array(RegionCount),
   roles: Schema.Array(RoleCount),
 });

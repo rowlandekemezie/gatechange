@@ -375,6 +375,50 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
+    "stats count open roles by role and region and rank companies by open roles",
+    () =>
+      withStore(
+        Effect.gen(function* directory() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "a",
+            [
+              job({ feed: "a", id: "a:1", title: "EM Payments" }),
+              job({ feed: "a", id: "a:2", title: "EM Ledger" }),
+              job({
+                company: "Zeta & Sons",
+                feed: "a",
+                id: "a:3",
+                region: "BritishColumbia",
+                role: "Director",
+                title: "Director of Engineering",
+              }),
+              job({
+                feed: "a",
+                id: "a:old",
+                postedAt: NOW - 40 * DAY_MILLIS,
+                title: "Old EM",
+              }),
+            ],
+            NOW
+          );
+
+          const stats = yield* store.stats(NOW, SourceName.literals, []);
+
+          expect(stats.companies).toStrictEqual([
+            { company: "Acme", count: 2, slug: "acme" },
+            { company: "Zeta & Sons", count: 1, slug: "zeta-sons" },
+          ]);
+          expect(stats.placements).toStrictEqual([
+            { count: 2, region: "RemoteCanada", role: "EngineeringManager" },
+            { count: 1, region: "BritishColumbia", role: "Director" },
+          ]);
+        })
+      )
+  );
+
+  it.effect(
     "filters respect age, role, region and a search containing LIKE wildcards",
     () =>
       withStore(

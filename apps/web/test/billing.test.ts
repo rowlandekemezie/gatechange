@@ -290,6 +290,7 @@ describe("billing updates", () => {
             filters,
             generatedAt: 1,
             jobs: [],
+            stats: null,
             total: 0,
           }),
         },
