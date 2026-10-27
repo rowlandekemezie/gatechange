@@ -13,6 +13,12 @@ import {
   PRIVATE_REFERRER_POLICY,
 } from "./edge-routes.js";
 import type { EdgeRoute } from "./edge-routes.js";
+import {
+  analyticsOf,
+  proxyIngest,
+  withAnalyticsKey,
+} from "./server/analytics.js";
+import type { AnalyticsBindings } from "./server/analytics.js";
 import { clientOf, listedJobs, shellOf } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
@@ -32,7 +38,7 @@ interface RateLimiter {
   }) => Promise<{ readonly success: boolean }>;
 }
 
-interface EdgeBindings {
+interface EdgeBindings extends AnalyticsBindings {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
   readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
@@ -375,6 +381,12 @@ export default {
       );
     }
 
+    if (route === "analytics") {
+      return await Effect.runPromise(
+        proxyIngest(request, analyticsOf(bindings), globalThis.fetch)
+      );
+    }
+
     if (route === "backend") {
       return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
     }
@@ -384,13 +396,18 @@ export default {
         ? await Effect.runPromise(serveSite(request, url, bindings, lifetime))
         : Option.none<Response>();
 
-    const response = withoutSharedCache(
-      route,
-      Option.isSome(served)
-        ? served.value
-        : await Effect.runPromise(
-            serveUnmatched(bindings, request, url, lifetime)
-          )
+    const response = await Effect.runPromise(
+      withAnalyticsKey(
+        withoutSharedCache(
+          route,
+          Option.isSome(served)
+            ? served.value
+            : await Effect.runPromise(
+                serveUnmatched(bindings, request, url, lifetime)
+              )
+        ),
+        analyticsOf(bindings)
+      )
     );
 
     const filteredBoard = url.pathname === "/" && url.search !== "";

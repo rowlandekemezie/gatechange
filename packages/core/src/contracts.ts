@@ -101,6 +101,8 @@ export {
 
 export { offSiteHref, SITE_NAME, SOURCE_REPOSITORY_URL } from "./site.js";
 
+export { PostHogKey } from "./analytics.js";
+
 export {
   AgentToken,
   AgentTokenId,

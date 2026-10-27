@@ -8,6 +8,8 @@ import { Array, Effect, Option, pipe, Predicate, Schema } from "effect";
 import { Command, Dom, Render } from "foldkit";
 import { load, pushUrl, replaceUrl } from "foldkit/navigation";
 
+import { Analytics } from "../analytics/client.js";
+import { AnalyticsCall } from "../analytics/events.js";
 import { collectListing, ListingRoute } from "../listing.js";
 import { Message } from "./message.js";
 import { Shortlist, TrackerChange } from "./model.js";
@@ -320,4 +322,13 @@ export const SendTrackerChange = Command.define("SendTrackerChange", {
       })
     ),
   messages: [Message.SucceededTrackerChange, Message.FailedTrackerChange],
+});
+
+export const TrackAnalytics = Command.define("TrackAnalytics", {
+  args: { calls: Schema.Array(AnalyticsCall) },
+  execute: ({ calls }) =>
+    Analytics.use((analytics) => analytics.send(calls)).pipe(
+      Effect.as(Message.CompletedTrackAnalytics())
+    ),
+  messages: [Message.CompletedTrackAnalytics],
 });

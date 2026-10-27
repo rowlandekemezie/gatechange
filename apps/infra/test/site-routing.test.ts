@@ -44,6 +44,8 @@ describe("siteIndexing", () => {
 describe("siteWorkerFirst", () => {
   it("preserves production's existing selected paths", () => {
     expect(siteWorkerFirst("prod")).toStrictEqual([
+      "/ingest",
+      "/ingest/*",
       "/rpc",
       "/rpc/*",
       "/mcp",
