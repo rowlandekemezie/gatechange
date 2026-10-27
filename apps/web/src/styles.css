@@ -93,8 +93,8 @@ a {
 .page {
   width: min(100%, var(--measure) + 2rem);
   margin: 0 auto;
-  padding: 0 max(1rem, env(safe-area-inset-right)) 3rem
-    max(1rem, env(safe-area-inset-left));
+  padding: 0 max(1rem, env(safe-area-inset-right))
+    max(3rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 }
 
 .site-header {
@@ -682,7 +682,6 @@ a {
 .footer {
   margin-top: 4rem;
   padding-top: 1.25rem;
-  padding-bottom: env(safe-area-inset-bottom);
   border-top: 1px solid var(--rule);
   color: var(--ink-soft);
   font-size: 0.875rem;
