@@ -8,6 +8,7 @@ import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
 import {
   edgeRouteOf,
+  HASHED_ASSET_CACHE_CONTROL,
   PRIVATE_CACHE_CONTROL,
   PRIVATE_REFERRER_POLICY,
 } from "./edge-routes.js";
@@ -242,6 +243,14 @@ const serveUnmatched = (
 ) =>
   Effect.gen(function* serveUnmatchedPath() {
     const asset = yield* fetchAsset(bindings, request);
+
+    if (asset.ok && url.pathname.startsWith("/assets/")) {
+      const immutable = new Response(asset.body, asset);
+
+      immutable.headers.set("cache-control", HASHED_ASSET_CACHE_CONTROL);
+
+      return immutable;
+    }
 
     if (asset.status !== 404 || FILE_PATH.test(url.pathname)) {
       return asset;

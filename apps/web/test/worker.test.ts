@@ -120,6 +120,12 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
         calls.assets += 1;
         const { pathname } = new URL(new Request(input, init).url);
 
+        if (pathname === "/assets/index-live.js") {
+          return new Response("export {};", {
+            headers: { "cache-control": "public, max-age=0, must-revalidate" },
+          });
+        }
+
         return await Promise.resolve(
           pathname === "/"
             ? new Response(shell)
@@ -359,6 +365,15 @@ describe("unknown paths", () => {
       expect(stored.size).toBe(0);
     }
   );
+
+  it("serves a hashed asset immutable for a year", async () => {
+    const page = await edge(indexHtml).get(`${ORIGIN}/assets/index-live.js`);
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get("cache-control")).toBe(
+      "public, max-age=31536000, immutable"
+    );
+  });
 
   it("answers a missing hashed asset with a plain 404, never the HTML shell", async () => {
     const page = await edge(indexHtml).get(`${ORIGIN}/assets/index-gone.js`);
