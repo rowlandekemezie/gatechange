@@ -56,7 +56,11 @@ export const IntelState = defineTaggedUnion({
 export type IntelStateValue = typeof IntelState.Type;
 
 export const Preload = defineTaggedUnion({
-  Board: { ...JobPage.fields, filters: Filters },
+  Board: {
+    ...JobPage.fields,
+    filters: Filters,
+    stats: Schema.NullOr(BoardStats),
+  },
   Job: { job: JobDetail },
   JobMissing: {},
   Listing: Listing.fields,

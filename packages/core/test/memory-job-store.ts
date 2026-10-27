@@ -583,6 +583,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         activeJobs: [...jobs.values()].filter(
           (job) => sources.includes(job.source) && !departed.has(job.id)
         ).length,
+        companies: [],
         feedsFailing: pipe(
           [...states.values()],
           Array.filter(
@@ -595,6 +596,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         ).length,
         lastRun: Option.getOrNull(Array.last(runs)),
         newToday: 0,
+        placements: [],
         regions: [],
         roles: [],
       })),

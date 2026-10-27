@@ -1,44 +1,69 @@
-import { companySlugOf, roleLevels } from "@rat-stack/core/contracts";
+import { companySlugOf } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
-import { Array, pipe } from "effect";
+import { Array, DateTime, Option, pipe } from "effect";
 
-import { regionGroups, regionsOfGroup } from "../client/board/filters.js";
-import { companyRouter, jobRouter, roleRouter } from "../client/route.js";
+import { regionsOfGroup } from "../client/board/filters.js";
+import { roleHubsWhere } from "../client/listing.js";
+import {
+  companyRouter,
+  InformationPage,
+  informationRouter,
+  jobRouter,
+  pricingRouter,
+  roleRouter,
+} from "../client/route.js";
 
 const escapeXml = (text: string) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-const urlEntry = (origin: string, path: string) =>
-  `<url><loc>${escapeXml(`${origin}${path}`)}</loc></url>`;
+const urlEntry = (
+  origin: string,
+  path: string,
+  listedAt: Option.Option<number>
+) =>
+  `<url><loc>${escapeXml(`${origin}${path}`)}</loc>${Option.match(listedAt, {
+    onNone: () => "",
+    onSome: (at) =>
+      `<lastmod>${DateTime.formatIso(DateTime.makeUnsafe(at))}</lastmod>`,
+  })}</url>`;
+
+const newestListingOf = (jobs: readonly JobValue[]) =>
+  Option.liftPredicate(
+    Math.max(...jobs.map((job) => job.firstSeenAt)),
+    Number.isFinite
+  );
 
 export const emptySitemapXml = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',
 ].join("\n");
 
-const companyPaths = (jobs: readonly JobValue[]) =>
+const companyEntries = (origin: string, jobs: readonly JobValue[]) =>
   pipe(
     jobs,
-    Array.map((job) => companySlugOf(job.company)),
-    Array.getSomes,
-    Array.dedupe,
-    Array.map((slug) => companyRouter({ slug }))
+    Array.groupBy((job) =>
+      Option.getOrElse(companySlugOf(job.company), () => "")
+    ),
+    (groups) => Object.entries(groups),
+    Array.filter(([slug]) => slug !== ""),
+    Array.map(([slug, listed]) =>
+      urlEntry(origin, companyRouter({ slug }), newestListingOf(listed))
+    )
   );
 
-const rolePaths = (jobs: readonly JobValue[]) =>
-  pipe(
-    roleLevels,
-    Array.flatMap((role) =>
-      pipe(
-        regionGroups,
-        Array.filter((place) =>
-          jobs.some(
-            (job) =>
-              job.role === role &&
-              Array.contains(regionsOfGroup(place), job.region)
-          )
-        ),
-        Array.map((place) => roleRouter({ place, role }))
+const roleEntries = (origin: string, jobs: readonly JobValue[]) =>
+  roleHubsWhere((role, region) =>
+    jobs.some((job) => job.role === role && job.region === region)
+  ).map(({ place, role }) =>
+    urlEntry(
+      origin,
+      roleRouter({ place, role }),
+      newestListingOf(
+        jobs.filter(
+          (job) =>
+            job.role === role &&
+            Array.contains(regionsOfGroup(place), job.region)
+        )
       )
     )
   );
@@ -47,10 +72,16 @@ export const sitemapXml = (origin: string, jobs: readonly JobValue[]) =>
   [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    urlEntry(origin, "/"),
-    ...jobs.map((job) => urlEntry(origin, jobRouter({ id: job.id }))),
-    ...companyPaths(jobs).map((path) => urlEntry(origin, path)),
-    ...rolePaths(jobs).map((path) => urlEntry(origin, path)),
+    urlEntry(origin, "/", newestListingOf(jobs)),
+    urlEntry(origin, pricingRouter(), Option.none()),
+    ...InformationPage.literals.map((page) =>
+      urlEntry(origin, informationRouter(page), Option.none())
+    ),
+    ...jobs.map((job) =>
+      urlEntry(origin, jobRouter({ id: job.id }), Option.some(job.firstSeenAt))
+    ),
+    ...companyEntries(origin, jobs),
+    ...roleEntries(origin, jobs),
     "</urlset>",
   ].join("\n");
 
