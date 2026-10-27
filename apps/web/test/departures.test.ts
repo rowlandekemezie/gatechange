@@ -85,6 +85,34 @@ describe("departures board", () => {
     })
   );
 
+  it.effect.each([
+    [
+      "a salary band",
+      {
+        enrichment: {
+          board: null,
+          enrichedAt: NOW,
+          handsOn: null,
+          model: "test-model",
+          promptVersion: 2,
+          remotePolicy: null,
+          reportsTo: null,
+          salary: { currency: "USD", max: 310_000, min: 260_000 },
+          seniority: null,
+          teamSize: null,
+        },
+      },
+      "$260K+",
+    ],
+    ["a stated range", { salary: "$180k – $210k" }, "$180k+"],
+  ] as const)("tags the role with %s", ([, pay, tag]) =>
+    Effect.map(renderBoard([{ ...listed("new"), ...pay }]), (html) => {
+      expect(
+        /class="role-pay"[^>]*>(?<pay>[^<]*)</u.exec(html)?.groups?.pay
+      ).toBe(tag);
+    })
+  );
+
   it.effect("explains New and Boarding under the board", () =>
     Effect.map(renderBoard([listed("new")]), (html) => {
       expect(html).toContain("first seen in the last 24 hours");
