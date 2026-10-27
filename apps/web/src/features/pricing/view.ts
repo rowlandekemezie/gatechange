@@ -251,14 +251,14 @@ const planCard = (
               ]
             ),
           ]),
-      h.p(
-        [h.Class("plan-saving")],
-        [
-          saving.percent > 0
-            ? `Save ${saving.percent}% against ${saving.against}`
-            : "Cancel any time",
-        ]
-      ),
+      ...(saving.percent > 0
+        ? [
+            h.p(
+              [h.Class("plan-saving")],
+              [`Save ${saving.percent}% against ${saving.against}`]
+            ),
+          ]
+        : []),
       planAction(model, session, offer.plan, isOnlyPlan, h),
     ]
   );
@@ -331,7 +331,12 @@ export const pricingPage = defineView<
             proPrice(model, h),
             h.p([h.Class("price-card-copy")], ["Everything in Free, plus:"]),
             featureList(h, proFeatures),
-            h.p([h.Class("price-card-copy")], [instantCoverage()]),
+            h.p(
+              [h.Class("price-card-copy")],
+              [
+                "Instant alerts cover the job sources whose terms allow email alerts.",
+              ]
+            ),
             ...planOffers(model, session, h),
           ]),
           selfHostCard(h, "tier"),
