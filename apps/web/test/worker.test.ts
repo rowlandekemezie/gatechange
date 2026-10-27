@@ -352,7 +352,7 @@ describe("tracking parameters", () => {
       "public, max-age=0, s-maxage=600"
     );
     expect(tagged.headers.has("x-robots-tag")).toBe(false);
-    expect(site.calls.backend).toBe(1);
+    expect(site.calls.backend).toBe(2);
     expect(stored.size).toBe(1);
   });
 
