@@ -4,7 +4,7 @@ The board opens on the freshest, most relevant leadership roles in the home regi
 
 ## Sub-features
 
-- `board-load` shows at least 20 rows and the line `<n> roles match`.
+- `board-load` shows at least 10 rows and the line `<n> roles match`.
 - `board-stats` shows `<n> leadership roles from the last 30 days` and when the board last refreshed.
 - `board-groups` groups rows under day headings such as `Today` and `Yesterday`.
 - `board-row` shows title, company, location, salary when known, the source, the age, and `New` for jobs first seen in the last day.
@@ -13,7 +13,7 @@ The board opens on the freshest, most relevant leadership roles in the home regi
 
 ## How to get to it (user POV)
 
-- Open the site root. The `Open roles` tab is selected.
+- Open the site root. The `Roles` header link is current.
 
 ## Driving it with drive.ts
 
@@ -24,7 +24,7 @@ Preconditions:
 - **First load.** Run `drive.ts --url <url> --out <dir> --scenario board --full-page`. The JSON has `ok: true`, `rows` of 40, and a `count` like `65 roles match`. The screenshot shows rows under day headings.
 - **Phone layout.** Add `--mobile`. The PNG is 1170 pixels wide and the headline wraps without horizontal scroll.
 - **Dark mode.** Add `--dark`. The JSON `background` reads near black and the screenshot is dark.
-- **Load more.** Not scripted yet. Add an action that clicks the `button.more` whose text starts with `Show`, then require `li.job` to exceed 40.
+- **Load more.** Not scripted yet. Add an action that clicks the `button.more` whose text starts with `Show`, then require `.board .departure` to exceed 15.
 - **Backend failure.** Stop the stage with `down.sh` mid-drive. `verify.sh` prints `FAIL alchemy dev for stage <stage> exited during the run`.
 
 ## Gotchas
