@@ -116,10 +116,15 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
 
   const bindings = {
     ASSETS: {
-      fetch: async () => {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         calls.assets += 1;
+        const { pathname } = new URL(new Request(input, init).url);
 
-        return await Promise.resolve(new Response(shell));
+        return await Promise.resolve(
+          pathname === "/"
+            ? new Response(shell)
+            : new Response("missing", { status: 404 })
+        );
       },
     },
     BACKEND: {
@@ -263,7 +268,7 @@ describe("public landing pages", () => {
     expect(site.calls.backend).toBe(2);
   });
 
-  it.each(["?utm_source=feed", "?shell=0", "?role="])(
+  it.each(["?shell=0", "?role="])(
     "keeps query variant %s noindex and out of the root cache",
     async (query) => {
       const site = edge(indexHtml);
@@ -304,6 +309,74 @@ afterEach(() => {
 
 afterAll(async () => {
   await backend.dispose();
+});
+
+describe("tracking parameters", () => {
+  it.each([
+    "?ref=producthunt",
+    "?utm_source=producthunt&utm_medium=launch",
+    "?fbclid=a&gclid=b&mc_cid=c&mc_eid=d",
+  ])("serves the root page %s from the shared cache", async (query) => {
+    const site = edge(indexHtml);
+    const plain = await site.get(`${ORIGIN}/`);
+    const tagged = await site.get(`${ORIGIN}/${query}`);
+
+    expect(tagged.status).toBe(200);
+    expect(tagged.html).toBe(plain.html);
+    expect(tagged.html).toContain(`<link rel="canonical" href="${ORIGIN}/"`);
+    expect(tagged.headers.get("cache-control")).toBe(
+      "public, max-age=0, s-maxage=600"
+    );
+    expect(tagged.headers.has("x-robots-tag")).toBe(false);
+    expect(site.calls.backend).toBe(1);
+    expect(stored.size).toBe(1);
+  });
+
+  it("keeps real filters private and noindex next to a tracking parameter", async () => {
+    const site = edge(indexHtml);
+    const page = await site.get(`${ORIGIN}/?ref=producthunt&q=absent`);
+
+    expect(page.html).toContain('value="absent"');
+    expect(page.headers.get("cache-control")).toBe("private, no-store");
+    expect(page.headers.get("x-robots-tag")).toBe("noindex");
+    expect(stored.size).toBe(0);
+  });
+});
+
+describe("unknown paths", () => {
+  it.each(["/nope", "/jobs"])(
+    "answers %s with an uncached, noindex 404 page that needs no backend",
+    async (path) => {
+      const site = edge(indexHtml, { backendStatus: 503 });
+      const page = await site.get(`${ORIGIN}${path}`);
+
+      expect(page.status).toBe(404);
+      expect(page.html).toContain("<title>Page not found</title>");
+      expect(page.html).toContain('<meta name="robots" content="noindex"');
+      expect(page.headers.get("x-robots-tag")).toBe("noindex");
+      expect(page.headers.get("cache-control")).toBe("private, no-store");
+      expect(site.calls.backend).toBe(0);
+      expect(stored.size).toBe(0);
+    }
+  );
+
+  it("answers a missing hashed asset with a plain 404, never the HTML shell", async () => {
+    const page = await edge(indexHtml).get(`${ORIGIN}/assets/index-gone.js`);
+
+    expect(page.status).toBe(404);
+    expect(page.html).not.toContain("<html");
+  });
+
+  it.each(["/shortlist", "/account", "/account/confirm?token=abc"])(
+    "serves the client-only route %s from the shell with noindex",
+    async (path) => {
+      const page = await edge(indexHtml).get(`${ORIGIN}${path}`);
+
+      expect(page.status).toBe(200);
+      expect(page.html).toBe(indexHtml);
+      expect(page.headers.get("x-robots-tag")).toBe("noindex");
+    }
+  );
 });
 
 describe("company pages", () => {
@@ -443,19 +516,18 @@ describe("per-viewer requests", () => {
     expect(site.calls.backend).toBe(1);
   });
 
-  it.each([
-    `${ORIGIN}/account/confirm?token=secret`,
-    `${ORIGIN}/shortlist`,
-    `${ORIGIN}/jobs`,
-  ])("passes %s to the assets without rendering or caching", async (url) => {
-    const site = edge(indexHtml);
+  it.each([`${ORIGIN}/account/confirm?token=secret`, `${ORIGIN}/shortlist`])(
+    "passes %s to the assets without rendering or caching",
+    async (url) => {
+      const site = edge(indexHtml);
 
-    const page = await site.get(url);
+      const page = await site.get(url);
 
-    expect(page.html).toBe(indexHtml);
-    expect(site.calls.backend).toBe(0);
-    expect(stored.size).toBe(0);
-  });
+      expect(page.html).toBe(indexHtml);
+      expect(site.calls.backend).toBe(0);
+      expect(stored.size).toBe(0);
+    }
+  );
 });
 
 describe("sitemap", () => {

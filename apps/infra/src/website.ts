@@ -43,7 +43,9 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
 
     return {
       assets: {
-        notFoundHandling: "single-page-application" as const,
+        headers:
+          "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+        notFoundHandling: "none" as const,
         runWorkerFirst: siteWorkerFirst(stage),
       },
       ...routing,
