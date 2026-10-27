@@ -17,9 +17,17 @@ export const MAIL_HOSTNAME = LEGACY_SITE_HOSTNAME;
 
 const OWNER_ZONE = "rowlandekemezie.com";
 
+const onSiteOrigin = ({ pathname, search }: URL) => {
+  const target = new URL(SITE_ORIGIN);
+  target.pathname = pathname;
+  target.search = search;
+
+  return target;
+};
+
 export const canonicalSiteUrlOf = (url: URL): Option.Option<URL> =>
   SITE_REDIRECT_HOSTNAMES.includes(url.hostname.replace(/\.+$/u, ""))
-    ? Option.some(new URL(`${url.pathname}${url.search}`, SITE_ORIGIN))
+    ? Option.some(onSiteOrigin(url))
     : Option.none();
 
 export const SITE_NAME = "Gate Change";

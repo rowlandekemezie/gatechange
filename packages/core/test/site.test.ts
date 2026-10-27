@@ -8,6 +8,7 @@ import {
   offSiteHrefOn,
   OWNER_WORKERS_SUBDOMAIN,
   publicOriginOf,
+  SITE_ORIGIN,
   siteHostsOf,
   siteWorkersSubdomainOf,
   WorkersSubdomain,
@@ -112,6 +113,19 @@ describe("canonicalSiteUrlOf", () => {
     expect(
       Option.map(canonicalSiteUrlOf(new URL(from)), (url) => url.href)
     ).toStrictEqual(Option.some(to));
+  });
+
+  it.each([
+    "https://jobs.rowlandekemezie.com//evil.com/x?a=1",
+    "https://jobs.rowlandekemezie.com/\\evil.com",
+    "https://jobs.rowlandekemezie.com/%2F%2Fevil.com",
+    "https://jobs.rowlandekemezie.com///evil.com",
+    "https://jobs.rowlandekemezie.com/\\\\evil.com",
+    "https://www.gatechange.dev//evil.com",
+  ])("keeps %s on gatechange.dev", (from) => {
+    const moved = Option.getOrThrow(canonicalSiteUrlOf(new URL(from)));
+
+    expect(new URL(moved.href).origin).toBe(SITE_ORIGIN);
   });
 
   it.each([

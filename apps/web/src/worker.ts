@@ -13,6 +13,7 @@ import {
   HASHED_ASSET_CACHE_CONTROL,
   PRIVATE_CACHE_CONTROL,
   PRIVATE_REFERRER_POLICY,
+  UNREDIRECTED_PATHS,
 } from "./edge-routes.js";
 import type { EdgeRoute } from "./edge-routes.js";
 import {
@@ -375,7 +376,11 @@ export default {
     environment: WorkerBindings,
     lifetime: Lifetime
   ): Promise<Response> => {
-    const canonical = canonicalSiteUrlOf(new URL(request.url));
+    const requested = new URL(request.url);
+
+    const canonical = UNREDIRECTED_PATHS.has(requested.pathname)
+      ? Option.none<URL>()
+      : canonicalSiteUrlOf(requested);
 
     if (Option.isSome(canonical)) {
       return redirectTo(request, canonical.value);

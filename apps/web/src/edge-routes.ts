@@ -9,6 +9,15 @@ export const INGEST_PREFIX = "/ingest";
 
 export const ANALYTICS_KEY_META = "posthog-key";
 
+const UNSUBSCRIBE_PATH = "/unsubscribe";
+
+const STRIPE_WEBHOOK_PATH = "/webhooks/stripe";
+
+export const UNREDIRECTED_PATHS: ReadonlySet<string> = new Set([
+  UNSUBSCRIBE_PATH,
+  STRIPE_WEBHOOK_PATH,
+]);
+
 const routePrefixes: readonly (readonly [
   string,
   Exclude<EdgeRoute, "public">,
@@ -18,8 +27,8 @@ const routePrefixes: readonly (readonly [
   ["/mcp", "agent"],
   ["/.well-known/mcp.json", "backend"],
   ["/api/auth", "backend"],
-  ["/unsubscribe", "backend"],
-  ["/webhooks/stripe", "backend"],
+  [UNSUBSCRIBE_PATH, "backend"],
+  [STRIPE_WEBHOOK_PATH, "backend"],
   ["/account", "private"],
 ];
 

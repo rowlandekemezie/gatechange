@@ -125,6 +125,7 @@ interface EdgeOptions {
 const edge = (shell: string, options: EdgeOptions = {}) => {
   const calls = { assets: 0, backend: 0 };
   const backendCredentials: boolean[] = [];
+  const forwarded: string[] = [];
   const pending: Promise<unknown>[] = [];
   const backendStatus = options.backendStatus ?? 200;
 
@@ -152,6 +153,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
         calls.backend += 1;
         const request = new Request(input, init);
 
+        forwarded.push(`${request.method} ${request.url}`);
         backendCredentials.push(
           request.headers.has("cookie") || request.headers.has("authorization")
         );
@@ -185,7 +187,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     return { headers: response.headers, html, status: response.status };
   };
 
-  return { backendCredentials, calls, get, send };
+  return { backendCredentials, calls, forwarded, get, send };
 };
 
 const stored = new Map<string, Response>();
@@ -384,6 +386,45 @@ describe("moved hosts", () => {
     );
     expect(site.calls.backend).toBe(0);
   });
+
+  it.each([
+    "https://jobs.rowlandekemezie.com//evil.com/x?a=1",
+    "https://jobs.rowlandekemezie.com/\\evil.com",
+    "https://jobs.rowlandekemezie.com/%2F%2Fevil.com",
+    "https://jobs.rowlandekemezie.com///evil.com",
+    "https://jobs.rowlandekemezie.com/\\\\evil.com",
+  ])("keeps the redirect for %s on gatechange.dev", async (from) => {
+    const response = await edge(indexHtml).send(new Request(from));
+
+    expect(response.status).toBe(301);
+    expect(new URL(response.headers.get("location") ?? "", from).origin).toBe(
+      "https://gatechange.dev"
+    );
+  });
+
+  it.each([
+    new Request("https://jobs.rowlandekemezie.com/unsubscribe?token=t"),
+    new Request("https://jobs.rowlandekemezie.com/unsubscribe?token=t", {
+      body: "List-Unsubscribe=One-Click",
+      method: "POST",
+    }),
+    new Request("https://jobs.rowlandekemezie.com/webhooks/stripe", {
+      body: "{}",
+      method: "POST",
+    }),
+  ])(
+    "answers $method $url on the old host without a redirect",
+    async (request) => {
+      const site = edge(indexHtml);
+
+      const response = await site.send(request);
+
+      expect(response.headers.has("location")).toBe(false);
+      expect(site.forwarded).toStrictEqual([
+        `${request.method} ${request.url}`,
+      ]);
+    }
+  );
 
   it("serves gatechange.dev itself", async () => {
     const page = await edge(indexHtml).get("https://gatechange.dev/pricing");
