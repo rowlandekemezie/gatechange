@@ -37,6 +37,7 @@ import {
   ReadShortlist,
   ReplaceUrl,
   ScrollToFragment,
+  ScrollToTop,
   SendTrackerChange,
   SyncTracker,
   WriteShortlist,
@@ -381,8 +382,26 @@ const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
     : visiting(routed, ReplaceUrl, canonical);
 };
 
+const hrefOf = (url: Url) =>
+  Option.match(url.hash, {
+    onNone: () => addressOf(url),
+    onSome: (fragment) => `${addressOf(url)}#${fragment}`,
+  });
+
+const landedAt = (model: ModelValue, url: Url): UpdateReturn => {
+  const step = arrivedAt(model, url);
+
+  const landing = Option.match(url.hash, {
+    onNone: () =>
+      step.model.route._tag === model.route._tag ? [] : [ScrollToTop()],
+    onSome: (fragment) => [ScrollToFragment({ fragment })],
+  });
+
+  return { ...step, commands: [...(step.commands ?? []), ...landing] };
+};
+
 const echoed = (model: ModelValue, url: Url): UpdateReturn => {
-  const address = addressOf(url);
+  const address = hrefOf(url);
 
   return Option.match(
     pipe(
@@ -397,7 +416,7 @@ const echoed = (model: ModelValue, url: Url): UpdateReturn => {
         const settled = modifyFields(model, { awaitingEcho: () => later });
 
         return Array.isReadonlyArrayEmpty(later)
-          ? arrivedAt(settled, url)
+          ? landedAt(settled, url)
           : { model: settled };
       },
     }
@@ -783,24 +802,12 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     ClickedLink: ({ request }) =>
       UrlRequest.match(request, {
         External: ({ href }) => ({ commands: [LoadUrl({ href })], model }),
-        Internal: ({ url }) => {
-          const step = visiting(
+        Internal: ({ url }) =>
+          visiting(
             { model },
             sameRoute(routeOfUrl(url), model.route) ? ReplaceUrl : PushUrl,
-            addressOf(url)
-          );
-
-          return Option.match(url.hash, {
-            onNone: () => step,
-            onSome: (fragment) => ({
-              ...step,
-              commands: [
-                ...(step.commands ?? []),
-                ScrollToFragment({ fragment }),
-              ],
-            }),
-          });
-        },
+            hrefOf(url)
+          ),
       }),
     ClickedLoadMore: () => {
       if (!Schema.is(JobsState.Loaded)(model.jobs)) {
