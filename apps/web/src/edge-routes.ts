@@ -1,9 +1,19 @@
-export type EdgeRoute = "agent" | "backend" | "private" | "public";
+export type EdgeRoute =
+  | "agent"
+  | "analytics"
+  | "backend"
+  | "private"
+  | "public";
+
+export const INGEST_PREFIX = "/ingest";
+
+export const ANALYTICS_KEY_META = "posthog-key";
 
 const routePrefixes: readonly (readonly [
   string,
   Exclude<EdgeRoute, "public">,
 ])[] = [
+  [INGEST_PREFIX, "analytics"],
   ["/rpc", "backend"],
   ["/mcp", "agent"],
   ["/.well-known/mcp.json", "backend"],

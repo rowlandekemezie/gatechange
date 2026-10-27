@@ -467,6 +467,17 @@ export {
 export type { SiteHosts, StageHosts } from "./site.js";
 
 export {
+  PostHogConfig,
+  postHogConfigOf,
+  postHogHostOf,
+  PostHogKey,
+  PostHogRegion,
+  postHogSetting,
+} from "./analytics.js";
+
+export type { PostHogConfigValue } from "./analytics.js";
+
+export {
   CompanyIntel,
   companyIntelOf,
   CompanySlug,

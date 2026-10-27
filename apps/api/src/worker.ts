@@ -24,6 +24,7 @@ import {
   INGEST_INTERVAL_MINUTES,
   isPullRequestStage,
   MAIL_HOSTNAME,
+  postHogSetting,
   publicOriginOf,
   runDigests,
   runIngest,
@@ -66,15 +67,22 @@ import {
   Effect,
   Layer,
   Option,
+  Predicate,
   Record,
   Redacted,
   Schema,
   Stream,
 } from "effect";
-import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
-import type { HttpServerRequest } from "effect/http";
+import {
+  FetchHttpClient,
+  HttpRouter,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
+import { postHogCapture, ServerEvent } from "./analytics.js";
+import type { ServerEventValue } from "./analytics.js";
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { guardPreviewAccess } from "./preview-access.js";
 import { handleRoutes } from "./route.js";
@@ -216,6 +224,14 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
   Effect.gen(function* jobsBackend() {
     const stage = yield* currentStage;
     const configuration = yield* stageConfig(stage);
+    const capture = postHogCapture(yield* postHogSetting, globalThis.fetch);
+    const executionContext = yield* Cloudflare.Workers.WorkerExecutionContext;
+
+    const captureInBackground = (event: ServerEventValue) =>
+      executionContext
+        .waitUntil(capture(event))
+        .pipe(Effect.provide(RuntimeContext.RuntimeContext.phantom));
+
     const pullRequest = isPullRequestStage(stage);
     const database = yield* backendDatabase;
     const client = yield* Cloudflare.D1.QueryDatabase(database);
@@ -419,6 +435,11 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
       yield* Cloudflare.Workers.cron(DIGEST_SCHEDULE, (controller) =>
         runDigests(digestPlan, controller.scheduledTime).pipe(
           Effect.tap((receipt) => Effect.logInfo("digests finished", receipt)),
+          Effect.tap(({ sent }) =>
+            sent > 0
+              ? capture(ServerEvent.DigestSent({ count: sent }))
+              : Effect.void
+          ),
           Effect.tapError((error) => Effect.logError("digests failed", error)),
           Effect.annotateLogs({
             cron: controller.cron,
@@ -503,8 +524,24 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
       billingLayer
     );
 
+    const trackedMcpHttp = HttpServerRequest.HttpServerRequest.pipe(
+      Effect.flatMap(({ headers }) => {
+        const tool = headers["mcp-name"];
+
+        return headers["mcp-method"] === "tools/call" && tool !== undefined
+          ? mcpHttp.pipe(
+              Effect.tap(() =>
+                captureInBackground(
+                  ServerEvent.McpToolCalled({ tool: tool.slice(0, 64) })
+                )
+              )
+            )
+          : mcpHttp;
+      })
+    );
+
     const mcp = (request: HttpServerRequest.HttpServerRequest) =>
-      serveMcp(mcpHttp)(request).pipe(Effect.provide(agentAccessLayer));
+      serveMcp(trackedMcpHttp)(request).pipe(Effect.provide(agentAccessLayer));
 
     const serveRpc = (viewer: ViewerValue) =>
       Effect.flatten(
@@ -578,7 +615,15 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
 
     const stripeWebhook = (request: HttpServerRequest.HttpServerRequest) =>
       stripe.endpoint.pipe(
-        Effect.flatMap((endpoint) => stripeWebhookResponse(endpoint, request)),
+        Effect.flatMap((endpoint) =>
+          stripeWebhookResponse(endpoint, request, (change, outcome) =>
+            Predicate.isTagged(change, "LinkCustomer") && outcome === "Applied"
+              ? captureInBackground(
+                  ServerEvent.SubscriptionActivated({ account: change.account })
+                )
+              : Effect.void
+          )
+        ),
         Effect.provide(billingLayer)
       );
 

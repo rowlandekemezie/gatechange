@@ -2,7 +2,8 @@ import { Effect, Layer } from "effect";
 import { Runtime } from "foldkit";
 
 import { AuthClient } from "./account/auth-client.js";
-import { application } from "./application.js";
+import { Analytics, campaignOf } from "./analytics/client.js";
+import { trackedApplication } from "./analytics/program.js";
 import { Message } from "./board/message.js";
 import { Preload } from "./board/model.js";
 import { JobQueries } from "./board/queries.js";
@@ -12,10 +13,14 @@ import "../styles.css";
 const served = document.querySelector<HTMLElement>("[data-foldkit-app]");
 
 const program = Runtime.makeApplication({
-  ...application,
+  ...trackedApplication,
   container: served ?? document.querySelector<HTMLElement>("#root"),
   devTools: import.meta.env.DEV ? { Message } : false,
-  resources: Layer.mergeAll(JobQueries.layer, AuthClient.layer),
+  resources: Layer.mergeAll(
+    JobQueries.layer,
+    AuthClient.layer,
+    Analytics.layer(campaignOf(window.location.search))
+  ),
 });
 
 if (served === null) {

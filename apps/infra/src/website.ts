@@ -2,6 +2,7 @@ import JobsBackend from "@rat-stack/api/worker";
 import {
   ANONYMOUS_MCP_CALLS_PER_MINUTE,
   isPullRequestStage,
+  postHogSetting,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "@rat-stack/core";
 import {
@@ -13,6 +14,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import { siteIndexing, siteRouting, siteWorkerFirst } from "./site-routing.js";
 
@@ -45,6 +47,14 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
         }
       : { BACKEND: JobsBackend };
 
+    const analytics = Option.match(yield* postHogSetting.pipe(Effect.orDie), {
+      onNone: () => ({}),
+      onSome: ({ key, region }) => ({
+        POSTHOG_PROJECT_KEY: key,
+        POSTHOG_REGION: region,
+      }),
+    });
+
     return {
       assets: {
         headers: `${HASHED_ASSET_PATHS}\n  Cache-Control: ${HASHED_ASSET_CACHE_CONTROL}\n`,
@@ -54,6 +64,7 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
       ...routing,
       env: {
         ...backendBindings,
+        ...analytics,
         MCP_ANONYMOUS_LIMIT: Cloudflare.Workers.RateLimit(
           "MCP_ANONYMOUS_LIMIT",
           {

@@ -52,6 +52,7 @@ export const Message = defineMessageUnion({
     revision: Schema.Finite,
     waiting: Schema.Finite,
   },
+  CompletedTrackAnalytics: {},
   CompletedWriteShortlist: {},
   FailedFetchIntel: { locked: Schema.Boolean, slug: Schema.String },
   FailedFetchJob: { id: Schema.String, message: Schema.String },
