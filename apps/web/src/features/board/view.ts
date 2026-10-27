@@ -8,7 +8,7 @@ import type {
   JobDetailValue,
   ListedJobValue,
   RoleLevelValue,
-  SalaryBandValue,
+  CurrencyValue,
 } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -42,7 +42,7 @@ import type {
   PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
-import { markButtons, stageOf } from "../../client/board/marks.js";
+import { lineIcon, markButtons, stageOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
@@ -457,27 +457,59 @@ const payTag = (
     })
   );
 
-const shortPay = (band: SalaryBandValue) => {
-  const from = new Intl.NumberFormat("en-US", {
-    currency: band.currency,
+const payFloor = (currency: CurrencyValue, amount: number) =>
+  `${new Intl.NumberFormat("en-US", {
+    currency,
     maximumFractionDigits: 0,
     notation: "compact",
     style: "currency",
-  }).format(band.min);
+  }).format(amount)}+`;
 
-  return band.max > band.min ? `${from}+` : from;
-};
+const CURRENCY_MARKS = new Map<string, CurrencyValue>([
+  ["$", "USD"],
+  ["CA$", "CAD"],
+  ["C$", "CAD"],
+  ["CAD", "CAD"],
+  ["EUR", "EUR"],
+  ["GBP", "GBP"],
+  ["US$", "USD"],
+  ["USD", "USD"],
+  ["£", "GBP"],
+  ["€", "EUR"],
+]);
+
+const UNITS = new Map([
+  ["k", 1000],
+  ["m", 1_000_000],
+]);
+
+const statedFloor = (salary: string) =>
+  pipe(
+    Option.fromNullishOr(
+      /^(?<mark>CA\$|C\$|US\$|\$|USD|CAD|EUR|GBP|£|€)\s*(?<amount>\d[\d,]*(?:\.\d+)?)\s*(?<unit>[kKmM])?/u.exec(
+        salary
+      )?.groups
+    ),
+    Option.flatMap(({ amount = "", mark = "", unit = "" }) => {
+      const floor =
+        Number(amount.replaceAll(",", "")) *
+        (UNITS.get(unit.toLowerCase()) ?? 1);
+
+      return pipe(
+        Option.fromNullishOr(CURRENCY_MARKS.get(mark)),
+        Option.filter(() => floor >= 10_000),
+        Option.map((currency) => payFloor(currency, floor))
+      );
+    }),
+    Option.getOrElse(() => salary)
+  );
 
 const rolePay = (h: HtmlBuilder<MessageValue>, job: ListedJobValue) =>
   pipe(
     Option.fromNullishOr(job.enrichment?.salary),
-    Option.map(shortPay),
+    Option.map((band) => payFloor(band.currency, band.min)),
     Option.orElse(() =>
-      Option.map(Option.fromNullishOr(job.salary), (salary) => {
-        const [from = salary, ...rest] = salary.split(/\s+(?:–|-|to)\s+/u);
-
-        return rest.length > 0 ? `${from}+` : from;
-      })
+      Option.map(Option.fromNullishOr(job.salary), statedFloor)
     ),
     Option.match({
       onNone: () => [],
@@ -493,14 +525,23 @@ const sourceLink = (
   h.a(
     [
       h.Class("job-source"),
-      ...(isCompact ? [h.AriaLabel(`From ${sourceLabel(job.source)}`)] : []),
+      ...(isCompact
+        ? [
+            h.AriaLabel(`From ${sourceLabel(job.source)}`),
+            h.Title(`From ${sourceLabel(job.source)}`),
+          ]
+        : []),
       ...Option.toArray(
         Option.map(offSiteHref(job.url), (href) => h.Href(href))
       ),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],
-    [isCompact ? "↗" : `From ${sourceLabel(job.source)}`]
+    [
+      isCompact
+        ? lineIcon(h, "M6.5 13.5l7-7M8 6.5h5.5V12")
+        : `From ${sourceLabel(job.source)}`,
+    ]
   );
 
 const postedTime = (
@@ -606,7 +647,7 @@ const departureRow = (
       ),
       h.div(
         [h.Class("departure-meta")],
-        [sourceLink(h, job, true), markButtons(model, h, job)]
+        [sourceLink(h, job, true), markButtons(model, h, job, true)]
       ),
     ]
   );
