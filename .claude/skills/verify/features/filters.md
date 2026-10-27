@@ -20,7 +20,7 @@ Preconditions:
 
 - `doctor.sh <stage>` prints four `ok` lines.
 
-- **Age.** Run `drive.ts --url <url> --out <dir> --scenario filter`. It clicks `day`. The JSON shows the count drop from the week view, for example `65 roles match` to `17 roles match`, and fewer rows.
+- **Age.** Run `drive.ts --url <url> --out <dir> --scenario filter`. It clicks `day`. The JSON shows the count drop from the week view, for example `65 roles match` to `17 roles match`, and no more rows (a page holds 15).
 - **Region or role.** Not scripted yet. Copy the `filter` action, click a chip such as `anywhere else`, and require the count to change.
 - **Sort.** Not scripted yet. Click `newest` and require the first row's age to be the newest in the list.
 

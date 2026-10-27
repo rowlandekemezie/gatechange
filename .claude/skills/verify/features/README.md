@@ -12,7 +12,7 @@ This directory is the maintained source for verifying what a person sees on the 
 ## Driving conventions
 
 - Every drive starts from a fresh Chrome profile, so the shortlist starts empty and the filters start at their defaults: every role, the three home regions (`remote in Canada`, `remote in the US`, `in Vancouver and BC`), the last `week`, and `most relevant` first.
-- Find controls by their visible text: chips are `button.phrase`, tabs are `nav.tabs button.tab`, row buttons are `li.job button.mark`.
+- Find controls by their visible text: chips are `button.phrase`, header links are `a.nav-link`, rows are `.board .departure`, row buttons are `.departure button.mark[aria-label]` (icons, desktop only).
 - Wait for the count line `p.count` to change, not for a fixed time.
 - Restore nothing by hand. `down.sh` removes the stage, and a new drive gets a new browser profile.
 
