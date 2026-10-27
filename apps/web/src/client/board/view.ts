@@ -1,4 +1,4 @@
-import { SourceName, SourceTerms } from "@rat-stack/core/contracts";
+import { SITE_NAME, SourceName, SourceTerms } from "@rat-stack/core/contracts";
 import type { SourceTermsValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
@@ -101,6 +101,13 @@ const footer = (h: H): Html =>
     ]
   );
 
+const BRAND_SUFFIX = ` · ${SITE_NAME}`;
+
+export const brandedTitle = (title: string) =>
+  title === SITE_NAME || title.endsWith(BRAND_SUFFIX)
+    ? title
+    : `${title}${BRAND_SUFFIX}`;
+
 const withCanonical = (model: ModelValue, document: Document): Document =>
   Option.match(canonicalPathOf(model.route), {
     onNone: () => document,
@@ -186,16 +193,18 @@ export const view = (model: ModelValue, h: H): Document =>
         footer(h),
       ]
     ),
-    title: Route.match<string>(model.route, {
-      Account: () => accountTitle(model.account.session),
-      Board: () => boardTitle(model),
-      Company: () => listingTitle(model),
-      ConfirmSignIn: () => "Finish signing in",
-      Information: ({ page }) => informationMeta(page).title,
-      Job: () => jobTitle(model),
-      NotFound: () => "Page not found",
-      Pricing: () => "Pro plans",
-      Role: () => listingTitle(model),
-      Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
-    }),
+    title: brandedTitle(
+      Route.match<string>(model.route, {
+        Account: () => accountTitle(model.account.session),
+        Board: () => boardTitle(model),
+        Company: () => listingTitle(model),
+        ConfirmSignIn: () => "Finish signing in",
+        Information: ({ page }) => informationMeta(page).title,
+        Job: () => jobTitle(model),
+        NotFound: () => "Page not found",
+        Pricing: () => "Pro plans",
+        Role: () => listingTitle(model),
+        Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
+      })
+    ),
   });

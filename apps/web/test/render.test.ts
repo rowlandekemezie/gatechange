@@ -14,6 +14,7 @@ import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
 
 import indexHtml from "../index.html?raw";
+import manifestJson from "../public/manifest.webmanifest?raw";
 import { application } from "../src/client/application.js";
 import { defaultFilters } from "../src/client/board/filters.js";
 import {
@@ -28,6 +29,7 @@ import type {
   PreloadValue,
 } from "../src/client/board/model.js";
 import { init } from "../src/client/board/update.js";
+import { brandedTitle } from "../src/client/board/view.js";
 import { collectListing, LISTING_ROWS } from "../src/client/listing.js";
 import { boardUrl, jobRouter, Route, routeOfUrl } from "../src/client/route.js";
 import { allowedOnly, allowedOrUnstated } from "../src/server/markup.js";
@@ -147,14 +149,14 @@ describe("job page render", () => {
         expect(page.html).toContain("data-foldkit-app");
         expect(page.html).toMatch(/<h1[^>]*>Director of Engineering<\/h1>/u);
         expect(page.html).toContain(
-          "<title>Director of Engineering at Acme &lt;Robotics&gt;</title>"
+          "<title>Director of Engineering at Acme &lt;Robotics&gt; · Engineering leadership jobs</title>"
         );
         expect(page.html).not.toContain("Refreshed every few hours");
         expect(page.html).toContain(
           `<link rel="canonical" href="${ORIGIN}${GREENHOUSE_PATH}"`
         );
         expect(page.html).toContain(
-          '<meta property="og:title" content="Director of Engineering at Acme &lt;Robotics&gt;" />'
+          '<meta property="og:title" content="Director of Engineering at Acme &lt;Robotics&gt; · Engineering leadership jobs" />'
         );
         expect(page.html).toContain('href="/companies/acme-robotics"');
       })
@@ -258,11 +260,33 @@ describe("job page render", () => {
     )
   );
 
-  it.effect("declares the Open Graph type and a summary card", () =>
-    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
-      expect(html).toContain('<meta property="og:type" content="website" />');
-      expect(html).toContain('<meta name="twitter:card" content="summary" />');
-    })
+  it.effect(
+    "declares the Open Graph type and a large image card with an absolute image URL",
+    () =>
+      Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+        expect(html).toContain('<meta property="og:type" content="website" />');
+        expect(html).toContain(
+          '<meta property="og:site_name" content="Engineering leadership jobs" />'
+        );
+        expect(html).toContain(
+          `<meta property="og:image" content="${ORIGIN}/og.png" />`
+        );
+        expect(html).toContain(
+          '<meta property="og:image:width" content="1200" />'
+        );
+        expect(html).toContain(
+          '<meta property="og:image:height" content="630" />'
+        );
+        expect(html).toMatch(
+          /<meta property="og:image:alt" content="[^"]+" \/>/u
+        );
+        expect(html).toContain(
+          '<meta name="twitter:card" content="summary_large_image" />'
+        );
+        expect(html).toContain(
+          `<meta name="twitter:image" content="${ORIGIN}/og.png" />`
+        );
+      })
   );
 
   it.effect("escapes double quotes from job data inside head attributes", () =>
@@ -274,7 +298,7 @@ describe("job page render", () => {
       ({ html }) => {
         expect(html).not.toMatch(/<[^>]*\sonload="/u);
         expect(html).toContain(
-          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1)" />'
+          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1) · Engineering leadership jobs" />'
         );
       }
     )
@@ -311,7 +335,7 @@ describe("job page render", () => {
       ),
       ({ html }) => {
         expect(html).toContain(
-          "<title>Lead $` ops at Cash $&amp; Carry $'</title>"
+          "<title>Lead $` ops at Cash $&amp; Carry $' · Engineering leadership jobs</title>"
         );
         expect(html).toContain(
           '<meta name="description" content="Director role at Cash $&amp; Carry $\', Remote, Canada" />'
@@ -448,7 +472,9 @@ describe("public landing hydration", () => {
     () =>
       Effect.map(render("/pricing", Preload.Nothing()), (page) => {
         expect(page.status).toBe(200);
-        expect(page.html).toContain("<title>Pro plans</title>");
+        expect(page.html).toContain(
+          "<title>Pro plans · Engineering leadership jobs</title>"
+        );
         expect(page.html).toContain("Pro for engineering leaders");
         expect(page.html).toContain(
           "Every engineering leadership listing stays free"
@@ -664,7 +690,7 @@ describe("listing page render", () => {
       ({ html, status }) => {
         expect(status).toBe(200);
         expect(html).toContain(
-          "<title>Engineering leadership roles at Acme &lt;Robotics&gt;</title>"
+          "<title>Engineering leadership roles at Acme &lt;Robotics&gt; · Engineering leadership jobs</title>"
         );
         expect(html).toContain(
           `<link rel="canonical" href="${ORIGIN}/companies/acme-robotics"`
@@ -692,7 +718,7 @@ describe("listing page render", () => {
       ({ html, status }) => {
         expect(status).toBe(200);
         expect(html).toContain(
-          "<title>Director roles remote in Canada</title>"
+          "<title>Director roles remote in Canada · Engineering leadership jobs</title>"
         );
         expect(html).toContain(
           `<link rel="canonical" href="${ORIGIN}/roles/director/remote-canada"`
@@ -941,4 +967,157 @@ describe("home page render", () => {
         );
       })
   );
+});
+
+const SiteGraphProbe = Schema.fromJsonString(
+  Schema.Struct({
+    "@graph": Schema.Tuple([
+      Schema.Struct({
+        "@type": Schema.Literal("WebSite"),
+        name: Schema.String,
+        potentialAction: Schema.Struct({
+          "@type": Schema.Literal("SearchAction"),
+          target: Schema.Struct({ urlTemplate: Schema.String }),
+        }),
+        url: Schema.String,
+      }),
+      Schema.Struct({
+        "@type": Schema.Literal("Organization"),
+        logo: Schema.String,
+        name: Schema.String,
+        url: Schema.String,
+      }),
+    ]),
+  })
+);
+
+const siteGraphIn = (html: string) =>
+  Option.map(Option.fromNullishOr(JSON_LD.exec(html)), (match) =>
+    Schema.decodeUnknownSync(SiteGraphProbe)(match.groups?.json)
+  );
+
+const ManifestProbe = Schema.fromJsonString(
+  Schema.Struct({
+    display: Schema.String,
+    icons: Schema.Array(
+      Schema.Struct({
+        purpose: Schema.String,
+        sizes: Schema.String,
+        src: Schema.String,
+      })
+    ),
+    name: Schema.String,
+    start_url: Schema.String,
+    theme_color: Schema.String,
+  })
+);
+
+const publicFiles = new Set(
+  Object.keys(import.meta.glob("../public/*")).map((file) =>
+    file.replace("../public", "")
+  )
+);
+
+const homeBoard = Preload.Board({
+  filters: defaultFilters,
+  generatedAt: 1_760_500_000_000,
+  jobs: [acmeDirector],
+  total: 45,
+});
+
+describe("share and install metadata", () => {
+  it.effect(
+    "brands the home title once and describes the site and its owner",
+    () =>
+      Effect.map(render("/", homeBoard), ({ html }) => {
+        expect(html).toContain(
+          `<title>45 engineering leadership roles · ${SITE_NAME}</title>`
+        );
+        expect(html).not.toContain(`${SITE_NAME} · ${SITE_NAME}`);
+
+        const [website, organization] = Option.getOrThrow(siteGraphIn(html))[
+          "@graph"
+        ];
+
+        expect(website.name).toBe(SITE_NAME);
+        expect(website.url).toBe(`${ORIGIN}/`);
+        expect(organization.name).toBe(SITE_NAME);
+        expect(organization.url).toBe(`${ORIGIN}/`);
+        expect(publicFiles).toContain(new URL(organization.logo).pathname);
+      })
+  );
+
+  it.effect(
+    "points the search action at a board search for the typed words",
+    () =>
+      Effect.map(render("/", homeBoard), ({ html }) => {
+        const [website] = Option.getOrThrow(siteGraphIn(html))["@graph"];
+
+        const searched = new URL(
+          website.potentialAction.target.urlTemplate.replace(
+            "{search_term_string}",
+            "platform"
+          )
+        );
+
+        const route = routeAt(`${searched.pathname}${searched.search}`);
+
+        expect(searched.origin).toBe(ORIGIN);
+        expect(Schema.is(Route.Board)(route) && route.filters.search).toBe(
+          "platform"
+        );
+      })
+  );
+
+  it.effect.each(["/pricing", "/about"])(
+    "keeps the site graph off %s but still shares the card image",
+    (path) =>
+      Effect.map(render(path, Preload.Nothing()), ({ html }) => {
+        expect(html).not.toContain('"WebSite"');
+        expect(html).toContain(
+          `<meta property="og:image" content="${ORIGIN}/og.png" />`
+        );
+      })
+  );
+
+  it("keeps a title that already carries the brand as it is", () => {
+    expect(brandedTitle(SITE_NAME)).toBe(SITE_NAME);
+    expect(brandedTitle(`Pro plans · ${SITE_NAME}`)).toBe(
+      `Pro plans · ${SITE_NAME}`
+    );
+  });
+
+  it("links every icon and the manifest from the shell, and each one ships", () => {
+    const linked = Array.from(
+      indexHtml.matchAll(
+        /<link rel="(?:icon|apple-touch-icon|manifest)" href="(?<href>[^"]+)"/gu
+      ),
+      (match) => match.groups?.href
+    );
+
+    expect(linked).toStrictEqual([
+      "/favicon.ico",
+      "/favicon.svg",
+      "/apple-touch-icon.png",
+      "/manifest.webmanifest",
+    ]);
+    expect(linked.filter((href) => !publicFiles.has(href ?? ""))).toStrictEqual(
+      []
+    );
+    expect(publicFiles).toContain("/og.png");
+    expect(indexHtml).toContain("viewport-fit=cover");
+  });
+
+  it("installs under the site name from the root with a maskable icon", () => {
+    const manifest = Schema.decodeUnknownSync(ManifestProbe)(manifestJson);
+
+    expect(manifest.name).toBe(SITE_NAME);
+    expect(manifest.start_url).toBe("/");
+    expect(manifest.display).toBe("standalone");
+    expect(manifest.theme_color.toLowerCase()).toBe("#f4f3ef");
+    expect(manifest.icons.map((icon) => icon.purpose)).toContain("maskable");
+    expect(
+      manifest.icons.filter((icon) => !publicFiles.has(icon.src))
+    ).toStrictEqual([]);
+  });
 });

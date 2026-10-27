@@ -194,7 +194,9 @@ describe("public landing pages", () => {
       const page = await site.get(`${ORIGIN}${path}`);
 
       expect(page.status).toBe(200);
-      expect(page.html).toContain(`<title>${title}</title>`);
+      expect(page.html).toContain(
+        `<title>${title} · Engineering leadership jobs</title>`
+      );
       expect(page.html).toContain(
         `<link rel="canonical" href="${ORIGIN}${path}"`
       );
