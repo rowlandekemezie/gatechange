@@ -1,3 +1,4 @@
+import { SITE_NAME, SOURCE_REPOSITORY_URL } from "@rat-stack/core/contracts";
 import type { JobValue } from "@rat-stack/core/contracts";
 import { Array, Data, Effect, Option, Schema } from "effect";
 import { renderToString } from "foldkit/experimental/server";
@@ -15,7 +16,7 @@ import type { JobPostingLd, MarkupPolicy } from "./markup.js";
 
 export interface PageMeta {
   readonly description: string;
-  readonly jsonLd: Option.Option<JobPostingLd>;
+  readonly jsonLd: Option.Option<JobPostingLd | ReturnType<typeof siteGraphOf>>;
   readonly status: 200 | 404;
 }
 
@@ -45,6 +46,42 @@ class ShellMismatch extends Data.TaggedError("ShellMismatch") {}
 
 const occursOnce = (text: string, part: string) =>
   text.includes(part) && text.indexOf(part) === text.lastIndexOf(part);
+
+const OG_IMAGE = {
+  alt: `${SITE_NAME}: Your next move is on the board.`,
+  height: 630,
+  path: "/og.png",
+  width: 1200,
+} as const;
+
+const siteGraphOf = (origin: string) => ({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@id": `${origin}/#website`,
+      "@type": "WebSite",
+      name: SITE_NAME,
+      potentialAction: {
+        "@type": "SearchAction",
+        "query-input": "required name=search_term_string",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: `${origin}/?q={search_term_string}`,
+        },
+      },
+      publisher: { "@id": `${origin}/#organization` },
+      url: `${origin}/`,
+    },
+    {
+      "@id": `${origin}/#organization`,
+      "@type": "Organization",
+      logo: `${origin}/icon-512.png`,
+      name: SITE_NAME,
+      sameAs: [SOURCE_REPOSITORY_URL],
+      url: `${origin}/`,
+    },
+  ],
+});
 
 const missing = (description: string): PageMeta => ({
   description,
@@ -117,7 +154,7 @@ export const pageMeta = (
     Board: () => ({
       description:
         "Find engineering manager, director, head of engineering and VP roles. Browse current leadership jobs, filter by where you can work, and apply at the original source for free.",
-      jsonLd: Option.none(),
+      jsonLd: Option.some(siteGraphOf(new URL(canonical).origin)),
       status: 200,
     }),
     Job: ({ job }) => jobMeta(job, canonical, policy),
@@ -130,7 +167,8 @@ const headTags = (
   title: string,
   canonical: string | undefined,
   meta: PageMeta,
-  noindex: boolean
+  noindex: boolean,
+  origin: string
 ) =>
   [
     ...(noindex ? ['<meta name="robots" content="noindex" />'] : []),
@@ -141,9 +179,15 @@ const headTags = (
           `<meta property="og:url" content="${escapeHtml(canonical)}" />`,
         ]),
     `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="${escapeHtml(SITE_NAME)}" />`,
     `<meta property="og:title" content="${escapeHtml(title)}" />`,
     `<meta property="og:description" content="${escapeHtml(meta.description)}" />`,
-    `<meta name="twitter:card" content="summary" />`,
+    `<meta property="og:image" content="${escapeHtml(`${origin}${OG_IMAGE.path}`)}" />`,
+    `<meta property="og:image:width" content="${OG_IMAGE.width}" />`,
+    `<meta property="og:image:height" content="${OG_IMAGE.height}" />`,
+    `<meta property="og:image:alt" content="${escapeHtml(OG_IMAGE.alt)}" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:image" content="${escapeHtml(`${origin}${OG_IMAGE.path}`)}" />`,
     ...Option.match(meta.jsonLd, {
       onNone: () => [],
       onSome: (data) => [

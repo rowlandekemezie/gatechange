@@ -1,0 +1,31 @@
+{
+  "name": "Engineering leadership jobs",
+  "short_name": "Leadership jobs",
+  "description": "Engineering manager, director, head of engineering and VP roles, refreshed every few hours from company job boards.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F4F3EF",
+  "theme_color": "#F4F3EF",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
