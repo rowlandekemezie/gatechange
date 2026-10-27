@@ -885,6 +885,7 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
         jobs
       );
     },
+    CompletedTrackAnalytics: () => ({ model }),
     CompletedWriteShortlist: () => ({ model }),
     FailedFetchIntel: ({ locked, slug }) => ({
       model: isAwaitingIntel(model, slug)

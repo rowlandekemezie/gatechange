@@ -61,6 +61,13 @@ const pages = {
         ],
       },
       {
+        heading: "Product analytics",
+        paragraphs: [
+          "The board collects product analytics with PostHog, such as page views, searches, filter changes and clicks on Apply, to learn which features help. Analytics are cookieless: no analytics cookie or browser storage is set, and each visit gets a new random identifier.",
+          "There are no session recordings and no capture of what you type; a search is counted by its length, not its text. When you are signed in, events carry your internal account identifier, never your email address. Events pass through this site, so your network address is not sent to PostHog. Browsers that send Do Not Track or Global Privacy Control are not tracked.",
+        ],
+      },
+      {
         heading: "Saved jobs, searches and tokens",
         paragraphs: [
           "While signed out, saved and applied jobs live in localStorage in your browser. When signed in, the application tracker stores job snapshots, stages, dates and notes with your account. Moving a browser shortlist into an account requires your explicit action.",

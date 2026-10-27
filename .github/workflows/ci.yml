@@ -107,6 +107,8 @@ jobs:
           GITHUB_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
 
       - name: Smoke test
         run: |
@@ -211,6 +213,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           PRO_PLANS: ${{ vars.PRO_PLANS }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
         run: |
           unset STRIPE_API_KEY STRIPE_API_BASE_URL
           if [ -z "$PRO_PLANS" ]; then echo "::error::Set the PRO_PLANS variable on the preview environment. apps/api/.env.schema describes PRO_PLANS."; exit 1; fi
@@ -227,6 +231,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           PRO_PLANS: ${{ vars.PRO_PLANS }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
         run: |
           unset STRIPE_API_KEY STRIPE_API_BASE_URL
           selection=()
@@ -322,6 +328,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
         run: |
           current=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,headRefOid)
           if [ "$(jq -r .state <<< "$current")" != OPEN ] || [ "$(jq -r .headRefOid <<< "$current")" != "$PR_HEAD_SHA" ]; then
