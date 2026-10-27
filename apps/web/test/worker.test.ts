@@ -172,12 +172,11 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     },
   };
 
+  const send = async (request: Request) =>
+    await worker.fetch(request, bindings, lifetime);
+
   const get = async (url: string, headers: Record<string, string> = {}) => {
-    const response = await worker.fetch(
-      new Request(url, { headers }),
-      bindings,
-      lifetime
-    );
+    const response = await send(new Request(url, { headers }));
 
     const html = await response.text();
 
@@ -186,7 +185,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     return { headers: response.headers, html, status: response.status };
   };
 
-  return { backendCredentials, calls, get };
+  return { backendCredentials, calls, get, send };
 };
 
 const stored = new Map<string, Response>();
@@ -331,6 +330,69 @@ afterEach(() => {
 
 afterAll(async () => {
   await backend.dispose();
+});
+
+describe("moved hosts", () => {
+  it.each([
+    [
+      "https://jobs.rowlandekemezie.com/jobs/greenhouse%3Aacme%2F1?q=staff&utm_source=x",
+      "https://gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff&utm_source=x",
+    ],
+    [
+      "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=abc",
+      "https://gatechange.dev/api/auth/magic-link/verify?token=abc",
+    ],
+    ["https://www.gatechange.dev/", "https://gatechange.dev/"],
+  ])(
+    "answers %s with a permanent 301 to %s before touching the site",
+    async (from, to) => {
+      const site = edge(indexHtml);
+
+      const responses = await Promise.all(
+        ["GET", "HEAD"].map(
+          async (method) => await site.send(new Request(from, { method }))
+        )
+      );
+
+      for (const response of responses) {
+        expect(response.status).toBe(301);
+        expect(response.headers.get("location")).toBe(to);
+        expect(response.headers.get("cache-control")).toBe(
+          "public, max-age=86400"
+        );
+        expect(response.headers.has("set-cookie")).toBe(false);
+      }
+
+      expect(site.calls).toStrictEqual({ assets: 0, backend: 0 });
+      expect(stored.size).toBe(0);
+    }
+  );
+
+  it("keeps the method and body of a moved MCP call with a 308", async () => {
+    const site = edge(indexHtml);
+
+    const response = await site.send(
+      new Request("https://jobs.rowlandekemezie.com/mcp?x=1", {
+        body: "{}",
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://gatechange.dev/mcp?x=1"
+    );
+    expect(site.calls.backend).toBe(0);
+  });
+
+  it("serves gatechange.dev itself", async () => {
+    const page = await edge(indexHtml).get("https://gatechange.dev/pricing");
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain(
+      '<link rel="canonical" href="https://gatechange.dev/pricing"'
+    );
+  });
 });
 
 describe("tracking parameters", () => {

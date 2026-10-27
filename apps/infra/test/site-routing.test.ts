@@ -7,11 +7,11 @@ import {
 } from "../src/site-routing.js";
 
 describe("siteRouting", () => {
-  it("attaches the production domain only to the prod stage, with workers.dev off", () => {
+  it("attaches gatechange.dev and its redirect hosts only to the prod stage, with workers.dev off", () => {
     expect(siteRouting("prod")).toStrictEqual({
       domain: {
-        name: "jobs.rowlandekemezie.com",
-        zoneName: "rowlandekemezie.com",
+        aliases: ["jobs.rowlandekemezie.com", "www.gatechange.dev"],
+        name: "gatechange.dev",
       },
       workersDev: false,
     });

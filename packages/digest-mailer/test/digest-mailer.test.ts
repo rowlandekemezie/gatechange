@@ -15,7 +15,7 @@ const SECRET = Redacted.make("a".repeat(32));
 
 const OTHER_SECRET = Redacted.make("b".repeat(32));
 
-const ORIGIN = "https://jobs.rowlandekemezie.com";
+const ORIGIN = "https://gatechange.dev";
 
 const ada = AccountId.make("user_ada");
 
@@ -58,7 +58,7 @@ const capture = (outcome: Effect.Effect<unknown, SendFailure>) => {
     secret: SECRET,
     send: (email) =>
       Effect.sync(() => sent.push(email)).pipe(Effect.andThen(outcome)),
-    sender: "digest@jobs.rowlandekemezie.com",
+    sender: "digest@gatechange.dev",
     siteOrigin: ORIGIN,
   });
 

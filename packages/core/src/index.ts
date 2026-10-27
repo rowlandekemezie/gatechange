@@ -445,7 +445,10 @@ export type {
 } from "./enrichment.js";
 
 export {
+  canonicalSiteUrlOf,
   isPullRequestStage,
+  LEGACY_SITE_HOSTNAME,
+  MAIL_HOSTNAME,
   offSiteHref,
   offSiteHrefOn,
   OWNER_WORKERS_SUBDOMAIN,
@@ -454,8 +457,8 @@ export {
   publicOriginOf,
   SITE_HOSTNAME,
   SITE_ORIGIN,
+  SITE_REDIRECT_HOSTNAMES,
   SITE_WORKERS_SUBDOMAIN,
-  SITE_ZONE,
   siteHostsOf,
   siteWorkersSubdomainOf,
   WorkersSubdomain,

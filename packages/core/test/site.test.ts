@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Option, Schema } from "effect";
 
 import {
+  canonicalSiteUrlOf,
   isPullRequestStage,
   offSiteHref,
   offSiteHrefOn,
@@ -16,13 +17,13 @@ const LOCAL = ["localhost:*"];
 
 describe("siteHostsOf", () => {
   it.each([Option.none(), Option.some("acct")])(
-    "trusts exactly https://jobs.rowlandekemezie.com on prod, whatever else is set (%o)",
+    "trusts exactly https://gatechange.dev on prod, whatever else is set (%o)",
     (workersSubdomain) => {
       expect(
         siteHostsOf("prod", { localHosts: LOCAL, workersSubdomain })
       ).toStrictEqual({
-        allowedHosts: ["jobs.rowlandekemezie.com"],
-        fallbackOrigin: Option.some("https://jobs.rowlandekemezie.com"),
+        allowedHosts: ["gatechange.dev"],
+        fallbackOrigin: Option.some("https://gatechange.dev"),
       });
     }
   );
@@ -94,6 +95,36 @@ describe("pull request origins", () => {
   );
 });
 
+describe("canonicalSiteUrlOf", () => {
+  it.each([
+    [
+      "https://jobs.rowlandekemezie.com/jobs/greenhouse%3Aacme%2F1?q=staff&age=30",
+      "https://gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff&age=30",
+    ],
+    [
+      "https://JOBS.rowlandekemezie.com/api/auth/magic-link/verify?token=a%2Bb",
+      "https://gatechange.dev/api/auth/magic-link/verify?token=a%2Bb",
+    ],
+    ["https://jobs.rowlandekemezie.com", "https://gatechange.dev/"],
+    ["https://jobs.rowlandekemezie.com./about", "https://gatechange.dev/about"],
+    ["http://www.gatechange.dev/pricing?", "https://gatechange.dev/pricing"],
+  ])("moves %s to %s on gatechange.dev", (from, to) => {
+    expect(
+      Option.map(canonicalSiteUrlOf(new URL(from)), (url) => url.href)
+    ).toStrictEqual(Option.some(to));
+  });
+
+  it.each([
+    "https://gatechange.dev/jobs/1?q=x",
+    "https://jobs-pr-12.rowland-ekemezie.workers.dev/",
+    "https://evil.jobs.rowlandekemezie.com/",
+    "https://rowlandekemezie.com/",
+    "http://localhost:1337/",
+  ])("serves %s where it is", (from) => {
+    expect(canonicalSiteUrlOf(new URL(from))).toStrictEqual(Option.none());
+  });
+});
+
 describe("own-host links", () => {
   it("drops a listing link to the owner's own Worker when nothing is configured", () => {
     expect(
@@ -101,9 +132,9 @@ describe("own-host links", () => {
         `https://jobs-preview.${OWNER_WORKERS_SUBDOMAIN}.workers.dev/api/auth/magic-link/verify?token=synthetic`
       )
     ).toStrictEqual(Option.none());
-    expect(
-      offSiteHref("https://jobs.rowlandekemezie.com/jobs/1")
-    ).toStrictEqual(Option.none());
+    expect(offSiteHref("https://gatechange.dev/jobs/1")).toStrictEqual(
+      Option.none()
+    );
   });
 
   it("drops a listing link to a self-host's own Worker on its configured subdomain", () => {

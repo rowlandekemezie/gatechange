@@ -2,7 +2,7 @@
 
 Gate Change is a job board for engineering managers, directors, heads of engineering and VPs of engineering. It collects roles from public company job boards and remote-job aggregators, admits roles posted in the last 30 days, keeps each one while its source still lists it, and opens on the freshest, most relevant roles that are remote in Canada, remote in the US, or in Vancouver and BC.
 
-Live at `jobs.rowlandekemezie.com` once deployed. Built on [rat-stack](https://ratstack.sh): Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.
+Live at `gatechange.dev` once deployed. Built on [rat-stack](https://ratstack.sh): Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.
 
 ## How it works
 
@@ -67,21 +67,21 @@ Workers Paid ($5 a month) is recommended. Workers Free also works if you set `IN
 
 Each feature is off when you leave its variables empty. Every variable is described in `.env.example`.
 
-- **Search engines.** Every stage except `prod` sends `noindex`. To be indexed, set `SITE_HOSTNAME` and `SITE_ZONE` in `packages/core/src/site.ts` to a zone on your account, then deploy the `prod` stage as in [Deploying from your machine](#deploying-from-your-machine).
+- **Search engines.** Every stage except `prod` sends `noindex`. To be indexed, set `SITE_HOSTNAME` in `packages/core/src/site.ts` to a zone on your account, empty `SITE_REDIRECT_HOSTNAMES`, then deploy the `prod` stage as in [Deploying from your machine](#deploying-from-your-machine).
 - **AI enrichment.** This stage makes no Workers AI calls until you set `ENRICHMENT_SWEEP_LIMIT` (8 is the production value). `ENRICHMENT_DAILY_NEURONS` caps daily spend. The default cap of 29000 keeps a month under about $10.
 - **GitHub or Google sign-in.** Set both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, or both Google variables. Leave a pair empty to hide that button.
-- **Email sign-in links and saved-search digests.** These need Cloudflare Email Sending on the zone in `SITE_HOSTNAME`. Mail is sent from `sign-in@` and `digest@` that hostname. Without it, the board still works, but emailed sign-in links and digests fail to send.
+- **Email sign-in links and saved-search digests.** These need Cloudflare Email Sending on `MAIL_HOSTNAME` in `packages/core/src/site.ts`. Mail is sent from `sign-in@` and `digest@` that hostname. Without it, the board still works, but emailed sign-in links and digests fail to send.
 - **Paid plans.** Set `BILLING_ENABLED=true` and add a Stripe test key to your Alchemy profile (`pnpm alchemy profile edit --profile mine --add Stripe`). Billing is off by default.
 
 The page footer, the about, contact, privacy and terms pages, and the crawler's user agent still name this deployment. To rebrand, edit `packages/core/src/site.ts`, `apps/web/src/features/information/view.ts`, `apps/web/src/client/board/view.ts` and `packages/job-sources/src/http.ts`.
 
 ## Deploy to Cloudflare
 
-Deploys run from GitHub Actions. Every pull request and push runs the full check, test and build. A push to `main` that passes deploys the `prod` stage and checks that `jobs.rowlandekemezie.com` answers.
+Deploys run from GitHub Actions. Every pull request and push runs the full check, test and build. A push to `main` that passes deploys the `prod` stage and checks that `gatechange.dev` answers and that `jobs.rowlandekemezie.com` redirects to it.
 
 ### One-time setup
 
-1. Make sure `rowlandekemezie.com` is a zone on your Cloudflare account.
+1. Make sure `gatechange.dev` and `rowlandekemezie.com` are zones on your Cloudflare account.
 2. Install and commit the lockfile, since CI installs with `--frozen-lockfile`:
 
    ```sh
@@ -114,7 +114,7 @@ pnpm infra:plan --stage prod
 pnpm infra:deploy --stage prod
 ```
 
-Alchemy creates the D1 database and applies `packages/job-store/migrations/`, deploys `JobsBackend` with its cron trigger, builds the Foldkit site, and attaches `jobs.rowlandekemezie.com`.
+Alchemy creates the D1 database and applies `packages/job-store/migrations/`, deploys `JobsBackend` with its cron trigger, builds the Foldkit site, and attaches `gatechange.dev` with its redirect hosts.
 
 The board fills over the first couple of hours: each cron run fetches 20 due feeds, so all 125 feeds are covered after about seven runs.
 

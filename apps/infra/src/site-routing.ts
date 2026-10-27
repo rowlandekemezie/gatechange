@@ -2,14 +2,14 @@ import {
   previewWorkerName,
   PROD_STAGE,
   SITE_HOSTNAME,
-  SITE_ZONE,
+  SITE_REDIRECT_HOSTNAMES,
 } from "@rat-stack/core";
 import { workerFirstPaths } from "@rat-stack/web/edge-routes";
 
 export const siteRouting = (stage: string) =>
   stage === PROD_STAGE
     ? {
-        domain: { name: SITE_HOSTNAME, zoneName: SITE_ZONE },
+        domain: { aliases: [...SITE_REDIRECT_HOSTNAMES], name: SITE_HOSTNAME },
         workersDev: false,
       }
     : { name: previewWorkerName(stage), workersDev: true };

@@ -7,7 +7,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { handleRoutes } from "../src/route.js";
 
-const ORIGIN = "https://jobs.rowlandekemezie.com";
+const ORIGIN = "https://gatechange.dev";
 
 const accountStore: AccountStore["Service"] = {
   signInOptions: { socialProviders: [] },

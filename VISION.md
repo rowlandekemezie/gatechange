@@ -1,6 +1,6 @@
 # Vision
 
-jobs.rowlandekemezie.com is a job board for engineering leaders who are looking for their next role. It lists engineering manager, director, head of engineering, and VP of engineering openings that are remote in Canada, remote in the US, or based in Vancouver and British Columbia. Every listing is free and public, and every listing links to the original posting.
+Gate Change (gatechange.dev) is a job board for engineering leaders who are looking for their next role. It lists engineering manager, director, head of engineering, and VP of engineering openings that are remote in Canada, remote in the US, or based in Vancouver and British Columbia. Every listing is free and public, and every listing links to the original posting.
 
 The board started as a personal tool. It is becoming a product with a paid tier, Gate Change Pro. Pro sells speed, sharper filters, and company intel. It never sells access to a listing.
 
@@ -45,7 +45,7 @@ The prices are proposals. Changing them needs the owner's sign-off.
 
 **Every source is used within its published terms.** The board reads public job APIs and aggregator feeds. Each one is fetched no more often than its terms allow, identified with the crawler's `USER_AGENT`, linked back to its original posting, and credited where its terms ask for credit. When a source's terms forbid a use, such as charging for its data or putting it behind a login, the board does not make that use. When a source publishes no terms, the board stays close to what the source shows in public and records the gap. That record is research, not legal advice.
 
-**The domain and regions stay.** The product lives on `jobs.rowlandekemezie.com`. Its regions are remote Canada, remote US, and Vancouver and British Columbia. Adding a region or moving to a new brand is a product decision for the owner.
+**The domain and regions stay.** The product lives on `gatechange.dev`, and `jobs.rowlandekemezie.com` redirects there permanently. Its regions are remote Canada, remote US, and Vancouver and British Columbia. Adding a region or moving to a new brand is a product decision for the owner.
 
 ## How it gets built
 

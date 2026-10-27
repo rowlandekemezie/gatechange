@@ -115,7 +115,7 @@ const jsonLdOf = (html: string) =>
 
 const textOf = (html: string) => html.replaceAll(/<[^>]+>/gu, " ");
 
-const SITE = "https://jobs.rowlandekemezie.com";
+const SITE = "https://gatechange.dev";
 
 const OWN_LINKS = [
   `${SITE}/api/auth/magic-link/verify?token=x`,

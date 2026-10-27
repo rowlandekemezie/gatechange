@@ -1,6 +1,6 @@
 # Project context
 
-Pi appends this file to its system prompt for sessions in this repo. It describes jobs.rowlandekemezie.com, a job board for engineering leaders built on the rat-stack foundation.
+Pi appends this file to its system prompt for sessions in this repo. It describes Gate Change (gatechange.dev), a job board for engineering leaders built on the rat-stack foundation.
 
 - Repo law lives in `AGENTS.md`; product intent in `VISION.md`. Read both before substantial work.
 - Validation gate: `pnpm turbo run check test build`. Lefthook runs `pnpm check` and `pnpm test` on commit; CI runs the full gate on a cold cache, and a green push to `main` deploys prod.
