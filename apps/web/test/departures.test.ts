@@ -77,10 +77,20 @@ describe("departures board", () => {
         /<a class="departure-tiles" href="\/jobs\/[^"]+">.*Director of Engineering boarding/su
       );
       expect(html).toContain('href="https://boards.example/boarding"');
-      expect(html).toContain("$250k");
+      expect(html).toContain("$250K+");
       expect(html).toContain("3d ago");
       expect(html).toContain(
         'aria-label="Track Director of Engineering boarding'
+      );
+      const meta = html.slice(html.indexOf('class="departure-meta"'));
+      expect(meta).toMatch(
+        /<a (?=[^>]*aria-label="From )(?=[^>]*class="job-source")/u
+      );
+      expect(meta).toMatch(
+        /<button (?=[^>]*aria-label="Save")(?=[^>]*aria-pressed="false")/u
+      );
+      expect(meta).toMatch(
+        /<button (?=[^>]*aria-label="Applied")(?=[^>]*aria-pressed="false")/u
       );
     })
   );
@@ -104,7 +114,28 @@ describe("departures board", () => {
       },
       "$260K+",
     ],
-    ["a stated range", { salary: "$180k – $210k" }, "$180k+"],
+    [
+      "a single-figure Canadian band",
+      {
+        enrichment: {
+          board: null,
+          enrichedAt: NOW,
+          handsOn: null,
+          model: "test-model",
+          promptVersion: 2,
+          remotePolicy: null,
+          reportsTo: null,
+          salary: { currency: "CAD", max: 220_000, min: 220_000 },
+          seniority: null,
+          teamSize: null,
+        },
+      },
+      "CA$220K+",
+    ],
+    ["a stated range", { salary: "$180k – $210k" }, "$180K+"],
+    ["a currency-coded range", { salary: "USD 325k to 350k" }, "$325K+"],
+    ["a Canadian range", { salary: "CA$166.4K - CA$208K" }, "CA$166K+"],
+    ["unstated figures", { salary: "Competitive" }, "Competitive"],
   ] as const)("tags the role with %s", ([, pay, tag]) =>
     Effect.map(renderBoard([{ ...listed("new"), ...pay }]), (html) => {
       expect(

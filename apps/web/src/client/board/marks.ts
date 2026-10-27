@@ -58,11 +58,40 @@ export const shortlistSize = (model: ModelValue) =>
     Remote: ({ adding, jobs }) => jobs.length + adding.length,
   });
 
+export const lineIcon = (h: HtmlBuilder<MessageValue>, d: string): Html =>
+  h.svg(
+    [h.ViewBox("0 0 20 20"), h.Width("20"), h.Height("20"), h.AriaHidden(true)],
+    [
+      h.path([
+        h.D(d),
+        h.Fill("none"),
+        h.Stroke("currentColor"),
+        h.StrokeWidth("1.8"),
+        h.StrokeLinecap("round"),
+        h.StrokeLinejoin("round"),
+      ]),
+    ]
+  );
+
+const MARK_ICONS: Readonly<Record<MarkKindValue, string>> = {
+  Applied: "M4.5 10.5l3.5 3.5 7.5-8",
+  Saved: "M6 3.5h8v13l-4-3-4 3Z",
+};
+
+const textOf = (kind: MarkKindValue, isOn: boolean) => {
+  if (kind === "Applied") {
+    return "Applied";
+  }
+
+  return isOn ? "Saved" : "Save";
+};
+
 const markButton = (
   h: HtmlBuilder<MessageValue>,
   job: JobValue,
   kind: MarkKindValue,
-  current: Option.Option<StageValue>
+  current: Option.Option<StageValue>,
+  isCompact: boolean
 ) => {
   const isOn = Option.contains(current, kind);
   const label = kind === "Saved" ? "Save" : "Applied";
@@ -72,13 +101,14 @@ const markButton = (
       h.Type("button"),
       h.Class(isOn ? "mark mark-on" : "mark"),
       h.AriaPressed(isOn ? "true" : "false"),
+      ...(isCompact ? [h.AriaLabel(label), h.Title(label)] : []),
       h.OnClick(
         isOn
           ? Message.ClickedClearMark({ id: job.id })
           : Message.ClickedMark({ job, kind })
       ),
     ],
-    [isOn && kind === "Saved" ? "Saved" : label]
+    [isCompact ? lineIcon(h, MARK_ICONS[kind]) : textOf(kind, isOn)]
   );
 };
 
@@ -88,7 +118,8 @@ const isMarkKind = (stage: StageValue): stage is MarkKindValue =>
 export const markButtons = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
-  job: JobValue
+  job: JobValue,
+  isCompact = false
 ): Html => {
   const current = stageOf(model, job.id);
   const label = `Track ${job.title} at ${job.company}`;
@@ -103,8 +134,8 @@ export const markButtons = (
         h.div(
           [h.Class("job-actions"), h.AriaLabel(label)],
           [
-            markButton(h, job, "Saved", current),
-            markButton(h, job, "Applied", current),
+            markButton(h, job, "Saved", current, isCompact),
+            markButton(h, job, "Applied", current, isCompact),
           ]
         ),
       onSome: (stage) =>
