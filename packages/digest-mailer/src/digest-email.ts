@@ -40,7 +40,7 @@ export const unsubscribeLink = (siteOrigin: string, token: string) => {
 const reasonOf = (digest: Digest) =>
   digest.cadence === "Instant"
     ? "You get this within 20 minutes of a new match because you turned on instant alerts for your saved searches."
-    : "You get this weekly because you saved a search on the engineering leadership job board.";
+    : "You get this weekly because you saved a search on Gate Change.";
 
 const instantSubjectOf = (digest: Digest) => {
   const first = digest.jobs[0]?.title ?? "an engineering leadership role";

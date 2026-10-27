@@ -37,7 +37,7 @@ const LABEL_ID = "agent-token-label";
 export const mcpUrlOf = (origin: string) => `${origin}${MCP_PATH}`;
 
 export const addServerCommandOf = (origin: string) =>
-  `claude mcp add --transport http jobs ${mcpUrlOf(origin)}`;
+  `claude mcp add --transport http gate-change ${mcpUrlOf(origin)}`;
 
 export const connectCommandOf = (origin: string, secret: string) =>
   `${addServerCommandOf(origin)} --header "Authorization: Bearer ${secret}"`;

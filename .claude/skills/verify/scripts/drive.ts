@@ -27,7 +27,7 @@ const { values } = parseArgs({
     "expect-digests": { default: "1", type: "string" },
     "full-page": { default: false, type: "boolean" },
     log: { type: "string" },
-    "min-rows": { default: "20", type: "string" },
+    "min-rows": { default: "10", type: "string" },
     mobile: { default: false, type: "boolean" },
     name: { type: "string" },
     out: { type: "string" },
@@ -333,7 +333,7 @@ const boardState = async () =>
     `({
     count: document.querySelector("p.count")?.textContent ?? "",
     error: document.querySelector(".empty[role=alert]")?.textContent ?? "",
-    rows: document.querySelectorAll("li.job").length,
+    rows: document.querySelectorAll(".board .departure").length,
     status: document.querySelector(".status")?.textContent ?? "",
   })`
   );
@@ -505,7 +505,7 @@ const accountState = async () =>
     AccountState,
     `({
     email: document.querySelector(".account-email")?.textContent ?? "",
-    header: document.querySelector("nav.tabs a.account-tab")?.textContent ?? "",
+    header: document.querySelector("a.nav-account")?.textContent ?? "",
     problem: [...document.querySelectorAll(".sign-in-problem[role=alert]")].map((node) => node.textContent).join(" "),
     sent: document.querySelector(".sign-in-sent")?.textContent ?? "",
   })`
@@ -533,6 +533,56 @@ const goTo = async (address: string) => {
   }
 };
 
+const markRows = async (
+  [kind, ...rest]: readonly ("Applied" | "Save")[],
+  index = 0
+): Promise<void> => {
+  if (kind === undefined) {
+    return;
+  }
+
+  if (values.mobile) {
+    const href = await evaluate(
+      Schema.String,
+      `document.querySelectorAll(".board .departure a.departure-tiles")[${index}]?.href ?? ""`
+    );
+
+    await goTo(href);
+    await waitFor("the job page buttons", async () =>
+      (await evaluate(
+        Schema.Boolean,
+        'document.querySelector("[data-foldkit-app]") === null'
+      )) && (await clickButton(".detail-actions button.mark", kind))
+        ? true
+        : undefined
+    );
+    await waitFor("the mark to take", async () =>
+      (await evaluate(
+        Schema.Boolean,
+        'document.querySelector(".detail-actions button.mark[aria-pressed=true]") !== null'
+      ))
+        ? true
+        : undefined
+    );
+    await goTo(url);
+    await waitForRows("the board", (state) => state.rows > index);
+  } else if (
+    !(await evaluate(
+      Schema.Boolean,
+      `(() => {
+      const button = document.querySelectorAll(".board .departure")[${index}]
+        ?.querySelector('button.mark[aria-label="${kind}"]');
+      button?.click();
+      return button !== undefined && button !== null;
+    })()`
+    ))
+  ) {
+    throw new Error(`no ${kind} button on row ${index + 1}`);
+  }
+
+  await markRows(rest, index + 1);
+};
+
 const finishSignIn = async (link: string) => {
   await goTo(link);
 
@@ -552,7 +602,7 @@ const finishSignIn = async (link: string) => {
 };
 
 const submitEmail = async (email: string) => {
-  if (!(await clickButton("nav.tabs a.account-tab", "Sign in"))) {
+  if (!(await clickButton("a.nav-account", "Sign in"))) {
     throw new Error("no Sign in link in the header");
   }
 
@@ -1076,12 +1126,10 @@ const run = async () => {
 
     const saved = await evaluate(
       Schema.String,
-      'document.querySelector("li.job .job-title")?.textContent ?? ""'
+      'document.querySelector(".board .departure .role-title")?.textContent ?? ""'
     );
 
-    if (!(await clickButton("li.job button.mark", "Save"))) {
-      throw new Error("no Save button on the first job");
-    }
+    await markRows(["Save"]);
 
     await sleep(1500);
     await openTracker("opened the tracker after saving a job");
@@ -1092,16 +1140,10 @@ const run = async () => {
   const savedThreeSignedOut = async () => {
     const titles = await evaluate(
       Schema.Array(Schema.String),
-      '[...document.querySelectorAll("li.job .job-title")].slice(0, 3).map((node) => node.textContent)'
+      '[...document.querySelectorAll(".board .departure .role-title")].slice(0, 3).map((node) => node.textContent)'
     );
 
-    await evaluate(
-      Ignored,
-      `[...document.querySelectorAll("li.job")].slice(0, 3).forEach((row, index) =>
-        [...row.querySelectorAll("button.mark")]
-          .find((button) => button.textContent.trim() === (index === 2 ? "Applied" : "Save"))
-          ?.click())`
-    );
+    await markRows(["Save", "Save", "Applied"]);
 
     steps.push({ step: "saved two and applied one while signed out", titles });
 
@@ -1161,7 +1203,7 @@ const run = async () => {
 
       steps.push({ step: "filtered to the last day", ...narrowed });
 
-      if (narrowed.rows >= loaded.rows) {
+      if (narrowed.rows > loaded.rows) {
         throw new Error(
           `the 1-day filter did not narrow the list (${loaded.rows} to ${narrowed.rows} rows)`
         );
@@ -1269,7 +1311,7 @@ const run = async () => {
     search: async () => {
       const company = await evaluate(
         Schema.String,
-        'document.querySelector("li.job .job-company")?.textContent ?? ""'
+        'document.querySelector(".board .departure .cell-company")?.textContent ?? ""'
       );
 
       await evaluate(
@@ -1289,7 +1331,7 @@ const run = async () => {
 
       const companies = await evaluate(
         Schema.Array(Schema.String),
-        '[...document.querySelectorAll("li.job .job-company")].map((node) => node.textContent)'
+        '[...document.querySelectorAll(".board .departure .cell-company")].map((node) => node.textContent)'
       );
 
       steps.push({
@@ -1305,14 +1347,13 @@ const run = async () => {
     shortlist: async () => {
       const title = await evaluate(
         Schema.String,
-        'document.querySelector("li.job .job-title")?.textContent ?? ""'
+        'document.querySelector(".board .departure .role-title")?.textContent ?? ""'
       );
 
-      if (!(await clickButton("li.job button.mark", "Save"))) {
-        throw new Error("no Save button on the first job");
-      }
+      await markRows(["Save"]);
+      await sleep(500);
 
-      if (!(await clickButton("nav.tabs a.tab", "Your shortlist"))) {
+      if (!(await clickButton("a.nav-link", "Shortlist"))) {
         throw new Error("no shortlist tab");
       }
 

@@ -33,7 +33,7 @@ import {
   withStreamableHttpCompatibility,
 } from "./mcp-streamable-http.js";
 
-export const MCP_SERVER_NAME = "jobs-rowlandekemezie";
+export const MCP_SERVER_NAME = "gate-change";
 
 export const MCP_SERVER_VERSION = "1.0.0";
 

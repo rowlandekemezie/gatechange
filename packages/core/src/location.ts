@@ -28,10 +28,10 @@ const britishColumbiaWords =
   /\b(?:vancouver|british columbia|b\.c\.|bc|victoria,?\s+(?:bc|b\.c\.|british columbia)|burnaby|surrey,?\s+bc|richmond,?\s+bc|kelowna|squamish|north vancouver|coquitlam)\b/iu;
 
 const canadaWords =
-  /\b(?:canada|canadian|toronto|montr[eé]al|ottawa|calgary|edmonton|waterloo|kitchener|winnipeg|halifax|quebec|qu[eé]bec|ontario|alberta|manitoba|saskatchewan|nova scotia|new brunswick|regina|saskatoon|victoria|mississauga|markham|gatineau|newfoundland|labrador|prince edward island|charlottetown|fredericton|moncton|yukon|whitehorse|northwest territories|yellowknife|nunavut|iqaluit)\b|,\s*(?:bc|on|qc|ab|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b/iu;
+  /\b(?:canada|canadian|toronto|montr[eé]al|ottawa|calgary|edmonton|waterloo|kitchener|winnipeg|halifax|quebec|qu[eé]bec|ontario|alberta|manitoba|saskatchewan|nova scotia|new brunswick|regina|saskatoon|victoria|mississauga|markham|gatineau|newfoundland|labrador|prince edward island|charlottetown|fredericton|moncton|yukon|whitehorse|northwest territories|yellowknife|nunavut|iqaluit)\b|\(can\)|,\s*(?:bc|on|qc|ab|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b/iu;
 
 const unitedStatesWords =
-  /\b(?:united states|usa|us|u\.s\.a?\.?|america|new york|nyc|san francisco|sf|bay area|seattle|austin|boston|chicago|los angeles|denver|atlanta|miami|dallas|houston|portland|phoenix|philadelphia|washington,?\s+d\.?c\.?|san jose|san diego|palo alto|mountain view|menlo park|sunnyvale|brooklyn|pittsburgh|minneapolis|salt lake city|raleigh|nashville|detroit|columbus|charlotte|alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|wisconsin|wyoming)\b|,\s*(?:al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy|dc)\b/iu;
+  /\b(?:united states|usa|us|u\.s(?:\.a)?|america|new york|nyc|ny|san francisco|sf|bay area|seattle|austin|boston|chicago|los angeles|denver|atlanta|miami|dallas|houston|portland|phoenix|philadelphia|washington|bellevue|santa clara|san jose|san diego|palo alto|mountain view|menlo park|sunnyvale|brooklyn|pittsburgh|minneapolis|salt lake city|raleigh|nashville|detroit|columbus|charlotte|alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|wisconsin|wyoming)\b|,\s*(?:al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy|dc)\b/iu;
 
 const foreignPlaces = [
   "europe",
@@ -363,7 +363,12 @@ const foreignPlaces = [
   "medell[ií]n",
   "montevideo",
   "valletta",
+  "tbilisi",
+  "batumi",
+  "kutaisi",
 ];
+
+const georgiaCountryWords = /\b(?:tbilisi|batumi|kutaisi),?\s+georgia\b/giu;
 
 const foreignWords = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${foreignPlaces.join("|")})(?![\\p{L}\\p{N}])`,
@@ -408,7 +413,7 @@ const signalsOf = (text: string): Signals => {
     foreign: foreignWords.test(text),
     global: globalWords.test(text),
     northAmerica: northAmericaWords.test(text),
-    unitedStates: unitedStatesWords.test(text),
+    unitedStates: unitedStatesWords.test(text.replace(georgiaCountryWords, "")),
   };
 };
 
