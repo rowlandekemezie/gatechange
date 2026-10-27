@@ -8,6 +8,7 @@ import type {
   JobDetailValue,
   ListedJobValue,
   RoleLevelValue,
+  SalaryBandValue,
 } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -456,17 +457,50 @@ const payTag = (
     })
   );
 
-const sourceLink = (h: HtmlBuilder<MessageValue>, job: JobDetailValue): Html =>
+const shortPay = (band: SalaryBandValue) => {
+  const from = new Intl.NumberFormat("en-US", {
+    currency: band.currency,
+    maximumFractionDigits: 0,
+    notation: "compact",
+    style: "currency",
+  }).format(band.min);
+
+  return band.max > band.min ? `${from}+` : from;
+};
+
+const rolePay = (h: HtmlBuilder<MessageValue>, job: ListedJobValue) =>
+  pipe(
+    Option.fromNullishOr(job.enrichment?.salary),
+    Option.map(shortPay),
+    Option.orElse(() =>
+      Option.map(Option.fromNullishOr(job.salary), (salary) => {
+        const [from = salary, ...rest] = salary.split(/\s+(?:–|-|to)\s+/u);
+
+        return rest.length > 0 ? `${from}+` : from;
+      })
+    ),
+    Option.match({
+      onNone: () => [],
+      onSome: (pay) => [h.span([h.Class("role-pay")], [pay])],
+    })
+  );
+
+const sourceLink = (
+  h: HtmlBuilder<MessageValue>,
+  job: JobDetailValue,
+  isCompact = false
+): Html =>
   h.a(
     [
       h.Class("job-source"),
+      ...(isCompact ? [h.AriaLabel(`From ${sourceLabel(job.source)}`)] : []),
       ...Option.toArray(
         Option.map(offSiteHref(job.url), (href) => h.Href(href))
       ),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],
-    [`From ${sourceLabel(job.source)}`]
+    [isCompact ? "↗" : `From ${sourceLabel(job.source)}`]
   );
 
 const postedTime = (
@@ -551,7 +585,10 @@ const departureRow = (
       h.a(
         [h.Class("departure-tiles"), h.Href(jobRouter({ id: job.id }))],
         [
-          h.span([h.Class("tile cell-role")], [job.title]),
+          h.span(
+            [h.Class("tile cell-role")],
+            [h.span([h.Class("role-title")], [job.title]), ...rolePay(h, job)]
+          ),
           h.span([h.Class("tile cell-company")], [job.company]),
           h.span(
             [h.Class("tile cell-where"), h.Title(regionLabel(job.region))],
@@ -569,7 +606,7 @@ const departureRow = (
       ),
       h.div(
         [h.Class("departure-meta")],
-        [...payTag(h, job), sourceLink(h, job), markButtons(model, h, job)]
+        [sourceLink(h, job, true), markButtons(model, h, job)]
       ),
     ]
   );
