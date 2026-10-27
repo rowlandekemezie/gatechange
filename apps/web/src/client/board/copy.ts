@@ -84,6 +84,14 @@ export const regionGroupChip = Match.type<RegionGroupValue>().pipe(
   Match.exhaustive
 );
 
+export const roleHubTitle = ({
+  place,
+  role,
+}: {
+  readonly place: RegionGroupValue;
+  readonly role: RoleLevelValue;
+}) => `${roleLabel(role)} roles ${regionGroupChip(place)}`;
+
 export const regionLabel = Match.type<RegionValue>().pipe(
   Match.when("RemoteCanada", () => "Remote, Canada"),
   Match.when("RemoteNorthAmerica", () => "Remote, US or Canada"),

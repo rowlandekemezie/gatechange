@@ -267,7 +267,7 @@ export const companyJobsContract = defineContract("companyJobs", {
 export const boardStatsContract = defineContract("boardStats", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "Count active roles by region and level, and report the most recent ingest run and feed health",
+    "Count active roles by region, level, region and level together, and the companies with the most open roles, and report the most recent ingest run and feed health",
   failure: JobStoreUnavailable,
   input: Schema.Struct({}),
   output: BoardStats,

@@ -1,4 +1,9 @@
-import { SITE_NAME, SourceName, SourceTerms } from "@rat-stack/core/contracts";
+import {
+  roleLevels,
+  SITE_NAME,
+  SourceName,
+  SourceTerms,
+} from "@rat-stack/core/contracts";
 import type { SourceTermsValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
@@ -33,8 +38,10 @@ import {
   boardUrl,
   canonicalPathOf,
   informationRouter,
+  roleRouter,
   Route,
 } from "../route.js";
+import { roleHubTitle } from "./copy.js";
 import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
@@ -68,6 +75,11 @@ const creditList = (items: readonly (Html | string)[]) =>
     return [index === items.length - 1 ? " and " : ", ", item];
   });
 
+const footerHubs = roleLevels.map((role) => ({
+  place: "RemoteUnitedStates" as const,
+  role,
+}));
+
 const footer = (h: H): Html =>
   h.footer(
     [h.Class("footer")],
@@ -85,6 +97,13 @@ const footer = (h: H): Html =>
           ),
           ". Each listing links to its original posting. Roles leave the board when their company takes them down, and listings unseen for 30 days are removed.",
         ]
+      ),
+      h.p(
+        [],
+        footerHubs.flatMap((hub, index) => [
+          ...(index === 0 ? [] : [" · "]),
+          h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)]),
+        ])
       ),
       h.p(
         [],

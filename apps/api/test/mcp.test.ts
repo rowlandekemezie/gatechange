@@ -180,10 +180,12 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
 
               return Effect.succeed({
                 activeJobs: served(sources).length,
+                companies: [],
                 feedsFailing: current.filter((feed) => feed.failing).length,
                 feedsTotal: current.length,
                 lastRun: null,
                 newToday: 0,
+                placements: [],
                 regions: [],
                 roles: [],
               });
