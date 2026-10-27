@@ -419,6 +419,73 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
+    "stats counts match what the company page and role hub list when sources repeat a role",
+    () =>
+      withStore(
+        Effect.gen(function* duplicatedCounts() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "remoteok:all",
+            [
+              job({
+                feed: "remoteok:all",
+                id: "r:1",
+                source: "RemoteOK",
+                title: "Engineering  Manager",
+              }),
+              job({
+                feed: "remoteok:all",
+                id: "r:2",
+                source: "RemoteOK",
+                title: "Platform  Manager",
+              }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({ feed: "greenhouse:acme", id: "g:1" }),
+              job({
+                feed: "greenhouse:acme",
+                id: "g:2",
+                title: "Platform Manager",
+              }),
+              job({
+                feed: "greenhouse:acme",
+                id: "g:3",
+                title: "Data Manager",
+              }),
+            ],
+            NOW
+          );
+
+          const stats = yield* store.stats(NOW, SourceName.literals, []);
+          const company = yield* store.companyJobs("acme", NOW);
+
+          const hub = yield* store.list(
+            query({ regions: ["RemoteCanada"], roles: ["EngineeringManager"] }),
+            NOW,
+            SourceName.literals
+          );
+
+          expect(company.total).toBe(3);
+          expect(stats.companies).toStrictEqual([
+            { company: "Acme", count: company.total, slug: "acme" },
+          ]);
+          expect(stats.placements).toStrictEqual([
+            {
+              count: hub.total,
+              region: "RemoteCanada",
+              role: "EngineeringManager",
+            },
+          ]);
+        })
+      )
+  );
+
+  it.effect(
     "filters respect age, role, region and a search containing LIKE wildcards",
     () =>
       withStore(

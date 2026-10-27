@@ -1008,7 +1008,7 @@ const boardStats = {
       region: "RemoteNorthAmerica" as const,
       role: "Director" as const,
     },
-    { count: 0, region: "Elsewhere" as const, role: "Director" as const },
+    { count: 2, region: "Elsewhere" as const, role: "Director" as const },
     {
       count: 1,
       region: "BritishColumbia" as const,

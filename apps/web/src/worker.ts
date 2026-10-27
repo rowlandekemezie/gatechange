@@ -107,7 +107,13 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
               : client.listJobs(queryOf(route.filters, 0)),
             stats: client
               .boardStats({})
-              .pipe(Effect.catchCause(() => Effect.succeed(null))),
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("board stats unavailable", cause).pipe(
+                    Effect.as(null)
+                  )
+                )
+              ),
           },
           { concurrency: 2 }
         );

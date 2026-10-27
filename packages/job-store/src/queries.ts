@@ -758,6 +758,15 @@ export const roleCountsStatement = (
   );
 };
 
+const dedupedActive = (where: string) => `WITH ranked AS (
+  SELECT role, region, company, company_slug,
+    ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
+  FROM jobs
+  WHERE ${where}
+), deduped AS (
+  SELECT role, region, company, company_slug FROM ranked WHERE duplicate_rank = 1
+)`;
+
 export const placementCountsStatement = (
   now: number,
   sources: readonly SourceNameValue[]
@@ -769,7 +778,8 @@ export const placementCountsStatement = (
   );
 
   return statement(
-    `SELECT role, region, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY role, region ORDER BY count DESC`,
+    `${dedupedActive(active.where)}
+SELECT role, region, COUNT(*) AS count FROM deduped GROUP BY role, region ORDER BY count DESC`,
     active.params
   );
 };
@@ -787,7 +797,8 @@ export const companyCountsStatement = (
   );
 
   return statement(
-    `SELECT company_slug AS slug, MIN(company) AS company, COUNT(*) AS count FROM jobs WHERE ${active.where} AND company_slug <> '' GROUP BY company_slug ORDER BY count DESC, slug LIMIT ${TOP_COMPANIES}`,
+    `${dedupedActive(active.where)}
+SELECT company_slug AS slug, MIN(company) AS company, COUNT(*) AS count FROM deduped WHERE company_slug <> '' GROUP BY company_slug ORDER BY count DESC, slug LIMIT ${TOP_COMPANIES}`,
     active.params
   );
 };

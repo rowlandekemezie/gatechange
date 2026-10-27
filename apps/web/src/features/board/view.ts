@@ -452,6 +452,7 @@ const browseView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
                     (placement) =>
                       placement.role === role &&
                       placement.region === region &&
+                      region !== "Elsewhere" &&
                       placement.count > 0
                   )
                 ).map((hub) => [
