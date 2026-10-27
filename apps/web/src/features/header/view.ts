@@ -21,22 +21,15 @@ const navLink = (h: H, href: string, isCurrent: boolean, label: string) =>
     [label]
   );
 
-const loopMark = (h: H): Html =>
+const gateChangeMark = (h: H): Html =>
   h.span(
     [h.Class("brand-mark"), h.AriaHidden(true)],
     [
       h.svg(
-        [h.ViewBox("0 0 22 22"), h.Width("22"), h.Height("22")],
+        [h.ViewBox("2 2 12 12"), h.Width("20"), h.Height("20")],
         [
           h.path(
-            [
-              h.D(
-                "M5 8a3.5 3.5 0 1 0 0 7c2 0 3-1.5 6-3.5s4-3.5 6-3.5a3.5 3.5 0 1 1 0 7c-2 0-3-1.5-6-3.5S7 8 5 8Z"
-              ),
-              h.Fill("none"),
-              h.Stroke("currentColor"),
-              h.StrokeWidth("2.2"),
-            ],
+            [h.D("M2 11h4V5h4V2l4 4-4 4V7H8v6H2Z"), h.Fill("currentColor")],
             []
           ),
         ]
@@ -85,7 +78,7 @@ export const siteHeader = (model: ModelValue, h: H): Html =>
     [
       h.a(
         [h.Class("brand"), h.Href(boardUrl(model.filters))],
-        [loopMark(h), h.span([h.Class("brand-name")], [SITE_NAME])]
+        [gateChangeMark(h), h.span([h.Class("brand-name")], [SITE_NAME])]
       ),
       h.nav([h.Class("site-nav"), h.AriaLabel("Site")], navItems(model, h)),
       h.keyed("details")(

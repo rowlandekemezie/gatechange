@@ -898,7 +898,7 @@ a {
 }
 
 .browse-count {
-  color: var(--field);
+  color: var(--ink-soft);
   font-family: var(--mono);
   font-size: 0.75rem;
 }

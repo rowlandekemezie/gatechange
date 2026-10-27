@@ -127,7 +127,7 @@ const publicMeta = (route: RouteValue): PageMeta => {
   if (Schema.is(Route.Pricing)(route)) {
     return {
       description:
-        "Every engineering leadership listing stays free. Compare Jobs Pro plans for faster alerts, salary filters and company intel. Prices in US dollars.",
+        "Every engineering leadership listing stays free. Compare Gate Change Pro plans for faster alerts, salary filters and company intel. Prices in US dollars.",
       jsonLd: Option.none(),
       status: 200,
     };

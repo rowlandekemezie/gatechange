@@ -37,13 +37,13 @@ export const magicLinkEmail = (
   return {
     from,
     html: [
-      "<p>Use this link to sign in to the engineering leadership job board:</p>",
+      "<p>Use this link to sign in to Gate Change, the engineering leadership job board:</p>",
       `<p><a href="${escapeHtml(url)}">Sign in</a></p>`,
       `<p>The link works once and expires in ${MAGIC_LINK_TTL_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
     ].join(""),
-    subject: "Your sign-in link",
+    subject: "Your Gate Change sign-in link",
     text: [
-      "Use this link to sign in to the engineering leadership job board:",
+      "Use this link to sign in to Gate Change, the engineering leadership job board:",
       "",
       url,
       "",

@@ -156,14 +156,14 @@ describe("job page render", () => {
         expect(page.html).toContain("data-foldkit-app");
         expect(page.html).toMatch(/<h1[^>]*>Director of Engineering<\/h1>/u);
         expect(page.html).toContain(
-          "<title>Director of Engineering at Acme &lt;Robotics&gt; · Engineering leadership jobs</title>"
+          "<title>Director of Engineering at Acme &lt;Robotics&gt; · Gate Change</title>"
         );
         expect(page.html).not.toContain("Refreshed every few hours");
         expect(page.html).toContain(
           `<link rel="canonical" href="${ORIGIN}${GREENHOUSE_PATH}"`
         );
         expect(page.html).toContain(
-          '<meta property="og:title" content="Director of Engineering at Acme &lt;Robotics&gt; · Engineering leadership jobs" />'
+          '<meta property="og:title" content="Director of Engineering at Acme &lt;Robotics&gt; · Gate Change" />'
         );
         expect(page.html).toContain('href="/companies/acme-robotics"');
       })
@@ -273,7 +273,7 @@ describe("job page render", () => {
       Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
         expect(html).toContain('<meta property="og:type" content="website" />');
         expect(html).toContain(
-          '<meta property="og:site_name" content="Engineering leadership jobs" />'
+          '<meta property="og:site_name" content="Gate Change" />'
         );
         expect(html).toContain(
           `<meta property="og:image" content="${ORIGIN}/og.png" />`
@@ -305,7 +305,7 @@ describe("job page render", () => {
       ({ html }) => {
         expect(html).not.toMatch(/<[^>]*\sonload="/u);
         expect(html).toContain(
-          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1) · Engineering leadership jobs" />'
+          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1) · Gate Change" />'
         );
       }
     )
@@ -342,7 +342,7 @@ describe("job page render", () => {
       ),
       ({ html }) => {
         expect(html).toContain(
-          "<title>Lead $` ops at Cash $&amp; Carry $' · Engineering leadership jobs</title>"
+          "<title>Lead $` ops at Cash $&amp; Carry $' · Gate Change</title>"
         );
         expect(html).toContain(
           '<meta name="description" content="Director role at Cash $&amp; Carry $\', Remote, Canada" />'
@@ -481,9 +481,7 @@ describe("public landing hydration", () => {
     () =>
       Effect.map(render("/pricing", Preload.Nothing()), (page) => {
         expect(page.status).toBe(200);
-        expect(page.html).toContain(
-          "<title>Pro plans · Engineering leadership jobs</title>"
-        );
+        expect(page.html).toContain("<title>Pro plans · Gate Change</title>");
         expect(page.html).toContain("Pro for engineering leaders");
         expect(page.html).toContain(
           "Every engineering leadership listing stays free"
@@ -699,7 +697,7 @@ describe("listing page render", () => {
       ({ html, status }) => {
         expect(status).toBe(200);
         expect(html).toContain(
-          "<title>Engineering leadership roles at Acme &lt;Robotics&gt; · Engineering leadership jobs</title>"
+          "<title>Engineering leadership roles at Acme &lt;Robotics&gt; · Gate Change</title>"
         );
         expect(html).toContain(
           `<link rel="canonical" href="${ORIGIN}/companies/acme-robotics"`
@@ -727,7 +725,7 @@ describe("listing page render", () => {
       ({ html, status }) => {
         expect(status).toBe(200);
         expect(html).toContain(
-          "<title>Director roles remote in Canada · Engineering leadership jobs</title>"
+          "<title>Director roles remote in Canada · Gate Change</title>"
         );
         expect(html).toContain(
           `<link rel="canonical" href="${ORIGIN}/roles/director/remote-canada"`
@@ -1100,7 +1098,7 @@ describe("home page render", () => {
         expect(html.match(/<h1[\s>]/gu)).toHaveLength(1);
         expect(html).toMatch(/<h1[^>]*>Your next move is on the board.<\/h1>/u);
         expect(html).toContain(
-          `claude mcp add --transport http jobs ${ORIGIN}/mcp`
+          `claude mcp add --transport http gate-change ${ORIGIN}/mcp`
         );
         expect(html).toContain(
           'href="https://github.com/rowlandekemezie/jobs"'

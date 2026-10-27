@@ -8,7 +8,7 @@ export const SITE_ZONE = "rowlandekemezie.com";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
 
-export const SITE_NAME = "Engineering leadership jobs";
+export const SITE_NAME = "Gate Change";
 
 export const SOURCE_REPOSITORY_URL = "https://github.com/rowlandekemezie/jobs";
 
