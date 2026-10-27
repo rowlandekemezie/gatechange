@@ -213,7 +213,32 @@ describe("URL-driven board state", () => {
     expect(named(elsewhere, "PushUrl")).toHaveLength(1);
   });
 
-  it("a link to a fragment scrolls to it after navigating", () => {
+  it("a link to another page lands at the top while Back and same-page links keep the scroll", () => {
+    const clicked = sent(
+      started("/"),
+      Message.ClickedLink({
+        request: UrlRequest.Internal({ url: urlAt("/jobs/abc") }),
+      })
+    );
+
+    expect(named(clicked, "ScrollToTop")).toHaveLength(0);
+
+    const landed = sent(clicked, urlChange("/jobs/abc"));
+
+    expect(named(landed, "ScrollToTop")).toHaveLength(1);
+    expect(named(sent(landed, urlChange("/")), "ScrollToTop")).toHaveLength(0);
+
+    const resorted = sentAll(started("/"), [
+      Message.ClickedLink({
+        request: UrlRequest.Internal({ url: urlAt("/?sort=newest") }),
+      }),
+      urlChange("/?sort=newest"),
+    ]);
+
+    expect(named(resorted, "ScrollToTop")).toHaveLength(0);
+  });
+
+  it("a link to a fragment scrolls to it once the page lands", () => {
     const clicked = sent(
       started("/shortlist"),
       Message.ClickedLink({
@@ -222,19 +247,23 @@ describe("URL-driven board state", () => {
     );
 
     expect(named(clicked, "PushUrl")).toStrictEqual([
-      expect.objectContaining({ args: { url: "/" } }),
+      expect.objectContaining({ args: { url: "/#agents" } }),
     ]);
-    expect(named(clicked, "ScrollToFragment")).toStrictEqual([
+
+    const landed = sent(clicked, urlChange("/#agents"));
+
+    expect(named(landed, "ScrollToFragment")).toStrictEqual([
       expect.objectContaining({ args: { fragment: "agents" } }),
     ]);
+    expect(named(landed, "ScrollToTop")).toHaveLength(0);
     expect(
       named(
-        sent(
-          started("/"),
+        sentAll(started("/"), [
           Message.ClickedLink({
             request: UrlRequest.Internal({ url: urlAt("/shortlist") }),
-          })
-        ),
+          }),
+          urlChange("/shortlist"),
+        ]),
         "ScrollToFragment"
       )
     ).toHaveLength(0);

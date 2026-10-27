@@ -7,11 +7,7 @@ import type {
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
-import {
-  regionGroupChip,
-  roleCount,
-  roleLabel,
-} from "../../client/board/copy.js";
+import { roleCount, roleHubTitle } from "../../client/board/copy.js";
 import { defaultFilters, regionGroups } from "../../client/board/filters.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
@@ -36,7 +32,7 @@ export const listingHeading = (
 ) =>
   Schema.is(Route.Company)(route)
     ? `Engineering leadership roles at ${companyNameOf(route.slug, jobs)}`
-    : `${roleLabel(route.role)} roles ${regionGroupChip(route.place)}`;
+    : roleHubTitle(route);
 
 const boardLinkOf = (route: ListingRouteValue) =>
   Schema.is(Route.Role)(route)

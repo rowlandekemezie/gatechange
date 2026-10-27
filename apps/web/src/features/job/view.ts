@@ -12,6 +12,7 @@ import {
   postedAgo,
   regionLabel,
   remotePolicyLabel,
+  roleHubTitle,
   seniorityLabel,
   sourceLabel,
   teamSizeLabel,
@@ -21,12 +22,44 @@ import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { boardUrl, companyRouter } from "../../client/route.js";
+import { roleHubsWhere } from "../../client/listing.js";
+import { boardUrl, companyRouter, roleRouter } from "../../client/route.js";
 
 const backLink = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.a(
     [h.Class("back"), h.Href(boardUrl(model.filters))],
     ["Back to open roles"]
+  );
+
+const moreLinks = (h: HtmlBuilder<MessageValue>, job: JobDetailValue): Html =>
+  h.nav(
+    [h.Class("detail-more"), h.AriaLabel("More roles like this")],
+    [
+      h.ul(
+        [],
+        [
+          ...Option.match(companySlugOf(job.company), {
+            onNone: () => [],
+            onSome: (slug) => [
+              h.li(
+                [],
+                [
+                  h.a(
+                    [h.Href(companyRouter({ slug }))],
+                    [`More at ${job.company}`]
+                  ),
+                ]
+              ),
+            ],
+          }),
+          ...roleHubsWhere(
+            (role, region) => role === job.role && region === job.region
+          ).map((hub) =>
+            h.li([], [h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)])])
+          ),
+        ]
+      ),
+    ]
   );
 
 const fact = <A>(
@@ -163,6 +196,7 @@ const foundView = (
           markButtons(model, h, job),
         ]
       ),
+      moreLinks(h, job),
     ]
   );
 };

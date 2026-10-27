@@ -25,4 +25,8 @@ export const workerFirstPaths = routePrefixes.flatMap(([prefix]) => [
 
 export const PRIVATE_CACHE_CONTROL = "private, no-store";
 
+export const HASHED_ASSET_PATHS = "/assets/*";
+
+export const HASHED_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
 export const PRIVATE_REFERRER_POLICY = "no-referrer";

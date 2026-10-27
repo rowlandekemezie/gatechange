@@ -25,6 +25,7 @@ import {
   regionLabel,
   roleChip,
   roleCount,
+  roleHubTitle,
   seniorityChip,
   sourceLabel,
   statusLabel,
@@ -47,7 +48,13 @@ import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { jobRouter, pricingRouter } from "../../client/route.js";
+import { roleHubsWhere } from "../../client/listing.js";
+import {
+  companyRouter,
+  jobRouter,
+  pricingRouter,
+  roleRouter,
+} from "../../client/route.js";
 import { addServerCommandOf } from "../agent-tokens/view.js";
 import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
@@ -408,6 +415,66 @@ export const boardMasthead = (
     ]
   );
 
+const browseList = (
+  h: HtmlBuilder<MessageValue>,
+  title: string,
+  items: readonly (readonly (Html | string)[])[]
+): Html =>
+  h.div(
+    [h.Class("browse-group")],
+    [
+      h.h3([h.Class("browse-label")], [title]),
+      h.ul(
+        [h.Class("browse-links")],
+        items.map((item) => h.li([], item))
+      ),
+    ]
+  );
+
+const browseView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  StatsState.match<Html>(model.stats, {
+    Loaded: ({ stats }) =>
+      h.nav(
+        [h.Class("browse"), h.AriaLabelledBy("browse-title")],
+        [
+          h.h2(
+            [h.Id("browse-title"), h.Class("browse-title")],
+            ["Browse by role and place"]
+          ),
+          h.div(
+            [h.Class("browse-groups")],
+            [
+              browseList(
+                h,
+                "Role hubs",
+                roleHubsWhere((role, region) =>
+                  stats.placements.some(
+                    (placement) =>
+                      placement.role === role &&
+                      placement.region === region &&
+                      region !== "Elsewhere" &&
+                      placement.count > 0
+                  )
+                ).map((hub) => [
+                  h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)]),
+                ])
+              ),
+              browseList(
+                h,
+                "Most open roles",
+                stats.companies.map(({ company, count, slug }) => [
+                  h.a([h.Href(companyRouter({ slug }))], [company]),
+                  " ",
+                  h.span([h.Class("browse-count")], [String(count)]),
+                ])
+              ),
+            ]
+          ),
+        ]
+      ),
+    Unavailable: () => h.empty,
+  });
+
 export const boardAfterword = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>
@@ -415,6 +482,7 @@ export const boardAfterword = (
   h.div(
     [h.Class("afterword")],
     [
+      browseView(model, h),
       h.section(
         [h.Id("agents"), h.Class("agents"), h.AriaLabelledBy("agents-title")],
         [

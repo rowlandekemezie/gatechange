@@ -758,6 +758,51 @@ export const roleCountsStatement = (
   );
 };
 
+const dedupedActive = (where: string) => `WITH ranked AS (
+  SELECT role, region, company, company_slug,
+    ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
+  FROM jobs
+  WHERE ${where}
+), deduped AS (
+  SELECT role, region, company, company_slug FROM ranked WHERE duplicate_rank = 1
+)`;
+
+export const placementCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `${dedupedActive(active.where)}
+SELECT role, region, COUNT(*) AS count FROM deduped GROUP BY role, region ORDER BY count DESC`,
+    active.params
+  );
+};
+
+export const TOP_COMPANIES = 12;
+
+export const companyCountsStatement = (
+  now: number,
+  sources: readonly SourceNameValue[]
+) => {
+  const active = servedJobsSince(
+    "posted_at",
+    now - MAX_AGE_DAYS * DAY_MILLIS,
+    sources
+  );
+
+  return statement(
+    `${dedupedActive(active.where)}
+SELECT company_slug AS slug, MIN(company) AS company, COUNT(*) AS count FROM deduped WHERE company_slug <> '' GROUP BY company_slug ORDER BY count DESC, slug LIMIT ${TOP_COMPANIES}`,
+    active.params
+  );
+};
+
 export const feedHealthStatement = (catalogKeys: readonly string[]) =>
   statement(
     "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN consecutive_failures > 0 THEN 1 ELSE 0 END), 0) AS failing FROM feeds WHERE key IN (SELECT value FROM json_each(?))",

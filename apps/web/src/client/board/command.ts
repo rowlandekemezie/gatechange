@@ -5,7 +5,7 @@ import {
 } from "@rat-stack/core/contracts";
 import type { TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Effect, Option, pipe, Predicate, Schema } from "effect";
-import { Command, Dom } from "foldkit";
+import { Command, Dom, Render } from "foldkit";
 import { load, pushUrl, replaceUrl } from "foldkit/navigation";
 
 import { collectListing, ListingRoute } from "../listing.js";
@@ -87,6 +87,18 @@ export const PushUrl = Command.define("PushUrl", {
   args: { url: Schema.String },
   execute: ({ url }) =>
     pushUrl(url).pipe(Effect.as(Message.CompletedNavigation())),
+  messages: [Message.CompletedNavigation],
+});
+
+export const ScrollToTop = Command.define("ScrollToTop", {
+  execute: Render.afterCommit.pipe(
+    Effect.andThen(
+      Effect.sync(() => {
+        window.scrollTo(0, 0);
+      })
+    ),
+    Effect.as(Message.CompletedNavigation())
+  ),
   messages: [Message.CompletedNavigation],
 });
 

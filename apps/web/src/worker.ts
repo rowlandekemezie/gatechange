@@ -8,6 +8,7 @@ import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
 import {
   edgeRouteOf,
+  HASHED_ASSET_CACHE_CONTROL,
   PRIVATE_CACHE_CONTROL,
   PRIVATE_REFERRER_POLICY,
 } from "./edge-routes.js";
@@ -92,7 +93,8 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
     Effect.gen(function* fetchPreload() {
       if (
         Schema.is(Route.Pricing)(route) ||
-        Schema.is(Route.Information)(route)
+        Schema.is(Route.Information)(route) ||
+        Schema.is(Route.NotFound)(route)
       ) {
         return Preload.Nothing();
       }
@@ -100,11 +102,25 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
       const client = yield* clientOf(backend);
 
       if (Schema.is(Route.Board)(route)) {
-        const page = hasNoSelection(route.filters)
-          ? { generatedAt: 0, jobs: [], total: 0 }
-          : yield* client.listJobs(queryOf(route.filters, 0));
+        const { page, stats } = yield* Effect.all(
+          {
+            page: hasNoSelection(route.filters)
+              ? Effect.succeed({ generatedAt: 0, jobs: [], total: 0 })
+              : client.listJobs(queryOf(route.filters, 0)),
+            stats: client
+              .boardStats({})
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("board stats unavailable", cause).pipe(
+                    Effect.as(null)
+                  )
+                )
+              ),
+          },
+          { concurrency: 2 }
+        );
 
-        return Preload.Board({ ...page, filters: route.filters });
+        return Preload.Board({ ...page, filters: route.filters, stats });
       }
 
       if (Schema.is(Route.Job)(route)) {
@@ -203,13 +219,80 @@ const serveSitemap = (
     )
   );
 
+const noindex = (response: Response) => {
+  const copy = new Response(response.body, response);
+
+  copy.headers.set("x-robots-tag", "noindex");
+
+  return copy;
+};
+
+const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "ref"]);
+
+const isTrackingParam = (name: string) =>
+  TRACKING_PARAMS.has(name) || name.startsWith("utm_");
+
+const siteUrlOf = (request: Request) => {
+  const url = new URL(request.url);
+  const tracking = [...url.searchParams.keys()].filter(isTrackingParam);
+
+  for (const name of tracking) {
+    url.searchParams.delete(name);
+  }
+
+  return url;
+};
+
+const FILE_PATH = /\.[^/]*$/u;
+
+const fetchAsset = (bindings: EdgeBindings, input: Request | URL) =>
+  // @effect-diagnostics-next-line asyncFunction:off -- The ASSETS binding is Promise-based.
+  Effect.promise(async () => await bindings.ASSETS.fetch(input));
+
+const serveUnmatched = (
+  bindings: EdgeBindings,
+  request: Request,
+  url: URL,
+  lifetime: Lifetime
+) =>
+  Effect.gen(function* serveUnmatchedPath() {
+    const asset = yield* fetchAsset(bindings, request);
+
+    if (asset.ok && url.pathname.startsWith("/assets/")) {
+      const immutable = new Response(asset.body, asset);
+
+      immutable.headers.set("cache-control", HASHED_ASSET_CACHE_CONTROL);
+
+      return immutable;
+    }
+
+    if (asset.status !== 404 || FILE_PATH.test(url.pathname)) {
+      return asset;
+    }
+
+    const unknown = Option.exists(fromString(url.href), (parsed) =>
+      Schema.is(Route.NotFound)(routeOfUrl(parsed))
+    );
+
+    const page = unknown
+      ? yield* servePage(bindings, request, url, lifetime)
+      : Option.none<Response>();
+
+    if (Option.isSome(page)) {
+      return page.value;
+    }
+
+    const shell = yield* fetchAsset(bindings, new URL("/", url.origin));
+
+    return isPage(url.pathname) ? shell : noindex(shell);
+  });
+
 const serveSite = (
   request: Request,
+  url: URL,
   bindings: EdgeBindings,
   lifetime: Lifetime
 ): Effect.Effect<Option.Option<Response>> => {
-  const url = new URL(request.url);
-
   if (url.pathname === "/robots.txt") {
     return Effect.succeedSome(
       respond(
@@ -266,14 +349,6 @@ const tooManyAgentCalls = (request: Request) =>
     { headers: { "retry-after": String(RETRY_AFTER_SECONDS) }, status: 429 }
   );
 
-const noindex = (response: Response) => {
-  const copy = new Response(response.body, response);
-
-  copy.headers.set("x-robots-tag", "noindex");
-
-  return copy;
-};
-
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
   fetch: async (
@@ -288,7 +363,8 @@ export default {
     }
 
     const bindings: EdgeBindings = { ...environment, BACKEND: backend };
-    const route = edgeRouteOf(new URL(request.url).pathname);
+    const url = siteUrlOf(request);
+    const route = edgeRouteOf(url.pathname);
 
     if (route === "agent") {
       return withoutSharedCache(
@@ -305,20 +381,23 @@ export default {
 
     const served =
       route === "public"
-        ? await Effect.runPromise(serveSite(request, bindings, lifetime))
+        ? await Effect.runPromise(serveSite(request, url, bindings, lifetime))
         : Option.none<Response>();
 
     const response = withoutSharedCache(
       route,
       Option.isSome(served)
         ? served.value
-        : await bindings.ASSETS.fetch(request)
+        : await Effect.runPromise(
+            serveUnmatched(bindings, request, url, lifetime)
+          )
     );
 
-    const url = new URL(request.url);
     const filteredBoard = url.pathname === "/" && url.search !== "";
 
-    return bindings.SITE_INDEXING === "index" && !filteredBoard
+    return bindings.SITE_INDEXING === "index" &&
+      !filteredBoard &&
+      response.status !== 404
       ? response
       : noindex(response);
   },
