@@ -190,11 +190,14 @@ const upstreamSpy = () =>
     });
   });
 
-const ingest = (path: string, init: RequestInit = {}) =>
+const batchFor = (key: string) => JSON.stringify({ api_key: key, batch: [] });
+
+const ingest = (path: string, init: RequestInit = {}, body = batchFor(KEY)) =>
   new Request(`${ORIGIN}/ingest${path}`, {
-    body: init.method === "GET" ? null : '{"batch":[]}',
+    body: init.method === "GET" ? null : body,
     headers: {
       authorization: "Bearer member-token",
+      "content-length": String(body.length),
       "content-type": "application/json",
       cookie: "better-auth.session_token=secret",
     },
@@ -249,6 +252,44 @@ describe("ingest proxy", () => {
       expect(read.status).toBe(405);
       expect(upstream).not.toHaveBeenCalled();
     })
+  );
+
+  it.effect(
+    "relays only this project's events and refuses oversized or encoded bodies",
+    () =>
+      Effect.gen(function* proxyGuards() {
+        const upstream = upstreamSpy();
+
+        const foreign = yield* proxyIngest(
+          ingest("/e/", {}, batchFor("phc_someoneElsesKey99")),
+          configured,
+          upstream
+        );
+
+        const oversized = yield* proxyIngest(
+          ingest("/e/", {
+            headers: { "content-length": String(1024 * 1024) },
+          }),
+          configured,
+          upstream
+        );
+
+        const encoded = yield* proxyIngest(
+          ingest("/e/", {
+            headers: {
+              "content-encoding": "gzip",
+              "content-length": "10",
+            },
+          }),
+          configured,
+          upstream
+        );
+
+        expect(foreign.status).toBe(403);
+        expect(oversized.status).toBe(413);
+        expect(encoded.status).toBe(415);
+        expect(upstream).not.toHaveBeenCalled();
+      })
   );
 
   it.effect("is a no-op without PostHog config", () =>

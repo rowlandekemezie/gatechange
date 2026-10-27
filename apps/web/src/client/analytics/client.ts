@@ -308,7 +308,12 @@ export class Analytics extends Context.Service<Analytics, typeof disabled>()(
   "@rat-stack/web/Analytics"
 ) {
   static readonly layer = (campaign: Properties) =>
-    Layer.effect(this, browserAnalytics(campaign)).pipe(
+    Layer.effect(
+      this,
+      browserAnalytics(campaign).pipe(
+        Effect.catchDefect(() => Effect.succeed(disabled))
+      )
+    ).pipe(
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(
         Layer.succeed(FetchHttpClient.RequestInit, {

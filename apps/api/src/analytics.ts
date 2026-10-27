@@ -72,6 +72,7 @@ export const postHogCapture =
               method: "POST",
             })
         ).pipe(
+          Effect.timeout("5 seconds"),
           Effect.tapError((failure) =>
             Effect.logWarning("analytics capture failed", failure)
           ),

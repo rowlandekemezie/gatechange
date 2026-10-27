@@ -1,6 +1,6 @@
 import { postHogConfigOf, postHogHostOf } from "@rat-stack/core";
 import type { PostHogConfigValue } from "@rat-stack/core";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { ANALYTICS_KEY_META, INGEST_PREFIX } from "../edge-routes.js";
 
@@ -20,9 +20,21 @@ export const INGEST_PATHS: ReadonlySet<string> = new Set([
   "/i/v0/e/",
 ]);
 
-const FORWARDED_HEADERS = ["content-encoding", "content-type"];
-
 const MAX_BODY_BYTES = 512 * 1024;
+
+const ProjectKeyed = Schema.fromJsonString(
+  Schema.Struct({
+    api_key: Schema.optional(Schema.String),
+    token: Schema.optional(Schema.String),
+  })
+);
+
+const keyOfBody = (body: string) =>
+  Schema.decodeUnknownOption(ProjectKeyed)(body).pipe(
+    Option.flatMap(({ api_key: apiKey, token }) =>
+      Option.fromNullishOr(apiKey ?? token)
+    )
+  );
 
 const NO_STORE = "no-store";
 
@@ -46,23 +58,23 @@ export const proxyIngest = (
       return refuse(405);
     }
 
-    const body = yield* Effect.promise(
-      // @effect-diagnostics-next-line asyncFunction:off -- The Fetch API body reader is Promise-based.
-      async () => await request.arrayBuffer()
-    );
+    const length = Number(request.headers.get("content-length") ?? Number.NaN);
 
-    if (body.byteLength > MAX_BODY_BYTES) {
+    if (!Number.isFinite(length) || length > MAX_BODY_BYTES) {
       return refuse(413);
     }
 
-    const headers = new Headers();
+    if (request.headers.has("content-encoding")) {
+      return refuse(415);
+    }
 
-    for (const name of FORWARDED_HEADERS) {
-      const value = request.headers.get(name);
+    const body = yield* Effect.promise(
+      // @effect-diagnostics-next-line asyncFunction:off -- The Fetch API body reader is Promise-based.
+      async () => await request.text()
+    );
 
-      if (value !== null) {
-        headers.set(name, value);
-      }
+    if (!Option.contains(keyOfBody(body), config.value.key)) {
+      return refuse(403);
     }
 
     const upstream = yield* Effect.promise(
@@ -71,18 +83,20 @@ export const proxyIngest = (
         await fetchUpstream(
           new Request(`${postHogHostOf(config.value)}${path}${url.search}`, {
             body,
-            headers,
+            headers: { "content-type": "application/json" },
             method: "POST",
           })
         )
     );
 
-    const response = new Response(upstream.body, upstream);
-
-    response.headers.delete("set-cookie");
-    response.headers.set("cache-control", NO_STORE);
-
-    return response;
+    return new Response(upstream.body, {
+      headers: {
+        "cache-control": NO_STORE,
+        "content-type":
+          upstream.headers.get("content-type") ?? "application/json",
+      },
+      status: upstream.status,
+    });
   }).pipe(Effect.catchDefect(() => Effect.succeed(refuse(502))));
 
 export const withAnalyticsKey = (
@@ -109,5 +123,6 @@ export const withAnalyticsKey = (
           tagged.headers.delete("content-length");
 
           return tagged;
-        })
+        }),
+        Effect.catchCause(() => Effect.succeed(response))
       );
