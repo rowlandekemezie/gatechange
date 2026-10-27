@@ -235,7 +235,8 @@ export const renderPage = (
             rendered.title,
             rendered.canonical,
             meta,
-            Schema.is(Route.Board)(route) && url.search !== "",
+            (Schema.is(Route.Board)(route) && url.search !== "") ||
+              meta.status === 404,
             url.origin
           )
         ),
