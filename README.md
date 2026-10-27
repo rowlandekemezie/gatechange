@@ -1,6 +1,6 @@
-# Engineering leadership jobs
+# Gate Change
 
-A job board for engineering managers, directors, heads of engineering and VPs of engineering. It collects roles from public company job boards and remote-job aggregators, admits roles posted in the last 30 days, keeps each one while its source still lists it, and opens on the freshest, most relevant roles that are remote in Canada, remote in the US, or in Vancouver and BC.
+Gate Change is a job board for engineering managers, directors, heads of engineering and VPs of engineering. It collects roles from public company job boards and remote-job aggregators, admits roles posted in the last 30 days, keeps each one while its source still lists it, and opens on the freshest, most relevant roles that are remote in Canada, remote in the US, or in Vancouver and BC.
 
 Live at `jobs.rowlandekemezie.com` once deployed. Built on [rat-stack](https://ratstack.sh): Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.
 
