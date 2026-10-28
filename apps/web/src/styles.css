@@ -1635,11 +1635,15 @@ a {
 
 .board-head {
   margin-right: calc(var(--actions) + 0.5rem);
-  padding: 0 0.5rem 0.75rem;
+  padding: 0 0 0.75rem;
   color: var(--ink-soft);
   font-size: 0.75rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.board-head > span {
+  padding: 0 0.5rem;
 }
 
 .board .day + .day {
@@ -1691,21 +1695,24 @@ a {
   display: flex;
   gap: 0.625rem;
   align-items: baseline;
+  white-space: normal;
 }
 
 .role-title {
+  display: -webkit-box;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .role-pay {
   flex: none;
-  max-width: 8rem;
-  overflow: hidden;
   color: var(--new-ink);
   font-size: 0.8125rem;
-  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .departure-tiles:active {
@@ -1853,6 +1860,10 @@ a {
 
   .tile.cell-role {
     display: block;
+  }
+
+  .role-title {
+    display: inline;
   }
 
   .role-pay {
