@@ -5,7 +5,6 @@ export const CompanyAts = Schema.Literals([
   "lever",
   "ashby",
   "workable",
-  "smartrecruiters",
 ]);
 
 export const CompanyBoard = Schema.Struct({
@@ -159,7 +158,6 @@ export const companyBoards: readonly CompanyBoardValue[] = [
   { ats: "lever", name: "EQ Bank", slug: "eqbank" },
   { ats: "lever", name: "Equativ", slug: "equativ" },
   { ats: "greenhouse", name: "Everpure", slug: "purestorage" },
-  { ats: "smartrecruiters", name: "Experian", slug: "Experian" },
   { ats: "lever", name: "Extreme Networks", slug: "extremenetworks" },
   { ats: "greenhouse", name: "Faire", slug: "faire" },
   { ats: "greenhouse", name: "fairlife", slug: "fairlife" },
@@ -266,7 +264,6 @@ export const companyBoards: readonly CompanyBoardValue[] = [
   { ats: "greenhouse", name: "Lexington Medical", slug: "lexingtonmedical" },
   { ats: "ashby", name: "Lightfield", slug: "lightfield" },
   { ats: "ashby", name: "Linear", slug: "linear" },
-  { ats: "smartrecruiters", name: "LinkedIn", slug: "LinkedIn3" },
   {
     ats: "ashby",
     name: "LiveView Technologies",
@@ -482,7 +479,6 @@ export const companyBoards: readonly CompanyBoardValue[] = [
   { ats: "ashby", name: "Wayve", slug: "wayve" },
   { ats: "ashby", name: "Wealthsimple", slug: "wealthsimple" },
   { ats: "ashby", name: "Webflow", slug: "webflow" },
-  { ats: "smartrecruiters", name: "Western Digital", slug: "WesternDigital" },
   { ats: "ashby", name: "WHOOP", slug: "whoop" },
   { ats: "greenhouse", name: "Wikimedia", slug: "wikimedia" },
   { ats: "greenhouse", name: "Wise", slug: "wise" },
