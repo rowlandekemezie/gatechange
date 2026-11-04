@@ -1,4 +1,4 @@
-import { SITE_NAME, SOURCE_REPOSITORY_URL } from "@rat-stack/core/contracts";
+import { SITE_NAME } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
@@ -60,9 +60,7 @@ const navItems = (model: ModelValue, h: H): readonly Html[] => [
     Schema.is(Route.Board)(model.route),
     "Roles"
   ),
-  navLink(h, `${boardUrl(model.filters)}#agents`, false, "For agents"),
   planLink(model.billing, Schema.is(Route.Pricing)(model.route), h),
-  navLink(h, SOURCE_REPOSITORY_URL, false, "GitHub"),
   navLink(
     h,
     shortlistRouter(),

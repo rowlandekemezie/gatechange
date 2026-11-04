@@ -1,6 +1,7 @@
 import {
   roleLevels,
   SITE_NAME,
+  SOURCE_REPOSITORY_URL,
   SourceName,
   SourceTerms,
 } from "@rat-stack/core/contracts";
@@ -80,7 +81,7 @@ const footerHubs = roleLevels.map((role) => ({
   role,
 }));
 
-const footer = (h: H): Html =>
+const footer = (model: ModelValue, h: H): Html =>
   h.footer(
     [h.Class("footer")],
     [
@@ -111,6 +112,10 @@ const footer = (h: H): Html =>
           ...(["About", "Privacy", "Terms", "Contact"] as const).flatMap(
             (page) => [h.a([h.Href(informationRouter(page))], [page]), " · "]
           ),
+          h.a([h.Href(`${boardUrl(model.filters)}#agents`)], ["For agents"]),
+          " · ",
+          h.a([h.Href(SOURCE_REPOSITORY_URL)], ["GitHub"]),
+          " · ",
           h.a(
             [h.Href("https://rowlandekemezie.com")],
             ["Made by Rowland Ekemezie"]
@@ -209,7 +214,7 @@ export const view = (model: ModelValue, h: H): Document =>
         ...(Schema.is(Route.Board)(model.route)
           ? [boardAfterword(model, h)]
           : []),
-        footer(h),
+        footer(model, h),
       ]
     ),
     title: brandedTitle(

@@ -686,6 +686,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         billing: billing.model,
         draftSearch: "",
         filters: defaultFilters,
+        filtersOpen: false,
         generation: 0,
         intel: IntelState.NotAsked(),
         job: JobState.NotAsked(),
@@ -718,6 +719,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
       ),
     ],
     model: modifyFields(routed.model, {
+      filtersOpen: () => hasProSelection(routed.model.filters),
       proFiltersOpen: () => hasProSelection(routed.model.filters),
     }),
   };
@@ -794,6 +796,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     ClickedAnySeniority: () =>
       navigatedTo(model, { ...model.filters, seniorities: [] }),
     ClickedClearMark: ({ id }) => unmarked(model, id),
+    ClickedFilters: () => ({
+      model: modifyFields(model, { filtersOpen: (isOpen) => !isOpen }),
+    }),
     ClickedKeepShortlist: () => ({
       model: withOffer(model, (offer) =>
         Schema.is(ImportOffer.Asking)(offer) ? ImportOffer.Declined() : offer
