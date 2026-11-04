@@ -21,7 +21,7 @@ const pages = {
         heading: "Coverage and freshness",
         paragraphs: [
           "The board reads public company boards and job feeds. It classifies titles and locations, removes duplicate company/title matches, and prefers the company board when the same role appears in multiple sources.",
-          "Fetches follow each source's schedule and back off after failures. When a successful fetch no longer lists a role, the role leaves the board. Listings unseen for 30 days are removed. The board's refresh status describes ingestion, not a guarantee that an employer is still accepting applications.",
+          "Fetches follow each source's schedule and back off after failures. When a company board no longer lists a role, the role leaves the board. Aggregators return only their newest postings, so a role one of them stops listing stays until 30 days after it was posted. Listings unseen for 30 days are removed. The board's refresh status describes ingestion, not a guarantee that an employer is still accepting applications.",
           "Location and salary information may be incomplete or classified incorrectly. Check work eligibility, compensation and availability on the original posting before applying. Report a mismatch with the job link and the source evidence.",
         ],
       },
@@ -58,6 +58,13 @@ const pages = {
         paragraphs: [
           "You can read listings without an account. The hosting and security services process request information, such as network addresses and browser metadata, to deliver and protect the site. Sign-in uses a session cookie. Sign-in requests are rate limited.",
           "An account stores an identifier, email address and profile name, along with authentication and session records. A connected sign-in provider processes its own sign-in flow. Your email address is used for requested sign-in messages and saved-search notifications.",
+        ],
+      },
+      {
+        heading: "Product analytics",
+        paragraphs: [
+          "The board collects product analytics with PostHog, such as page views, searches, filter changes and clicks on Apply, to learn which features help. Analytics are cookieless: no analytics cookie or browser storage is set, and each visit gets a new random identifier.",
+          "There are no session recordings and no capture of what you type; a search is counted by its length, not its text. When you are signed in, events carry your internal account identifier, never your email address. Events pass through this site, so your network address is not sent to PostHog. Browsers that send Do Not Track or Global Privacy Control are not tracked.",
         ],
       },
       {

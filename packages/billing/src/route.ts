@@ -1,4 +1,5 @@
 import { applyBillingChange } from "@rat-stack/core";
+import type { BillingChangeValue, BillingOutcome } from "@rat-stack/core";
 import { Clock, Effect, Option } from "effect";
 import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
@@ -12,9 +13,15 @@ const reply = (status: number, body: string) =>
     status,
   });
 
+export type BillingObserver = (
+  change: BillingChangeValue,
+  outcome: BillingOutcome
+) => Effect.Effect<void>;
+
 export const stripeWebhookResponse = (
   endpoint: Option.Option<StripeEndpoint>,
-  request: HttpServerRequest.HttpServerRequest
+  request: HttpServerRequest.HttpServerRequest,
+  observe: BillingObserver = () => Effect.void
 ) =>
   Effect.gen(function* stripeWebhook() {
     if (request.method !== "POST") {
@@ -31,7 +38,11 @@ export const stripeWebhookResponse = (
     const now = yield* Clock.currentTimeMillis;
 
     return yield* verifiedChange(endpoint.value, payload, header, now).pipe(
-      Effect.flatMap(applyBillingChange),
+      Effect.flatMap((change) =>
+        applyBillingChange(change).pipe(
+          Effect.tap((outcome) => observe(change, outcome))
+        )
+      ),
       Effect.map((outcome) =>
         reply(outcome === "Unmatched" ? 409 : 200, outcome)
       ),

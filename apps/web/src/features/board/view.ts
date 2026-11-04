@@ -1,14 +1,16 @@
 import {
+  arrivedLongOpen,
   currencies,
+  NEW_WINDOW_MILLIS,
   offSiteHref,
   roleLevels,
   seniorities,
-  SOURCE_REPOSITORY_URL,
 } from "@rat-stack/core/contracts";
 import type {
   JobDetailValue,
   ListedJobValue,
   RoleLevelValue,
+  CurrencyValue,
 } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -25,6 +27,7 @@ import {
   regionLabel,
   roleChip,
   roleCount,
+  roleHubTitle,
   seniorityChip,
   sourceLabel,
   statusLabel,
@@ -32,24 +35,32 @@ import {
 } from "../../client/board/copy.js";
 import {
   ageWindows,
+  hasProSelection,
+  MORE_PAGE_SIZE,
   regionGroups,
   salarySteps,
 } from "../../client/board/filters.js";
 import type {
   AgeWindowValue,
+  FiltersValue,
   PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
-import { markButtons, stageOf } from "../../client/board/marks.js";
+import { lineIcon, markButtons, stageOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobsState, MoreState, StatsState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { jobRouter, pricingRouter } from "../../client/route.js";
+import { roleHubsWhere } from "../../client/listing.js";
+import {
+  companyRouter,
+  jobRouter,
+  pricingRouter,
+  roleRouter,
+} from "../../client/route.js";
 import { addServerCommandOf } from "../agent-tokens/view.js";
+import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
-
-const NEW_WINDOW = 86_400_000;
 
 const chip = (
   h: HtmlBuilder<MessageValue>,
@@ -285,44 +296,51 @@ const proFilterView = (
 ): Html => {
   const freeViewer = isFreeViewer(model.account.session, model.billing);
 
-  const selected =
-    model.filters.salaryListed ||
-    model.filters.salaryFloor !== null ||
-    model.filters.seniorities.length > 0;
+  const selected = hasProSelection(model.filters);
 
-  return h.fieldset(
+  return h.details(
     [
       h.Class("pro-refinements"),
-      ...(freeViewer ? [h.AriaDescribedBy("pro-refinements-note")] : []),
+      h.Open(model.proFiltersOpen),
+      h.OnToggle((isOpen) => Message.ToggledProFilters({ isOpen })),
     ],
     [
-      h.legend(
+      h.summary(
         [h.Class("pro-refinements-title")],
         ["Salary and seniority ", h.span([h.Class("pro-badge")], ["Pro"])]
       ),
-      ...(freeViewer
-        ? [
-            h.p(
-              [h.Id("pro-refinements-note"), h.Class("upgrade-prompt")],
-              [
-                "Salary and seniority filters come with Pro. ",
-                selected
-                  ? "These selections are not applied on Free. "
-                  : "These filters are not applied on Free. ",
-                h.a([h.Href(pricingRouter())], ["See Pro plans"]),
-              ]
-            ),
-          ]
-        : []),
-      refineView(model, h),
-      h.div(
-        [h.Class("pro-filters")],
+      h.fieldset(
         [
-          chip(
-            h,
-            model.filters.salaryListed,
-            "Only roles that state a salary",
-            Message.ToggledSalaryListed()
+          h.Class("pro-refinements-fields"),
+          ...(freeViewer ? [h.AriaDescribedBy("pro-refinements-note")] : []),
+        ],
+        [
+          h.legend([h.Class("visually-hidden")], ["Salary and seniority"]),
+          ...(freeViewer
+            ? [
+                h.p(
+                  [h.Id("pro-refinements-note"), h.Class("upgrade-prompt")],
+                  [
+                    "Salary and seniority filters come with Pro. ",
+                    selected
+                      ? "These selections are not applied on Free. "
+                      : "These filters are not applied on Free. ",
+                    h.a([h.Href(pricingRouter())], ["See Pro plans"]),
+                  ]
+                ),
+              ]
+            : []),
+          refineView(model, h),
+          h.div(
+            [h.Class("pro-filters")],
+            [
+              chip(
+                h,
+                model.filters.salaryListed,
+                "Only roles that state a salary",
+                Message.ToggledSalaryListed()
+              ),
+            ]
           ),
         ]
       ),
@@ -330,13 +348,38 @@ const proFilterView = (
   );
 };
 
+const filterSummary = (filters: FiltersValue) =>
+  [
+    filters.roles.length === 1 ? "1 role" : `${filters.roles.length} roles`,
+    filters.regionGroups.length === 1
+      ? "1 place"
+      : `${filters.regionGroups.length} places`,
+    `last ${ageChip(filters.maxAgeDays)}`,
+    ...(hasProSelection(filters) ? ["Pro filters"] : []),
+  ].join(", ");
+
+const filtersToggle = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  h.button(
+    [
+      h.Type("button"),
+      h.Class("search-button filters-toggle"),
+      h.AriaExpanded(model.filtersOpen),
+      h.AriaControls("filter-panel"),
+      h.OnClick(Message.ClickedFilters()),
+    ],
+    [
+      "Filters",
+      h.span([h.Class("filters-summary")], [filterSummary(model.filters)]),
+    ]
+  );
+
 const statusLine = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   StatsState.match<Html>(model.stats, {
     Loaded: ({ stats }) =>
       h.p(
         [h.Class("status")],
         [
-          `${stats.activeJobs} leadership roles from the last 30 days, ${stats.newToday} new today. `,
+          `${stats.activeJobs} live roles, ${stats.newToday} new today. `,
           pipe(
             Option.fromNullishOr(stats.lastRun),
             Option.match({
@@ -360,33 +403,114 @@ export const boardMasthead = (
       h.div(
         [h.Class("hero")],
         [
-          h.p(
-            [h.Class("kicker")],
-            ["Remote · US & Canada · Checked every 20 min"]
-          ),
           h.h1([h.Class("hero-title")], ["Your next move is on the board."]),
           h.p(
             [h.Class("hero-lede")],
             [
-              "Director, VP and Head of Engineering roles, straight from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
+              "Engineering manager to VP roles from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
             ]
           ),
         ]
       ),
-      sentenceView(model, h),
-      searchView(model, h),
-      proFilterView(model, h),
-      h.submodel({
-        model: model.savedSearches,
-        slotId: "save-search",
-        toParentMessage: (message) =>
-          Message.GotSavedSearchesMessage({ message }),
-        view: saveSearchControl,
-        viewInputs: { filters: model.filters, session: model.account.session },
-      }),
-      statusLine(model, h),
+      h.div(
+        [h.Class("filters")],
+        [
+          searchView(model, h),
+          filtersToggle(model, h),
+          h.div(
+            [
+              h.Id("filter-panel"),
+              h.Class(
+                model.filtersOpen
+                  ? "filter-panel filter-panel-open"
+                  : "filter-panel"
+              ),
+            ],
+            [
+              sentenceView(model, h),
+              h.div(
+                [h.Class("filter-tools")],
+                [
+                  proFilterView(model, h),
+                  h.submodel({
+                    model: model.savedSearches,
+                    slotId: "save-search",
+                    toParentMessage: (message) =>
+                      Message.GotSavedSearchesMessage({ message }),
+                    view: saveSearchControl,
+                    viewInputs: {
+                      filters: model.filters,
+                      session: model.account.session,
+                    },
+                  }),
+                ]
+              ),
+            ]
+          ),
+        ]
+      ),
     ]
   );
+
+const browseList = (
+  h: HtmlBuilder<MessageValue>,
+  title: string,
+  items: readonly (readonly (Html | string)[])[]
+): Html =>
+  h.div(
+    [h.Class("browse-group")],
+    [
+      h.h3([h.Class("browse-label")], [title]),
+      h.ul(
+        [h.Class("browse-links")],
+        items.map((item) => h.li([], item))
+      ),
+    ]
+  );
+
+const browseView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  StatsState.match<Html>(model.stats, {
+    Loaded: ({ stats }) =>
+      h.nav(
+        [h.Class("browse"), h.AriaLabelledBy("browse-title")],
+        [
+          h.h2(
+            [h.Id("browse-title"), h.Class("browse-title")],
+            ["Browse by role and place"]
+          ),
+          h.div(
+            [h.Class("browse-groups")],
+            [
+              browseList(
+                h,
+                "Role hubs",
+                roleHubsWhere((role, region) =>
+                  stats.placements.some(
+                    (placement) =>
+                      placement.role === role &&
+                      placement.region === region &&
+                      region !== "Elsewhere" &&
+                      placement.count > 0
+                  )
+                ).map((hub) => [
+                  h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)]),
+                ])
+              ),
+              browseList(
+                h,
+                "Most open roles",
+                stats.companies.map(({ company, count, slug }) => [
+                  h.a([h.Href(companyRouter({ slug }))], [company]),
+                  " ",
+                  h.span([h.Class("browse-count")], [String(count)]),
+                ])
+              ),
+            ]
+          ),
+        ]
+      ),
+    Unavailable: () => h.empty,
+  });
 
 export const boardAfterword = (
   model: ModelValue,
@@ -395,8 +519,9 @@ export const boardAfterword = (
   h.div(
     [h.Class("afterword")],
     [
+      browseView(model, h),
       h.section(
-        [h.Class("agents"), h.AriaLabelledBy("agents-title")],
+        [h.Id("agents"), h.Class("agents"), h.AriaLabelledBy("agents-title")],
         [
           h.div(
             [h.Class("agents-copy")],
@@ -416,22 +541,7 @@ export const boardAfterword = (
           ),
         ]
       ),
-      h.section(
-        [h.Class("open-source"), h.AriaLabelledBy("open-source-title")],
-        [
-          h.h2([h.Id("open-source-title")], ["Open source"]),
-          h.p(
-            [],
-            [
-              "The board, the crawler and the agent tools are MIT licensed. Read the code, file an issue or send a fix.",
-            ]
-          ),
-          h.a(
-            [h.Class("repo-link"), h.Href(SOURCE_REPOSITORY_URL)],
-            ["View the code on GitHub"]
-          ),
-        ]
-      ),
+      pricingSummary(model.billing, h),
     ]
   );
 
@@ -452,17 +562,91 @@ const payTag = (
     })
   );
 
-const sourceLink = (h: HtmlBuilder<MessageValue>, job: JobDetailValue): Html =>
+const payFloor = (currency: CurrencyValue, amount: number) =>
+  `${new Intl.NumberFormat("en-US", {
+    currency,
+    maximumFractionDigits: 0,
+    notation: "compact",
+    style: "currency",
+  }).format(amount)}+`;
+
+const CURRENCY_MARKS = new Map<string, CurrencyValue>([
+  ["$", "USD"],
+  ["CA$", "CAD"],
+  ["C$", "CAD"],
+  ["CAD", "CAD"],
+  ["EUR", "EUR"],
+  ["GBP", "GBP"],
+  ["US$", "USD"],
+  ["USD", "USD"],
+  ["£", "GBP"],
+  ["€", "EUR"],
+]);
+
+const UNITS = new Map([
+  ["k", 1000],
+  ["m", 1_000_000],
+]);
+
+const statedFloor = (salary: string) =>
+  pipe(
+    Option.fromNullishOr(
+      /^(?<mark>CA\$|C\$|US\$|\$|USD|CAD|EUR|GBP|£|€)\s*(?<amount>\d[\d,]*(?:\.\d+)?)\s*(?<unit>[kKmM])?/u.exec(
+        salary
+      )?.groups
+    ),
+    Option.flatMap(({ amount = "", mark = "", unit = "" }) => {
+      const floor =
+        Number(amount.replaceAll(",", "")) *
+        (UNITS.get(unit.toLowerCase()) ?? 1);
+
+      return pipe(
+        Option.fromNullishOr(CURRENCY_MARKS.get(mark)),
+        Option.filter(() => floor >= 10_000),
+        Option.map((currency) => payFloor(currency, floor))
+      );
+    }),
+    Option.getOrElse(() => salary)
+  );
+
+const rolePay = (h: HtmlBuilder<MessageValue>, job: ListedJobValue) =>
+  pipe(
+    Option.fromNullishOr(job.enrichment?.salary),
+    Option.map((band) => payFloor(band.currency, band.min)),
+    Option.orElse(() =>
+      Option.map(Option.fromNullishOr(job.salary), statedFloor)
+    ),
+    Option.match({
+      onNone: () => [],
+      onSome: (pay) => [h.span([h.Class("role-pay")], [pay])],
+    })
+  );
+
+const sourceLink = (
+  h: HtmlBuilder<MessageValue>,
+  job: JobDetailValue,
+  isCompact = false
+): Html =>
   h.a(
     [
       h.Class("job-source"),
+      ...(isCompact
+        ? [
+            h.AriaLabel(`From ${sourceLabel(job.source)}`),
+            h.Title(`From ${sourceLabel(job.source)}`),
+          ]
+        : []),
       ...Option.toArray(
         Option.map(offSiteHref(job.url), (href) => h.Href(href))
       ),
       h.Target("_blank"),
       h.Rel("noopener noreferrer"),
     ],
-    [`From ${sourceLabel(job.source)}`]
+    [
+      isCompact
+        ? lineIcon(h, "M6.5 13.5l7-7M8 6.5h5.5V12")
+        : `From ${sourceLabel(job.source)}`,
+    ]
   );
 
 const postedTime = (
@@ -486,7 +670,8 @@ export const jobRow = (
 ): Html => {
   const isApplied = isAppliedTo(model, job);
 
-  const isNew = now - job.firstSeenAt < NEW_WINDOW;
+  const isNew =
+    now - job.firstSeenAt < NEW_WINDOW_MILLIS && !arrivedLongOpen(job);
 
   return h.keyed("li")(
     job.id,
@@ -547,7 +732,10 @@ const departureRow = (
       h.a(
         [h.Class("departure-tiles"), h.Href(jobRouter({ id: job.id }))],
         [
-          h.span([h.Class("tile cell-role")], [job.title]),
+          h.span(
+            [h.Class("tile cell-role")],
+            [h.span([h.Class("role-title")], [job.title]), ...rolePay(h, job)]
+          ),
           h.span([h.Class("tile cell-company")], [job.company]),
           h.span(
             [h.Class("tile cell-where"), h.Title(regionLabel(job.region))],
@@ -565,7 +753,7 @@ const departureRow = (
       ),
       h.div(
         [h.Class("departure-meta")],
-        [...payTag(h, job), sourceLink(h, job), markButtons(model, h, job)]
+        [sourceLink(h, job, true), markButtons(model, h, job, true)]
       ),
     ]
   );
@@ -692,24 +880,23 @@ const moreView = (
           h.Class("more"),
           h.OnClick(Message.ClickedLoadMore()),
         ],
-        [
-          `Show ${Math.min(40, total - shown)} more of ${total - shown} remaining`,
-        ]
+        [`Show ${Math.min(MORE_PAGE_SIZE, total - shown)} more`]
       ),
     Loading: () =>
       h.p([h.Class("list-end"), h.Role("status")], ["Loading more roles"]),
   });
 };
 
-const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
+const emptyView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.div(
     [h.Class("empty")],
     [
       h.p([], ["No roles match that sentence yet."]),
+      statusLine(model, h),
       h.p(
         [],
         [
-          "Pick at least one role and one place, widen the window to a month, open up the level or pay, or clear the search.",
+          "Pick at least one role and one place, widen the window, open up the level or pay, or clear the search.",
         ]
       ),
       h.button(
@@ -723,8 +910,39 @@ const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
     ]
   );
 
+interface BoardPageValue {
+  readonly generatedAt: number;
+  readonly jobs: readonly ListedJobValue[];
+  readonly total: number;
+}
+
 const findingRoles = (h: HtmlBuilder<MessageValue>): Html =>
   h.p([h.Class("count"), h.Role("status")], ["Finding roles"]);
+
+const boardList = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>,
+  { generatedAt, jobs, total }: BoardPageValue,
+  refreshing: boolean
+): Html =>
+  h.div(
+    [h.AriaBusy(refreshing)],
+    [
+      h.div(
+        [h.Class("board-top")],
+        [
+          h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
+          statusLine(model, h),
+        ]
+      ),
+      h.div(
+        [h.Class("board")],
+        [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
+      ),
+      legendView(h),
+      ...(refreshing ? [] : [moreView(model, h, jobs.length, total)]),
+    ]
+  );
 
 export const boardPage = (
   model: ModelValue,
@@ -746,23 +964,13 @@ export const boardPage = (
           ),
         ]
       ),
-    Loaded: ({ generatedAt, jobs, total }) =>
-      Array.isReadonlyArrayEmpty(jobs)
-        ? emptyView(h)
-        : h.div(
-            [],
-            [
-              h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
-              h.div(
-                [h.Class("board")],
-                [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
-              ),
-              legendView(h),
-              moreView(model, h, jobs.length, total),
-            ]
-          ),
+    Loaded: (page) =>
+      Array.isReadonlyArrayEmpty(page.jobs)
+        ? emptyView(model, h)
+        : boardList(model, h, page, false),
     Loading: () => findingRoles(h),
     NotAsked: () => findingRoles(h),
+    Refreshing: (page) => boardList(model, h, page, true),
   });
 
 export const boardTitle = (model: ModelValue) =>
@@ -771,4 +979,5 @@ export const boardTitle = (model: ModelValue) =>
     Loaded: ({ total }) => `${total} engineering leadership roles`,
     Loading: () => "Engineering leadership roles",
     NotAsked: () => "Engineering leadership roles",
+    Refreshing: ({ total }) => `${total} engineering leadership roles`,
   });

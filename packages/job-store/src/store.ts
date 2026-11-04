@@ -3,6 +3,7 @@ import {
   Currency,
   daysOpen,
   Enrichment,
+  EVERY_POSTING,
   IngestOutcome,
   JobStore,
   JobStoreUnavailable,
@@ -26,7 +27,7 @@ import type {
 import { Array, Effect, Layer, Option, pipe, Schema } from "effect";
 
 import {
-  activeCountStatement,
+  boardCountsStatement,
   claimIngestStatement,
   claimNeuronsStatement,
   clearSkipStatement,
@@ -44,6 +45,7 @@ import {
   intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
+  heldListingsStatement,
   markListedStatement,
   newTodayStatement,
   pruneJobsStatement,
@@ -55,14 +57,14 @@ import {
   recordNeuronsUsedStatement,
   recordRunStatement,
   recordSkipStatement,
-  regionCountsStatement,
   releaseIngestStatement,
   departUnseenStatement,
-  roleCountsStatement,
   BOARD_MODEL_PREFIX,
   saveBoardFactsStatement,
   saveEnrichmentStatement,
   sightingStatement,
+  sitemapJobsStatement,
+  TOP_COMPANIES,
   trackedSinceStatement,
   unenrichedListingsStatement,
   UPSERT_CHUNK,
@@ -89,6 +91,8 @@ export const JobRow = Schema.Struct({
   title: Schema.String,
   url: Schema.String,
 });
+
+const HeldListingRow = Schema.Struct({ id: Schema.String });
 
 const CompanySummaryRow = Schema.Struct({
   opened_at: Schema.NullOr(Count),
@@ -196,9 +200,24 @@ const FeedStateRow = Schema.Struct({
   last_success_at: Schema.NullOr(Count),
 });
 
-const RegionCountRow = Schema.Struct({ count: Count, region: Region });
+const BoardCountRow = Schema.Struct({
+  company: Schema.NullOr(Schema.String),
+  deduped: Count,
+  listed: Count,
+  region: Region,
+  role: RoleLevel,
+  slug: Schema.String,
+});
 
-const RoleCountRow = Schema.Struct({ count: Count, role: RoleLevel });
+type BoardCountRowValue = typeof BoardCountRow.Type;
+
+const SitemapJobRow = Schema.Struct({
+  company: Schema.String,
+  first_seen_at: Count,
+  id: Schema.String,
+  region: Region,
+  role: RoleLevel,
+});
 
 const FeedHealthRow = Schema.Struct({ failing: Count, total: Count });
 
@@ -322,6 +341,63 @@ const receiptOfRow = (row: typeof RunRow.Type): IngestReceiptValue => ({
   startedAt: row.started_at,
 });
 
+const sumOf = (
+  rows: readonly BoardCountRowValue[],
+  column: "deduped" | "listed"
+) => rows.reduce((sum, row) => sum + row[column], 0);
+
+const countedBy = <Fact>(
+  rows: readonly BoardCountRowValue[],
+  keyOf: (row: BoardCountRowValue) => string,
+  column: "deduped" | "listed",
+  factOf: (row: BoardCountRowValue) => Fact
+) =>
+  Object.values(Array.groupBy(rows, keyOf))
+    .map((group) => ({ ...factOf(group[0]), count: sumOf(group, column) }))
+    .filter(({ count }) => count > 0)
+    .toSorted((left, right) => right.count - left.count);
+
+const topCompaniesOf = (rows: readonly BoardCountRowValue[]) =>
+  Object.values(
+    Array.groupBy(
+      rows.filter(({ deduped, slug }) => deduped > 0 && slug !== ""),
+      ({ slug }) => slug
+    )
+  )
+    .map((group) => ({
+      company: group.map(({ company }) => company ?? "").toSorted()[0] ?? "",
+      count: sumOf(group, "deduped"),
+      slug: group[0].slug,
+    }))
+    .toSorted(
+      (left, right) =>
+        right.count - left.count || (left.slug < right.slug ? -1 : 1)
+    )
+    .slice(0, TOP_COMPANIES);
+
+const boardCountsOf = (rows: readonly BoardCountRowValue[]) => ({
+  activeJobs: sumOf(rows, "listed"),
+  companies: topCompaniesOf(rows),
+  placements: countedBy(
+    rows,
+    ({ region, role }) => `${role} ${region}`,
+    "deduped",
+    ({ region, role }) => ({ region, role })
+  ),
+  regions: countedBy(
+    rows,
+    ({ region }) => region,
+    "listed",
+    ({ region }) => ({ region })
+  ),
+  roles: countedBy(
+    rows,
+    ({ role }) => role,
+    "listed",
+    ({ role }) => ({ role })
+  ),
+});
+
 const totalOf = (rows: readonly (typeof TotalRow.Type)[]) =>
   Option.match(Array.head(rows), {
     onNone: () => 0,
@@ -426,6 +502,17 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
     find: (id) => findJob(id, false),
 
     findIncludingDeparted: (id) => findJob(id, true),
+
+    heldListings: (feedKey, ids) =>
+      ids.length === 0
+        ? Effect.succeed([])
+        : sql
+            .all(
+              "heldListings",
+              heldListingsStatement(feedKey, ids),
+              HeldListingRow
+            )
+            .pipe(Effect.map(Array.map((row) => row.id))),
 
     historyOf: (job) =>
       sql
@@ -539,7 +626,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("releaseIngest", [releaseIngestStatement(startedAt)])
         .pipe(Effect.asVoid),
 
-    replaceFeed: (feedKey, jobs, seenAt) =>
+    replaceFeed: (feedKey, jobs, seenAt, departPostedBefore = EVERY_POSTING) =>
       Effect.gen(function* replaceFeed() {
         const chunks = pipe(
           Array.chunksOf(jobs, UPSERT_CHUNK),
@@ -561,7 +648,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         );
 
         const [departed] = yield* sql.batch("replaceFeed", [
-          departUnseenStatement(feedKey, seenAt),
+          departUnseenStatement(feedKey, seenAt, departPostedBefore),
           feedSucceededStatement(feedKey, seenAt),
         ]);
 
@@ -587,13 +674,25 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         ])
         .pipe(Effect.asVoid),
 
+    sitemapJobs: (now, sources) =>
+      sql
+        .all("sitemapJobs", sitemapJobsStatement(now, sources), SitemapJobRow)
+        .pipe(
+          Effect.map(
+            Array.map(({ first_seen_at, ...job }) => ({
+              ...job,
+              firstSeenAt: first_seen_at,
+            }))
+          )
+        ),
+
     stats: (now, sources, catalogKeys) =>
       Effect.all(
         {
-          active: sql.all(
-            "activeJobs",
-            activeCountStatement(now, sources),
-            TotalRow
+          counts: sql.all(
+            "boardCounts",
+            boardCountsStatement(now, sources),
+            BoardCountRow
           ),
           feeds: sql.all(
             "feedHealth",
@@ -606,24 +705,14 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             newTodayStatement(now, sources),
             TotalRow
           ),
-          regions: sql.all(
-            "regionCounts",
-            regionCountsStatement(now, sources),
-            RegionCountRow
-          ),
-          roles: sql.all(
-            "roleCounts",
-            roleCountsStatement(now, sources),
-            RoleCountRow
-          ),
         },
         { concurrency: 3 }
       ).pipe(
-        Effect.map(({ active, feeds, lastRun, newToday, regions, roles }) => {
+        Effect.map(({ counts, feeds, lastRun, newToday }) => {
           const health = Array.head(feeds);
 
           return {
-            activeJobs: totalOf(active),
+            ...boardCountsOf(counts),
             feedsFailing: Option.match(health, {
               onNone: () => 0,
               onSome: (row) => row.failing,
@@ -638,8 +727,6 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
               Option.getOrNull
             ),
             newToday: totalOf(newToday),
-            regions,
-            roles,
           };
         })
       ),

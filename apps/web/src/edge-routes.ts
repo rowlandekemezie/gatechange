@@ -1,9 +1,19 @@
-export type EdgeRoute = "agent" | "backend" | "private" | "public";
+export type EdgeRoute =
+  | "agent"
+  | "analytics"
+  | "backend"
+  | "private"
+  | "public";
+
+export const INGEST_PREFIX = "/ingest";
+
+export const ANALYTICS_KEY_META = "posthog-key";
 
 const routePrefixes: readonly (readonly [
   string,
   Exclude<EdgeRoute, "public">,
 ])[] = [
+  [INGEST_PREFIX, "analytics"],
   ["/rpc", "backend"],
   ["/mcp", "agent"],
   ["/.well-known/mcp.json", "backend"],
@@ -24,5 +34,9 @@ export const workerFirstPaths = routePrefixes.flatMap(([prefix]) => [
 ]);
 
 export const PRIVATE_CACHE_CONTROL = "private, no-store";
+
+export const HASHED_ASSET_PATHS = "/assets/*";
+
+export const HASHED_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 export const PRIVATE_REFERRER_POLICY = "no-referrer";

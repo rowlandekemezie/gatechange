@@ -7,6 +7,7 @@ import {
   fingerprintOf,
   isRepost,
   JobStore,
+  EVERY_POSTING,
   listingStatus,
   MAX_AGE_DAYS,
   paidFeaturesAllowed,
@@ -356,6 +357,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
         )
       ),
+    heldListings: (feedKey, ids) =>
+      Effect.sync(() => ids.filter((id) => jobs.get(id)?.feed === feedKey)),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
     list: (query, now, sources) =>
@@ -487,7 +490,12 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           lease.heldUntil = startedAt;
         }
       }),
-    replaceFeed: (feedKey, incoming, seenAt) =>
+    replaceFeed: (
+      feedKey,
+      incoming,
+      seenAt,
+      departPostedBefore = EVERY_POSTING
+    ) =>
       Effect.sync(() => {
         const stale = pipe(
           [...jobs.values()],
@@ -495,6 +503,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
             (job) =>
               job.feed === feedKey &&
               job.lastSeenAt < seenAt &&
+              job.postedAt < departPostedBefore &&
               !departed.has(job.id) &&
               !pipe(
                 incoming,
@@ -578,11 +587,28 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         enrichments.set(id, enrichment);
         skips.delete(id);
       }),
+    sitemapJobs: (_now, sources) =>
+      Effect.sync(() =>
+        [...jobs.values()].flatMap((job) =>
+          sources.includes(job.source) && !departed.has(job.id)
+            ? [
+                {
+                  company: job.company,
+                  firstSeenAt: job.firstSeenAt,
+                  id: job.id,
+                  region: job.region,
+                  role: job.role,
+                },
+              ]
+            : []
+        )
+      ),
     stats: (_now, sources, catalogKeys) =>
       Effect.sync(() => ({
         activeJobs: [...jobs.values()].filter(
           (job) => sources.includes(job.source) && !departed.has(job.id)
         ).length,
+        companies: [],
         feedsFailing: pipe(
           [...states.values()],
           Array.filter(
@@ -595,6 +621,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         ).length,
         lastRun: Option.getOrNull(Array.last(runs)),
         newToday: 0,
+        placements: [],
         regions: [],
         roles: [],
       })),

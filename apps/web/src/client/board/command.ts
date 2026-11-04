@@ -5,9 +5,11 @@ import {
 } from "@rat-stack/core/contracts";
 import type { TrackedJobValue } from "@rat-stack/core/contracts";
 import { Array, Effect, Option, pipe, Predicate, Schema } from "effect";
-import { Command } from "foldkit";
+import { Command, Dom, Render } from "foldkit";
 import { load, pushUrl, replaceUrl } from "foldkit/navigation";
 
+import { Analytics } from "../analytics/client.js";
+import { AnalyticsCall } from "../analytics/events.js";
 import { collectListing, ListingRoute } from "../listing.js";
 import { Message } from "./message.js";
 import { Shortlist, TrackerChange } from "./model.js";
@@ -90,10 +92,31 @@ export const PushUrl = Command.define("PushUrl", {
   messages: [Message.CompletedNavigation],
 });
 
+export const ScrollToTop = Command.define("ScrollToTop", {
+  execute: Render.afterCommit.pipe(
+    Effect.andThen(
+      Effect.sync(() => {
+        window.scrollTo(0, 0);
+      })
+    ),
+    Effect.as(Message.CompletedNavigation())
+  ),
+  messages: [Message.CompletedNavigation],
+});
+
 export const ReplaceUrl = Command.define("ReplaceUrl", {
   args: { url: Schema.String },
   execute: ({ url }) =>
     replaceUrl(url).pipe(Effect.as(Message.CompletedNavigation())),
+  messages: [Message.CompletedNavigation],
+});
+
+export const ScrollToFragment = Command.define("ScrollToFragment", {
+  args: { fragment: Schema.String },
+  execute: ({ fragment }) =>
+    Dom.scrollIntoViewAfterPaint(`#${CSS.escape(fragment)}`, {
+      block: "start",
+    }).pipe(Effect.ignore, Effect.as(Message.CompletedNavigation())),
   messages: [Message.CompletedNavigation],
 });
 
@@ -299,4 +322,13 @@ export const SendTrackerChange = Command.define("SendTrackerChange", {
       })
     ),
   messages: [Message.SucceededTrackerChange, Message.FailedTrackerChange],
+});
+
+export const TrackAnalytics = Command.define("TrackAnalytics", {
+  args: { calls: Schema.Array(AnalyticsCall) },
+  execute: ({ calls }) =>
+    Analytics.use((analytics) => analytics.send(calls)).pipe(
+      Effect.as(Message.CompletedTrackAnalytics())
+    ),
+  messages: [Message.CompletedTrackAnalytics],
 });

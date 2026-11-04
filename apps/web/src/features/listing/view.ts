@@ -1,4 +1,4 @@
-import { roleLevels } from "@rat-stack/core/contracts";
+import { MAX_AGE_DAYS, roleLevels } from "@rat-stack/core/contracts";
 import type {
   CompanySummaryValue,
   JobDetailValue,
@@ -7,11 +7,7 @@ import type {
 import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
-import {
-  regionGroupChip,
-  roleCount,
-  roleLabel,
-} from "../../client/board/copy.js";
+import { roleCount, roleHubTitle } from "../../client/board/copy.js";
 import { defaultFilters, regionGroups } from "../../client/board/filters.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
@@ -36,13 +32,13 @@ export const listingHeading = (
 ) =>
   Schema.is(Route.Company)(route)
     ? `Engineering leadership roles at ${companyNameOf(route.slug, jobs)}`
-    : `${roleLabel(route.role)} roles ${regionGroupChip(route.place)}`;
+    : roleHubTitle(route);
 
 const boardLinkOf = (route: ListingRouteValue) =>
   Schema.is(Route.Role)(route)
     ? boardUrl({
         ...defaultFilters,
-        maxAgeDays: 30,
+        maxAgeDays: MAX_AGE_DAYS,
         regionGroups: [route.place],
         roles: [route.role],
       })
@@ -55,7 +51,7 @@ const everyRoleOf = (route: ListingRouteValue, jobs: readonly JobValue[]) =>
   Schema.is(Route.Company)(route)
     ? boardUrl({
         ...defaultFilters,
-        maxAgeDays: 30,
+        maxAgeDays: MAX_AGE_DAYS,
         regionGroups,
         roles: roleLevels,
         salaryListed: false,

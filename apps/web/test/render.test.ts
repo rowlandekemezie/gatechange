@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { SITE_NAME, SOURCE_REPOSITORY_URL } from "@rat-stack/core/contracts";
 import type {
   JobDetailValue,
   JobPageValue,
@@ -8,11 +9,12 @@ import type {
   ListedJobValue,
   SourceNameValue,
 } from "@rat-stack/core/contracts";
-import { Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
 
 import indexHtml from "../index.html?raw";
+import manifestJson from "../public/manifest.webmanifest?raw";
 import { application } from "../src/client/application.js";
 import { defaultFilters } from "../src/client/board/filters.js";
 import {
@@ -27,8 +29,16 @@ import type {
   PreloadValue,
 } from "../src/client/board/model.js";
 import { init } from "../src/client/board/update.js";
+import { brandedTitle } from "../src/client/board/view.js";
 import { collectListing, LISTING_ROWS } from "../src/client/listing.js";
-import { boardUrl, jobRouter, Route, routeOfUrl } from "../src/client/route.js";
+import {
+  boardUrl,
+  companyRouter,
+  jobRouter,
+  roleRouter,
+  Route,
+  routeOfUrl,
+} from "../src/client/route.js";
 import { allowedOnly, allowedOrUnstated } from "../src/server/markup.js";
 import type { MarkupPolicy } from "../src/server/markup.js";
 import { renderPage } from "../src/server/render.js";
@@ -146,14 +156,14 @@ describe("job page render", () => {
         expect(page.html).toContain("data-foldkit-app");
         expect(page.html).toMatch(/<h1[^>]*>Director of Engineering<\/h1>/u);
         expect(page.html).toContain(
-          "<title>Director of Engineering at Acme &lt;Robotics&gt;</title>"
+          "<title>Director of Engineering at Acme &lt;Robotics&gt; · Gate Change</title>"
         );
         expect(page.html).not.toContain("Refreshed every few hours");
         expect(page.html).toContain(
           `<link rel="canonical" href="${ORIGIN}${GREENHOUSE_PATH}"`
         );
         expect(page.html).toContain(
-          '<meta property="og:title" content="Director of Engineering at Acme &lt;Robotics&gt;" />'
+          '<meta property="og:title" content="Director of Engineering at Acme &lt;Robotics&gt; · Gate Change" />'
         );
         expect(page.html).toContain('href="/companies/acme-robotics"');
       })
@@ -257,11 +267,33 @@ describe("job page render", () => {
     )
   );
 
-  it.effect("declares the Open Graph type and a summary card", () =>
-    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
-      expect(html).toContain('<meta property="og:type" content="website" />');
-      expect(html).toContain('<meta name="twitter:card" content="summary" />');
-    })
+  it.effect(
+    "declares the Open Graph type and a large image card with an absolute image URL",
+    () =>
+      Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+        expect(html).toContain('<meta property="og:type" content="website" />');
+        expect(html).toContain(
+          '<meta property="og:site_name" content="Gate Change" />'
+        );
+        expect(html).toContain(
+          `<meta property="og:image" content="${ORIGIN}/og.png" />`
+        );
+        expect(html).toContain(
+          '<meta property="og:image:width" content="1200" />'
+        );
+        expect(html).toContain(
+          '<meta property="og:image:height" content="630" />'
+        );
+        expect(html).toMatch(
+          /<meta property="og:image:alt" content="[^"]+" \/>/u
+        );
+        expect(html).toContain(
+          '<meta name="twitter:card" content="summary_large_image" />'
+        );
+        expect(html).toContain(
+          `<meta name="twitter:image" content="${ORIGIN}/og.png" />`
+        );
+      })
   );
 
   it.effect("escapes double quotes from job data inside head attributes", () =>
@@ -273,7 +305,7 @@ describe("job page render", () => {
       ({ html }) => {
         expect(html).not.toMatch(/<[^>]*\sonload="/u);
         expect(html).toContain(
-          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1)" />'
+          '<meta property="og:title" content="Director of Engineering at Acme&quot; onload=&quot;alert(1) · Gate Change" />'
         );
       }
     )
@@ -310,7 +342,7 @@ describe("job page render", () => {
       ),
       ({ html }) => {
         expect(html).toContain(
-          "<title>Lead $` ops at Cash $&amp; Carry $'</title>"
+          "<title>Lead $` ops at Cash $&amp; Carry $' · Gate Change</title>"
         );
         expect(html).toContain(
           '<meta name="description" content="Director role at Cash $&amp; Carry $\', Remote, Canada" />'
@@ -381,6 +413,7 @@ describe("public landing hydration", () => {
           filters,
           generatedAt: 1_760_500_000_000,
           jobs: [acmeDirector],
+          stats: null,
           total: 45,
         });
 
@@ -429,6 +462,7 @@ describe("public landing hydration", () => {
           filters: defaultFilters,
           generatedAt: 0,
           jobs: [acmeDirector],
+          stats: null,
           total: 1,
         }),
       },
@@ -447,7 +481,7 @@ describe("public landing hydration", () => {
     () =>
       Effect.map(render("/pricing", Preload.Nothing()), (page) => {
         expect(page.status).toBe(200);
-        expect(page.html).toContain("<title>Pro plans</title>");
+        expect(page.html).toContain("<title>Pro plans · Gate Change</title>");
         expect(page.html).toContain("Pro for engineering leaders");
         expect(page.html).toContain(
           "Every engineering leadership listing stays free"
@@ -599,7 +633,7 @@ describe("original posting links", () => {
           [{ ...markOf(acmeDirector), url }]
         ),
         ({ html }) => {
-          expect(textOf(html)).toContain("Open the original posting");
+          expect(textOf(html)).toContain(acmeDirector.title);
           expect(
             linksHome(html, jobRouter({ id: acmeDirector.id }))
           ).toStrictEqual([]);
@@ -663,7 +697,7 @@ describe("listing page render", () => {
       ({ html, status }) => {
         expect(status).toBe(200);
         expect(html).toContain(
-          "<title>Engineering leadership roles at Acme &lt;Robotics&gt;</title>"
+          "<title>Engineering leadership roles at Acme &lt;Robotics&gt; · Gate Change</title>"
         );
         expect(html).toContain(
           `<link rel="canonical" href="${ORIGIN}/companies/acme-robotics"`
@@ -691,7 +725,7 @@ describe("listing page render", () => {
       ({ html, status }) => {
         expect(status).toBe(200);
         expect(html).toContain(
-          "<title>Director roles remote in Canada</title>"
+          "<title>Director roles remote in Canada · Gate Change</title>"
         );
         expect(html).toContain(
           `<link rel="canonical" href="${ORIGIN}/roles/director/remote-canada"`
@@ -699,7 +733,7 @@ describe("listing page render", () => {
         expect(html).toContain('href="/jobs/Z3JlZW5ob3VzZTphY21lLzE"');
         expect(textOf(html)).toContain("30 roles match");
         expect(html).toContain(
-          'href="/?age=30&amp;place=remote-canada&amp;role=director"'
+          'href="/?age=3650&amp;place=remote-canada&amp;role=director"'
         );
         expect(textOf(html)).toContain("See all 30 on the board");
       }
@@ -838,6 +872,8 @@ describe("listing queries", () => {
   );
 });
 
+const isoOf = (at: number) => DateTime.formatIso(DateTime.makeUnsafe(at));
+
 const LOC = /<loc>(?<loc>.*?)<\/loc>/gu;
 
 const sitemapRoutes = (jobs: readonly JobValue[]) =>
@@ -850,16 +886,35 @@ const sitemapRoutes = (jobs: readonly JobValue[]) =>
   );
 
 describe("sitemap", () => {
-  it("omits unobserved modification dates even when a listing was seen again", () => {
-    const first = sitemapXml(ORIGIN, [greenhouse]);
+  it("dates each URL by its newest listing's first sighting, not by re-sightings", () => {
+    const newer = jobFrom("Lever", "lever:acme/2", {
+      firstSeenAt: greenhouse.firstSeenAt + 3_600_000,
+    });
 
-    const unchanged = sitemapXml(ORIGIN, [
+    const xml = sitemapXml(ORIGIN, [greenhouse, newer]);
+
+    const resighted = sitemapXml(ORIGIN, [
       { ...greenhouse, lastSeenAt: greenhouse.lastSeenAt + 86_400_000 },
+      newer,
     ]);
 
-    expect(first).not.toContain("<lastmod>");
-    expect(unchanged).toBe(first);
+    const entryOf = (path: string) =>
+      xml.split("\n").find((line) => line.includes(`${ORIGIN}${path}</loc>`));
+
+    expect(resighted).toBe(xml);
+    expect(entryOf(jobRouter({ id: greenhouse.id }))).toContain(
+      `<lastmod>${isoOf(greenhouse.firstSeenAt)}</lastmod>`
+    );
+    expect(entryOf("/companies/acme-robotics")).toContain(
+      `<lastmod>${isoOf(newer.firstSeenAt)}</lastmod>`
+    );
+    expect(
+      entryOf(roleRouter({ place: "RemoteCanada", role: "Director" }))
+    ).toContain(`<lastmod>${isoOf(newer.firstSeenAt)}</lastmod>`);
+    expect(entryOf("/pricing")).not.toContain("<lastmod>");
+    expect(entryOf("/about")).not.toContain("<lastmod>");
   });
+
   it("lists the board, every job, every company, and each role page with roles", () => {
     const jobs = [
       greenhouse,
@@ -874,6 +929,10 @@ describe("sitemap", () => {
 
     expect(sitemapRoutes(jobs)).toEqual([
       routeAt("/"),
+      Route.Pricing(),
+      ...(["About", "Privacy", "Terms", "Contact"] as const).map((page) =>
+        Route.Information({ page })
+      ),
       ...jobs.map((job) => Route.Job({ id: job.id })),
       Route.Company({ slug: "acme-robotics" }),
       Route.Company({ slug: "zeta-sons" }),
@@ -889,6 +948,191 @@ describe("sitemap", () => {
   });
 });
 
+describe("site header", () => {
+  it.effect.each(["/", "/pricing", "/shortlist", "/about"])(
+    "names the site and reaches every section from %s",
+    (path) =>
+      Effect.map(render(path, Preload.Nothing()), ({ html }) => {
+        const header = html.slice(
+          html.indexOf('<header class="site-header"'),
+          html.indexOf("</header>")
+        );
+
+        const footer = html.slice(html.indexOf('<footer class="footer"'));
+
+        expect(header).toContain(SITE_NAME);
+        expect(header).toContain('href="/#agents"');
+        expect(header).not.toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(footer).not.toContain('href="/#agents"');
+        expect(footer).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(textOf(header)).toContain("Shortlist (0)");
+        expect(textOf(header)).toContain("Sign in");
+      })
+  );
+
+  it.effect("marks the current page in the site navigation", () =>
+    Effect.map(render("/shortlist", Preload.Nothing()), ({ html }) => {
+      expect(html).toContain(
+        '<a aria-current="page" class="nav-link" href="/shortlist"'
+      );
+      expect(html).not.toContain(
+        '<a aria-current="page" class="nav-link" href="/"'
+      );
+    })
+  );
+
+  it.effect("gives the For agents link a target on the board", () =>
+    Effect.map(render("/", Preload.Nothing()), ({ html }) => {
+      expect(html).toMatch(/<section [^>]*id="agents"/u);
+    })
+  );
+});
+
+const homeGeneratedAt = 1_760_500_000_000;
+
+const homeBoard = Preload.Board({
+  filters: defaultFilters,
+  generatedAt: homeGeneratedAt,
+  jobs: [acmeDirector],
+  stats: null,
+  total: 45,
+});
+
+const boardStats = {
+  activeJobs: 4,
+  companies: [{ company: "Acme <Robotics>", count: 3, slug: "acme-robotics" }],
+  feedsFailing: 0,
+  feedsTotal: 1,
+  generatedAt: 1_760_500_000_000,
+  lastRun: null,
+  newToday: 1,
+  placements: [
+    {
+      count: 3,
+      region: "RemoteNorthAmerica" as const,
+      role: "Director" as const,
+    },
+    { count: 2, region: "Elsewhere" as const, role: "Director" as const },
+    {
+      count: 1,
+      region: "BritishColumbia" as const,
+      role: "VicePresident" as const,
+    },
+  ],
+  regions: [],
+  roles: [],
+};
+
+describe("the New badge on a listing row", () => {
+  const DAY = 86_400_000;
+  const FRESH_BADGE = `class="fresh"`;
+  const arrivedAt = homeGeneratedAt - DAY / 2;
+
+  const row = (postedAt: number) =>
+    Preload.Listing({
+      generatedAt: homeGeneratedAt,
+      jobs: [
+        jobFrom("Greenhouse", "greenhouse:acme/new", {
+          firstSeenAt: arrivedAt,
+          postedAt,
+        }),
+      ],
+      summary: null,
+      total: 1,
+    });
+
+  it.effect("marks a role first seen today that was posted recently", () =>
+    Effect.map(
+      render("/companies/acme-robotics", row(arrivedAt - DAY)),
+      ({ html }) => {
+        expect(html).toContain(FRESH_BADGE);
+      }
+    )
+  );
+
+  it.effect("leaves it off a role that arrived long open", () =>
+    Effect.map(
+      render("/companies/acme-robotics", row(arrivedAt - 31 * DAY)),
+      ({ html }) => {
+        expect(html).not.toContain(FRESH_BADGE);
+      }
+    )
+  );
+});
+
+describe("internal links", () => {
+  it.effect(
+    "links every open role hub and the busiest companies from the home page",
+    () =>
+      Effect.map(
+        render("/", { ...homeBoard, stats: boardStats }),
+        ({ html }) => {
+          const start = html.indexOf('id="browse-title"');
+          const browse = html.slice(start, html.indexOf("</nav>", start));
+
+          const hrefs = [...browse.matchAll(HREF)].map(
+            (match) => match.groups?.href
+          );
+
+          expect(hrefs).toStrictEqual([
+            roleRouter({ place: "BritishColumbia", role: "VicePresident" }),
+            roleRouter({ place: "RemoteCanada", role: "Director" }),
+            roleRouter({ place: "RemoteUnitedStates", role: "Director" }),
+            companyRouter({ slug: "acme-robotics" }),
+          ]);
+          expect(textOf(browse)).toContain("Director roles remote in the US");
+          expect(textOf(browse)).toContain("Acme &lt;Robotics&gt;");
+        }
+      )
+  );
+
+  it.effect("renders no browse section when board stats are unavailable", () =>
+    Effect.map(render("/", homeBoard), ({ html }) => {
+      expect(html).not.toContain('id="browse-title"');
+    })
+  );
+
+  it.effect("links a job page to its company and its role hubs", () =>
+    Effect.map(
+      render(
+        GREENHOUSE_PATH,
+        Preload.Job({
+          job: { ...greenhouse, region: "RemoteNorthAmerica" },
+        })
+      ),
+      ({ html }) => {
+        const more = html.slice(html.indexOf('class="detail-more"'));
+
+        expect(more).toContain(
+          `href="${companyRouter({ slug: "acme-robotics" })}">More at Acme &lt;Robotics&gt;</a>`
+        );
+        expect(more).toContain(
+          `href="${roleRouter({ place: "RemoteCanada", role: "Director" })}">Director roles remote in Canada</a>`
+        );
+        expect(more).toContain(
+          `href="${roleRouter({ place: "RemoteUnitedStates", role: "Director" })}">Director roles remote in the US</a>`
+        );
+        expect(more).not.toContain("on-site in the US");
+      }
+    )
+  );
+
+  it.effect.each(["/", "/about", GREENHOUSE_PATH])(
+    "links the remote US role hubs from the footer on %s",
+    (path) =>
+      Effect.map(render(path, Preload.Nothing()), ({ html }) => {
+        const footer = html.slice(html.indexOf('<footer class="footer"'));
+
+        expect(footer).toContain(
+          `href="${roleRouter({ place: "RemoteUnitedStates", role: "VicePresident" })}"`
+        );
+        expect(footer).toContain(
+          `href="${roleRouter({ place: "RemoteUnitedStates", role: "EngineeringManager" })}"`
+        );
+      })
+  );
+});
+
 describe("home page render", () => {
   it.effect(
     "leads with one headline and ends with agent and source links",
@@ -897,11 +1141,231 @@ describe("home page render", () => {
         expect(html.match(/<h1[\s>]/gu)).toHaveLength(1);
         expect(html).toMatch(/<h1[^>]*>Your next move is on the board.<\/h1>/u);
         expect(html).toContain(
-          `claude mcp add --transport http jobs ${ORIGIN}/mcp`
+          `claude mcp add --transport http gate-change ${ORIGIN}/mcp`
         );
         expect(html).toContain(
           'href="https://github.com/rowlandekemezie/jobs"'
         );
       })
   );
+});
+
+describe("home filters", () => {
+  it.effect("keep every filter in the panel the Filters button controls", () =>
+    Effect.map(render("/", homeBoard), ({ html }) => {
+      const toggle = /<button[^>]*filters-toggle.*?<\/button>/su.exec(
+        html
+      )?.[0];
+
+      expect(toggle).toContain('aria-controls="filter-panel"');
+      expect(toggle).toContain('aria-expanded="false"');
+      expect(textOf(toggle ?? "")).toContain("4 roles, 3 places, last week");
+
+      const panel = html.slice(
+        html.indexOf('id="filter-panel"'),
+        html.indexOf('class="count"')
+      );
+
+      expect(panel).toContain("remote in Canada");
+      expect(panel).toContain("Salary and seniority");
+      expect(panel).toContain("Sign in to get new matches by email");
+    })
+  );
+
+  it.effect("say how fresh the board is when nothing matches", () =>
+    Effect.map(
+      render(
+        "/",
+        Preload.Board({
+          filters: defaultFilters,
+          generatedAt: 1_760_500_000_000,
+          jobs: [],
+          stats: boardStats,
+          total: 0,
+        })
+      ),
+      ({ html }) => {
+        expect(html).toContain("No roles match that sentence yet.");
+        expect(html).toContain('class="status"');
+        expect(html).toContain("The first refresh has not run yet.");
+      }
+    )
+  );
+
+  it.effect("name a Pro selection while the panel is closed", () =>
+    Effect.map(render("/?pay=200000", Preload.Nothing()), ({ html }) => {
+      expect(html).toContain("last week, Pro filters");
+    })
+  );
+});
+
+describe("job page", () => {
+  it.effect("puts Apply before the facts and names each fact once", () =>
+    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+      const facts = html.slice(html.indexOf('class="detail-facts"'));
+
+      expect(html.indexOf('class="apply"')).toBeLessThan(
+        html.indexOf('class="detail-facts"')
+      );
+      expect(textOf(facts)).not.toContain("Source");
+    })
+  );
+
+  it.effect("leaves out Where when the region is all it would say", () =>
+    Effect.map(
+      renderJob({ ...greenhouse, location: "" }, allowedOnly),
+      ({ html }) => {
+        const facts = html.slice(html.indexOf('class="detail-facts"'));
+
+        expect(textOf(facts)).toContain("Region");
+        expect(textOf(facts)).not.toContain("Where");
+      }
+    )
+  );
+});
+
+const SiteGraphProbe = Schema.fromJsonString(
+  Schema.Struct({
+    "@graph": Schema.Tuple([
+      Schema.Struct({
+        "@type": Schema.Literal("WebSite"),
+        name: Schema.String,
+        potentialAction: Schema.Struct({
+          "@type": Schema.Literal("SearchAction"),
+          target: Schema.Struct({ urlTemplate: Schema.String }),
+        }),
+        url: Schema.String,
+      }),
+      Schema.Struct({
+        "@type": Schema.Literal("Organization"),
+        logo: Schema.String,
+        name: Schema.String,
+        url: Schema.String,
+      }),
+    ]),
+  })
+);
+
+const siteGraphIn = (html: string) =>
+  Option.map(Option.fromNullishOr(JSON_LD.exec(html)), (match) =>
+    Schema.decodeUnknownSync(SiteGraphProbe)(match.groups?.json)
+  );
+
+const ManifestProbe = Schema.fromJsonString(
+  Schema.Struct({
+    display: Schema.String,
+    icons: Schema.Array(
+      Schema.Struct({
+        purpose: Schema.String,
+        sizes: Schema.String,
+        src: Schema.String,
+      })
+    ),
+    name: Schema.String,
+    start_url: Schema.String,
+    theme_color: Schema.String,
+  })
+);
+
+const publicFiles = new Set(
+  Object.keys(import.meta.glob("../public/*")).map((file) =>
+    file.replace("../public", "")
+  )
+);
+
+describe("share and install metadata", () => {
+  it.effect(
+    "brands the home title once and describes the site and its owner",
+    () =>
+      Effect.map(render("/", homeBoard), ({ html }) => {
+        expect(html).toContain(
+          `<title>45 engineering leadership roles · ${SITE_NAME}</title>`
+        );
+        expect(html).not.toContain(`${SITE_NAME} · ${SITE_NAME}`);
+
+        const [website, organization] = Option.getOrThrow(siteGraphIn(html))[
+          "@graph"
+        ];
+
+        expect(website.name).toBe(SITE_NAME);
+        expect(website.url).toBe(`${ORIGIN}/`);
+        expect(organization.name).toBe(SITE_NAME);
+        expect(organization.url).toBe(`${ORIGIN}/`);
+        expect(publicFiles).toContain(new URL(organization.logo).pathname);
+      })
+  );
+
+  it.effect(
+    "points the search action at a board search for the typed words",
+    () =>
+      Effect.map(render("/", homeBoard), ({ html }) => {
+        const [website] = Option.getOrThrow(siteGraphIn(html))["@graph"];
+
+        const searched = new URL(
+          website.potentialAction.target.urlTemplate.replace(
+            "{search_term_string}",
+            "platform"
+          )
+        );
+
+        const route = routeAt(`${searched.pathname}${searched.search}`);
+
+        expect(searched.origin).toBe(ORIGIN);
+        expect(Schema.is(Route.Board)(route) && route.filters.search).toBe(
+          "platform"
+        );
+      })
+  );
+
+  it.effect.each(["/pricing", "/about"])(
+    "keeps the site graph off %s but still shares the card image",
+    (path) =>
+      Effect.map(render(path, Preload.Nothing()), ({ html }) => {
+        expect(html).not.toContain('"WebSite"');
+        expect(html).toContain(
+          `<meta property="og:image" content="${ORIGIN}/og.png" />`
+        );
+      })
+  );
+
+  it("keeps a title that already carries the brand as it is", () => {
+    expect(brandedTitle(SITE_NAME)).toBe(SITE_NAME);
+    expect(brandedTitle(`Pro plans · ${SITE_NAME}`)).toBe(
+      `Pro plans · ${SITE_NAME}`
+    );
+  });
+
+  it("links every icon and the manifest from the shell, and each one ships", () => {
+    const linked = Array.from(
+      indexHtml.matchAll(
+        /<link rel="(?:icon|apple-touch-icon|manifest)" href="(?<href>[^"]+)"/gu
+      ),
+      (match) => match.groups?.href
+    );
+
+    expect(linked).toStrictEqual([
+      "/favicon.ico",
+      "/favicon.svg",
+      "/apple-touch-icon.png",
+      "/manifest.webmanifest",
+    ]);
+    expect(linked.filter((href) => !publicFiles.has(href ?? ""))).toStrictEqual(
+      []
+    );
+    expect(publicFiles).toContain("/og.png");
+    expect(indexHtml).toContain("viewport-fit=cover");
+  });
+
+  it("installs under the site name from the root with a maskable icon", () => {
+    const manifest = Schema.decodeUnknownSync(ManifestProbe)(manifestJson);
+
+    expect(manifest.name).toBe(SITE_NAME);
+    expect(manifest.start_url).toBe("/");
+    expect(manifest.display).toBe("standalone");
+    expect(manifest.theme_color.toLowerCase()).toBe("#f4f3ef");
+    expect(manifest.icons.map((icon) => icon.purpose)).toContain("maskable");
+    expect(
+      manifest.icons.filter((icon) => !publicFiles.has(icon.src))
+    ).toStrictEqual([]);
+  });
 });

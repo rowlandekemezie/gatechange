@@ -294,7 +294,7 @@ describe("agent tokens", () => {
       Effect.map(renderAccount(signedIn, pro, issued), (text) => {
         expect(text).toContain(`It will not be shown again. ${SECRET} `);
         expect(text).toContain(
-          `claude mcp add --transport http jobs ${ORIGIN}/mcp --header "Authorization: Bearer ${SECRET}"`
+          `claude mcp add --transport http gate-change ${ORIGIN}/mcp --header "Authorization: Bearer ${SECRET}"`
         );
         expect(text).toContain("Build server, created October 18, 2026");
         expect(text).toContain("Laptop, created October 1, 2026");

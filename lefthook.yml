@@ -7,3 +7,8 @@ pre-commit:
       run: pnpm check
     test:
       run: pnpm test
+
+pre-push:
+  commands:
+    gate:
+      run: pnpm turbo run check test build --concurrency=1

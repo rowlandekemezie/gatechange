@@ -2,7 +2,7 @@
 
 jobs.rowlandekemezie.com is a job board for engineering leaders who are looking for their next role. It lists engineering manager, director, head of engineering, and VP of engineering openings that are remote in Canada, remote in the US, or based in Vancouver and British Columbia. Every listing is free and public, and every listing links to the original posting.
 
-The board started as a personal tool. It is becoming a product with a paid tier, Jobs Pro. Pro sells speed, sharper filters, and company intel. It never sells access to a listing.
+The board started as a personal tool. It is becoming a product with a paid tier, Gate Change Pro. Pro sells speed, sharper filters, and company intel. It never sells access to a listing.
 
 `AGENTS.md` is the law for commands, architecture, and the fence. This file sets intent. If the two disagree, `AGENTS.md` wins, and this file gets amended.
 
@@ -13,7 +13,7 @@ The customer is the engineering leader running their own job search. They manage
 What this person needs from the board:
 
 - Only leadership titles, filtered by role and by where they can work.
-- The freshest roles first. The board admits roles posted in the last 30 days, keeps each while its source lists it, and ranks by relevance minus age.
+- The freshest roles first, with long-open roles still findable. The board admits every role a company's own board lists, however old the posting, admits roles from aggregators only when they were posted in the last 30 days, and ranks by relevance minus age. A role leaves when its company board stops listing it, or 30 days after an aggregator posted it.
 - One link to the real posting, preferring the company's own board over an aggregator copy.
 - A place to keep a shortlist and track applications.
 

@@ -12,21 +12,55 @@ import {
   postedAgo,
   regionLabel,
   remotePolicyLabel,
+  roleHubTitle,
   seniorityLabel,
   sourceLabel,
   teamSizeLabel,
 } from "../../client/board/copy.js";
 import { entryOf, markButtons } from "../../client/board/marks.js";
+import type { ShortlistEntry } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { JobState } from "../../client/board/model.js";
 import type { ModelValue } from "../../client/board/model.js";
-import { boardUrl, companyRouter } from "../../client/route.js";
+import { roleHubsWhere } from "../../client/listing.js";
+import { boardUrl, companyRouter, roleRouter } from "../../client/route.js";
 
 const backLink = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.a(
     [h.Class("back"), h.Href(boardUrl(model.filters))],
     ["Back to open roles"]
+  );
+
+const moreLinks = (h: HtmlBuilder<MessageValue>, job: JobDetailValue): Html =>
+  h.nav(
+    [h.Class("detail-more"), h.AriaLabel("More roles like this")],
+    [
+      h.ul(
+        [],
+        [
+          ...Option.match(companySlugOf(job.company), {
+            onNone: () => [],
+            onSome: (slug) => [
+              h.li(
+                [],
+                [
+                  h.a(
+                    [h.Href(companyRouter({ slug }))],
+                    [`More at ${job.company}`]
+                  ),
+                ]
+              ),
+            ],
+          }),
+          ...roleHubsWhere(
+            (role, region) => role === job.role && region === job.region
+          ).map((hub) =>
+            h.li([], [h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)])])
+          ),
+        ]
+      ),
+    ]
   );
 
 const fact = <A>(
@@ -98,11 +132,8 @@ const foundView = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
   job: JobDetailValue
-): Html => {
-  const where =
-    job.location.length > 0 ? job.location : regionLabel(job.region);
-
-  return h.article(
+): Html =>
+  h.article(
     [h.Class("detail")],
     [
       backLink(model, h),
@@ -117,11 +148,29 @@ const foundView = (
           }),
         ]
       ),
+      h.div(
+        [h.Class("detail-actions")],
+        [
+          h.a(
+            [
+              h.Class("apply"),
+              ...Option.toArray(
+                Option.map(offSiteHref(job.url), (href) => h.Href(href))
+              ),
+              h.Target("_blank"),
+              h.Rel("noopener noreferrer"),
+            ],
+            [`Apply on ${sourceLabel(job.source)}`]
+          ),
+          markButtons(model, h, job),
+        ]
+      ),
       h.dl(
         [h.Class("detail-facts")],
         [
-          h.dt([], ["Where"]),
-          h.dd([], [where]),
+          ...(job.location.length > 0
+            ? [h.dt([], ["Where"]), h.dd([], [job.location])]
+            : []),
           h.dt([], ["Region"]),
           h.dd([], [regionLabel(job.region)]),
           ...(job.salary === null
@@ -141,59 +190,48 @@ const foundView = (
               ),
             ]
           ),
-          h.dt([], ["Source"]),
-          h.dd([], [sourceLabel(job.source)]),
         ]
       ),
       ...(job.enrichment === null ? [] : enrichmentView(h, job.enrichment)),
-      h.div(
-        [h.Class("detail-actions")],
-        [
-          h.a(
-            [
-              h.Class("apply"),
-              ...Option.toArray(
-                Option.map(offSiteHref(job.url), (href) => h.Href(href))
-              ),
-              h.Target("_blank"),
-              h.Rel("noopener noreferrer"),
-            ],
-            [`Apply on ${sourceLabel(job.source)}`]
-          ),
-          markButtons(model, h, job),
-        ]
-      ),
+      moreLinks(h, job),
     ]
   );
-};
 
-const missingView = (
+const savedRoleView = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
-  id: string
+  saved: ShortlistEntry
 ): Html =>
-  h.div(
-    [h.Class("empty detail"), h.Role("alert")],
+  h.article(
+    [h.Class("detail")],
     [
-      h.h1([h.Class("detail-title")], ["This role is no longer on the board"]),
+      backLink(model, h),
+      h.h1([h.Class("detail-title")], [saved.title]),
+      h.p([h.Class("job-company")], [saved.company]),
+      ...(saved.location.length > 0
+        ? [
+            h.dl(
+              [h.Class("detail-facts")],
+              [h.dt([], ["Where"]), h.dd([], [saved.location])]
+            ),
+          ]
+        : []),
       h.p(
-        [],
+        [h.Class("detail-note")],
         [
-          "Its company took the posting down, or the board has not seen it for 30 days.",
+          "This role is no longer on the board. You are seeing what it said when you saved it.",
         ]
       ),
-      ...Option.match(entryOf(model, id), {
+      ...Option.match(offSiteHref(saved.url), {
         onNone: () => [],
-        onSome: (mark) => [
-          h.p(
-            [],
+        onSome: (href) => [
+          h.div(
+            [h.Class("detail-actions")],
             [
-              `You tracked ${mark.title} at ${mark.company}. `,
               h.a(
                 [
-                  ...Option.toArray(
-                    Option.map(offSiteHref(mark.url), (href) => h.Href(href))
-                  ),
+                  h.Class("apply"),
+                  h.Href(href),
                   h.Target("_blank"),
                   h.Rel("noopener noreferrer"),
                 ],
@@ -203,6 +241,15 @@ const missingView = (
           ),
         ],
       }),
+    ]
+  );
+
+const goneView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  h.div(
+    [h.Class("empty detail"), h.Role("alert")],
+    [
+      h.h1([h.Class("detail-title")], ["This role is no longer on the board"]),
+      h.p([], ["Its company took the posting down, or the listing expired."]),
       backLink(model, h),
     ]
   );
@@ -235,7 +282,11 @@ export const jobPage = (
         [h.Class("empty detail"), h.Role("status")],
         [h.h1([h.Class("detail-title")], ["Finding role"])]
       ),
-    Missing: ({ id }) => missingView(model, h, id),
+    Missing: ({ id }) =>
+      Option.match(entryOf(model, id), {
+        onNone: () => goneView(model, h),
+        onSome: (saved) => savedRoleView(model, h, saved),
+      }),
     NotAsked: () => h.empty,
   });
 
@@ -244,6 +295,10 @@ export const jobTitle = (model: ModelValue) =>
     Failed: () => "Role unavailable",
     Found: ({ job }) => `${job.title} at ${job.company}`,
     Loading: () => "Engineering leadership role",
-    Missing: () => "Role not found",
+    Missing: ({ id }) =>
+      Option.match(entryOf(model, id), {
+        onNone: () => "Role not found",
+        onSome: (saved) => `${saved.title} at ${saved.company}`,
+      }),
     NotAsked: () => "Engineering leadership role",
   });

@@ -36,6 +36,8 @@ import {
   PushUrl,
   ReadShortlist,
   ReplaceUrl,
+  ScrollToFragment,
+  ScrollToTop,
   SendTrackerChange,
   SyncTracker,
   WriteShortlist,
@@ -45,6 +47,7 @@ import {
   defaultFilters,
   Filters,
   hasNoSelection,
+  hasProSelection,
   queryOf,
   regionGroups,
   toggled,
@@ -203,6 +206,17 @@ const sameFilters = Schema.toEquivalence(Filters);
 
 const sameRoute = Schema.toEquivalence(Route);
 
+const keepingRoles = (jobs: typeof JobsState.Type) =>
+  (Schema.is(JobsState.Loaded)(jobs) ||
+    Schema.is(JobsState.Refreshing)(jobs)) &&
+  Array.isReadonlyArrayNonEmpty(jobs.jobs)
+    ? JobsState.Refreshing({
+        generatedAt: jobs.generatedAt,
+        jobs: jobs.jobs,
+        total: jobs.total,
+      })
+    : JobsState.Loading();
+
 const withFilters = (
   model: ModelValue,
   filters: FiltersValue
@@ -226,7 +240,7 @@ const withFilters = (
 
   return {
     commands: [FetchJobs({ generation, query: queryOf(filters, 0) })],
-    model: modifyFields(nextModel, { jobs: () => JobsState.Loading() }),
+    model: modifyFields(nextModel, { jobs: keepingRoles }),
   };
 };
 
@@ -258,9 +272,7 @@ const followedEntitlement = (
     !isProMember(previous.billing) &&
     isProMember(step.model.billing) &&
     Schema.is(Route.Board)(step.model.route) &&
-    (step.model.filters.salaryListed ||
-      step.model.filters.salaryFloor !== null ||
-      step.model.filters.seniorities.length > 0)
+    hasProSelection(step.model.filters)
   ) {
     return joined(step, (next) => withFilters(next, next.filters));
   }
@@ -366,9 +378,15 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   });
 };
 
+const withStats = (step: UpdateReturn): UpdateReturn =>
+  Schema.is(Route.Board)(step.model.route) &&
+  Schema.is(StatsState.Unavailable)(step.model.stats)
+    ? { ...step, commands: [...(step.commands ?? []), FetchStats()] }
+    : step;
+
 const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
   const route = routeOfUrl(url);
-  const routed = entered(model, route);
+  const routed = withStats(entered(model, route));
 
   const address = addressOf(url);
 
@@ -381,8 +399,26 @@ const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
     : visiting(routed, ReplaceUrl, canonical);
 };
 
+const hrefOf = (url: Url) =>
+  Option.match(url.hash, {
+    onNone: () => addressOf(url),
+    onSome: (fragment) => `${addressOf(url)}#${fragment}`,
+  });
+
+const landedAt = (model: ModelValue, url: Url): UpdateReturn => {
+  const step = arrivedAt(model, url);
+
+  const landing = Option.match(url.hash, {
+    onNone: () =>
+      step.model.route._tag === model.route._tag ? [] : [ScrollToTop()],
+    onSome: (fragment) => [ScrollToFragment({ fragment })],
+  });
+
+  return { ...step, commands: [...(step.commands ?? []), ...landing] };
+};
+
 const echoed = (model: ModelValue, url: Url): UpdateReturn => {
-  const address = addressOf(url);
+  const address = hrefOf(url);
 
   return Option.match(
     pipe(
@@ -397,7 +433,7 @@ const echoed = (model: ModelValue, url: Url): UpdateReturn => {
         const settled = modifyFields(model, { awaitingEcho: () => later });
 
         return Array.isReadonlyArrayEmpty(later)
-          ? arrivedAt(settled, url)
+          ? landedAt(settled, url)
           : { model: settled };
       },
     }
@@ -621,12 +657,16 @@ const preloaded = (model: ModelValue, preload: PreloadValue): ModelValue => {
   const { route } = model;
 
   return Preload.match<ModelValue>(preload, {
-    Board: ({ filters, generatedAt, jobs, total }) =>
+    Board: ({ filters, generatedAt, jobs, stats, total }) =>
       Schema.is(Route.Board)(route) && sameFilters(route.filters, filters)
         ? modifyFields(model, {
             draftSearch: () => filters.search,
             filters: () => filters,
             jobs: () => JobsState.Loaded({ generatedAt, jobs, total }),
+            stats: () =>
+              stats === null
+                ? StatsState.Unavailable()
+                : StatsState.Loaded({ stats }),
           })
         : model,
     Job: ({ job }) =>
@@ -663,6 +703,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         billing: billing.model,
         draftSearch: "",
         filters: defaultFilters,
+        filtersOpen: false,
         generation: 0,
         intel: IntelState.NotAsked(),
         job: JobState.NotAsked(),
@@ -671,6 +712,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         marks: [],
         more: MoreState.Idle(),
         origin: flags.origin,
+        proFiltersOpen: false,
         route: routeOfUrl(url),
         savedSearches: savedSearches.model,
         stats: StatsState.Unavailable(),
@@ -685,7 +727,6 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   return {
     commands: [
       ...(routed.commands ?? []),
-      FetchStats(),
       ReadShortlist(),
       ...Command.mapMessages(account.commands, accountChild.toParentMessage),
       ...Command.mapMessages(
@@ -693,7 +734,10 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         billingChild.toParentMessage
       ),
     ],
-    model: routed.model,
+    model: modifyFields(routed.model, {
+      filtersOpen: () => hasProSelection(routed.model.filters),
+      proFiltersOpen: () => hasProSelection(routed.model.filters),
+    }),
   };
 };
 
@@ -768,6 +812,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     ClickedAnySeniority: () =>
       navigatedTo(model, { ...model.filters, seniorities: [] }),
     ClickedClearMark: ({ id }) => unmarked(model, id),
+    ClickedFilters: () => ({
+      model: modifyFields(model, { filtersOpen: (isOpen) => !isOpen }),
+    }),
     ClickedKeepShortlist: () => ({
       model: withOffer(model, (offer) =>
         Schema.is(ImportOffer.Asking)(offer) ? ImportOffer.Declined() : offer
@@ -780,7 +827,7 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
           visiting(
             { model },
             sameRoute(routeOfUrl(url), model.route) ? ReplaceUrl : PushUrl,
-            addressOf(url)
+            hrefOf(url)
           ),
       }),
     ClickedLoadMore: () => {
@@ -859,6 +906,7 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
         jobs
       );
     },
+    CompletedTrackAnalytics: () => ({ model }),
     CompletedWriteShortlist: () => ({ model }),
     FailedFetchIntel: ({ locked, slug }) => ({
       model: isAwaitingIntel(model, slug)
@@ -1031,6 +1079,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     }),
     SucceededTrackerChange: ({ jobs, revision }) =>
       withServerTracker(model, revision, jobs),
+    ToggledProFilters: ({ isOpen }) => ({
+      model: modifyFields(model, { proFiltersOpen: () => isOpen }),
+    }),
     ToggledRegionGroup: ({ group }) =>
       navigatedTo(model, {
         ...model.filters,

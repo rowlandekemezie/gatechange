@@ -61,7 +61,7 @@ Recording reads live public job boards, so do it by hand and commit the result. 
 
 ## Drive
 
-`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, sends a random `cf-connecting-ip` on requests to the board's own origin so each run gets its own better-auth rate-limit bucket (other origins, such as Google Fonts, get no extra header), and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 20) and fails as soon as the board shows its error alert.
+`scripts/drive.ts` launches headless Chrome with a throwaway profile, so `localStorage` starts empty, sends a random `cf-connecting-ip` on requests to the board's own origin so each run gets its own better-auth rate-limit bucket (other origins, such as Google Fonts, get no extra header), and drives the page over the DevTools protocol with Node's built-in `WebSocket`. It waits for at least `--min-rows` job rows (default 10; the board shows 15 rows per page) and fails as soon as the board shows its error alert.
 
 ```sh
 mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
@@ -71,9 +71,10 @@ mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
 Scenarios:
 
 - `board` loads the board and screenshots it.
-- `filter` clicks the `day` age chip and requires the count line and the row count to drop.
+- `filter` clicks the `day` age chip and requires the count line and the row count to drop. Every chip click needs a visible chip, so on `--mobile` the scenario opens the `Filters` panel first and fails if that does not reveal it.
+- `filter-steady` clicks the `day` age chip and fails if the board leaves the page at any point before the new rows arrive.
 - `search` types the first row's company into the search box, submits, and requires every row to show that company.
-- `shortlist` presses `Save` on the first row, opens the `Your shortlist` tab, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
+- `shortlist` saves the first row (the `Save` icon button on desktop; on `--mobile` the row's `Save` text button on its job page, because the row's buttons are hidden on a phone), opens the `Shortlist (n)` header link, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
 - `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest `/account/confirm` link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), presses `Finish signing in`, and requires the header to show the email.
 - `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
 - `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
@@ -85,6 +86,7 @@ Scenarios:
 - `tracker-note` signs in, writes a note on the first card, reloads, and requires the note.
 - `tracker-remove` signs in, removes the first card, reloads, and requires it gone.
 - `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
+- `tracker-gone` signs in, opens the first closed card, and requires the job page to show the saved title and a link to the original posting. Set that job's `departed_at` in the stage's local D1 first.
 - `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. It then reads the session cookie over the DevTools protocol and replays it from Node: a `trackJob` with `sec-fetch-site: cross-site` and a foreign `Origin` must answer 403, and a `trackedJobs` with the same cookie and same-origin headers must answer as a member, which proves the refusal came from the cross-site guard. Read the victim's row from the local D1 afterwards to prove it did not change.
 
 - `pricing` opens `/pricing` and requires three plan cards with their prices and no sideways scroll. Add `--mobile` for the phone check.
@@ -105,7 +107,7 @@ Flags:
 - `--dark` sets `prefers-color-scheme: dark`. The report's `background` field shows the body color, so a dark run reads near black.
 - `--full-page` captures the whole page instead of the viewport.
 
-The handles come from `apps/web/src/features/board/view.ts`, `apps/web/src/features/job/view.ts`, `apps/web/src/client/board/marks.ts`, and `apps/web/src/client/board/view.ts`: `li.job` rows, `p.count` for the match count, `.status` for the board stats line, `button.phrase` chips by text (`day`, `3 days`, `week`, `remote in Canada`, `director`, and so on), `form.search input`, `li.job button.mark` for `Save` and `Applied`, `nav.tabs a.tab` for `Open roles` and `Your shortlist (n)`, and `.empty[role=alert]` for the load error. To add a scenario, add an entry to `actions` in `drive.ts` that clicks through these handles and throws when the end state is wrong.
+The handles come from `apps/web/src/features/board/view.ts`, `apps/web/src/features/job/view.ts`, `apps/web/src/client/board/marks.ts`, and `apps/web/src/client/board/view.ts`: `.board .departure` rows (`a.departure-tiles`, `.role-title`, `.cell-company`), `p.count` for the match count, `.status` for the board stats line, `button.phrase` chips by text (`day`, `3 days`, `week`, `remote in Canada`, `director`, and so on), `form.search input`, `.departure button.mark[aria-label="Save"|"Applied"]` for the desktop icon buttons and `.detail-actions button.mark` for the text buttons on a job page, `a.nav-link` for `Roles` and `Shortlist (n)`, `a.nav-account` for `Sign in` or the email, and `.empty[role=alert]` for the load error. To add a scenario, add an entry to `actions` in `drive.ts` that clicks through these handles and throws when the end state is wrong.
 
 `drive.ts` prints one JSON line. On success it has `ok: true`, each step's row count and count text, and the screenshot path, and exits 0. On failure it has `ok: false`, a `reason`, and a `<name>-failed.png` screenshot when Chrome can still take one, and exits 1. Bad arguments exit 2.
 
@@ -130,7 +132,7 @@ alchemy dev starts a sidecar (`Local/Sidecar.js`) in its own process group, so k
 - `alchemy dev exited before the Website was ready`: read the log tail. A stale stage often clears with `down.sh` then `up.sh`.
 - `FAIL alchemy dev for stage <stage> exited during the run`: the dev server died mid-drive. `verify.sh` reports it even when the drive passed.
 - `board shows an error`: the RPC call failed. Check `dev.log` and `apps/infra/.alchemy/log/<stage>/JobsBackend`.
-- `timed out waiting for at least 20 job rows`: the seed did not reach this stage's D1. Run `doctor.sh`.
+- `timed out waiting for at least 10 job rows`: the seed did not reach this stage's D1. Run `doctor.sh`.
 - `cannot tell which local D1 belongs to stage`: an old stage left its D1 file behind. Run `down.sh` on the old stage, or boot under a new stage name.
 - `refusing stage '<stage>'`: the name is not `verify-<name>`, or it contains `prod` or `staging`. Nothing ran.
 - `refusing to destroy stage <stage>: <row> is not a local alchemy dev resource`: the stage holds a row a deploy wrote. Stop and ask the owner; never remove it from a verify run.

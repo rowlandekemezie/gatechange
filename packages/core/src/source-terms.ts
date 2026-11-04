@@ -1,5 +1,6 @@
 import { Data } from "effect";
 
+import type { FeedCoverageValue } from "./feed.js";
 import type { SourceNameValue } from "./job.js";
 
 interface Citation {
@@ -166,3 +167,6 @@ export const SourceTerms: Readonly<Record<SourceNameValue, SourceTermsValue>> =
       paidFeatures: unstated,
     },
   };
+
+export const coverageOfSource = (source: SourceNameValue): FeedCoverageValue =>
+  SourceTerms[source].kind === "CompanyBoard" ? "Complete" : "Window";

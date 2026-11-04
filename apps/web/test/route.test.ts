@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   companySlugOf,
   JobQuery,
+  MAX_AGE_DAYS,
   RoleLevel,
   roleLevels,
   seniorities,
@@ -11,6 +12,7 @@ import { Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
 
 import {
+  ageWindows,
   defaultFilters,
   Filters,
   inOrderOf,
@@ -176,6 +178,15 @@ describe("board route", () => {
     );
   });
 
+  it("an age window reaches every role the board holds", () => {
+    expect(ageWindows.at(-1)).toBe(MAX_AGE_DAYS);
+    expect(routeAt(`/?age=${MAX_AGE_DAYS}`)).toStrictEqual(
+      Route.Board({
+        filters: { ...defaultFilters, maxAgeDays: MAX_AGE_DAYS },
+      })
+    );
+  });
+
   it("an empty list parameter means no selection, not the default", () => {
     expect(routeAt("/?role=")).toStrictEqual(
       Route.Board({ filters: { ...defaultFilters, roles: [] } })
@@ -186,7 +197,7 @@ describe("board route", () => {
 describe("board query", () => {
   it("the default filters ask for no pay floor and no level restriction", () => {
     expect(queryOf(defaultFilters, 0)).toStrictEqual({
-      limit: 40,
+      limit: 15,
       maxAgeDays: 7,
       offset: 0,
       regions: [

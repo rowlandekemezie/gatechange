@@ -33,14 +33,14 @@ import {
   withStreamableHttpCompatibility,
 } from "./mcp-streamable-http.js";
 
-export const MCP_SERVER_NAME = "jobs-rowlandekemezie";
+export const MCP_SERVER_NAME = "gate-change";
 
 export const MCP_SERVER_VERSION = "1.0.0";
 
 const MCP_PROTOCOLS = [McpProtocol.v2026_07_28] as const;
 
 const INSTRUCTIONS =
-  "Search engineering leadership roles (managers to CTOs) posted in the last 30 days with listJobs, and read board health with boardStats. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
+  "Search open engineering leadership roles (managers to CTOs) with listJobs, and read board health with boardStats. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
 
 export const agentToolkit = toToolkit(agentCapabilities);
 

@@ -6,7 +6,7 @@ The headline sentence is the filter: "Show me VP, head of engineering, director 
 
 - `filter-role` toggles `VP`, `head of engineering`, `director`, and `engineering manager`.
 - `filter-region` toggles `remote in Canada`, `remote in the US`, `in Vancouver and BC`, `elsewhere in Canada`, `on-site in the US`, and `anywhere else`.
-- `filter-age` selects one of `day`, `3 days`, `week`, `2 weeks`, or `month`.
+- `filter-age` selects one of `day`, `3 days`, `week`, `2 weeks`, `month`, or `10 years`.
 - `filter-sort` selects `most relevant` or `newest`.
 - `filter-none` shows an empty state when no role or no region is selected.
 
@@ -20,7 +20,7 @@ Preconditions:
 
 - `doctor.sh <stage>` prints four `ok` lines.
 
-- **Age.** Run `drive.ts --url <url> --out <dir> --scenario filter`. It clicks `day`. The JSON shows the count drop from the week view, for example `65 roles match` to `17 roles match`, and fewer rows.
+- **Age.** Run `drive.ts --url <url> --out <dir> --scenario filter`. It clicks `day`. The JSON shows the count drop from the week view, for example `65 roles match` to `17 roles match`, and no more rows (a page holds 15).
 - **Region or role.** Not scripted yet. Copy the `filter` action, click a chip such as `anywhere else`, and require the count to change.
 - **Sort.** Not scripted yet. Click `newest` and require the first row's age to be the newest in the list.
 

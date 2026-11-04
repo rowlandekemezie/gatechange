@@ -2,8 +2,17 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   workflow_dispatch:
     inputs:
       preview_plan_only:
@@ -20,7 +29,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -37,6 +46,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
+      - uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -82,6 +97,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -135,6 +156,8 @@ jobs:
           PRO_PLANS: ${{ vars.PRO_PLANS }}
           STRIPE_API_KEY: ${{ secrets.STRIPE_LIVE_API_KEY }}
           STRIPE_RESTRICTED_KEY: ${{ secrets.STRIPE_LIVE_RESTRICTED_KEY }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
 
       - name: Smoke test
         run: |
@@ -192,6 +215,12 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
@@ -239,6 +268,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           PRO_PLANS: ${{ vars.PRO_PLANS }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
         run: |
           unset STRIPE_API_KEY STRIPE_API_BASE_URL
           if [ -z "$PRO_PLANS" ]; then echo "::error::Set the PRO_PLANS variable on the preview environment. apps/api/.env.schema describes PRO_PLANS."; exit 1; fi
@@ -255,10 +286,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           PRO_PLANS: ${{ vars.PRO_PLANS }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
         run: |
           unset STRIPE_API_KEY STRIPE_API_BASE_URL
           selection=()
-          if [ "$PREVIEW_PARENT_ONLY" = true ]; then selection=(--include PullRequestBackend); fi
+          if [ "$PREVIEW_PARENT_ONLY" = true ]; then selection=(--include PullRequestBackend --force); fi
           pnpm exec alchemy deploy --stage preview --profile preview --yes --no-input "${selection[@]}"
 
       - name: Smoke test preview
@@ -291,12 +324,11 @@ jobs:
   pr-preview:
     name: Deploy PR preview
     needs: check
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
-      deployments: write
     environment:
       name: preview
       url: ${{ steps.preview.outputs.url }}
@@ -321,6 +353,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
 
       - name: Install and build
         run: |
@@ -350,6 +388,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
+          POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          POSTHOG_REGION: ${{ vars.POSTHOG_REGION }}
         run: |
           current=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,headRefOid)
           if [ "$(jq -r .state <<< "$current")" != OPEN ] || [ "$(jq -r .headRefOid <<< "$current")" != "$PR_HEAD_SHA" ]; then
@@ -382,7 +422,7 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "### PR preview: [$PR_STAGE]($url)" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish deployment link and update PR comment
+      - name: Update PR comment
         env:
           PREVIEW_URL: ${{ steps.preview.outputs.url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -391,16 +431,8 @@ jobs:
           node --input-type=module <<'JS'
           import { writeFileSync } from 'node:fs';
           const { HEAD_SHA, PR_STAGE, PREVIEW_URL, RUNNER_TEMP } = process.env;
-          writeFileSync(`${RUNNER_TEMP}/deployment.json`, JSON.stringify({ ref: HEAD_SHA, environment: PR_STAGE, auto_merge: false, required_contexts: [], production_environment: false, transient_environment: true, description: 'Cloudflare native PR preview' }));
-          writeFileSync(`${RUNNER_TEMP}/deployment-status.json`, JSON.stringify({ state: 'success', environment_url: PREVIEW_URL, auto_inactive: true, log_url: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` }));
           writeFileSync(`${RUNNER_TEMP}/preview-comment.json`, JSON.stringify({ body: `<!-- jobs-pr-preview -->\nPreview ready: **[Open PR preview](${PREVIEW_URL})**\n\nCommit: \`${HEAD_SHA.slice(0, 7)}\` · Cloudflare native Worker Previews.\nUses shared preview data. Checkout and scheduled jobs are disabled. This URL updates on pushes and is removed when the PR closes.` }));
           JS
-          previous=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=$PR_STAGE&per_page=1" --jq '.[0].id // empty')
-          deployment=$(gh api "repos/$GITHUB_REPOSITORY/deployments" --input "$RUNNER_TEMP/deployment.json" --jq '.id')
-          gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment/statuses" --input "$RUNNER_TEMP/deployment-status.json" > /dev/null
-          if [ -n "$previous" ]; then
-            gh api "repos/$GITHUB_REPOSITORY/deployments/$previous/statuses" -f state=inactive > /dev/null
-          fi
           comment=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- jobs-pr-preview -->"))) | .id' | head -1)
           if [ -n "$comment" ]; then
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment" --input "$RUNNER_TEMP/preview-comment.json" > /dev/null

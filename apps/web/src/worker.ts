@@ -1,4 +1,6 @@
-import { Effect, Option, Schema } from "effect";
+import { BoardStats } from "@rat-stack/core/contracts";
+import type { BoardStatsValue } from "@rat-stack/core/contracts";
+import { Clock, Effect, Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
 
 import { hasNoSelection, queryOf } from "./client/board/filters.js";
@@ -8,11 +10,18 @@ import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
 import {
   edgeRouteOf,
+  HASHED_ASSET_CACHE_CONTROL,
   PRIVATE_CACHE_CONTROL,
   PRIVATE_REFERRER_POLICY,
 } from "./edge-routes.js";
 import type { EdgeRoute } from "./edge-routes.js";
-import { clientOf, listedJobs, shellOf } from "./server/backend.js";
+import {
+  analyticsOf,
+  proxyIngest,
+  withAnalyticsKey,
+} from "./server/analytics.js";
+import type { AnalyticsBindings } from "./server/analytics.js";
+import { clientOf, shellOf, sitemapJobs } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
@@ -31,7 +40,7 @@ interface RateLimiter {
   }) => Promise<{ readonly success: boolean }>;
 }
 
-interface EdgeBindings {
+interface EdgeBindings extends AnalyticsBindings {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
   readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
@@ -87,12 +96,48 @@ const pageKeyOf = (pageUrl: URL, shell: string) =>
     return new Request(keyUrl);
   });
 
-const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
+const STATS_PATH = "/board-stats";
+
+const bodyOf = (response: Response) =>
+  // @effect-diagnostics-next-line asyncFunction:off -- Response.text is Promise-based.
+  Effect.promise(async () => await response.text());
+
+const cachedStats = <E>(
+  query: Effect.Effect<BoardStatsValue, E>,
+  origin: string,
+  shell: string,
+  lifetime: Lifetime
+) =>
+  Effect.gen(function* readCachedStats() {
+    const key = yield* pageKeyOf(new URL(STATS_PATH, origin), shell);
+
+    const response = yield* throughEdgeCache(
+      key,
+      key,
+      lifetime,
+      query.pipe(Effect.map((stats) => Response.json(stats)))
+    );
+
+    const stats = yield* Schema.decodeEffect(Schema.fromJsonString(BoardStats))(
+      yield* bodyOf(response)
+    );
+
+    return { ...stats, generatedAt: yield* Clock.currentTimeMillis };
+  });
+
+const preloadOf = (
+  backend: ServiceBinding,
+  route: RouteValue,
+  origin: string,
+  shell: string,
+  lifetime: Lifetime
+) =>
   Effect.scoped(
     Effect.gen(function* fetchPreload() {
       if (
         Schema.is(Route.Pricing)(route) ||
-        Schema.is(Route.Information)(route)
+        Schema.is(Route.Information)(route) ||
+        Schema.is(Route.NotFound)(route)
       ) {
         return Preload.Nothing();
       }
@@ -100,11 +145,28 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
       const client = yield* clientOf(backend);
 
       if (Schema.is(Route.Board)(route)) {
-        const page = hasNoSelection(route.filters)
-          ? { generatedAt: 0, jobs: [], total: 0 }
-          : yield* client.listJobs(queryOf(route.filters, 0));
+        const { page, stats } = yield* Effect.all(
+          {
+            page: hasNoSelection(route.filters)
+              ? Effect.succeed({ generatedAt: 0, jobs: [], total: 0 })
+              : client.listJobs(queryOf(route.filters, 0)),
+            stats: cachedStats(
+              client.boardStats({}),
+              origin,
+              shell,
+              lifetime
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("board stats unavailable", cause).pipe(
+                  Effect.as(null)
+                )
+              )
+            ),
+          },
+          { concurrency: 2 }
+        );
 
-        return Preload.Board({ ...page, filters: route.filters });
+        return Preload.Board({ ...page, filters: route.filters, stats });
       }
 
       if (Schema.is(Route.Job)(route)) {
@@ -158,7 +220,14 @@ const servePage = (
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
 
     const fresh = Effect.gen(function* renderFreshPage() {
-      const preload = yield* preloadOf(bindings.BACKEND, route);
+      const preload = yield* preloadOf(
+        bindings.BACKEND,
+        route,
+        url.origin,
+        shell,
+        lifetime
+      );
+
       const page = yield* renderPage(shell, pageUrl, route, preload);
 
       return respond(page.html, "text/html", page.status);
@@ -194,7 +263,7 @@ const serveSitemap = (
     request,
     new Request(new URL("/sitemap.xml", url.origin)),
     lifetime,
-    listedJobs(bindings.BACKEND).pipe(
+    sitemapJobs(bindings.BACKEND).pipe(
       Effect.match({
         onFailure: () => respond("", "application/xml", 503),
         onSuccess: (jobs) =>
@@ -203,13 +272,80 @@ const serveSitemap = (
     )
   );
 
+const noindex = (response: Response) => {
+  const copy = new Response(response.body, response);
+
+  copy.headers.set("x-robots-tag", "noindex");
+
+  return copy;
+};
+
+const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "ref"]);
+
+const isTrackingParam = (name: string) =>
+  TRACKING_PARAMS.has(name) || name.startsWith("utm_");
+
+const siteUrlOf = (request: Request) => {
+  const url = new URL(request.url);
+  const tracking = [...url.searchParams.keys()].filter(isTrackingParam);
+
+  for (const name of tracking) {
+    url.searchParams.delete(name);
+  }
+
+  return url;
+};
+
+const FILE_PATH = /\.[^/]*$/u;
+
+const fetchAsset = (bindings: EdgeBindings, input: Request | URL) =>
+  // @effect-diagnostics-next-line asyncFunction:off -- The ASSETS binding is Promise-based.
+  Effect.promise(async () => await bindings.ASSETS.fetch(input));
+
+const serveUnmatched = (
+  bindings: EdgeBindings,
+  request: Request,
+  url: URL,
+  lifetime: Lifetime
+) =>
+  Effect.gen(function* serveUnmatchedPath() {
+    const asset = yield* fetchAsset(bindings, request);
+
+    if (asset.ok && url.pathname.startsWith("/assets/")) {
+      const immutable = new Response(asset.body, asset);
+
+      immutable.headers.set("cache-control", HASHED_ASSET_CACHE_CONTROL);
+
+      return immutable;
+    }
+
+    if (asset.status !== 404 || FILE_PATH.test(url.pathname)) {
+      return asset;
+    }
+
+    const unknown = Option.exists(fromString(url.href), (parsed) =>
+      Schema.is(Route.NotFound)(routeOfUrl(parsed))
+    );
+
+    const page = unknown
+      ? yield* servePage(bindings, request, url, lifetime)
+      : Option.none<Response>();
+
+    if (Option.isSome(page)) {
+      return page.value;
+    }
+
+    const shell = yield* fetchAsset(bindings, new URL("/", url.origin));
+
+    return isPage(url.pathname) ? shell : noindex(shell);
+  });
+
 const serveSite = (
   request: Request,
+  url: URL,
   bindings: EdgeBindings,
   lifetime: Lifetime
 ): Effect.Effect<Option.Option<Response>> => {
-  const url = new URL(request.url);
-
   if (url.pathname === "/robots.txt") {
     return Effect.succeedSome(
       respond(
@@ -266,14 +402,6 @@ const tooManyAgentCalls = (request: Request) =>
     { headers: { "retry-after": String(RETRY_AFTER_SECONDS) }, status: 429 }
   );
 
-const noindex = (response: Response) => {
-  const copy = new Response(response.body, response);
-
-  copy.headers.set("x-robots-tag", "noindex");
-
-  return copy;
-};
-
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
   fetch: async (
@@ -288,7 +416,8 @@ export default {
     }
 
     const bindings: EdgeBindings = { ...environment, BACKEND: backend };
-    const route = edgeRouteOf(new URL(request.url).pathname);
+    const url = siteUrlOf(request);
+    const route = edgeRouteOf(url.pathname);
 
     if (route === "agent") {
       return withoutSharedCache(
@@ -299,26 +428,40 @@ export default {
       );
     }
 
+    if (route === "analytics") {
+      return await Effect.runPromise(
+        proxyIngest(request, analyticsOf(bindings), globalThis.fetch)
+      );
+    }
+
     if (route === "backend") {
       return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
     }
 
     const served =
       route === "public"
-        ? await Effect.runPromise(serveSite(request, bindings, lifetime))
+        ? await Effect.runPromise(serveSite(request, url, bindings, lifetime))
         : Option.none<Response>();
 
-    const response = withoutSharedCache(
-      route,
-      Option.isSome(served)
-        ? served.value
-        : await bindings.ASSETS.fetch(request)
+    const response = await Effect.runPromise(
+      withAnalyticsKey(
+        withoutSharedCache(
+          route,
+          Option.isSome(served)
+            ? served.value
+            : await Effect.runPromise(
+                serveUnmatched(bindings, request, url, lifetime)
+              )
+        ),
+        analyticsOf(bindings)
+      )
     );
 
-    const url = new URL(request.url);
     const filteredBoard = url.pathname === "/" && url.search !== "";
 
-    return bindings.SITE_INDEXING === "index" && !filteredBoard
+    return bindings.SITE_INDEXING === "index" &&
+      !filteredBoard &&
+      response.status !== 404
       ? response
       : noindex(response);
   },

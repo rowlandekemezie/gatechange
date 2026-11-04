@@ -1,4 +1,10 @@
-import { SourceName, SourceTerms } from "@rat-stack/core/contracts";
+import {
+  roleLevels,
+  SITE_NAME,
+  SOURCE_REPOSITORY_URL,
+  SourceName,
+  SourceTerms,
+} from "@rat-stack/core/contracts";
 import type { SourceTermsValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Document, Html, HtmlBuilder } from "foldkit/html";
@@ -7,7 +13,6 @@ import {
   accountTitle,
   accountView,
   confirmSignInPage,
-  sessionLink,
 } from "../../features/account/view.js";
 import { agentTokensPanel } from "../../features/agent-tokens/view.js";
 import {
@@ -16,17 +21,14 @@ import {
   boardPage,
   boardTitle,
 } from "../../features/board/view.js";
+import { siteHeader } from "../../features/header/view.js";
 import {
   informationMeta,
   informationPage,
 } from "../../features/information/view.js";
 import { jobPage, jobTitle } from "../../features/job/view.js";
 import { listingPage, listingTitle } from "../../features/listing/view.js";
-import {
-  billingPanel,
-  planLink,
-  pricingPage,
-} from "../../features/pricing/view.js";
+import { billingPanel, pricingPage } from "../../features/pricing/view.js";
 import { savedSearchesPanel } from "../../features/saved-searches/view.js";
 import {
   shortlistPage,
@@ -37,55 +39,16 @@ import {
   boardUrl,
   canonicalPathOf,
   informationRouter,
+  roleRouter,
   Route,
-  shortlistRouter,
 } from "../route.js";
+import { roleHubTitle } from "./copy.js";
 import { shortlistSize } from "./marks.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
 
 type H = HtmlBuilder<MessageValue>;
-
-const tab = (h: H, href: string, isOn: boolean, label: string): Html =>
-  h.a(
-    [
-      h.Href(href),
-      h.Class(isOn ? "tab tab-on" : "tab"),
-      ...(isOn ? [h.AriaCurrent("page")] : []),
-    ],
-    [label]
-  );
-
-const tabs = (model: ModelValue, h: H): Html =>
-  h.nav(
-    [h.Class("tabs"), h.AriaLabel("Views")],
-    [
-      tab(
-        h,
-        boardUrl(model.filters),
-        Schema.is(Route.Board)(model.route),
-        "Open roles"
-      ),
-      tab(
-        h,
-        shortlistRouter(),
-        Schema.is(Route.Shortlist)(model.route),
-        `Your shortlist (${shortlistSize(model)})`
-      ),
-      planLink(
-        model.billing,
-        model.account.session,
-        Schema.is(Route.Pricing)(model.route),
-        h
-      ),
-      sessionLink(
-        model.account.session,
-        Schema.is(Route.Account)(model.route),
-        h
-      ),
-    ]
-  );
 
 const notFoundPage = (model: ModelValue, h: H): Html =>
   h.div(
@@ -113,7 +76,12 @@ const creditList = (items: readonly (Html | string)[]) =>
     return [index === items.length - 1 ? " and " : ", ", item];
   });
 
-const footer = (h: H): Html =>
+const footerHubs = roleLevels.map((role) => ({
+  place: "RemoteUnitedStates" as const,
+  role,
+}));
+
+const footer = (model: ModelValue, h: H): Html =>
   h.footer(
     [h.Class("footer")],
     [
@@ -128,8 +96,15 @@ const footer = (h: H): Html =>
               h.a([h.Href(creditUrl)], [label])
             )
           ),
-          ". Each listing links to its original posting. Roles leave the board when their company takes them down, and listings unseen for 30 days are removed.",
+          ". Each listing links to its original posting. Roles leave the board when their company takes them down or 30 days after an aggregator posted them, and listings unseen for 30 days are removed.",
         ]
+      ),
+      h.p(
+        [],
+        footerHubs.flatMap((hub, index) => [
+          ...(index === 0 ? [] : [" · "]),
+          h.a([h.Href(roleRouter(hub))], [roleHubTitle(hub)]),
+        ])
       ),
       h.p(
         [],
@@ -137,6 +112,8 @@ const footer = (h: H): Html =>
           ...(["About", "Privacy", "Terms", "Contact"] as const).flatMap(
             (page) => [h.a([h.Href(informationRouter(page))], [page]), " · "]
           ),
+          h.a([h.Href(SOURCE_REPOSITORY_URL)], ["GitHub"]),
+          " · ",
           h.a(
             [h.Href("https://rowlandekemezie.com")],
             ["Made by Rowland Ekemezie"]
@@ -145,6 +122,13 @@ const footer = (h: H): Html =>
       ),
     ]
   );
+
+const BRAND_SUFFIX = ` · ${SITE_NAME}`;
+
+export const brandedTitle = (title: string) =>
+  title === SITE_NAME || title.endsWith(BRAND_SUFFIX)
+    ? title
+    : `${title}${BRAND_SUFFIX}`;
 
 const withCanonical = (model: ModelValue, document: Document): Document =>
   Option.match(canonicalPathOf(model.route), {
@@ -157,10 +141,10 @@ export const view = (model: ModelValue, h: H): Document =>
     body: h.main(
       [h.Class("page")],
       [
+        siteHeader(model, h),
         ...(Schema.is(Route.Board)(model.route)
           ? [boardMasthead(model, h)]
           : []),
-        tabs(model, h),
         ...trackerNotices(model, h),
         Route.match<Html>(model.route, {
           Account: ({ notice }) =>
@@ -228,19 +212,21 @@ export const view = (model: ModelValue, h: H): Document =>
         ...(Schema.is(Route.Board)(model.route)
           ? [boardAfterword(model, h)]
           : []),
-        footer(h),
+        footer(model, h),
       ]
     ),
-    title: Route.match<string>(model.route, {
-      Account: () => accountTitle(model.account.session),
-      Board: () => boardTitle(model),
-      Company: () => listingTitle(model),
-      ConfirmSignIn: () => "Finish signing in",
-      Information: ({ page }) => informationMeta(page).title,
-      Job: () => jobTitle(model),
-      NotFound: () => "Page not found",
-      Pricing: () => "Pro plans",
-      Role: () => listingTitle(model),
-      Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
-    }),
+    title: brandedTitle(
+      Route.match<string>(model.route, {
+        Account: () => accountTitle(model.account.session),
+        Board: () => boardTitle(model),
+        Company: () => listingTitle(model),
+        ConfirmSignIn: () => "Finish signing in",
+        Information: ({ page }) => informationMeta(page).title,
+        Job: () => jobTitle(model),
+        NotFound: () => "Page not found",
+        Pricing: () => "Pro plans",
+        Role: () => listingTitle(model),
+        Shortlist: () => `Your shortlist (${shortlistSize(model)})`,
+      })
+    ),
   });

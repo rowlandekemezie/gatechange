@@ -1,5 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Account, FREE, ProEntitlement } from "@rat-stack/core/contracts";
+import {
+  Account,
+  FREE,
+  ProEntitlement,
+  SOURCE_REPOSITORY_URL,
+} from "@rat-stack/core/contracts";
 import type {
   MembershipValue,
   PlanOfferValue,
@@ -285,6 +290,7 @@ describe("billing updates", () => {
             filters,
             generatedAt: 1,
             jobs: [],
+            stats: null,
             total: 0,
           }),
         },
@@ -450,11 +456,40 @@ describe("billing pages", () => {
         const [visitor = "", member = ""] = pages.map(textOf);
 
         expect(visitor).toContain("Free");
-        expect(visitor).toContain("$5 / week Cancel any time");
+        expect(visitor).toContain("Pro $5 / week");
+        expect(visitor.match(/Cancel any time/gu)?.length).toBe(1);
+        expect(visitor).toContain(
+          "Instant alerts cover the job sources whose terms allow email alerts."
+        );
         expect(visitor.match(/Sign in to upgrade/gu)?.length).toBe(1);
-        expect(member).toContain("$5 / week Cancel any time Upgrade to Pro");
+        expect(member).toContain("Pro $5 / week");
+        expect(member).toContain("Upgrade to Pro");
+        expect(member.match(/Cancel any time/gu)?.length).toBe(1);
         expect(pages.join(" ")).not.toMatch(/Save \d|Choose|plan-name/u);
       })
+  );
+
+  it.effect.each([
+    ["sells a weekly plan", offers.slice(0, 1), "Pro $5 / week", true],
+    ["sells no plans", [], "Pro Coming soon", false],
+  ] as const)(
+    "prices Free, Pro and Self-host on the home page when the site %s",
+    ([, plans, proPrice, checkout]) =>
+      Effect.map(
+        renderAs("/", SessionState.SignedOut(), Option.none(), plans),
+        (html) => {
+          const text = textOf(html);
+
+          expect(text).toContain("Free $0");
+          expect(text).toContain(proPrice);
+          expect(text).toContain("Self-host MIT");
+          expect(html).toContain(
+            `href="${SOURCE_REPOSITORY_URL}#run-your-own"`
+          );
+          expect(html.includes('href="/pricing">Get Pro</a>')).toBe(checkout);
+          expect(html).toMatch(/<section [^>]*id="pricing"/u);
+        }
+      )
   );
 
   it.effect("keeps the configured case of a custom plan name", () =>
@@ -488,7 +523,7 @@ describe("billing pages", () => {
   );
 
   it.effect(
-    "hides plans, checkout and the pricing tab when the site sells no plans",
+    "says Pro is coming soon with no checkout when the site sells no plans",
     () =>
       Effect.map(
         renderAs(
@@ -500,10 +535,12 @@ describe("billing pages", () => {
         (html) => {
           const text = textOf(html);
 
-          expect(text).toContain("Pro is not on sale on this site.");
+          expect(text).toContain("Pro Coming soon");
+          expect(text).not.toContain("not on sale");
           expect(text).not.toContain("Choose");
           expect(text).not.toContain("Stripe handles payment");
           expect(text).not.toContain("Upgrade");
+          expect(html).not.toContain("plan-button");
         }
       )
   );
@@ -540,7 +577,7 @@ describe("billing pages", () => {
           const text = textOf(html);
 
           expect(text).toContain("These selections are not applied on Free.");
-          expect(text).toContain("Upgrade");
+          expect(text).toContain("See Pro plans");
         }
       )
   );

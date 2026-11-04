@@ -6,7 +6,9 @@ import type {
 } from "@rat-stack/core/contracts";
 import { Array, Match, pipe, Schema } from "effect";
 
-export const PAGE_SIZE = 40;
+export const FIRST_PAGE_SIZE = 15;
+
+export const MORE_PAGE_SIZE = 25;
 
 export const RegionGroup = Schema.Literals([
   "RemoteCanada",
@@ -40,7 +42,7 @@ export const regionsOfGroup = Match.type<RegionGroupValue>().pipe(
   Match.exhaustive
 );
 
-export const AgeWindow = Schema.Literals([1, 3, 7, 14, 30]);
+export const AgeWindow = Schema.Literals([1, 3, 7, 14, 30, 3650]);
 
 export type AgeWindowValue = typeof AgeWindow.Type;
 
@@ -119,7 +121,7 @@ export const queryOf = (
   filters: FiltersValue,
   offset: number
 ): JobQueryValue => ({
-  limit: PAGE_SIZE,
+  limit: offset === 0 ? FIRST_PAGE_SIZE : MORE_PAGE_SIZE,
   maxAgeDays: filters.maxAgeDays,
   offset,
   regions: pipe(
@@ -134,6 +136,11 @@ export const queryOf = (
   seniorities: filters.seniorities,
   sort: filters.sort,
 });
+
+export const hasProSelection = (filters: FiltersValue) =>
+  filters.salaryListed ||
+  filters.salaryFloor !== null ||
+  filters.seniorities.length > 0;
 
 export const hasNoSelection = (filters: FiltersValue) =>
   Array.isReadonlyArrayEmpty(filters.roles) ||

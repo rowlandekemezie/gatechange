@@ -305,6 +305,7 @@ it.effect(
             {
               company: "Acme Cloud",
               feed: "greenhouse:acme",
+              postedAt: NOW - 20 * DAY,
               title: "VP Engineering",
             },
           ],
@@ -315,6 +316,7 @@ it.effect(
             {
               company: "AcmeCloud",
               feed: "lever:other",
+              postedAt: NOW,
               title: "VP Engineering",
             },
           ],
@@ -325,6 +327,7 @@ it.effect(
             {
               company: "ACME--Cloud",
               feed: "ashby:alias",
+              postedAt: NOW,
               title: "VP Engineering",
             },
           ],

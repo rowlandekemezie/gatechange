@@ -158,6 +158,7 @@ describe("company boards", () => {
         const { jobs } = listingsFromPostings(
           {
             company: Option.some("Acme"),
+            coverage: "Complete",
             key: "lever:acme",
             minIntervalMinutes: 180,
             source: "Lever",
@@ -222,6 +223,7 @@ describe("company boards", () => {
         listingsFromPostings(
           {
             company: Option.some("Acme"),
+            coverage: "Complete",
             key: "lever:acme",
             minIntervalMinutes: 180,
             source: "Lever",
@@ -229,7 +231,7 @@ describe("company boards", () => {
           postings,
           1_760_000_000_000
         ).jobs[0]?.region
-      ).toBe("RemoteGlobal");
+      ).toBe("RemoteCanada");
     }).pipe(
       Effect.provide(
         respondWith(

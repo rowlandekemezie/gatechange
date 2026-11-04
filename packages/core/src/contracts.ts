@@ -16,7 +16,7 @@ import { CompanyIntel, CompanySlug, TREND_WEEKS } from "./company-intel.js";
 import { CompanyJobs } from "./company-jobs.js";
 import { Membership, Plan, PlanOffer } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
-import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
+import { BoardStats, JobDetail, JobPage, JobQuery, SitemapJob } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
@@ -35,6 +35,7 @@ export {
   AnnualAmount,
   Arrangement,
   BoardStats,
+  SitemapJob,
   currencies,
   Currency,
   DEFAULT_AGE_DAYS,
@@ -50,6 +51,7 @@ export {
   ListedJob,
   ListingDetails,
   ListingStatus,
+  ADMISSION_DAYS,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
   Region,
@@ -70,6 +72,7 @@ export {
 export type {
   ArrangementValue,
   BoardStatsValue,
+  SitemapJobValue,
   CurrencyValue,
   EnrichmentValue,
   IngestReceiptValue,
@@ -99,7 +102,9 @@ export {
   SocialProvider,
 } from "./account.js";
 
-export { offSiteHref, SOURCE_REPOSITORY_URL } from "./site.js";
+export { offSiteHref, SITE_NAME, SOURCE_REPOSITORY_URL } from "./site.js";
+
+export { PostHogKey } from "./analytics.js";
 
 export {
   AgentToken,
@@ -238,14 +243,20 @@ export type {
   TrackOrMoveRequestValue,
 } from "./tracker.js";
 
-export { Permission, SourceTerms } from "./source-terms.js";
+export { coverageOfSource, Permission, SourceTerms } from "./source-terms.js";
 
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
+
+export {
+  arrivedLongOpen,
+  coverageRules,
+  NEW_WINDOW_MILLIS,
+} from "./listing-status.js";
 
 export const listJobsContract = defineContract("listJobs", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "List engineering leadership roles posted within the last 1 to 30 days, filtered by role level, region, and a text search",
+    "List open engineering leadership roles, filtered by how many days ago they were posted, role level, region, and a text search. Company boards list long-open roles, so pass a large maxAgeDays to include them",
   failure: JobStoreUnavailable,
   input: JobQuery,
   output: JobPage,
@@ -267,10 +278,19 @@ export const companyJobsContract = defineContract("companyJobs", {
 export const boardStatsContract = defineContract("boardStats", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "Count active roles by region and level, and report the most recent ingest run and feed health",
+    "Count active roles by region, level, region and level together, and the companies with the most open roles, and report the most recent ingest run and feed health",
   failure: JobStoreUnavailable,
   input: Schema.Struct({}),
   output: BoardStats,
+});
+
+export const sitemapJobsContract = defineContract("sitemapJobs", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "List the id, company, level, region and first-seen date of each open role for the sitemap",
+  failure: JobStoreUnavailable,
+  input: Schema.Struct({}),
+  output: Schema.Array(SitemapJob),
 });
 
 export const getJobContract = defineContract("getJob", {
@@ -485,6 +505,7 @@ export const jobBoardContracts = [
   listJobsContract,
   companyJobsContract,
   boardStatsContract,
+  sitemapJobsContract,
   getJobContract,
   accountContract,
   signInOptionsContract,

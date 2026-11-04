@@ -28,6 +28,7 @@ const build = (rows: readonly (typeof FeedFixture.Type)[]) => {
     rows,
     Array.map((row, index) => ({
       company: Option.none(),
+      coverage: "Complete",
       key: `feed-${index}`,
       minIntervalMinutes: row.intervalMinutes,
       source: "Greenhouse",
@@ -130,6 +131,7 @@ describe("feed scheduling", () => {
     ({ failures }) => {
       const feed: FeedRef = {
         company: Option.none(),
+        coverage: "Complete",
         key: "feed",
         minIntervalMinutes: 60,
         source: "Lever",

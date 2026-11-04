@@ -27,7 +27,7 @@ const { values } = parseArgs({
     "expect-digests": { default: "1", type: "string" },
     "full-page": { default: false, type: "boolean" },
     log: { type: "string" },
-    "min-rows": { default: "20", type: "string" },
+    "min-rows": { default: "10", type: "string" },
     mobile: { default: false, type: "boolean" },
     name: { type: "string" },
     out: { type: "string" },
@@ -42,6 +42,7 @@ const { values } = parseArgs({
 const scenarios = [
   "board",
   "filter",
+  "filter-steady",
   "search",
   "shortlist",
   "signin",
@@ -61,6 +62,7 @@ const scenarios = [
   "tracker-note",
   "tracker-remove",
   "tracker-closed",
+  "tracker-gone",
   "tracker-isolation",
   "pricing",
   "free-gate",
@@ -333,7 +335,7 @@ const boardState = async () =>
     `({
     count: document.querySelector("p.count")?.textContent ?? "",
     error: document.querySelector(".empty[role=alert]")?.textContent ?? "",
-    rows: document.querySelectorAll("li.job").length,
+    rows: document.querySelectorAll(".board .departure").length,
     status: document.querySelector(".status")?.textContent ?? "",
   })`
   );
@@ -341,11 +343,17 @@ const boardState = async () =>
 const clickButton = async (selector: string, text: string) =>
   await evaluate(
     Schema.Boolean,
-    `(() => {
+    `(async () => {
     const button = [...document.querySelectorAll(${JSON.stringify(selector)})]
       .find((node) => node.textContent.trim().startsWith(${JSON.stringify(text)}));
-    button?.click();
-    return button !== undefined;
+    if (button === undefined) return false;
+    if (!button.checkVisibility()) {
+      document.querySelector(".filters-toggle")?.click();
+      await new Promise((settled) => requestAnimationFrame(settled));
+      if (!button.isConnected || !button.checkVisibility()) return false;
+    }
+    button.click();
+    return true;
   })()`
   );
 
@@ -505,7 +513,7 @@ const accountState = async () =>
     AccountState,
     `({
     email: document.querySelector(".account-email")?.textContent ?? "",
-    header: document.querySelector("nav.tabs a.account-tab")?.textContent ?? "",
+    header: document.querySelector("a.nav-account")?.textContent ?? "",
     problem: [...document.querySelectorAll(".sign-in-problem[role=alert]")].map((node) => node.textContent).join(" "),
     sent: document.querySelector(".sign-in-sent")?.textContent ?? "",
   })`
@@ -533,6 +541,56 @@ const goTo = async (address: string) => {
   }
 };
 
+const markRows = async (
+  [kind, ...rest]: readonly ("Applied" | "Save")[],
+  index = 0
+): Promise<void> => {
+  if (kind === undefined) {
+    return;
+  }
+
+  if (values.mobile) {
+    const href = await evaluate(
+      Schema.String,
+      `document.querySelectorAll(".board .departure a.departure-tiles")[${index}]?.href ?? ""`
+    );
+
+    await goTo(href);
+    await waitFor("the job page buttons", async () =>
+      (await evaluate(
+        Schema.Boolean,
+        'document.querySelector("[data-foldkit-app]") === null'
+      )) && (await clickButton(".detail-actions button.mark", kind))
+        ? true
+        : undefined
+    );
+    await waitFor("the mark to take", async () =>
+      (await evaluate(
+        Schema.Boolean,
+        'document.querySelector(".detail-actions button.mark[aria-pressed=true]") !== null'
+      ))
+        ? true
+        : undefined
+    );
+    await goTo(url);
+    await waitForRows("the board", (state) => state.rows > index);
+  } else if (
+    !(await evaluate(
+      Schema.Boolean,
+      `(() => {
+      const button = document.querySelectorAll(".board .departure")[${index}]
+        ?.querySelector('button.mark[aria-label="${kind}"]');
+      button?.click();
+      return button !== undefined && button !== null;
+    })()`
+    ))
+  ) {
+    throw new Error(`no ${kind} button on row ${index + 1}`);
+  }
+
+  await markRows(rest, index + 1);
+};
+
 const finishSignIn = async (link: string) => {
   await goTo(link);
 
@@ -552,7 +610,7 @@ const finishSignIn = async (link: string) => {
 };
 
 const submitEmail = async (email: string) => {
-  if (!(await clickButton("nav.tabs a.account-tab", "Sign in"))) {
+  if (!(await clickButton("a.nav-account", "Sign in"))) {
     throw new Error("no Sign in link in the header");
   }
 
@@ -596,6 +654,13 @@ const TrackerState = Schema.Struct({
 });
 
 type TrackerStateValue = typeof TrackerState.Type;
+
+const GonePage = Schema.Struct({
+  company: Schema.String,
+  link: Schema.String,
+  pageTitle: Schema.String,
+  title: Schema.String,
+});
 
 const trackerState = async () =>
   await evaluate(
@@ -1076,12 +1141,10 @@ const run = async () => {
 
     const saved = await evaluate(
       Schema.String,
-      'document.querySelector("li.job .job-title")?.textContent ?? ""'
+      'document.querySelector(".board .departure .role-title")?.textContent ?? ""'
     );
 
-    if (!(await clickButton("li.job button.mark", "Save"))) {
-      throw new Error("no Save button on the first job");
-    }
+    await markRows(["Save"]);
 
     await sleep(1500);
     await openTracker("opened the tracker after saving a job");
@@ -1092,16 +1155,10 @@ const run = async () => {
   const savedThreeSignedOut = async () => {
     const titles = await evaluate(
       Schema.Array(Schema.String),
-      '[...document.querySelectorAll("li.job .job-title")].slice(0, 3).map((node) => node.textContent)'
+      '[...document.querySelectorAll(".board .departure .role-title")].slice(0, 3).map((node) => node.textContent)'
     );
 
-    await evaluate(
-      Ignored,
-      `[...document.querySelectorAll("li.job")].slice(0, 3).forEach((row, index) =>
-        [...row.querySelectorAll("button.mark")]
-          .find((button) => button.textContent.trim() === (index === 2 ? "Applied" : "Save"))
-          ?.click())`
-    );
+    await markRows(["Save", "Save", "Applied"]);
 
     steps.push({ step: "saved two and applied one while signed out", titles });
 
@@ -1161,9 +1218,45 @@ const run = async () => {
 
       steps.push({ step: "filtered to the last day", ...narrowed });
 
-      if (narrowed.rows >= loaded.rows) {
+      if (narrowed.rows > loaded.rows) {
         throw new Error(
           `the 1-day filter did not narrow the list (${loaded.rows} to ${narrowed.rows} rows)`
+        );
+      }
+    },
+    "filter-steady": async () => {
+      await evaluate(
+        Schema.Null,
+        `(() => {
+        const watch = { boardGone: 0, shortest: document.documentElement.scrollHeight };
+        window.__steady = watch;
+        new MutationObserver(() => {
+          if (!document.querySelector(".board")) watch.boardGone += 1;
+          watch.shortest = Math.min(watch.shortest, document.documentElement.scrollHeight);
+        }).observe(document.body, { childList: true, subtree: true });
+        return null;
+      })()`
+      );
+
+      if (!(await clickButton("button.phrase", "day"))) {
+        throw new Error('no "day" age chip to click');
+      }
+
+      const narrowed = await waitForRows(
+        "the 1-day filter to change the list",
+        (state) => state.count !== loaded.count && state.rows > 0
+      );
+
+      const watch = await evaluate(
+        Schema.Struct({ boardGone: Schema.Finite, shortest: Schema.Finite }),
+        "window.__steady"
+      );
+
+      steps.push({ step: "filtered without a flicker", ...narrowed, ...watch });
+
+      if (watch.boardGone > 0) {
+        throw new Error(
+          `the board left the page ${watch.boardGone} times while filtering`
         );
       }
     },
@@ -1269,7 +1362,7 @@ const run = async () => {
     search: async () => {
       const company = await evaluate(
         Schema.String,
-        'document.querySelector("li.job .job-company")?.textContent ?? ""'
+        'document.querySelector(".board .departure .cell-company")?.textContent ?? ""'
       );
 
       await evaluate(
@@ -1289,7 +1382,7 @@ const run = async () => {
 
       const companies = await evaluate(
         Schema.Array(Schema.String),
-        '[...document.querySelectorAll("li.job .job-company")].map((node) => node.textContent)'
+        '[...document.querySelectorAll(".board .departure .cell-company")].map((node) => node.textContent)'
       );
 
       steps.push({
@@ -1305,14 +1398,13 @@ const run = async () => {
     shortlist: async () => {
       const title = await evaluate(
         Schema.String,
-        'document.querySelector("li.job .job-title")?.textContent ?? ""'
+        'document.querySelector(".board .departure .role-title")?.textContent ?? ""'
       );
 
-      if (!(await clickButton("li.job button.mark", "Save"))) {
-        throw new Error("no Save button on the first job");
-      }
+      await markRows(["Save"]);
+      await sleep(500);
 
-      if (!(await clickButton("nav.tabs a.tab", "Your shortlist"))) {
+      if (!(await clickButton("a.nav-link", "Shortlist"))) {
         throw new Error("no shortlist tab");
       }
 
@@ -1359,6 +1451,40 @@ const run = async () => {
 
       if (tracker.closed.length === 0) {
         throw new Error("no tracked job shows the closed-posting note");
+      }
+    },
+    "tracker-gone": async () => {
+      await signIn();
+
+      const tracker = await openTracker("opened the tracker");
+      const [saved] = tracker.closed;
+
+      if (saved === undefined) {
+        throw new Error("no tracked job shows the closed-posting note");
+      }
+
+      await inCard(saved, 'card.querySelector("a.job-title").click();');
+
+      const shown = await waitFor("the saved role's page", async () => {
+        const gone = await evaluate(
+          GonePage,
+          `({
+    company: document.querySelector(".job-company")?.textContent ?? "",
+    link: document.querySelector("a.apply")?.getAttribute("href") ?? "",
+    pageTitle: document.title,
+    title: document.querySelector("h1.detail-title")?.textContent ?? "",
+  })`
+        );
+
+        return gone.title === saved ? gone : undefined;
+      });
+
+      steps.push({
+        step: `opened the gone role: ${shown.pageTitle}; ${shown.link}`,
+      });
+
+      if (shown.link === "") {
+        throw new Error(`the gone role has no original posting link: ${saved}`);
       }
     },
     "tracker-import": async () => {

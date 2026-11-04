@@ -19,15 +19,18 @@ import { Route } from "../route.js";
 import { Model as SavedSearchesModel } from "../saved-searches/model.js";
 import { Filters } from "./filters.js";
 
+const JobsPage = {
+  generatedAt: Schema.Finite,
+  jobs: Schema.Array(ListedJob),
+  total: Schema.Finite,
+};
+
 export const JobsState = defineTaggedUnion({
   Failed: { message: Schema.String },
-  Loaded: {
-    generatedAt: Schema.Finite,
-    jobs: Schema.Array(ListedJob),
-    total: Schema.Finite,
-  },
+  Loaded: JobsPage,
   Loading: {},
   NotAsked: {},
+  Refreshing: JobsPage,
 });
 
 export const JobState = defineTaggedUnion({
@@ -56,7 +59,11 @@ export const IntelState = defineTaggedUnion({
 export type IntelStateValue = typeof IntelState.Type;
 
 export const Preload = defineTaggedUnion({
-  Board: { ...JobPage.fields, filters: Filters },
+  Board: {
+    ...JobPage.fields,
+    filters: Filters,
+    stats: Schema.NullOr(BoardStats),
+  },
   Job: { job: JobDetail },
   JobMissing: {},
   Listing: Listing.fields,
@@ -144,6 +151,7 @@ export const Model = Schema.Struct({
   billing: BillingModel,
   draftSearch: Schema.String,
   filters: Filters,
+  filtersOpen: Schema.Boolean,
   generation: Schema.Finite,
   intel: IntelState,
   job: JobState,
@@ -152,6 +160,7 @@ export const Model = Schema.Struct({
   marks: Shortlist,
   more: MoreState,
   origin: Schema.String,
+  proFiltersOpen: Schema.Boolean,
   route: Route,
   savedSearches: SavedSearchesModel,
   stats: StatsState,
