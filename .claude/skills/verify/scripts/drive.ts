@@ -42,6 +42,7 @@ const { values } = parseArgs({
 const scenarios = [
   "board",
   "filter",
+  "filter-steady",
   "search",
   "shortlist",
   "signin",
@@ -1206,6 +1207,42 @@ const run = async () => {
       if (narrowed.rows > loaded.rows) {
         throw new Error(
           `the 1-day filter did not narrow the list (${loaded.rows} to ${narrowed.rows} rows)`
+        );
+      }
+    },
+    "filter-steady": async () => {
+      await evaluate(
+        Schema.Null,
+        `(() => {
+        const watch = { boardGone: 0, shortest: document.documentElement.scrollHeight };
+        window.__steady = watch;
+        new MutationObserver(() => {
+          if (!document.querySelector(".board")) watch.boardGone += 1;
+          watch.shortest = Math.min(watch.shortest, document.documentElement.scrollHeight);
+        }).observe(document.body, { childList: true, subtree: true });
+        return null;
+      })()`
+      );
+
+      if (!(await clickButton("button.phrase", "day"))) {
+        throw new Error('no "day" age chip to click');
+      }
+
+      const narrowed = await waitForRows(
+        "the 1-day filter to change the list",
+        (state) => state.count !== loaded.count && state.rows > 0
+      );
+
+      const watch = await evaluate(
+        Schema.Struct({ boardGone: Schema.Finite, shortest: Schema.Finite }),
+        "window.__steady"
+      );
+
+      steps.push({ step: "filtered without a flicker", ...narrowed, ...watch });
+
+      if (watch.boardGone > 0) {
+        throw new Error(
+          `the board left the page ${watch.boardGone} times while filtering`
         );
       }
     },
