@@ -2,7 +2,7 @@ import { Account, SocialProvider } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
 
-import { LinkOutcome } from "./model.js";
+import { LinkOutcome, LinkPreview } from "./model.js";
 
 export const Message = defineMessageUnion({
   ClickedSignOut: {},
@@ -12,6 +12,7 @@ export const Message = defineMessageUnion({
   CompletedFetchSignInOptions: {
     socialProviders: Schema.Array(SocialProvider),
   },
+  CompletedPreviewLink: { preview: LinkPreview },
   CompletedRequestLink: { email: Schema.String, outcome: LinkOutcome },
   CompletedSignOut: {},
   CompletedSocialRedirect: {},
