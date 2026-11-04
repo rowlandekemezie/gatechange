@@ -22,19 +22,24 @@ const pageCache = {
   },
 };
 
-const UNLIMITED = {
+type LimiterName = "anonymous" | "publicRead" | "sessionRead" | "token";
+
+const UNLIMITED: Readonly<Record<LimiterName, number>> = {
   anonymous: Number.POSITIVE_INFINITY,
+  publicRead: Number.POSITIVE_INFINITY,
+  sessionRead: Number.POSITIVE_INFINITY,
   token: Number.POSITIVE_INFINITY,
 };
 
 const edge = (
   backendHeaders: Record<string, string> = {},
-  allowed: { readonly anonymous: number; readonly token: number } = UNLIMITED
+  allowed: Partial<Record<LimiterName, number>> = {}
 ) => {
   const seen: { binding: BindingName; path: string }[] = [];
-  const limited: { key: string; limiter: "anonymous" | "token" }[] = [];
+  const limited: { key: string; limiter: LimiterName }[] = [];
+  const limits = { ...UNLIMITED, ...allowed };
 
-  const limiter = (name: "anonymous" | "token") => ({
+  const limiter = (name: LimiterName) => ({
     // @effect-diagnostics-next-line asyncFunction:off -- Fakes the Promise-returning Rate Limiting binding.
     limit: async ({ key }: { readonly key: string }) => {
       limited.push({ key, limiter: name });
@@ -42,7 +47,7 @@ const edge = (
       return await Promise.resolve({
         success:
           limited.filter((call) => call.limiter === name && call.key === key)
-            .length <= allowed[name],
+            .length <= limits[name],
       });
     },
   });
@@ -63,6 +68,8 @@ const edge = (
     BACKEND: binding("BACKEND", backendHeaders),
     MCP_ANONYMOUS_LIMIT: limiter("anonymous"),
     MCP_TOKEN_LIMIT: limiter("token"),
+    PUBLIC_READ_LIMIT: limiter("publicRead"),
+    SESSION_READ_LIMIT: limiter("sessionRead"),
     SITE_INDEXING: "index",
   };
 
@@ -103,6 +110,140 @@ afterEach(() => {
   stored.clear();
   pending.length = 0;
   vi.unstubAllGlobals();
+});
+
+describe("public read limit", () => {
+  it.effect(
+    "answers an anonymous /rpc call past the limit with a clean 429",
+    () =>
+      Effect.gen(function* overLimit() {
+        const site = edge({}, { publicRead: 1 });
+        const address = { "cf-connecting-ip": "203.0.113.9" };
+
+        const allowed = yield* site.get("/rpc/", address, "POST");
+        const refused = yield* site.get("/rpc/", address, "POST");
+
+        expect(allowed.status).toBe(200);
+        expect(refused.status).toBe(429);
+        expect(refused.headers.get("retry-after")).toBe("60");
+        expect(refused.headers.get("cache-control")).toBe("private, no-store");
+        expect(
+          site.seen.filter(({ binding }) => binding === "BACKEND")
+        ).toHaveLength(1);
+      })
+  );
+
+  it.effect("keeps a cookie's calls out of the anonymous bucket", () =>
+    Effect.gen(function* separateBuckets() {
+      const site = edge({}, { publicRead: 0 });
+
+      const member = yield* site.get(
+        "/rpc/",
+        { "cf-connecting-ip": "203.0.113.9", cookie: "session=abc" },
+        "POST"
+      );
+
+      expect(member.status).toBe(200);
+      expect(site.limited.map(({ limiter }) => limiter)).toStrictEqual([
+        "sessionRead",
+      ]);
+    })
+  );
+
+  it.effect("limits a cookie's calls in their own bucket too", () =>
+    Effect.gen(function* boundedCookie() {
+      const site = edge({}, { sessionRead: 0 });
+
+      const refused = yield* site.get(
+        "/rpc/",
+        { cookie: "anything=1" },
+        "POST"
+      );
+
+      expect(refused.status).toBe(429);
+    })
+  );
+
+  it.effect(
+    "answers a filtered board past the limit with the static shell",
+    () =>
+      Effect.gen(function* limitedBoard() {
+        const site = edge({}, { publicRead: 0 });
+
+        const refused = yield* site.get("/?q=a");
+
+        expect(refused.status).toBe(429);
+        expect(refused.headers.get("retry-after")).toBe("60");
+        expect(refused.headers.get("cache-control")).toBe("private, no-store");
+        expect(refused.headers.get("x-robots-tag")).toBe("noindex");
+        expect(yield* bodyOf(refused)).toBe("ASSETS");
+        expect(
+          site.seen.filter(({ binding }) => binding === "BACKEND")
+        ).toHaveLength(0);
+      })
+  );
+
+  it.effect.each(["/", "/?utm_source=mail", "/pricing", "/about"])(
+    "spends nothing on %s, which the edge cache serves",
+    (path) =>
+      Effect.gen(function* cached() {
+        const site = edge({}, { publicRead: 0 });
+
+        yield* site.get(path);
+
+        expect(site.limited).toHaveLength(0);
+      })
+  );
+
+  it.effect.each([
+    ["/api/auth/get-session", "GET"],
+    ["/unsubscribe", "POST"],
+    ["/webhooks/stripe", "POST"],
+    ["/.well-known/mcp.json", "GET"],
+  ] as const)("leaves %s to its own rules", ([path, method]) =>
+    Effect.gen(function* untouched() {
+      const site = edge({}, { publicRead: 0, sessionRead: 0 });
+
+      const response = yield* site.get(path, {}, method);
+
+      expect(response.status).toBe(200);
+      expect(site.limited).toHaveLength(0);
+    })
+  );
+
+  it.effect("counts one IPv6 subnet as one address", () =>
+    Effect.gen(function* subnet() {
+      const site = edge();
+
+      for (const address of [
+        "2001:db8:1:2:aaaa:bbbb:cccc:dddd",
+        "2001:0DB8:1:2::1",
+        "2001:db8:1:2::",
+      ]) {
+        yield* site.get("/rpc/", { "cf-connecting-ip": address }, "POST");
+      }
+
+      expect(new Set(site.limited.map(({ key }) => key))).toStrictEqual(
+        new Set(["jobs.example|2001:db8:1:2"])
+      );
+    })
+  );
+
+  it.effect("keeps IPv4 addresses and short IPv6 subnets distinct", () =>
+    Effect.gen(function* distinct() {
+      const site = edge();
+
+      for (const address of ["203.0.113.9", "::1", "2001:db8::1"]) {
+        yield* site.get("/rpc/", { "cf-connecting-ip": address }, "POST");
+      }
+
+      expect(site.limited.map(({ key }) => key)).toStrictEqual([
+        "jobs.example|203.0.113.9",
+        "jobs.example|0:0:0:0",
+        "jobs.example|2001:db8:0:0",
+      ]);
+    })
+  );
 });
 
 describe("edge routing", () => {

@@ -51,6 +51,13 @@ const send = (
     };
   });
 
+const rpcPost = (body: string) =>
+  send("/rpc/", {
+    body,
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+
 const crossSiteWithSession = {
   headers: {
     cookie: `${SESSION_COOKIE}=abc`,
@@ -194,5 +201,56 @@ describe("backend routing", () => {
           status: 200,
         });
       })
+  );
+});
+
+describe("one call per /rpc POST", () => {
+  it.effect.each(["[]", '[{"_tag":"Request"}]', ' \n\t[{"_tag":"Request"}]'])(
+    "refuses the batch %j before it reaches the RPC server",
+    (body) =>
+      Effect.gen(function* refusedBatch() {
+        const response = yield* rpcPost(body);
+
+        expect(response.status).toBe(400);
+        expect(response.body).not.toContain("rpc:");
+      })
+  );
+
+  it.effect("serves a single message and leaves its body readable", () =>
+    Effect.gen(function* singleMessage() {
+      const echo = handleRoutes({
+        accountStore,
+        auth: Effect.succeed(HttpServerResponse.text("auth")),
+        mcp: () => Effect.succeed(HttpServerResponse.text("mcp")),
+        mcpDiscovery: () => HttpServerResponse.text("discovery"),
+        rpc: () =>
+          HttpServerRequest.HttpServerRequest.pipe(
+            Effect.flatMap((request) => request.text),
+            Effect.orDie,
+            Effect.map((text) => HttpServerResponse.text(text))
+          ),
+        stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
+        unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsub")),
+      });
+
+      const response = yield* echo.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request(`${ORIGIN}/rpc/`, {
+              body: '{"_tag":"Request"}',
+              method: "POST",
+            })
+          )
+        )
+      );
+
+      expect(
+        yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- The Web Response body is Promise-based.
+          async () => await HttpServerResponse.toWeb(response).text()
+        )
+      ).toBe('{"_tag":"Request"}');
+    })
   );
 });

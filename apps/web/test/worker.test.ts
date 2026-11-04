@@ -173,6 +173,8 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     },
     MCP_ANONYMOUS_LIMIT: unlimited,
     MCP_TOKEN_LIMIT: unlimited,
+    PUBLIC_READ_LIMIT: unlimited,
+    SESSION_READ_LIMIT: unlimited,
     SITE_INDEXING: options.indexing ?? "index",
   };
 

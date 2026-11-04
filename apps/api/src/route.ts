@@ -4,10 +4,11 @@ import { MCP_DISCOVERY_PATH, MCP_PATH, SITE_ORIGIN } from "@rat-stack/core";
 import type { AccountStore, ViewerValue } from "@rat-stack/core";
 import { UNSUBSCRIBE_PATH } from "@rat-stack/digest-mailer";
 import { Effect } from "effect";
-import type { HttpServerResponse } from "effect/http";
-import { HttpServerRequest } from "effect/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 const pathOf = (url: string) => new URL(url, SITE_ORIGIN).pathname;
+
+const BATCHED_RPC = /^\s*\[/u;
 
 export interface Routes<Error, Context> {
   readonly accountStore: AccountStore["Service"];
@@ -57,6 +58,14 @@ export const handleRoutes = <Error, Context>(routes: Routes<Error, Context>) =>
 
     if (path === STRIPE_WEBHOOK_PATH) {
       return yield* routes.stripeWebhook(request);
+    }
+
+    const body = yield* Effect.orElseSucceed(request.text, () => "");
+
+    if (BATCHED_RPC.test(body)) {
+      return HttpServerResponse.text("Send one call per request.", {
+        status: 400,
+      });
     }
 
     return yield* respondAsViewer(

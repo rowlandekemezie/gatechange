@@ -26,6 +26,12 @@ import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
 import { backendOf } from "./server/preview-backend.js";
+import {
+  readAllowed,
+  RETRY_AFTER_SECONDS,
+  tooManyReads,
+} from "./server/read-limit.js";
+import type { RateLimiter, ReadLimits } from "./server/read-limit.js";
 import { renderPage } from "./server/render.js";
 import {
   closedRobotsTxt,
@@ -34,13 +40,7 @@ import {
   sitemapXml,
 } from "./server/sitemap.js";
 
-interface RateLimiter {
-  readonly limit: (options: {
-    readonly key: string;
-  }) => Promise<{ readonly success: boolean }>;
-}
-
-interface EdgeBindings extends AnalyticsBindings {
+interface EdgeBindings extends AnalyticsBindings, ReadLimits {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
   readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
@@ -370,8 +370,6 @@ const serveSite = (
     : Effect.succeedNone;
 };
 
-const RETRY_AFTER_SECONDS = 60;
-
 // @effect-diagnostics-next-line asyncFunction:off -- The Rate Limiting binding is Promise-based.
 const agentCallAllowed = async (request: Request, bindings: EdgeBindings) => {
   const limiter = request.headers.has("authorization")
@@ -401,6 +399,21 @@ const tooManyAgentCalls = (request: Request) =>
     },
     { headers: { "retry-after": String(RETRY_AFTER_SECONDS) }, status: 429 }
   );
+
+// @effect-diagnostics-next-line asyncFunction:off -- The ASSETS binding is Promise-based.
+const busyBoard = async (bindings: EdgeBindings, url: URL) => {
+  const shell = await bindings.ASSETS.fetch(new URL("/", url.origin));
+
+  const busy = new Response(shell.body, {
+    headers: shell.headers,
+    status: 429,
+  });
+
+  busy.headers.set("cache-control", PRIVATE_CACHE_CONTROL);
+  busy.headers.set("retry-after", String(RETRY_AFTER_SECONDS));
+
+  return busy;
+};
 
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
@@ -434,14 +447,31 @@ export default {
       );
     }
 
+    if (route === "rpc") {
+      return withoutSharedCache(
+        route,
+        (await readAllowed(request, bindings))
+          ? await bindings.BACKEND.fetch(request)
+          : tooManyReads()
+      );
+    }
+
     if (route === "backend") {
       return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
     }
 
-    const served =
+    const filteredBoard = url.pathname === "/" && url.search !== "";
+
+    const busy = filteredBoard && !(await readAllowed(request, bindings));
+
+    const site =
       route === "public"
-        ? await Effect.runPromise(serveSite(request, url, bindings, lifetime))
-        : Option.none<Response>();
+        ? serveSite(request, url, bindings, lifetime)
+        : Effect.succeedNone;
+
+    const served = busy
+      ? Option.some(await busyBoard(bindings, url))
+      : await Effect.runPromise(site);
 
     const response = await Effect.runPromise(
       withAnalyticsKey(
@@ -456,8 +486,6 @@ export default {
         analyticsOf(bindings)
       )
     );
-
-    const filteredBoard = url.pathname === "/" && url.search !== "";
 
     return bindings.SITE_INDEXING === "index" &&
       !filteredBoard &&

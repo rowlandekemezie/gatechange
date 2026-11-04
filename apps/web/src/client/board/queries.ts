@@ -9,14 +9,31 @@ import type {
   TrackRequestValue,
   TrackOrMoveRequestValue,
 } from "@rat-stack/core/contracts";
-import { Context, Effect, Layer } from "effect";
-import { FetchHttpClient } from "effect/http";
+import { Context, Effect, Layer, Schema } from "effect";
+import { FetchHttpClient, HttpClient } from "effect/http";
 import { RpcClient, RpcSerialization } from "effect/rpc";
 
 const { group } = toRpcGroup(jobBoardContracts);
 
+const checkedHttp = Layer.effect(
+  HttpClient.HttpClient,
+  Effect.gen(function* checkStatus() {
+    return HttpClient.filterStatusOk(yield* HttpClient.HttpClient);
+  })
+).pipe(Layer.provide(FetchHttpClient.layer));
+
 const protocol = RpcClient.layerProtocolHttp({ url: "/rpc" }).pipe(
-  Layer.provide([FetchHttpClient.layer, RpcSerialization.layerJson])
+  Layer.provide([checkedHttp, RpcSerialization.layerJson])
+);
+
+export const isRateLimited = Schema.is(
+  Schema.Struct({
+    reason: Schema.Struct({
+      cause: Schema.Struct({
+        response: Schema.Struct({ status: Schema.Literal(429) }),
+      }),
+    }),
+  })
 );
 
 const make = Effect.gen(function* makeJobQueries() {
