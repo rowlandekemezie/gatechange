@@ -19,15 +19,18 @@ import { Route } from "../route.js";
 import { Model as SavedSearchesModel } from "../saved-searches/model.js";
 import { Filters } from "./filters.js";
 
+const JobsPage = {
+  generatedAt: Schema.Finite,
+  jobs: Schema.Array(ListedJob),
+  total: Schema.Finite,
+};
+
 export const JobsState = defineTaggedUnion({
   Failed: { message: Schema.String },
-  Loaded: {
-    generatedAt: Schema.Finite,
-    jobs: Schema.Array(ListedJob),
-    total: Schema.Finite,
-  },
+  Loaded: JobsPage,
   Loading: {},
   NotAsked: {},
+  Refreshing: JobsPage,
 });
 
 export const JobState = defineTaggedUnion({

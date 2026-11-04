@@ -8,7 +8,12 @@ import { defaultFilters } from "../src/client/board/filters.js";
 import type { FiltersValue } from "../src/client/board/filters.js";
 import { Message } from "../src/client/board/message.js";
 import type { MessageValue } from "../src/client/board/message.js";
-import { JobState, ListingState, Preload } from "../src/client/board/model.js";
+import {
+  JobsState,
+  JobState,
+  ListingState,
+  Preload,
+} from "../src/client/board/model.js";
 import type { PreloadValue, ModelValue } from "../src/client/board/model.js";
 import { init, update } from "../src/client/board/update.js";
 import { boardUrl, jobRouter, Route } from "../src/client/route.js";
@@ -140,6 +145,78 @@ describe("URL-driven board state", () => {
     );
 
     expect(stale.model.jobs._tag).toBe("Loading");
+  });
+
+  describe("changing filters with roles on screen", () => {
+    const page = { generatedAt: 1, jobs: [listed], total: 1 };
+
+    const refreshing = () =>
+      sentAll(started("/"), [
+        Message.SucceededFetchJobs({
+          generation: started("/").model.generation,
+          page,
+        }),
+        Message.ChangedSort({ sort: "Newest" }),
+      ]);
+
+    it("keeps the current roles until the new ones arrive", () => {
+      expect(refreshing().model.jobs).toStrictEqual(JobsState.Refreshing(page));
+    });
+
+    it("keeps them through a second change", () => {
+      const step = sent(
+        refreshing(),
+        Message.ToggledRole({ role: "Director" })
+      );
+
+      expect(step.model.jobs).toStrictEqual(JobsState.Refreshing(page));
+    });
+
+    it("replaces them with the newest response only", () => {
+      const before = refreshing();
+
+      const stale = sent(
+        before,
+        Message.SucceededFetchJobs({
+          generation: before.model.generation - 1,
+          page: { generatedAt: 2, jobs: [], total: 0 },
+        })
+      );
+
+      expect(stale.model.jobs).toStrictEqual(JobsState.Refreshing(page));
+
+      const fresh = sent(
+        before,
+        Message.SucceededFetchJobs({
+          generation: before.model.generation,
+          page: { generatedAt: 2, jobs: [], total: 0 },
+        })
+      );
+
+      expect(fresh.model.jobs).toStrictEqual(
+        JobsState.Loaded({ generatedAt: 2, jobs: [], total: 0 })
+      );
+    });
+
+    it("shows the failure when the refresh fails", () => {
+      const before = refreshing();
+
+      const failed = sent(
+        before,
+        Message.FailedFetchJobs({
+          generation: before.model.generation,
+          message: "down",
+        })
+      );
+
+      expect(failed.model.jobs._tag).toBe("Failed");
+    });
+
+    it("does not load more while refreshing", () => {
+      const step = sent(refreshing(), Message.ClickedLoadMore());
+
+      expect(step.commands ?? []).toStrictEqual([]);
+    });
   });
 
   it("drops a job detail response for a job the reader already left", () => {
