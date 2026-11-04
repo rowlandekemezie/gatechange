@@ -3,7 +3,14 @@ import { selectDueFeeds, sourceOfFeedKey, SourceTerms } from "@rat-stack/core";
 import type { FeedRef, FeedStateValue, SourceNameValue } from "@rat-stack/core";
 import { Option } from "effect";
 
-import { companyBoards, feedRefOf, feedSpecs } from "../src/index.js";
+import {
+  aggregatorFeeds,
+  companyBoards,
+  feedKey,
+  FeedSpec,
+  feedRefOf,
+  feedSpecs,
+} from "../src/index.js";
 
 const MINUTE = 60_000;
 
@@ -55,6 +62,25 @@ describe("source request limits", () => {
 
     expect(jobicy.length).toBeGreaterThan(0);
     expect(jobicy.every((feed) => feed.minIntervalMinutes >= 60)).toBe(true);
+  });
+});
+
+describe("Jobicy tags", () => {
+  const jobicyFeeds = aggregatorFeeds.filter(FeedSpec.$is("Jobicy"));
+
+  it("every tag fits the 3 to 20 characters the API accepts", () => {
+    expect(jobicyFeeds.length).toBeGreaterThan(0);
+
+    for (const { tag } of jobicyFeeds) {
+      expect(tag.length).toBeGreaterThanOrEqual(3);
+      expect(tag.length).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it("the director feed keeps the key its rows, feed state and history use", () => {
+    expect(jobicyFeeds.map(feedKey)).toContain(
+      "jobicy:director-of-engineering"
+    );
   });
 });
 

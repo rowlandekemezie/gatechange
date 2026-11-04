@@ -6,7 +6,7 @@ export type FeedSpecValue = Data.TaggedEnum<{
   Greenhouse: { readonly company: string; readonly slug: string };
   HackerNews: { readonly thread: string };
   Himalayas: { readonly query: string };
-  Jobicy: { readonly tag: string };
+  Jobicy: { readonly slug: string; readonly tag: string };
   Lever: { readonly company: string; readonly slug: string };
   RemoteOK: { readonly listing: string };
   Remotive: { readonly search: string };
@@ -27,7 +27,7 @@ export const feedKey: (spec: FeedSpecValue) => string = FeedSpec.$match({
   Greenhouse: ({ slug }) => `greenhouse:${slug}`,
   HackerNews: ({ thread }) => `hackernews:${slugOf(thread)}`,
   Himalayas: ({ query }) => `himalayas:${slugOf(query)}`,
-  Jobicy: ({ tag }) => `jobicy:${slugOf(tag)}`,
+  Jobicy: ({ slug }) => `jobicy:${slug}`,
   Lever: ({ slug }) => `lever:${slug}`,
   RemoteOK: ({ listing }) => `remoteok:${slugOf(listing)}`,
   Remotive: ({ search }) => `remotive:${slugOf(search)}`,
