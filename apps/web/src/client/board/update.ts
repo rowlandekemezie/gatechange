@@ -206,6 +206,17 @@ const sameFilters = Schema.toEquivalence(Filters);
 
 const sameRoute = Schema.toEquivalence(Route);
 
+const keepingRoles = (jobs: typeof JobsState.Type) =>
+  (Schema.is(JobsState.Loaded)(jobs) ||
+    Schema.is(JobsState.Refreshing)(jobs)) &&
+  Array.isReadonlyArrayNonEmpty(jobs.jobs)
+    ? JobsState.Refreshing({
+        generatedAt: jobs.generatedAt,
+        jobs: jobs.jobs,
+        total: jobs.total,
+      })
+    : JobsState.Loading();
+
 const withFilters = (
   model: ModelValue,
   filters: FiltersValue
@@ -229,7 +240,7 @@ const withFilters = (
 
   return {
     commands: [FetchJobs({ generation, query: queryOf(filters, 0) })],
-    model: modifyFields(nextModel, { jobs: () => JobsState.Loading() }),
+    model: modifyFields(nextModel, { jobs: keepingRoles }),
   };
 };
 
