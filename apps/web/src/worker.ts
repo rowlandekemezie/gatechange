@@ -263,15 +263,12 @@ const servePage = (
     )
   );
 
-const serveSitemap = (
-  bindings: EdgeBindings,
-  request: Request,
-  url: URL,
-  lifetime: Lifetime
-) =>
-  throughEdgeCache(
-    request,
-    new Request(new URL("/sitemap.xml", url.origin)),
+const serveSitemap = (bindings: EdgeBindings, url: URL, lifetime: Lifetime) => {
+  const key = new Request(new URL("/sitemap.xml", url.origin));
+
+  return throughEdgeCache(
+    key,
+    key,
     lifetime,
     sitemapJobs(bindings.BACKEND).pipe(
       Effect.match({
@@ -281,6 +278,7 @@ const serveSitemap = (
       })
     )
   );
+};
 
 const noindex = (response: Response) => {
   const copy = new Response(response.body, response);
@@ -372,7 +370,7 @@ const serveSite = (
       return Effect.succeedSome(respond(emptySitemapXml, "application/xml"));
     }
 
-    return Effect.asSome(serveSitemap(bindings, request, url, lifetime));
+    return Effect.asSome(serveSitemap(bindings, url, lifetime));
   }
 
   return isPage(url.pathname)
