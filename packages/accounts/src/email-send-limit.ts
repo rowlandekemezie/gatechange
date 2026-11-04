@@ -166,22 +166,22 @@ const refund = async (adapter: DBAdapter, key: string) => {
   });
 };
 
-interface DailyBudget {
+interface Claim {
   readonly key: string;
+}
+
+interface DailyBudget extends Claim {
   readonly max: number;
-  readonly refusal: string;
+  readonly refusal: string | undefined;
 }
 
 const CAPACITY_REFUSAL =
   "Sign-in email capacity is temporarily unavailable. Please try again later.";
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
-const refundBudgets = async (
-  adapter: DBAdapter,
-  budgets: readonly DailyBudget[]
-) => {
-  await Promise.all(
-    budgets.map(
+const refundBudgets = async (adapter: DBAdapter, claims: readonly Claim[]) => {
+  await Promise.allSettled(
+    claims.map(
       // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
       async ({ key }) => {
         await refund(adapter, key);
@@ -191,25 +191,43 @@ const refundBudgets = async (
 };
 
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const fitsBudget = async (
+  adapter: DBAdapter,
+  { key, max }: DailyBudget,
+  now: number,
+  claimed: readonly Claim[]
+) => {
+  try {
+    return await consume(adapter, key, max, now, DAY_MILLIS);
+  } catch (error) {
+    await refundBudgets(adapter, claimed);
+
+    throw error;
+  }
+};
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
 const claimBudgets = async (
   adapter: DBAdapter,
   budgets: readonly DailyBudget[],
   now: number,
-  claimed: readonly DailyBudget[] = []
-): Promise<string | undefined> => {
+  claimed: readonly Claim[]
+): Promise<DailyBudget | undefined> => {
   const [next, ...rest] = budgets;
 
   if (next === undefined) {
     return undefined;
   }
 
-  if (await consume(adapter, next.key, next.max, now, DAY_MILLIS)) {
+  if (await fitsBudget(adapter, next, now, claimed)) {
     return await claimBudgets(adapter, rest, now, [...claimed, next]);
   }
 
-  await refundBudgets(adapter, claimed);
+  if (next.refusal !== undefined) {
+    await refundBudgets(adapter, claimed);
+  }
 
-  return next.refusal;
+  return next;
 };
 
 const keepSendRowsForTheWindow = {
@@ -263,6 +281,9 @@ export const limitSends =
     const clientKey = `magic-link-client:${day}:${client}`;
     const inboxDayKey = `magic-link-inbox:${day}:${inbox}`;
 
+    const owner = await ctx.context.internalAdapter.findUserByEmail(email);
+    const isMember = owner?.user.emailVerified === true;
+
     const allowed =
       (await consume(adapter, attemptKey, EMAIL_SEND_LIMIT.attempts, now)) &&
       (await consume(adapter, sendKey, EMAIL_SEND_LIMIT.max, now));
@@ -273,21 +294,7 @@ export const limitSends =
       });
     }
 
-    const owner = await ctx.context.internalAdapter.findUserByEmail(email);
-    const isMember = owner?.user.emailVerified === true;
-
-    const budgets: readonly DailyBudget[] = [
-      {
-        key: clientKey,
-        max: CLIENT_DAILY_SEND_LIMIT,
-        refusal:
-          "Too many sign-in links were requested from this network today.",
-      },
-      {
-        key: inboxDayKey,
-        max: INBOX_DAILY_SEND_LIMIT,
-        refusal: "Too many sign-in links were sent to this address today.",
-      },
+    const siteBudgets: readonly DailyBudget[] = [
       ...(isMember
         ? []
         : [
@@ -304,35 +311,61 @@ export const limitSends =
       },
     ];
 
-    const refused = await claimBudgets(adapter, budgets, now);
+    const budgets: readonly DailyBudget[] = [
+      {
+        key: clientKey,
+        max: CLIENT_DAILY_SEND_LIMIT,
+        refusal:
+          "Too many sign-in links were requested from this network today.",
+      },
+      ...siteBudgets,
+      ...(isMember
+        ? []
+        : [
+            {
+              key: inboxDayKey,
+              max: INBOX_DAILY_SEND_LIMIT,
+              refusal: undefined,
+            },
+          ]),
+    ];
+
+    const refused = await claimBudgets(adapter, budgets, now, [
+      { key: sendKey },
+      { key: attemptKey },
+    ]);
+
+    if (refused?.refusal !== undefined) {
+      throw new APIError("TOO_MANY_REQUESTS", { message: refused.refusal });
+    }
 
     if (refused !== undefined) {
-      await refund(adapter, sendKey);
-      await refund(adapter, attemptKey);
+      await refundBudgets(adapter, siteBudgets);
 
-      throw new APIError("TOO_MANY_REQUESTS", { message: refused });
+      ctx.context.logger.warn(
+        "magic link dropped: inbox with no verified account reached its daily cap"
+      );
+
+      return;
     }
 
     try {
       await send({ email, url });
     } catch (error) {
       await refund(adapter, sendKey);
-      await refund(adapter, inboxDayKey);
 
-      if (
-        Schema.is(CodedSendError)(error) &&
-        REJECTED_SEND_CODES.has(error.cause.code)
-      ) {
-        await refundBudgets(
-          adapter,
-          budgets.filter(({ key }) => key !== inboxDayKey)
-        );
+      if (!isMember) {
+        await refund(adapter, inboxDayKey);
       }
 
-      if (
-        Schema.is(CodedSendError)(error) &&
-        PROVIDER_FAILURES.has(error.cause.code)
-      ) {
+      const code = Schema.is(CodedSendError)(error) ? error.cause.code : "";
+
+      if (REJECTED_SEND_CODES.has(code)) {
+        await refundBudgets(adapter, siteBudgets);
+      }
+
+      if (PROVIDER_FAILURES.has(code)) {
+        await refund(adapter, clientKey);
         await refund(adapter, attemptKey);
       }
 
