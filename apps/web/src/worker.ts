@@ -96,7 +96,7 @@ const pageKeyOf = (pageUrl: URL, shell: string) =>
     return new Request(keyUrl);
   });
 
-const STATS_PATH = "/board-stats";
+const STATS_PATH = "/rpc/board-stats";
 
 const bodyOf = (response: Response) =>
   // @effect-diagnostics-next-line asyncFunction:off -- Response.text is Promise-based.

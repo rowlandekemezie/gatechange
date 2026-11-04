@@ -91,6 +91,8 @@ describe("job posting markup", () => {
         posting,
         Option.map(({ validThrough }) => validThrough)
       )
-    ).toStrictEqual(Option.some(DateTime.formatIso(DateTime.makeUnsafe(SEEN))));
+    ).toStrictEqual(
+      Option.some(DateTime.formatIso(DateTime.makeUnsafe(SEEN + DAY_MILLIS)))
+    );
   });
 });
