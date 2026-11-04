@@ -118,6 +118,10 @@ export class JobStore extends Context.Service<
     readonly findIncludingDeparted: (
       id: string
     ) => Effect.Effect<Option.Option<JobDetailValue>, JobStoreUnavailable>;
+    readonly heldListings: (
+      feedKey: string,
+      ids: readonly string[]
+    ) => Effect.Effect<readonly string[], JobStoreUnavailable>;
     readonly historyOf: (
       job: Pick<JobValue, "company" | "title">
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;

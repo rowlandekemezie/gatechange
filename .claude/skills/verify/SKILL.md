@@ -85,6 +85,7 @@ Scenarios:
 - `tracker-note` signs in, writes a note on the first card, reloads, and requires the note.
 - `tracker-remove` signs in, removes the first card, reloads, and requires it gone.
 - `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
+- `tracker-gone` signs in, opens the first closed card, and requires the job page to show the saved title and a link to the original posting. Set that job's `departed_at` in the stage's local D1 first.
 - `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. It then reads the session cookie over the DevTools protocol and replays it from Node: a `trackJob` with `sec-fetch-site: cross-site` and a foreign `Origin` must answer 403, and a `trackedJobs` with the same cookie and same-origin headers must answer as a member, which proves the refusal came from the cross-site guard. Read the victim's row from the local D1 afterwards to prove it did not change.
 
 - `pricing` opens `/pricing` and requires three plan cards with their prices and no sideways scroll. Add `--mobile` for the phone check.

@@ -95,6 +95,21 @@ describe("company board registry", () => {
     expect(withoutTerms).toStrictEqual([]);
   });
 
+  it("reads the companies once reached only through aggregators from their own boards", () => {
+    const keys = companyBoards.map((board) => feedKey(boardFeed(board)));
+
+    expect(keys).toStrictEqual(
+      expect.arrayContaining([
+        "ashby:revenuecat",
+        "greenhouse:cloverhealth",
+        "greenhouse:oddball",
+        "greenhouse:orbisoperations",
+        "greenhouse:pingidentity",
+        "lever:agiloft",
+      ])
+    );
+  });
+
   it("keeps the registry sorted by company name", () => {
     const names = companyBoards.map((board) => board.name.toLowerCase());
 

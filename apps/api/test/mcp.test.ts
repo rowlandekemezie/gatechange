@@ -145,6 +145,7 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
                 )
               ),
             findIncludingDeparted: unserved("findIncludingDeparted"),
+            heldListings: unserved("heldListings"),
             historyOf: unserved("historyOf"),
             list: (_query, _now, sources) => {
               listedSources.push(sources);

@@ -46,6 +46,7 @@ import {
   intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
+  heldListingsStatement,
   markListedStatement,
   newTodayStatement,
   pruneJobsStatement,
@@ -92,6 +93,8 @@ export const JobRow = Schema.Struct({
   title: Schema.String,
   url: Schema.String,
 });
+
+const HeldListingRow = Schema.Struct({ id: Schema.String });
 
 const CompanySummaryRow = Schema.Struct({
   opened_at: Schema.NullOr(Count),
@@ -441,6 +444,17 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
     find: (id) => findJob(id, false),
 
     findIncludingDeparted: (id) => findJob(id, true),
+
+    heldListings: (feedKey, ids) =>
+      ids.length === 0
+        ? Effect.succeed([])
+        : sql
+            .all(
+              "heldListings",
+              heldListingsStatement(feedKey, ids),
+              HeldListingRow
+            )
+            .pipe(Effect.map(Array.map((row) => row.id))),
 
     historyOf: (job) =>
       sql

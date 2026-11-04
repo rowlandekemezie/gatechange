@@ -50,6 +50,7 @@ export {
   ListedJob,
   ListingDetails,
   ListingStatus,
+  ADMISSION_DAYS,
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
   Region,
@@ -244,10 +245,12 @@ export { Permission, SourceTerms } from "./source-terms.js";
 
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
+export { arrivedLongOpen, NEW_WINDOW_MILLIS } from "./listing-status.js";
+
 export const listJobsContract = defineContract("listJobs", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "List engineering leadership roles posted within the last 1 to 30 days, filtered by role level, region, and a text search",
+    "List open engineering leadership roles, filtered by how many days ago they were posted, role level, region, and a text search. Company boards list long-open roles, so pass a large maxAgeDays to include them",
   failure: JobStoreUnavailable,
   input: JobQuery,
   output: JobPage,

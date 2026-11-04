@@ -633,7 +633,7 @@ describe("original posting links", () => {
           [{ ...markOf(acmeDirector), url }]
         ),
         ({ html }) => {
-          expect(textOf(html)).toContain("Open the original posting");
+          expect(textOf(html)).toContain(acmeDirector.title);
           expect(
             linksHome(html, jobRouter({ id: acmeDirector.id }))
           ).toStrictEqual([]);
@@ -733,7 +733,7 @@ describe("listing page render", () => {
         expect(html).toContain('href="/jobs/Z3JlZW5ob3VzZTphY21lLzE"');
         expect(textOf(html)).toContain("30 roles match");
         expect(html).toContain(
-          'href="/?age=30&amp;place=remote-canada&amp;role=director"'
+          'href="/?age=3650&amp;place=remote-canada&amp;role=director"'
         );
         expect(textOf(html)).toContain("See all 30 on the board");
       }

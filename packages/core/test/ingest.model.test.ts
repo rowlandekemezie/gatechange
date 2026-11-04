@@ -20,7 +20,8 @@ import {
   FeedUnavailable,
   fingerprintOf,
   JobStore,
-  MAX_AGE_DAYS,
+  ADMISSION_DAYS,
+  arrivedLongOpen,
   PostingFeeds,
   REPOST_GAP,
   runIngest,
@@ -302,7 +303,7 @@ interface ModelRow {
 }
 
 const expectedStatus = (row: ModelRow, now: number): ListingStatusValue => {
-  if (now - row.firstSeenAt < DAY_MILLIS) {
+  if (now - row.firstSeenAt < DAY_MILLIS && !arrivedLongOpen(row)) {
     return "new";
   }
 
@@ -347,7 +348,10 @@ const replayLifecycle = (
               lastSeenAt: now,
               postedAt: Math.min(row.postedAt, postedAt),
             });
-          } else if (postedAt >= now - MAX_AGE_DAYS * DAY_MILLIS) {
+          } else if (
+            key !== windowFeed ||
+            postedAt >= now - ADMISSION_DAYS * DAY_MILLIS
+          ) {
             model.set(id, {
               departedAt: null,
               firstSeenAt: now,
@@ -465,7 +469,7 @@ describe("ingest", () => {
   );
 
   it.effect.prop(
-    "a role a company board stops listing departs at once, a role an aggregator stops listing departs once the hold after its posting has passed, each stays one day, then goes; a failed fetch changes nothing; a listed role outlives the 30-day posting window; and the board shows only live roles, each with its status",
+    "a role a company board stops listing departs at once, a role an aggregator stops listing departs once the hold after its posting has passed, each stays one day, then goes; a failed fetch changes nothing; a company board admits a role however old its posting while an aggregator keeps the 30-day cutoff; a listed role outlives the 30-day posting window; and the board shows only live roles, each with its status",
     { schedule: lifecycleRuns },
     ({ schedule }) => replayLifecycle(schedule)
   );
@@ -498,11 +502,38 @@ describe("ingest", () => {
         const now = yield* Clock.currentTimeMillis;
         const history = memory.history().get(fingerprintOf(postingFor("a")));
 
-        expect(now - firstSeenAt).toBeGreaterThan(MAX_AGE_DAYS * DAY_MILLIS);
+        expect(now - firstSeenAt).toBeGreaterThan(ADMISSION_DAYS * DAY_MILLIS);
         expect(history?.firstSeenAt).toBe(firstSeenAt);
         expect(history?.reposts).toBe(0);
       }),
     WEEKLY_LISTINGS_TIMEOUT_MILLIS
+  );
+
+  it.effect(
+    "a company board admits a long-open role and an aggregator refuses it",
+    () =>
+      Effect.gen(function* longOpen() {
+        const memory = yield* makeMemoryJobStore;
+
+        yield* TestClock.adjust(`${ADMISSION_DAYS + 1} days`);
+        yield* ingestResponses(
+          memory,
+          [listed(["e", "a"]), down, listed(["e", "a"])],
+          catalogIn(feedKeys),
+          datedPostingFor
+        );
+
+        expect(
+          pipe(
+            memory.jobs(),
+            Array.map((job) => job.id)
+          ).toSorted()
+        ).toStrictEqual([
+          "greenhouse:acme:a",
+          "greenhouse:acme:e",
+          "remoteok:a",
+        ]);
+      })
   );
 
   it.effect(

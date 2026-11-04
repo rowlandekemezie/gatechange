@@ -357,6 +357,8 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           Option.map((job) => ({ ...job, enrichment: enrichmentOf(id) }))
         )
       ),
+    heldListings: (feedKey, ids) =>
+      Effect.sync(() => ids.filter((id) => jobs.get(id)?.feed === feedKey)),
     historyOf: (job) =>
       Effect.sync(() => Option.fromNullishOr(history.get(fingerprintOf(job)))),
     list: (query, now, sources) =>

@@ -8,9 +8,10 @@ Site: <https://gatechange.dev>
 
 ## What it does
 
-- Reads 406 public company job boards on Greenhouse, Ashby, Lever, SmartRecruiters and Workable, plus Remote OK, Remotive, Himalayas, Jobicy and the monthly Hacker News "Who is hiring?" thread.
+- Reads 412 public company job boards on Greenhouse, Ashby, Lever, SmartRecruiters and Workable, plus Remote OK, Remotive, Himalayas, Jobicy and the monthly Hacker News "Who is hiring?" thread.
 - Keeps only leadership titles, and tags each role with where it can be worked from, such as remote Canada, remote US, or Vancouver and BC.
-- Admits roles posted in the last 30 days. A role leaves the board when its company board stops listing it, so the board does not show ghost jobs. Aggregators return only their newest postings, so a role they stop listing stays until 30 days after it was posted.
+- Lists every role a company board still lists, however old the posting, and ranks older roles lower. Takes aggregator roles posted in the last 30 days.
+- Removes a role when its company board stops listing it, so the board does not show ghost jobs. Aggregators return only their newest postings, so a role they stop listing stays until 30 days after it was posted.
 - Links every listing to the original posting, and prefers the company's own board over an aggregator copy of the same role.
 - Shows the freshest, most relevant roles first. Relevance adds weights for role, region, a stated salary and remote work, then subtracts 2.5 points per day of age.
 - Serves the board over MCP, so an agent can search it for you.

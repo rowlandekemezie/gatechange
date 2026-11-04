@@ -163,7 +163,9 @@ export const JobSort = Schema.Literals(["Relevance", "Newest"]);
 
 export type JobSortValue = typeof JobSort.Type;
 
-export const MAX_AGE_DAYS = 30;
+export const ADMISSION_DAYS = 30;
+
+export const MAX_AGE_DAYS = 3650;
 
 export const DEFAULT_AGE_DAYS = 7;
 
