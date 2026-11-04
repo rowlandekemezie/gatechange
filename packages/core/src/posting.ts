@@ -36,30 +36,50 @@ export const RECENCY_PENALTY_PER_DAY = 2.5;
 
 export const DAY_MILLIS = 86_400_000;
 
-const collapseWhitespace = (text: string) =>
-  text.replaceAll(/\s+/gu, " ").trim();
+export const MAX_TITLE_LENGTH = 500;
+
+export const MAX_DETAIL_LENGTH = 1000;
+
+export const MAX_URL_LENGTH = 2048;
+
+const cleanText = (text: string) =>
+  text
+    .replaceAll("\u0000", "")
+    .replaceAll(/\p{Cs}/gu, "\uFFFD")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+
+const boundedDetail = (text: string) =>
+  cleanText(cleanText(text).slice(0, MAX_DETAIL_LENGTH));
 
 export const normalizePosting = (
   feed: FeedRef,
   posting: PostingValue,
   seenAt: number
 ): Option.Option<Listing> => {
-  const title = collapseWhitespace(posting.title);
+  const title = cleanText(posting.title);
 
-  const company = collapseWhitespace(
+  const company = cleanText(
     posting.company.length > 0
       ? posting.company
       : Option.getOrElse(feed.company, () => "")
   );
 
-  if (title.length === 0 || company.length === 0) {
+  if (
+    title.length === 0 ||
+    company.length === 0 ||
+    title.length > MAX_TITLE_LENGTH ||
+    company.length > MAX_TITLE_LENGTH ||
+    posting.externalId.length > MAX_TITLE_LENGTH ||
+    posting.url.length > MAX_URL_LENGTH
+  ) {
     return Option.none();
   }
 
   return pipe(
     classifyRole(title),
     Option.map((role) => {
-      const location = collapseWhitespace(posting.location);
+      const location = boundedDetail(posting.location);
 
       const placement = classifyPlacement({
         country: posting.country,
@@ -68,7 +88,7 @@ export const normalizePosting = (
       });
 
       const salary =
-        posting.salary === null ? null : collapseWhitespace(posting.salary);
+        posting.salary === null ? null : boundedDetail(posting.salary);
 
       const hasSalary = salary !== null && salary.length > 0;
 
