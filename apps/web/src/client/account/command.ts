@@ -27,6 +27,15 @@ export const FetchSignInOptions = Command.define("FetchSignInOptions", {
   messages: [Message.CompletedFetchSignInOptions],
 });
 
+export const PreviewLink = Command.define("PreviewLink", {
+  args: { token: Schema.String },
+  execute: ({ token }) =>
+    AuthClient.use((auth) => auth.previewLink(token)).pipe(
+      Effect.map((preview) => Message.CompletedPreviewLink({ preview }))
+    ),
+  messages: [Message.CompletedPreviewLink],
+});
+
 export const RequestLink = Command.define("RequestLink", {
   args: { email: Schema.String },
   execute: ({ email }) =>

@@ -110,6 +110,12 @@ const foldAccountEntered = Update.foldChildStep({
   update: Account.entered,
 });
 
+const foldConfirmEntered = (token: string) =>
+  Update.foldChildStep({
+    ...accountChild,
+    update: Account.enteredConfirm(token),
+  });
+
 const savedSearchesChild = {
   read: (model: ModelValue) => Option.some(model.savedSearches),
   toParentMessage: (message: SavedSearchesMessageValue) =>
@@ -368,7 +374,11 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
           )
         : { model: routed },
     Company: (company) => enteredListing(routed, company),
-    ConfirmSignIn: () => ({ commands: [ForgetSignInToken()], model: routed }),
+    ConfirmSignIn: ({ token }) =>
+      joined(foldConfirmEntered(token)(routed), (next) => ({
+        commands: [ForgetSignInToken()],
+        model: next,
+      })),
     Information: () => ({ model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),

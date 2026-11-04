@@ -193,7 +193,8 @@ export const view = (model: ModelValue, h: H): Document =>
             ),
           Board: () => boardPage(model, h),
           Company: () => listingPage(model, h),
-          ConfirmSignIn: ({ token }) => confirmSignInPage(token, h),
+          ConfirmSignIn: ({ token }) =>
+            confirmSignInPage(token, model.account, h),
           Information: ({ page }) => informationPage(page, h),
           Job: () => jobPage(model, h),
           NotFound: () => notFoundPage(model, h),
