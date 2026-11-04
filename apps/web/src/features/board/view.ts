@@ -1,5 +1,7 @@
 import {
+  arrivedLongOpen,
   currencies,
+  NEW_WINDOW_MILLIS,
   offSiteHref,
   roleLevels,
   seniorities,
@@ -58,8 +60,6 @@ import {
 import { addServerCommandOf } from "../agent-tokens/view.js";
 import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
-
-const NEW_WINDOW = 86_400_000;
 
 const chip = (
   h: HtmlBuilder<MessageValue>,
@@ -353,7 +353,7 @@ const statusLine = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
       h.p(
         [h.Class("status")],
         [
-          `${stats.activeJobs} leadership roles from the last 30 days, ${stats.newToday} new today. `,
+          `${stats.activeJobs} live roles, ${stats.newToday} new today. `,
           pipe(
             Option.fromNullishOr(stats.lastRun),
             Option.match({
@@ -633,7 +633,8 @@ export const jobRow = (
 ): Html => {
   const isApplied = isAppliedTo(model, job);
 
-  const isNew = now - job.firstSeenAt < NEW_WINDOW;
+  const isNew =
+    now - job.firstSeenAt < NEW_WINDOW_MILLIS && !arrivedLongOpen(job);
 
   return h.keyed("li")(
     job.id,
@@ -857,7 +858,7 @@ const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
       h.p(
         [],
         [
-          "Pick at least one role and one place, widen the window to a month, open up the level or pay, or clear the search.",
+          "Pick at least one role and one place, widen the window, open up the level or pay, or clear the search.",
         ]
       ),
       h.button(

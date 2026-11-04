@@ -1,4 +1,5 @@
 import {
+  ADMISSION_DAYS,
   companySlugOf,
   COMPANY_LISTING_ROWS,
   DAY_MILLIS,
@@ -113,6 +114,8 @@ const servedJobsSince = (
     ),
   };
 };
+
+const arrivedFresh = `first_seen_at - posted_at <= ${ADMISSION_DAYS * DAY_MILLIS}`;
 
 const filteredJobs = (
   query: JobQueryValue,
@@ -587,6 +590,15 @@ export const markListedStatement = (
     [seenAt, feedKey, JSON.stringify(ids)]
   );
 
+export const heldListingsStatement = (
+  feedKey: string,
+  ids: readonly string[]
+): SqlStatement =>
+  statement(
+    "SELECT id FROM jobs WHERE feed = ? AND id IN (SELECT value FROM json_each(?))",
+    [feedKey, JSON.stringify(ids)]
+  );
+
 export const feedSucceededStatement = (
   feedKey: string,
   seenAt: number
@@ -722,7 +734,7 @@ export const newTodayStatement = (
   const fresh = servedJobsSince("first_seen_at", now - DAY_MILLIS, sources);
 
   return statement(
-    `SELECT COUNT(*) AS total FROM jobs WHERE ${fresh.where}`,
+    `SELECT COUNT(*) AS total FROM jobs WHERE ${fresh.where} AND ${arrivedFresh}`,
     fresh.params
   );
 };

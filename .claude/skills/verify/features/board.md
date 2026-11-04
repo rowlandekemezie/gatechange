@@ -5,7 +5,7 @@ The board opens on the freshest, most relevant leadership roles in the home regi
 ## Sub-features
 
 - `board-load` shows at least 10 rows and the line `<n> roles match`.
-- `board-stats` shows `<n> leadership roles from the last 30 days` and when the board last refreshed.
+- `board-stats` shows `<n> live roles, <m> new today` beside the count line and when the board last refreshed.
 - `board-groups` groups rows under day headings such as `Today` and `Yesterday`.
 - `board-row` shows title, company, location, salary when known, the source, the age, and `New` for jobs first seen in the last day.
 - `board-more` shows `Show <n> more of <m> remaining` when more than 40 roles match, and loads the next page.
