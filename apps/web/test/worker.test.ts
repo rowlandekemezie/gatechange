@@ -638,6 +638,17 @@ describe("board stats", () => {
     expect(signedIn.html).toContain("1 live roles");
   });
 
+  it("keeps its cache entry out of reach of a page URL", async () => {
+    const site = edge(indexHtml);
+
+    await site.get(`${ORIGIN}/?role=director`);
+
+    const page = await site.get(`${ORIGIN}/board-stats`);
+
+    expect(page.status).toBe(404);
+    expect(page.headers.get("x-robots-tag")).toContain("noindex");
+  });
+
   it("caches nothing when the backend is down", async () => {
     await edge(indexHtml, { backendStatus: 503 }).get(
       `${ORIGIN}/?role=director`
