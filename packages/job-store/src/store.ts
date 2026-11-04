@@ -3,6 +3,7 @@ import {
   Currency,
   daysOpen,
   Enrichment,
+  EVERY_POSTING,
   IngestOutcome,
   JobStore,
   JobStoreUnavailable,
@@ -553,7 +554,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("releaseIngest", [releaseIngestStatement(startedAt)])
         .pipe(Effect.asVoid),
 
-    replaceFeed: (feedKey, jobs, seenAt) =>
+    replaceFeed: (feedKey, jobs, seenAt, departPostedBefore = EVERY_POSTING) =>
       Effect.gen(function* replaceFeed() {
         const chunks = pipe(
           Array.chunksOf(jobs, UPSERT_CHUNK),
@@ -575,7 +576,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         );
 
         const [departed] = yield* sql.batch("replaceFeed", [
-          departUnseenStatement(feedKey, seenAt),
+          departUnseenStatement(feedKey, seenAt, departPostedBefore),
           feedSucceededStatement(feedKey, seenAt),
         ]);
 

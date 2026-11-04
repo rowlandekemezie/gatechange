@@ -65,6 +65,18 @@ describe("source request limits", () => {
   });
 });
 
+describe("feed coverage", () => {
+  it("only company boards are complete listings of what is open", () => {
+    for (const feed of catalog) {
+      expect(feed.coverage).toBe(
+        SourceTerms[feed.source].kind === "CompanyBoard" ? "Complete" : "Window"
+      );
+    }
+
+    expect(new Set(catalog.map((feed) => feed.coverage)).size).toBe(2);
+  });
+});
+
 describe("Jobicy tags", () => {
   const jobicyFeeds = aggregatorFeeds.filter(FeedSpec.$is("Jobicy"));
 

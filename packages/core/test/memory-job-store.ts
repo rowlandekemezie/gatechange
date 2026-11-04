@@ -7,6 +7,7 @@ import {
   fingerprintOf,
   isRepost,
   JobStore,
+  EVERY_POSTING,
   listingStatus,
   MAX_AGE_DAYS,
   paidFeaturesAllowed,
@@ -487,7 +488,12 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
           lease.heldUntil = startedAt;
         }
       }),
-    replaceFeed: (feedKey, incoming, seenAt) =>
+    replaceFeed: (
+      feedKey,
+      incoming,
+      seenAt,
+      departPostedBefore = EVERY_POSTING
+    ) =>
       Effect.sync(() => {
         const stale = pipe(
           [...jobs.values()],
@@ -495,6 +501,7 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
             (job) =>
               job.feed === feedKey &&
               job.lastSeenAt < seenAt &&
+              job.postedAt < departPostedBefore &&
               !departed.has(job.id) &&
               !pipe(
                 incoming,

@@ -36,12 +36,14 @@ const REMOTIVE = "remotive:engineering";
 const catalog: readonly FeedRef[] = [
   {
     company: Option.some("Acme Cloud"),
+    coverage: "Complete",
     key: BOARD,
     minIntervalMinutes: 1,
     source: "Greenhouse",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: REMOTIVE,
     minIntervalMinutes: 1,
     source: "Remotive",

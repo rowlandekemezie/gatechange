@@ -8,7 +8,7 @@ import { JobStore } from "./job-store.js";
 import type { Sighted } from "./job-store.js";
 import { MAX_AGE_DAYS } from "./job.js";
 import type { IngestReceiptValue, JobValue } from "./job.js";
-import { retentionAt } from "./listing-status.js";
+import { departureCutoff, retentionAt } from "./listing-status.js";
 import { PostingFeeds } from "./posting-feeds.js";
 import { DAY_MILLIS, normalizePosting } from "./posting.js";
 import type { PostingValue } from "./posting.js";
@@ -120,7 +120,14 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
 
         return store.recordSightings(historySightings, seenAt).pipe(
           Effect.andThen(store.markListed(feed.key, stillListed, seenAt)),
-          Effect.andThen(store.replaceFeed(feed.key, jobs, seenAt)),
+          Effect.andThen(
+            store.replaceFeed(
+              feed.key,
+              jobs,
+              seenAt,
+              departureCutoff(feed.coverage, seenAt)
+            )
+          ),
           Effect.tap(() => store.saveBoardFacts(boardFacts, seenAt)),
           Effect.tap(() => warnOfUnlinked(feed, unlinked)),
           Effect.map((replacement): FeedOutcomeValue => ({

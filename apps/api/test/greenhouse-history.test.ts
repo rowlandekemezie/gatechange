@@ -12,6 +12,7 @@ const NOW = 1_760_000_000_000;
 
 const feed: FeedRef = {
   company: Option.some("Acme"),
+  coverage: "Complete",
   key: "greenhouse:acme",
   minIntervalMinutes: 1,
   source: "Greenhouse",

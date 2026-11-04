@@ -569,11 +569,12 @@ export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
 
 export const departUnseenStatement = (
   feedKey: string,
-  seenAt: number
+  seenAt: number,
+  postedBefore: number
 ): SqlStatement =>
   statement(
-    "UPDATE jobs SET departed_at = ? WHERE feed = ? AND last_seen_at < ? AND departed_at IS NULL",
-    [seenAt, feedKey, seenAt]
+    "UPDATE jobs SET departed_at = ? WHERE feed = ? AND last_seen_at < ? AND posted_at < ? AND departed_at IS NULL",
+    [seenAt, feedKey, seenAt, postedBefore]
   );
 
 export const markListedStatement = (

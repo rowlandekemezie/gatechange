@@ -1,4 +1,9 @@
-import type { FeedRef, SourceNameValue } from "@rat-stack/core";
+import { SourceTerms } from "@rat-stack/core";
+import type {
+  FeedCoverageValue,
+  FeedRef,
+  SourceNameValue,
+} from "@rat-stack/core";
 import { Data, Match, Option } from "effect";
 
 export type FeedSpecValue = Data.TaggedEnum<{
@@ -74,8 +79,12 @@ const intervalOf: (spec: FeedSpecValue) => number = FeedSpec.$match({
   Workable: () => BOARD_INTERVAL_MINUTES,
 });
 
+const coverageOf = (spec: FeedSpecValue): FeedCoverageValue =>
+  SourceTerms[sourceOf(spec)].kind === "CompanyBoard" ? "Complete" : "Window";
+
 export const feedRefOf = (spec: FeedSpecValue): FeedRef => ({
   company: companyOf(spec),
+  coverage: coverageOf(spec),
   key: feedKey(spec),
   minIntervalMinutes: intervalOf(spec),
   source: sourceOf(spec),

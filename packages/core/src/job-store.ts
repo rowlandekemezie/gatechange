@@ -162,7 +162,8 @@ export class JobStore extends Context.Service<
     readonly replaceFeed: (
       feedKey: string,
       jobs: readonly JobValue[],
-      seenAt: number
+      seenAt: number,
+      departPostedBefore?: number
     ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
     readonly saveBoardFacts: (
       rows: readonly BoardFactsRow[],

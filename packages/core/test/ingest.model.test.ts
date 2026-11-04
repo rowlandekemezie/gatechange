@@ -26,6 +26,7 @@ import {
   runIngest,
   SourceName,
   UNSEEN_RETENTION_MILLIS,
+  WINDOW_HOLD_MILLIS,
 } from "../src/index.js";
 import type {
   FeedRef,
@@ -36,21 +37,25 @@ import type {
 import { makeMemoryJobStore } from "./memory-job-store.js";
 import type { MemoryJobStore } from "./memory-job-store.js";
 
-const feedKeys = ["greenhouse:acme", "lever:globex", "remoteok"] as const;
+const windowFeed = "remoteok";
+
+const feedKeys = ["greenhouse:acme", "lever:globex", windowFeed] as const;
 
 const catalogIn = (keys: readonly string[]): readonly FeedRef[] =>
   pipe(
     keys,
     Array.map((key) => ({
       company: Option.some("Acme"),
+      coverage: key === windowFeed ? "Window" : "Complete",
       key,
       minIntervalMinutes: 1,
-      source: "Greenhouse",
+      source: key === windowFeed ? "RemoteOK" : "Greenhouse",
     }))
   );
 
 const onlyFeed: FeedRef = {
   company: Option.some("Acme"),
+  coverage: "Complete",
   key: "greenhouse:acme",
   minIntervalMinutes: 1,
   source: "Greenhouse",
@@ -356,7 +361,8 @@ const replayLifecycle = (
           if (
             id.startsWith(`${key}:`) &&
             row.lastSeenAt < now &&
-            row.departedAt === null
+            row.departedAt === null &&
+            (key !== windowFeed || row.postedAt < now - WINDOW_HOLD_MILLIS)
           ) {
             model.set(id, { ...row, departedAt: now });
           }
@@ -406,7 +412,7 @@ const replayLifecycle = (
 
 describe("ingest", () => {
   it.effect.prop(
-    "each feed's live rows are exactly its last successful listing, and a feed that goes down keeps what it had",
+    "a company board's live rows are exactly its last successful listing, an aggregator's are everything it listed within the hold, and a feed that goes down keeps what it had",
     { schedule: runs },
     ({ schedule }) =>
       Effect.gen(function* replayRuns() {
@@ -423,7 +429,13 @@ describe("ingest", () => {
               response !== undefined &&
               Predicate.isTagged(response, "Listed")
             ) {
-              expected.set(key, uniqueIds(response.ids));
+              expected.set(
+                key,
+                uniqueIds([
+                  ...(key === windowFeed ? (expected.get(key) ?? []) : []),
+                  ...response.ids,
+                ])
+              );
             }
           }
 
@@ -453,7 +465,7 @@ describe("ingest", () => {
   );
 
   it.effect.prop(
-    "a role its feed stops listing departs, stays one day, then goes; a failed fetch changes nothing; a listed role outlives the 30-day posting window; and the board shows only roles still listed, each with its status",
+    "a role a company board stops listing departs at once, a role an aggregator stops listing departs once the hold after its posting has passed, each stays one day, then goes; a failed fetch changes nothing; a listed role outlives the 30-day posting window; and the board shows only live roles, each with its status",
     { schedule: lifecycleRuns },
     ({ schedule }) => replayLifecycle(schedule)
   );
@@ -491,6 +503,45 @@ describe("ingest", () => {
         expect(history?.reposts).toBe(0);
       }),
     WEEKLY_LISTINGS_TIMEOUT_MILLIS
+  );
+
+  it.effect(
+    "an aggregator's absence keeps a role through the hold after its posting, while the same absence from a company board departs it",
+    () =>
+      Effect.gen(function* absence() {
+        const memory = yield* makeMemoryJobStore;
+
+        const liveIds = () =>
+          pipe(
+            memory.jobs(),
+            Array.filter((job) => !memory.departed().has(job.id)),
+            Array.map((job) => job.id)
+          );
+
+        yield* ingestResponses(memory, [listed(["a"]), down, listed(["a"])]);
+        yield* TestClock.adjust("5 days");
+        yield* ingestResponses(memory, [listed(["a"]), down, listed(["a"])]);
+        yield* TestClock.adjust(`${WINDOW_HOLD_MILLIS / DAY_MILLIS - 6} days`);
+        yield* ingestResponses(memory, [listed([]), down, listed([])]);
+
+        expect(liveIds()).toStrictEqual(["remoteok:a"]);
+
+        yield* TestClock.adjust("2 days");
+        yield* ingestResponses(memory, [down, down, listed([])]);
+
+        expect(liveIds()).toStrictEqual([]);
+        expect(
+          pipe(
+            memory.jobs(),
+            Array.map((job) => job.id)
+          )
+        ).toStrictEqual(["remoteok:a"]);
+
+        yield* TestClock.adjust("2 days");
+        yield* ingestResponses(memory, [down, down, listed([])]);
+
+        expect(memory.jobs()).toStrictEqual([]);
+      })
   );
 
   it.effect(

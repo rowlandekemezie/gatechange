@@ -711,6 +711,7 @@ describe("D1 job store queries", () => {
             Effect.provideService(PostingFeeds, {
               catalog: catalog.map((key) => ({
                 company: Option.none(),
+                coverage: "Complete" as const,
                 key,
                 minIntervalMinutes: 60,
                 source: "Greenhouse" as const,

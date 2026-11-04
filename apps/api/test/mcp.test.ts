@@ -114,12 +114,14 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
         catalog: [
           ...board.map((row) => ({
             company: Option.some(row.company),
+            coverage: "Complete" as const,
             key: row.feed,
             minIntervalMinutes: 60,
             source: row.source,
           })),
           {
             company: Option.none(),
+            coverage: "Complete" as const,
             key: "Greenhouse:unattempted",
             minIntervalMinutes: 60,
             source: "Greenhouse" as const,

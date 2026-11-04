@@ -6,6 +6,7 @@ import type { FeedRef, PostingValue } from "../src/index.js";
 
 const feed: FeedRef = {
   company: Option.some("Acme"),
+  coverage: "Complete",
   key: "greenhouse:acme",
   minIntervalMinutes: 1,
   source: "Greenhouse",
