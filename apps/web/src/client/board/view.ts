@@ -112,8 +112,6 @@ const footer = (model: ModelValue, h: H): Html =>
           ...(["About", "Privacy", "Terms", "Contact"] as const).flatMap(
             (page) => [h.a([h.Href(informationRouter(page))], [page]), " · "]
           ),
-          h.a([h.Href(`${boardUrl(model.filters)}#agents`)], ["For agents"]),
-          " · ",
           h.a([h.Href(SOURCE_REPOSITORY_URL)], ["GitHub"]),
           " · ",
           h.a(

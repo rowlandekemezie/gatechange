@@ -60,6 +60,7 @@ const navItems = (model: ModelValue, h: H): readonly Html[] => [
     Schema.is(Route.Board)(model.route),
     "Roles"
   ),
+  navLink(h, `${boardUrl(model.filters)}#agents`, false, "For agents"),
   planLink(model.billing, Schema.is(Route.Pricing)(model.route), h),
   navLink(
     h,

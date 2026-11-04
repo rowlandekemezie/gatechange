@@ -961,9 +961,9 @@ describe("site header", () => {
         const footer = html.slice(html.indexOf('<footer class="footer"'));
 
         expect(header).toContain(SITE_NAME);
-        expect(header).not.toContain('href="/#agents"');
+        expect(header).toContain('href="/#agents"');
         expect(header).not.toContain(`href="${SOURCE_REPOSITORY_URL}"`);
-        expect(footer).toContain('href="/#agents"');
+        expect(footer).not.toContain('href="/#agents"');
         expect(footer).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
         expect(textOf(header)).toContain("Shortlist (0)");
         expect(textOf(header)).toContain("Sign in");
