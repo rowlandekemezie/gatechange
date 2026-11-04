@@ -312,7 +312,7 @@ export { PostingFeeds } from "./posting-feeds.js";
 
 export { classifyRole, roleWeight, seniorityOfTitle } from "./role.js";
 
-export { Permission, SourceTerms } from "./source-terms.js";
+export { coverageOfSource, Permission, SourceTerms } from "./source-terms.js";
 
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 

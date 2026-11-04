@@ -241,11 +241,15 @@ export type {
   TrackOrMoveRequestValue,
 } from "./tracker.js";
 
-export { Permission, SourceTerms } from "./source-terms.js";
+export { coverageOfSource, Permission, SourceTerms } from "./source-terms.js";
 
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
-export { arrivedLongOpen, NEW_WINDOW_MILLIS } from "./listing-status.js";
+export {
+  arrivedLongOpen,
+  coverageRules,
+  NEW_WINDOW_MILLIS,
+} from "./listing-status.js";
 
 export const listJobsContract = defineContract("listJobs", {
   annotations: { idempotent: true, readOnly: true },

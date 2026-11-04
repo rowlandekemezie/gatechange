@@ -988,9 +988,11 @@ describe("site header", () => {
   );
 });
 
+const homeGeneratedAt = 1_760_500_000_000;
+
 const homeBoard = Preload.Board({
   filters: defaultFilters,
-  generatedAt: 1_760_500_000_000,
+  generatedAt: homeGeneratedAt,
   jobs: [acmeDirector],
   stats: null,
   total: 45,
@@ -1020,6 +1022,43 @@ const boardStats = {
   regions: [],
   roles: [],
 };
+
+describe("the New badge on a listing row", () => {
+  const DAY = 86_400_000;
+  const FRESH_BADGE = `class="fresh"`;
+  const arrivedAt = homeGeneratedAt - DAY / 2;
+
+  const row = (postedAt: number) =>
+    Preload.Listing({
+      generatedAt: homeGeneratedAt,
+      jobs: [
+        jobFrom("Greenhouse", "greenhouse:acme/new", {
+          firstSeenAt: arrivedAt,
+          postedAt,
+        }),
+      ],
+      summary: null,
+      total: 1,
+    });
+
+  it.effect("marks a role first seen today that was posted recently", () =>
+    Effect.map(
+      render("/companies/acme-robotics", row(arrivedAt - DAY)),
+      ({ html }) => {
+        expect(html).toContain(FRESH_BADGE);
+      }
+    )
+  );
+
+  it.effect("leaves it off a role that arrived long open", () =>
+    Effect.map(
+      render("/companies/acme-robotics", row(arrivedAt - 31 * DAY)),
+      ({ html }) => {
+        expect(html).not.toContain(FRESH_BADGE);
+      }
+    )
+  );
+});
 
 describe("internal links", () => {
   it.effect(

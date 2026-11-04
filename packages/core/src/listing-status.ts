@@ -17,17 +17,29 @@ export const WINDOW_HOLD_MILLIS = ADMISSION_MILLIS;
 
 export const EVERY_POSTING = Number.MAX_SAFE_INTEGER;
 
+interface Sighting {
+  readonly lastSeenAt: number;
+  readonly postedAt: number;
+}
+
 export interface CoverageRule {
   readonly admitsLongOpen: boolean;
   readonly departPostedBefore: (now: number) => number;
+  readonly validThrough: (sighting: Sighting) => number;
 }
 
 export const coverageRules: Readonly<Record<FeedCoverageValue, CoverageRule>> =
   {
-    Complete: { admitsLongOpen: true, departPostedBefore: () => EVERY_POSTING },
+    Complete: {
+      admitsLongOpen: true,
+      departPostedBefore: () => EVERY_POSTING,
+      validThrough: ({ lastSeenAt }) => lastSeenAt + ADMISSION_MILLIS,
+    },
     Window: {
       admitsLongOpen: false,
       departPostedBefore: (now) => now - WINDOW_HOLD_MILLIS,
+      validThrough: ({ lastSeenAt, postedAt }) =>
+        Math.min(lastSeenAt + ADMISSION_MILLIS, postedAt + WINDOW_HOLD_MILLIS),
     },
   };
 
