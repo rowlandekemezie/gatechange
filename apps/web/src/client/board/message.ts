@@ -33,6 +33,7 @@ export const Message = defineMessageUnion({
   ChangedUrl: { url: Url },
   ClickedAnySeniority: {},
   ClickedClearMark: { id: Schema.String },
+  ClickedFilters: {},
   ClickedKeepShortlist: {},
   ClickedLink: { request: UrlRequest },
   ClickedLoadMore: {},

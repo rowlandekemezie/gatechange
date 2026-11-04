@@ -284,6 +284,18 @@ describe("URL-driven board state", () => {
     ).toBe(true);
   });
 
+  it("toggles the filter panel, and opens it for a link with Pro filters", () => {
+    expect(started("/").model.filtersOpen).toBe(false);
+    expect(started("/?pay=200000").model.filtersOpen).toBe(true);
+
+    const opened = sent(started("/"), Message.ClickedFilters());
+
+    expect(opened.model.filtersOpen).toBe(true);
+    expect(sent(opened, Message.ClickedFilters()).model.filtersOpen).toBe(
+      false
+    );
+  });
+
   it("submitting an unchanged search replaces the history entry", () => {
     const opened = started(boardUrl(directorOnly));
 

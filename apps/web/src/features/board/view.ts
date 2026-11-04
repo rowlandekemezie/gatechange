@@ -42,6 +42,7 @@ import {
 } from "../../client/board/filters.js";
 import type {
   AgeWindowValue,
+  FiltersValue,
   PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
@@ -347,6 +348,31 @@ const proFilterView = (
   );
 };
 
+const filterSummary = (filters: FiltersValue) =>
+  [
+    filters.roles.length === 1 ? "1 role" : `${filters.roles.length} roles`,
+    filters.regionGroups.length === 1
+      ? "1 place"
+      : `${filters.regionGroups.length} places`,
+    `last ${ageChip(filters.maxAgeDays)}`,
+    ...(hasProSelection(filters) ? ["Pro filters"] : []),
+  ].join(", ");
+
+const filtersToggle = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  h.button(
+    [
+      h.Type("button"),
+      h.Class("search-button filters-toggle"),
+      h.AriaExpanded(model.filtersOpen),
+      h.AriaControls("filter-panel"),
+      h.OnClick(Message.ClickedFilters()),
+    ],
+    [
+      "Filters",
+      h.span([h.Class("filters-summary")], [filterSummary(model.filters)]),
+    ]
+  );
+
 const statusLine = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   StatsState.match<Html>(model.stats, {
     Loaded: ({ stats }) =>
@@ -377,15 +403,11 @@ export const boardMasthead = (
       h.div(
         [h.Class("hero")],
         [
-          h.p(
-            [h.Class("kicker")],
-            ["Remote · US & Canada · Checked every 20 min"]
-          ),
           h.h1([h.Class("hero-title")], ["Your next move is on the board."]),
           h.p(
             [h.Class("hero-lede")],
             [
-              "Director, VP and Head of Engineering roles, straight from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
+              "Director, VP and Head of Engineering roles from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
             ]
           ),
         ]
@@ -393,23 +415,38 @@ export const boardMasthead = (
       h.div(
         [h.Class("filters")],
         [
-          sentenceView(model, h),
+          searchView(model, h),
+          filtersToggle(model, h),
           h.div(
-            [h.Class("filter-tools")],
-            [searchView(model, h), proFilterView(model, h)]
+            [
+              h.Id("filter-panel"),
+              h.Class(
+                model.filtersOpen
+                  ? "filter-panel filter-panel-open"
+                  : "filter-panel"
+              ),
+            ],
+            [
+              sentenceView(model, h),
+              h.div(
+                [h.Class("filter-tools")],
+                [
+                  proFilterView(model, h),
+                  h.submodel({
+                    model: model.savedSearches,
+                    slotId: "save-search",
+                    toParentMessage: (message) =>
+                      Message.GotSavedSearchesMessage({ message }),
+                    view: saveSearchControl,
+                    viewInputs: {
+                      filters: model.filters,
+                      session: model.account.session,
+                    },
+                  }),
+                ]
+              ),
+            ]
           ),
-          h.submodel({
-            model: model.savedSearches,
-            slotId: "save-search",
-            toParentMessage: (message) =>
-              Message.GotSavedSearchesMessage({ message }),
-            view: saveSearchControl,
-            viewInputs: {
-              filters: model.filters,
-              session: model.account.session,
-            },
-          }),
-          statusLine(model, h),
         ]
       ),
     ]
@@ -901,7 +938,16 @@ export const boardPage = (
         : h.div(
             [],
             [
-              h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
+              h.div(
+                [h.Class("board-top")],
+                [
+                  h.p(
+                    [h.Class("count"), h.AriaLive("polite")],
+                    [roleCount(total)]
+                  ),
+                  statusLine(model, h),
+                ]
+              ),
               h.div(
                 [h.Class("board")],
                 [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]

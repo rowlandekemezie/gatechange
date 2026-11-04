@@ -950,7 +950,7 @@ describe("sitemap", () => {
 
 describe("site header", () => {
   it.effect.each(["/", "/pricing", "/shortlist", "/about"])(
-    "names the site and links every section from %s",
+    "names the site and reaches every section from %s",
     (path) =>
       Effect.map(render(path, Preload.Nothing()), ({ html }) => {
         const header = html.slice(
@@ -958,9 +958,13 @@ describe("site header", () => {
           html.indexOf("</header>")
         );
 
+        const footer = html.slice(html.indexOf('<footer class="footer"'));
+
         expect(header).toContain(SITE_NAME);
         expect(header).toContain('href="/#agents"');
-        expect(header).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(header).not.toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(footer).not.toContain('href="/#agents"');
+        expect(footer).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
         expect(textOf(header)).toContain("Shortlist (0)");
         expect(textOf(header)).toContain("Sign in");
       })
@@ -1104,6 +1108,60 @@ describe("home page render", () => {
           'href="https://github.com/rowlandekemezie/jobs"'
         );
       })
+  );
+});
+
+describe("home filters", () => {
+  it.effect("keep every filter in the panel the Filters button controls", () =>
+    Effect.map(render("/", homeBoard), ({ html }) => {
+      const toggle = /<button[^>]*filters-toggle.*?<\/button>/su.exec(
+        html
+      )?.[0];
+
+      expect(toggle).toContain('aria-controls="filter-panel"');
+      expect(toggle).toContain('aria-expanded="false"');
+      expect(textOf(toggle ?? "")).toContain("4 roles, 3 places, last week");
+
+      const panel = html.slice(
+        html.indexOf('id="filter-panel"'),
+        html.indexOf('class="count"')
+      );
+
+      expect(panel).toContain("remote in Canada");
+      expect(panel).toContain("Salary and seniority");
+      expect(panel).toContain("Sign in to get new matches by email");
+    })
+  );
+
+  it.effect("name a Pro selection while the panel is closed", () =>
+    Effect.map(render("/?pay=200000", Preload.Nothing()), ({ html }) => {
+      expect(html).toContain("last week, Pro filters");
+    })
+  );
+});
+
+describe("job page", () => {
+  it.effect("puts Apply before the facts and names each fact once", () =>
+    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+      const facts = html.slice(html.indexOf('class="detail-facts"'));
+
+      expect(html.indexOf('class="apply"')).toBeLessThan(
+        html.indexOf('class="detail-facts"')
+      );
+      expect(textOf(facts)).not.toContain("Source");
+    })
+  );
+
+  it.effect("leaves out Where when the region is all it would say", () =>
+    Effect.map(
+      renderJob({ ...greenhouse, location: "" }, allowedOnly),
+      ({ html }) => {
+        const facts = html.slice(html.indexOf('class="detail-facts"'));
+
+        expect(textOf(facts)).toContain("Region");
+        expect(textOf(facts)).not.toContain("Where");
+      }
+    )
   );
 });
 

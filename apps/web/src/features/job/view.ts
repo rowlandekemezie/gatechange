@@ -132,11 +132,8 @@ const foundView = (
   model: ModelValue,
   h: HtmlBuilder<MessageValue>,
   job: JobDetailValue
-): Html => {
-  const where =
-    job.location.length > 0 ? job.location : regionLabel(job.region);
-
-  return h.article(
+): Html =>
+  h.article(
     [h.Class("detail")],
     [
       backLink(model, h),
@@ -151,11 +148,29 @@ const foundView = (
           }),
         ]
       ),
+      h.div(
+        [h.Class("detail-actions")],
+        [
+          h.a(
+            [
+              h.Class("apply"),
+              ...Option.toArray(
+                Option.map(offSiteHref(job.url), (href) => h.Href(href))
+              ),
+              h.Target("_blank"),
+              h.Rel("noopener noreferrer"),
+            ],
+            [`Apply on ${sourceLabel(job.source)}`]
+          ),
+          markButtons(model, h, job),
+        ]
+      ),
       h.dl(
         [h.Class("detail-facts")],
         [
-          h.dt([], ["Where"]),
-          h.dd([], [where]),
+          ...(job.location.length > 0
+            ? [h.dt([], ["Where"]), h.dd([], [job.location])]
+            : []),
           h.dt([], ["Region"]),
           h.dd([], [regionLabel(job.region)]),
           ...(job.salary === null
@@ -175,32 +190,12 @@ const foundView = (
               ),
             ]
           ),
-          h.dt([], ["Source"]),
-          h.dd([], [sourceLabel(job.source)]),
         ]
       ),
       ...(job.enrichment === null ? [] : enrichmentView(h, job.enrichment)),
-      h.div(
-        [h.Class("detail-actions")],
-        [
-          h.a(
-            [
-              h.Class("apply"),
-              ...Option.toArray(
-                Option.map(offSiteHref(job.url), (href) => h.Href(href))
-              ),
-              h.Target("_blank"),
-              h.Rel("noopener noreferrer"),
-            ],
-            [`Apply on ${sourceLabel(job.source)}`]
-          ),
-          markButtons(model, h, job),
-        ]
-      ),
       moreLinks(h, job),
     ]
   );
-};
 
 const savedRoleView = (
   model: ModelValue,

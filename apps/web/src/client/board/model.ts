@@ -148,6 +148,7 @@ export const Model = Schema.Struct({
   billing: BillingModel,
   draftSearch: Schema.String,
   filters: Filters,
+  filtersOpen: Schema.Boolean,
   generation: Schema.Finite,
   intel: IntelState,
   job: JobState,
