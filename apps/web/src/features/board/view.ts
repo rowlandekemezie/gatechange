@@ -407,7 +407,7 @@ export const boardMasthead = (
           h.p(
             [h.Class("hero-lede")],
             [
-              "Director, VP and Head of Engineering roles from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
+              "Engineering manager to VP roles from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
             ]
           ),
         ]
