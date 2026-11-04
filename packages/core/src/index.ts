@@ -239,7 +239,12 @@ export {
   selectDueFeeds,
 } from "./feed.js";
 
-export type { FeedOutcomeValue, FeedRef, FeedStateValue } from "./feed.js";
+export type {
+  FeedCoverageValue,
+  FeedOutcomeValue,
+  FeedRef,
+  FeedStateValue,
+} from "./feed.js";
 
 export {
   admissionCutoff,
@@ -254,13 +259,17 @@ export type { IngestPlan } from "./ingest.js";
 export {
   BOARDING_WINDOW_MILLIS,
   DEPARTED_RETENTION_MILLIS,
+  arrivedLongOpen,
+  coverageRules,
+  EVERY_POSTING,
   listingStatus,
   NEW_WINDOW_MILLIS,
   retentionAt,
   UNSEEN_RETENTION_MILLIS,
+  WINDOW_HOLD_MILLIS,
 } from "./listing-status.js";
 
-export type { Lifecycle, Retention } from "./listing-status.js";
+export type { CoverageRule, Lifecycle, Retention } from "./listing-status.js";
 
 export {
   daysOpen,
@@ -337,6 +346,7 @@ export {
   ListingDetails,
   ListingStatus,
   listJobsContract,
+  ADMISSION_DAYS,
   MAX_AGE_DAYS,
   membershipContract,
   openBillingPortalContract,

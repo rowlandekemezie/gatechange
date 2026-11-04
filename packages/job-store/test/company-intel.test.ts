@@ -46,30 +46,35 @@ type FeedKey =
 const catalog: readonly FeedRef[] = [
   {
     company: Option.some("Acme Cloud"),
+    coverage: "Complete",
     key: BOARD,
     minIntervalMinutes: 1,
     source: "Greenhouse",
   },
   {
     company: Option.some("AcmeCloud"),
+    coverage: "Complete",
     key: LOOKALIKE_BOARD,
     minIntervalMinutes: 1,
     source: "Lever",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: REMOTIVE,
     minIntervalMinutes: 1,
     source: "Remotive",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: HACKER_NEWS,
     minIntervalMinutes: 1,
     source: "HackerNews",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: HIMALAYAS,
     minIntervalMinutes: 1,
     source: "Himalayas",

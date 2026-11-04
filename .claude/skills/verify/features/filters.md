@@ -6,7 +6,7 @@ The headline sentence is the filter: "Show me VP, head of engineering, director 
 
 - `filter-role` toggles `VP`, `head of engineering`, `director`, and `engineering manager`.
 - `filter-region` toggles `remote in Canada`, `remote in the US`, `in Vancouver and BC`, `elsewhere in Canada`, `on-site in the US`, and `anywhere else`.
-- `filter-age` selects one of `day`, `3 days`, `week`, `2 weeks`, or `month`.
+- `filter-age` selects one of `day`, `3 days`, `week`, `2 weeks`, `month`, or `10 years`.
 - `filter-sort` selects `most relevant` or `newest`.
 - `filter-none` shows an empty state when no role or no region is selected.
 

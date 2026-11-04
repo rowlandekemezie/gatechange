@@ -3,8 +3,11 @@ import { Array, Option, Order, pipe, Schema } from "effect";
 import { EpochMillis, SourceName } from "./job.js";
 import type { SourceNameValue } from "./job.js";
 
+export type FeedCoverageValue = "Complete" | "Window";
+
 export interface FeedRef {
   readonly company: Option.Option<string>;
+  readonly coverage: FeedCoverageValue;
   readonly key: string;
   readonly minIntervalMinutes: number;
   readonly source: SourceNameValue;

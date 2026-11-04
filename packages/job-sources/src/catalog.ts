@@ -25,8 +25,11 @@ export const aggregatorFeeds: readonly FeedSpecValue[] = [
   FeedSpec.Himalayas({ query: "engineering manager" }),
   FeedSpec.Himalayas({ query: "director of engineering" }),
   FeedSpec.Himalayas({ query: "vp engineering" }),
-  FeedSpec.Jobicy({ tag: "engineering manager" }),
-  FeedSpec.Jobicy({ tag: "director of engineering" }),
+  FeedSpec.Jobicy({ slug: "engineering-manager", tag: "engineering manager" }),
+  FeedSpec.Jobicy({
+    slug: "director-of-engineering",
+    tag: "engineering director",
+  }),
   FeedSpec.HackerNews({ thread: "who is hiring" }),
 ];
 

@@ -12,6 +12,7 @@ const NOW = 1_760_000_000_000;
 
 const feed: FeedRef = {
   company: Option.some("Acme"),
+  coverage: "Complete",
   key: "greenhouse:acme",
   minIntervalMinutes: 1,
   source: "Greenhouse",
@@ -114,6 +115,47 @@ describe("Greenhouse dates through adapter, ingest and SQL history", () => {
           const listing = yield* store.find("greenhouse:acme:42");
           expect(listing.pipe(Option.map((job) => job.postedAt))).toStrictEqual(
             Option.some(NOW - 8 * DAY_MILLIS)
+          );
+        })
+      )
+  );
+
+  it.effect(
+    "a long-open role on a new board is admitted once with its first sighting, then only refreshed",
+    () =>
+      withStore(
+        Effect.gen(function* longOpen() {
+          const published = iso(NOW - 106 * DAY_MILLIS);
+          const first = yield* ingestAt(0, published, NOW);
+          const second = yield* ingestAt(1, published, NOW);
+          const store = yield* JobStore;
+          const kept = yield* store.find("greenhouse:acme:42");
+
+          expect(first.receipt.jobsUpserted).toBe(1);
+          expect(second.receipt.jobsUpserted).toBe(0);
+          expect(
+            pipe(
+              kept,
+              Option.map(({ firstSeenAt, lastSeenAt, postedAt }) => ({
+                firstSeenAt,
+                lastSeenAt,
+                postedAt,
+              }))
+            )
+          ).toStrictEqual(
+            Option.some({
+              firstSeenAt: NOW,
+              lastSeenAt: NOW + DAY_MILLIS,
+              postedAt: NOW - 106 * DAY_MILLIS,
+            })
+          );
+          expect(yield* store.historyOf(identity)).toStrictEqual(
+            Option.some({
+              firstSeenAt: NOW,
+              lastSeenAt: NOW,
+              reposts: 0,
+              sightings: 1,
+            })
           );
         })
       )

@@ -42,7 +42,7 @@ export const regionsOfGroup = Match.type<RegionGroupValue>().pipe(
   Match.exhaustive
 );
 
-export const AgeWindow = Schema.Literals([1, 3, 7, 14, 30]);
+export const AgeWindow = Schema.Literals([1, 3, 7, 14, 30, 3650]);
 
 export type AgeWindowValue = typeof AgeWindow.Type;
 

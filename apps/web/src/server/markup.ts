@@ -1,5 +1,5 @@
 import {
-  MAX_AGE_DAYS,
+  ADMISSION_DAYS,
   Permission,
   SourceTerms,
 } from "@rat-stack/core/contracts";
@@ -63,8 +63,8 @@ export const jobPostingOf = (
         title: job.title,
         url: canonicalUrl,
         validThrough: DateTime.formatIso(
-          DateTime.add(DateTime.makeUnsafe(job.postedAt), {
-            days: MAX_AGE_DAYS,
+          DateTime.add(DateTime.makeUnsafe(job.lastSeenAt), {
+            days: ADMISSION_DAYS,
           })
         ),
         ...locationTypeOf(job.arrangement),

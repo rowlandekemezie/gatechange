@@ -1,4 +1,4 @@
-import { roleLevels } from "@rat-stack/core/contracts";
+import { MAX_AGE_DAYS, roleLevels } from "@rat-stack/core/contracts";
 import type {
   CompanySummaryValue,
   JobDetailValue,
@@ -38,7 +38,7 @@ const boardLinkOf = (route: ListingRouteValue) =>
   Schema.is(Route.Role)(route)
     ? boardUrl({
         ...defaultFilters,
-        maxAgeDays: 30,
+        maxAgeDays: MAX_AGE_DAYS,
         regionGroups: [route.place],
         roles: [route.role],
       })
@@ -51,7 +51,7 @@ const everyRoleOf = (route: ListingRouteValue, jobs: readonly JobValue[]) =>
   Schema.is(Route.Company)(route)
     ? boardUrl({
         ...defaultFilters,
-        maxAgeDays: 30,
+        maxAgeDays: MAX_AGE_DAYS,
         regionGroups,
         roles: roleLevels,
         salaryListed: false,

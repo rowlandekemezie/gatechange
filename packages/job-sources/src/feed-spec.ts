@@ -1,4 +1,9 @@
-import type { FeedRef, SourceNameValue } from "@rat-stack/core";
+import { SourceTerms } from "@rat-stack/core";
+import type {
+  FeedCoverageValue,
+  FeedRef,
+  SourceNameValue,
+} from "@rat-stack/core";
 import { Data, Match, Option } from "effect";
 
 export type FeedSpecValue = Data.TaggedEnum<{
@@ -6,7 +11,7 @@ export type FeedSpecValue = Data.TaggedEnum<{
   Greenhouse: { readonly company: string; readonly slug: string };
   HackerNews: { readonly thread: string };
   Himalayas: { readonly query: string };
-  Jobicy: { readonly tag: string };
+  Jobicy: { readonly slug: string; readonly tag: string };
   Lever: { readonly company: string; readonly slug: string };
   RemoteOK: { readonly listing: string };
   Remotive: { readonly search: string };
@@ -27,7 +32,7 @@ export const feedKey: (spec: FeedSpecValue) => string = FeedSpec.$match({
   Greenhouse: ({ slug }) => `greenhouse:${slug}`,
   HackerNews: ({ thread }) => `hackernews:${slugOf(thread)}`,
   Himalayas: ({ query }) => `himalayas:${slugOf(query)}`,
-  Jobicy: ({ tag }) => `jobicy:${slugOf(tag)}`,
+  Jobicy: ({ slug }) => `jobicy:${slug}`,
   Lever: ({ slug }) => `lever:${slug}`,
   RemoteOK: ({ listing }) => `remoteok:${slugOf(listing)}`,
   Remotive: ({ search }) => `remotive:${slugOf(search)}`,
@@ -74,8 +79,12 @@ const intervalOf: (spec: FeedSpecValue) => number = FeedSpec.$match({
   Workable: () => BOARD_INTERVAL_MINUTES,
 });
 
+const coverageOf = (spec: FeedSpecValue): FeedCoverageValue =>
+  SourceTerms[sourceOf(spec)].kind === "CompanyBoard" ? "Complete" : "Window";
+
 export const feedRefOf = (spec: FeedSpecValue): FeedRef => ({
   company: companyOf(spec),
+  coverage: coverageOf(spec),
   key: feedKey(spec),
   minIntervalMinutes: intervalOf(spec),
   source: sourceOf(spec),

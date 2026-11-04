@@ -118,6 +118,10 @@ export class JobStore extends Context.Service<
     readonly findIncludingDeparted: (
       id: string
     ) => Effect.Effect<Option.Option<JobDetailValue>, JobStoreUnavailable>;
+    readonly heldListings: (
+      feedKey: string,
+      ids: readonly string[]
+    ) => Effect.Effect<readonly string[], JobStoreUnavailable>;
     readonly historyOf: (
       job: Pick<JobValue, "company" | "title">
     ) => Effect.Effect<Option.Option<ListingHistory>, JobStoreUnavailable>;
@@ -162,7 +166,8 @@ export class JobStore extends Context.Service<
     readonly replaceFeed: (
       feedKey: string,
       jobs: readonly JobValue[],
-      seenAt: number
+      seenAt: number,
+      departPostedBefore?: number
     ) => Effect.Effect<FeedReplacementValue, JobStoreUnavailable>;
     readonly saveBoardFacts: (
       rows: readonly BoardFactsRow[],

@@ -38,7 +38,7 @@ export const shellOf = (assets: ServiceBinding, origin: string) =>
     Effect.provide(httpOver(assets))
   );
 
-const SITEMAP_PAGES = 10;
+const SITEMAP_PAGES = 30;
 
 export const listedJobs = (backend: ServiceBinding) =>
   Effect.scoped(
