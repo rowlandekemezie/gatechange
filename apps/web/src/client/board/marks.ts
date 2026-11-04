@@ -10,6 +10,7 @@ import type { MarkKindValue, ModelValue } from "./model.js";
 
 export interface ShortlistEntry {
   readonly company: string;
+  readonly location: string;
   readonly stage: StageValue;
   readonly title: string;
   readonly url: string;

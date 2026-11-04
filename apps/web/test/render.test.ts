@@ -633,7 +633,7 @@ describe("original posting links", () => {
           [{ ...markOf(acmeDirector), url }]
         ),
         ({ html }) => {
-          expect(textOf(html)).toContain("Open the original posting");
+          expect(textOf(html)).toContain(acmeDirector.title);
           expect(
             linksHome(html, jobRouter({ id: acmeDirector.id }))
           ).toStrictEqual([]);

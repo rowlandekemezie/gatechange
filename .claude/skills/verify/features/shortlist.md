@@ -10,6 +10,7 @@ A person marks roles as Saved or Applied. Signed out, the `Shortlist (n)` header
 - `shortlist-remove` removes a mark from the shortlist tab.
 - `shortlist-empty` explains the shortlist when nothing is marked.
 - `shortlist-persist` keeps marks across reloads in the same browser.
+- `shortlist-gone` opens a saved role whose row is gone and shows its saved title, company, location and original posting link.
 
 ## How to get to it (user POV)
 
