@@ -909,8 +909,39 @@ const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
     ]
   );
 
+interface BoardPageValue {
+  readonly generatedAt: number;
+  readonly jobs: readonly ListedJobValue[];
+  readonly total: number;
+}
+
 const findingRoles = (h: HtmlBuilder<MessageValue>): Html =>
   h.p([h.Class("count"), h.Role("status")], ["Finding roles"]);
+
+const boardList = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>,
+  { generatedAt, jobs, total }: BoardPageValue,
+  refreshing: boolean
+): Html =>
+  h.div(
+    [h.AriaBusy(refreshing)],
+    [
+      h.div(
+        [h.Class("board-top")],
+        [
+          h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
+          statusLine(model, h),
+        ]
+      ),
+      h.div(
+        [h.Class("board")],
+        [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
+      ),
+      legendView(h),
+      ...(refreshing ? [] : [moreView(model, h, jobs.length, total)]),
+    ]
+  );
 
 export const boardPage = (
   model: ModelValue,
@@ -932,32 +963,13 @@ export const boardPage = (
           ),
         ]
       ),
-    Loaded: ({ generatedAt, jobs, total }) =>
-      Array.isReadonlyArrayEmpty(jobs)
+    Loaded: (page) =>
+      Array.isReadonlyArrayEmpty(page.jobs)
         ? emptyView(h)
-        : h.div(
-            [],
-            [
-              h.div(
-                [h.Class("board-top")],
-                [
-                  h.p(
-                    [h.Class("count"), h.AriaLive("polite")],
-                    [roleCount(total)]
-                  ),
-                  statusLine(model, h),
-                ]
-              ),
-              h.div(
-                [h.Class("board")],
-                [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
-              ),
-              legendView(h),
-              moreView(model, h, jobs.length, total),
-            ]
-          ),
+        : boardList(model, h, page, false),
     Loading: () => findingRoles(h),
     NotAsked: () => findingRoles(h),
+    Refreshing: (page) => boardList(model, h, page, true),
   });
 
 export const boardTitle = (model: ModelValue) =>
@@ -966,4 +978,5 @@ export const boardTitle = (model: ModelValue) =>
     Loaded: ({ total }) => `${total} engineering leadership roles`,
     Loading: () => "Engineering leadership roles",
     NotAsked: () => "Engineering leadership roles",
+    Refreshing: ({ total }) => `${total} engineering leadership roles`,
   });
