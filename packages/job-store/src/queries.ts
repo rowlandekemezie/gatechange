@@ -117,6 +117,9 @@ const servedJobsSince = (
 
 const arrivedFresh = `first_seen_at - posted_at <= ${ADMISSION_DAYS * DAY_MILLIS}`;
 
+const openedAt = (seen: string) =>
+  `CASE WHEN ranked.first_seen_at - ranked.posted_at > ${ADMISSION_DAYS * DAY_MILLIS} THEN MIN(${seen}, ranked.posted_at) ELSE ${seen} END`;
+
 const filteredJobs = (
   query: JobQueryValue,
   now: number,
@@ -203,7 +206,7 @@ export const listJobsStatement = (
   return statement(
     `${filtered.sql}
 SELECT ${rankedColumns}, ranked.departed_at,
-  COALESCE(history.first_seen_at, ranked.first_seen_at) AS opened_at,
+  ${openedAt("COALESCE(history.first_seen_at, ranked.first_seen_at)")} AS opened_at,
   COALESCE(history.reposts, 0) AS reposts
 FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
 WHERE duplicate_rank = 1
@@ -239,7 +242,7 @@ export const companySummaryStatement = (slug: string, now: number) => {
 
   return statement(
     `${filtered.sql}
-SELECT COUNT(*) AS total, MIN(COALESCE(history.first_seen_at, ranked.first_seen_at)) AS opened_at
+SELECT COUNT(*) AS total, MIN(${openedAt("COALESCE(history.first_seen_at, ranked.first_seen_at)")}) AS opened_at
 FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
 WHERE duplicate_rank = 1`,
     filtered.params
@@ -254,7 +257,7 @@ export const companyOpenRolesStatement = (
 
   return statement(
     `WITH ranked AS (
-  SELECT jobs.id, jobs.company, jobs.title, jobs.role, jobs.source, jobs.first_seen_at, jobs.fingerprint,
+  SELECT jobs.id, jobs.company, jobs.title, jobs.role, jobs.source, jobs.posted_at, jobs.first_seen_at, jobs.fingerprint,
     job_enrichment.salary_currency, job_enrichment.salary_min, job_enrichment.salary_max,
     ROW_NUMBER() OVER (PARTITION BY jobs.fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM ${enrichedJobs}
@@ -262,7 +265,7 @@ export const companyOpenRolesStatement = (
 )
 SELECT ranked.id, ranked.company, ranked.title, ranked.role, ranked.source,
   ranked.salary_currency, ranked.salary_min, ranked.salary_max,
-  COALESCE(history.stint_started_at, ranked.first_seen_at) AS opened_at,
+  ${openedAt("COALESCE(history.stint_started_at, ranked.first_seen_at)")} AS opened_at,
   COALESCE(history.reposts, 0) AS reposts
 FROM ranked LEFT JOIN intel_history AS history ON history.company_slug = ? AND history.fingerprint = ranked.fingerprint
 WHERE duplicate_rank = 1`,
@@ -480,6 +483,7 @@ ON CONFLICT (fingerprint) DO UPDATE SET
   sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
   reposts = job_history.reposts + (
     job_history.last_seen_at < excluded.last_seen_at - ?
+    AND NOT (job_history.last_seen_feed <> excluded.last_seen_feed AND ? < job_history.last_seen_at)
     AND job_history.last_seen_at < COALESCE((
       SELECT CASE
         WHEN last_success_at < ? THEN last_success_at
@@ -496,6 +500,7 @@ ON CONFLICT (fingerprint) DO UPDATE SET
       seenAt,
       job.feed,
       REPOST_GAP,
+      job.postedAt,
       seenAt,
       seenAt,
     ]
@@ -510,6 +515,7 @@ const reopenIntelStatement = (job: Sighted, seenAt: number): SqlStatement =>
   stint_started_at = ?
 WHERE company_slug = ? AND fingerprint = ?
   AND last_seen_at < ? - ?
+  AND NOT (last_seen_feed <> ? AND ? < last_seen_at)
   AND last_seen_at < COALESCE((
     SELECT CASE
       WHEN last_success_at < ? THEN last_success_at
@@ -523,6 +529,8 @@ WHERE company_slug = ? AND fingerprint = ?
       fingerprintOf(job),
       seenAt,
       REPOST_GAP,
+      job.feed,
+      job.postedAt,
       seenAt,
       seenAt,
     ]

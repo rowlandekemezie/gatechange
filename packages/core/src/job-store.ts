@@ -64,7 +64,7 @@ export interface ListingHistory {
   readonly sightings: number;
 }
 
-export type Sighted = Pick<JobValue, "company" | "feed" | "title">;
+export type Sighted = Pick<JobValue, "company" | "feed" | "postedAt" | "title">;
 
 export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
   `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
