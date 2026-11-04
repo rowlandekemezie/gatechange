@@ -7,6 +7,7 @@ import { Option } from "effect";
 import { authLogger } from "./auth-logger.js";
 import { sameSiteVerify } from "./cross-site.js";
 import { emailSendLimit, limitSends } from "./email-send-limit.js";
+import { hashLinkToken, magicLinkPreview } from "./link-preview.js";
 
 const AUTH_BASE_PATH = "/api/auth";
 
@@ -59,8 +60,9 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
         settings.sendMagicLink,
         settings.magicLinkDailySendLimit
       ),
-      storeToken: "hashed",
+      storeToken: { hash: hashLinkToken, type: "custom-hasher" },
     }),
+    magicLinkPreview(),
     emailSendLimit(),
     sameSiteVerify(),
   ],

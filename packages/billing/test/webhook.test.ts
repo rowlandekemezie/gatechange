@@ -249,6 +249,43 @@ describe("Stripe events to billing changes", () => {
   );
 
   it.effect(
+    "reports each weekly past-due event's own seven-day limit, which the store holds to the first",
+    () =>
+      Effect.gen(function* weeklyPastDue() {
+        const WEEK = 7 * 24 * 60 * 60;
+
+        const pastDueAt = (start: number, event: string) =>
+          created
+            .replace('"status":"active"', '"status":"past_due"')
+            .replaceAll(
+              "price_1USIFA0ZnafJYNlYo9bbbD97",
+              "price_sandbox_weekly"
+            )
+            .replaceAll("1792424047", String(start))
+            .replaceAll("1795102447", String(start + WEEK))
+            .replace("evt_1USIZj0ZnafJYNlYFqQEBJXC", event);
+
+        const first = 1_792_424_047;
+
+        const changes = yield* Effect.all([
+          changeOf(pastDueAt(first, "evt_first_failure")),
+          changeOf(pastDueAt(first + WEEK, "evt_second_failure")),
+        ]);
+
+        expect(
+          changes.map((change) =>
+            Predicate.isTagged(change, "ApplySubscription")
+              ? [change.subscription.plan, change.subscription.periodEnd]
+              : null
+          )
+        ).toEqual([
+          ["Weekly", (first + PAST_DUE_GRACE_SECONDS) * 1000],
+          ["Weekly", (first + WEEK + PAST_DUE_GRACE_SECONDS) * 1000],
+        ]);
+      })
+  );
+
+  it.effect(
     "grants the weekly plan from a configured weekly price id, whatever the price metadata says",
     () =>
       Effect.gen(function* byPrice() {

@@ -27,7 +27,17 @@ export const LinkOutcome = Schema.Literals([
 
 export type LinkOutcomeValue = typeof LinkOutcome.Type;
 
+export const LinkPreview = defineTaggedUnion({
+  Checking: {},
+  Named: { email: Schema.String },
+  Refused: {},
+  Unknown: {},
+});
+
+export type LinkPreviewValue = typeof LinkPreview.Type;
+
 export const Model = Schema.Struct({
+  link: LinkPreview,
   session: SessionState,
   signIn: SignInState,
   socialProviders: Schema.Array(SocialProvider),

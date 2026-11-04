@@ -2,7 +2,14 @@ import type { RequestHeaders } from "@rat-stack/core";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 
+import { MAGIC_LINK_PREVIEW_PATH } from "./link-preview.js";
+
 const SAME_SITE_FETCHES: ReadonlySet<string> = new Set(["same-origin", "none"]);
+
+const SAME_ORIGIN_ONLY_PATHS: ReadonlySet<string> = new Set([
+  "/magic-link/verify",
+  MAGIC_LINK_PREVIEW_PATH,
+]);
 
 const hostOfOrigin = (origin: string) =>
   URL.canParse(origin) ? new URL(origin).host : undefined;
@@ -36,7 +43,7 @@ export const sameSiteVerify = (): BetterAuthPlugin => ({
                 })
               ));
         }),
-        matcher: (context) => context.path === "/magic-link/verify",
+        matcher: (context) => SAME_ORIGIN_ONLY_PATHS.has(context.path ?? ""),
       },
     ],
   },

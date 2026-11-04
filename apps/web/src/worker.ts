@@ -201,6 +201,21 @@ const isPage = (pathname: string) =>
     pathname
   ) || PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
+const pageUrlOf = (url: URL, route: RouteValue) => {
+  if (Schema.is(Route.Board)(route)) {
+    return url;
+  }
+
+  const pageUrl = new URL(url.origin);
+
+  pageUrl.pathname = Option.getOrElse(
+    canonicalPathOf(route),
+    () => url.pathname
+  );
+
+  return pageUrl;
+};
+
 const servePage = (
   bindings: EdgeBindings,
   request: Request,
@@ -210,12 +225,7 @@ const servePage = (
   Effect.gen(function* serveRenderedPage() {
     const route = routeOfUrl(yield* Effect.fromOption(fromString(url.href)));
 
-    const pageUrl = Schema.is(Route.Board)(route)
-      ? url
-      : new URL(
-          Option.getOrElse(canonicalPathOf(route), () => url.pathname),
-          url.origin
-        );
+    const pageUrl = pageUrlOf(url, route);
 
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
 
@@ -253,15 +263,12 @@ const servePage = (
     )
   );
 
-const serveSitemap = (
-  bindings: EdgeBindings,
-  request: Request,
-  url: URL,
-  lifetime: Lifetime
-) =>
-  throughEdgeCache(
-    request,
-    new Request(new URL("/sitemap.xml", url.origin)),
+const serveSitemap = (bindings: EdgeBindings, url: URL, lifetime: Lifetime) => {
+  const key = new Request(new URL("/sitemap.xml", url.origin));
+
+  return throughEdgeCache(
+    key,
+    key,
     lifetime,
     sitemapJobs(bindings.BACKEND).pipe(
       Effect.match({
@@ -271,6 +278,7 @@ const serveSitemap = (
       })
     )
   );
+};
 
 const noindex = (response: Response) => {
   const copy = new Response(response.body, response);
@@ -362,7 +370,7 @@ const serveSite = (
       return Effect.succeedSome(respond(emptySitemapXml, "application/xml"));
     }
 
-    return Effect.asSome(serveSitemap(bindings, request, url, lifetime));
+    return Effect.asSome(serveSitemap(bindings, url, lifetime));
   }
 
   return isPage(url.pathname)
