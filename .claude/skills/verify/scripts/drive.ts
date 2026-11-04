@@ -347,11 +347,14 @@ const clickButton = async (selector: string, text: string) =>
     const button = [...document.querySelectorAll(${JSON.stringify(selector)})]
       .find((node) => node.textContent.trim().startsWith(${JSON.stringify(text)}));
     if (button === undefined) return false;
-    if (!button.checkVisibility()) {
-      document.querySelector(".filters-toggle")?.click();
+    const reveal = async (control) => {
+      if (button.checkVisibility() || control === null) return;
+      control.click();
       await new Promise((settled) => requestAnimationFrame(settled));
-      if (!button.isConnected || !button.checkVisibility()) return false;
-    }
+    };
+    await reveal(document.querySelector(".filters-toggle"));
+    await reveal(button.closest("details")?.querySelector("summary") ?? null);
+    if (!button.isConnected || !button.checkVisibility()) return false;
     button.click();
     return true;
   })()`
