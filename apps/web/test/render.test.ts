@@ -1133,6 +1133,26 @@ describe("home filters", () => {
     })
   );
 
+  it.effect("say how fresh the board is when nothing matches", () =>
+    Effect.map(
+      render(
+        "/",
+        Preload.Board({
+          filters: defaultFilters,
+          generatedAt: 1_760_500_000_000,
+          jobs: [],
+          stats: boardStats,
+          total: 0,
+        })
+      ),
+      ({ html }) => {
+        expect(html).toContain("No roles match that sentence yet.");
+        expect(html).toContain('class="status"');
+        expect(html).toContain("The first refresh has not run yet.");
+      }
+    )
+  );
+
   it.effect("name a Pro selection while the panel is closed", () =>
     Effect.map(render("/?pay=200000", Preload.Nothing()), ({ html }) => {
       expect(html).toContain("last week, Pro filters");
