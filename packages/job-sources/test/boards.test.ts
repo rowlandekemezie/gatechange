@@ -132,17 +132,23 @@ describe("company board registry", () => {
     ).toBeLessThanOrEqual(REFRESH_MINUTES);
   });
 
-  it("misses the six hour refresh with 600 boards at the default feeds per run", () => {
-    const sixHundred = feedSpecs(
-      Array.from({ length: 600 }, (_, index) => ({
-        ats: "greenhouse" as const,
-        name: `Company ${index}`,
-        slug: `company-${index}`,
-      }))
-    ).map(feedRefOf);
+  it.each([
+    [1000, "keeps"],
+    [1200, "misses"],
+  ] as const)(
+    "with %i boards the default feeds per run %s the six hour refresh",
+    (boards, outcome) => {
+      const catalog = feedSpecs(
+        Array.from({ length: boards }, (_, index) => ({
+          ats: "greenhouse" as const,
+          name: `Company ${index}`,
+          slug: `company-${index}`,
+        }))
+      ).map(feedRefOf);
 
-    expect(
-      longestBoardGapMinutes(sixHundred, DEFAULT_FEEDS_PER_RUN)
-    ).toBeGreaterThan(REFRESH_MINUTES);
-  });
+      const gap = longestBoardGapMinutes(catalog, DEFAULT_FEEDS_PER_RUN);
+
+      expect(gap <= REFRESH_MINUTES).toBe(outcome === "keeps");
+    }
+  );
 });
