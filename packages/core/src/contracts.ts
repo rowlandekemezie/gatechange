@@ -16,7 +16,7 @@ import { CompanyIntel, CompanySlug, TREND_WEEKS } from "./company-intel.js";
 import { CompanyJobs } from "./company-jobs.js";
 import { Membership, Plan, PlanOffer } from "./entitlement.js";
 import { JobStoreUnavailable } from "./job-store-unavailable.js";
-import { BoardStats, JobDetail, JobPage, JobQuery } from "./job.js";
+import { BoardStats, JobDetail, JobPage, JobQuery, SitemapJob } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
 import { ProRequired } from "./pro-required.js";
 import { SavedSearchLimit } from "./saved-search-limit.js";
@@ -35,6 +35,7 @@ export {
   AnnualAmount,
   Arrangement,
   BoardStats,
+  SitemapJob,
   currencies,
   Currency,
   DEFAULT_AGE_DAYS,
@@ -71,6 +72,7 @@ export {
 export type {
   ArrangementValue,
   BoardStatsValue,
+  SitemapJobValue,
   CurrencyValue,
   EnrichmentValue,
   IngestReceiptValue,
@@ -241,11 +243,15 @@ export type {
   TrackOrMoveRequestValue,
 } from "./tracker.js";
 
-export { Permission, SourceTerms } from "./source-terms.js";
+export { coverageOfSource, Permission, SourceTerms } from "./source-terms.js";
 
 export type { PermissionValue, SourceTermsValue } from "./source-terms.js";
 
-export { arrivedLongOpen, NEW_WINDOW_MILLIS } from "./listing-status.js";
+export {
+  arrivedLongOpen,
+  coverageRules,
+  NEW_WINDOW_MILLIS,
+} from "./listing-status.js";
 
 export const listJobsContract = defineContract("listJobs", {
   annotations: { idempotent: true, readOnly: true },
@@ -276,6 +282,15 @@ export const boardStatsContract = defineContract("boardStats", {
   failure: JobStoreUnavailable,
   input: Schema.Struct({}),
   output: BoardStats,
+});
+
+export const sitemapJobsContract = defineContract("sitemapJobs", {
+  annotations: { idempotent: true, readOnly: true },
+  description:
+    "List the id, company, level, region and first-seen date of each open role for the sitemap",
+  failure: JobStoreUnavailable,
+  input: Schema.Struct({}),
+  output: Schema.Array(SitemapJob),
 });
 
 export const getJobContract = defineContract("getJob", {
@@ -490,6 +505,7 @@ export const jobBoardContracts = [
   listJobsContract,
   companyJobsContract,
   boardStatsContract,
+  sitemapJobsContract,
   getJobContract,
   accountContract,
   signInOptionsContract,

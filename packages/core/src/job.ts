@@ -285,3 +285,13 @@ export const BoardStats = Schema.Struct({
 });
 
 export type BoardStatsValue = typeof BoardStats.Type;
+
+export const SitemapJob = Schema.Struct({
+  company: Schema.String,
+  firstSeenAt: EpochMillis,
+  id: Schema.String,
+  region: Region,
+  role: RoleLevel,
+});
+
+export type SitemapJobValue = typeof SitemapJob.Type;

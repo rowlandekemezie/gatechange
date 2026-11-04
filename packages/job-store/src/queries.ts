@@ -117,6 +117,9 @@ const servedJobsSince = (
 
 const arrivedFresh = `first_seen_at - posted_at <= ${ADMISSION_DAYS * DAY_MILLIS}`;
 
+const openedAt = (seen: string) =>
+  `CASE WHEN ranked.first_seen_at - ranked.posted_at > ${ADMISSION_DAYS * DAY_MILLIS} THEN MIN(${seen}, ranked.posted_at) ELSE ${seen} END`;
+
 const filteredJobs = (
   query: JobQueryValue,
   now: number,
@@ -203,7 +206,7 @@ export const listJobsStatement = (
   return statement(
     `${filtered.sql}
 SELECT ${rankedColumns}, ranked.departed_at,
-  COALESCE(history.first_seen_at, ranked.first_seen_at) AS opened_at,
+  ${openedAt("COALESCE(history.first_seen_at, ranked.first_seen_at)")} AS opened_at,
   COALESCE(history.reposts, 0) AS reposts
 FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
 WHERE duplicate_rank = 1
@@ -239,7 +242,7 @@ export const companySummaryStatement = (slug: string, now: number) => {
 
   return statement(
     `${filtered.sql}
-SELECT COUNT(*) AS total, MIN(COALESCE(history.first_seen_at, ranked.first_seen_at)) AS opened_at
+SELECT COUNT(*) AS total, MIN(${openedAt("COALESCE(history.first_seen_at, ranked.first_seen_at)")}) AS opened_at
 FROM ranked LEFT JOIN job_history AS history ON history.fingerprint = ranked.fingerprint
 WHERE duplicate_rank = 1`,
     filtered.params
@@ -254,7 +257,7 @@ export const companyOpenRolesStatement = (
 
   return statement(
     `WITH ranked AS (
-  SELECT jobs.id, jobs.company, jobs.title, jobs.role, jobs.source, jobs.first_seen_at, jobs.fingerprint,
+  SELECT jobs.id, jobs.company, jobs.title, jobs.role, jobs.source, jobs.posted_at, jobs.first_seen_at, jobs.fingerprint,
     job_enrichment.salary_currency, job_enrichment.salary_min, job_enrichment.salary_max,
     ROW_NUMBER() OVER (PARTITION BY jobs.fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM ${enrichedJobs}
@@ -262,7 +265,7 @@ export const companyOpenRolesStatement = (
 )
 SELECT ranked.id, ranked.company, ranked.title, ranked.role, ranked.source,
   ranked.salary_currency, ranked.salary_min, ranked.salary_max,
-  COALESCE(history.stint_started_at, ranked.first_seen_at) AS opened_at,
+  ${openedAt("COALESCE(history.stint_started_at, ranked.first_seen_at)")} AS opened_at,
   COALESCE(history.reposts, 0) AS reposts
 FROM ranked LEFT JOIN intel_history AS history ON history.company_slug = ? AND history.fingerprint = ranked.fingerprint
 WHERE duplicate_rank = 1`,
@@ -480,6 +483,7 @@ ON CONFLICT (fingerprint) DO UPDATE SET
   sightings = job_history.sightings + (job_history.last_seen_at < excluded.last_seen_at),
   reposts = job_history.reposts + (
     job_history.last_seen_at < excluded.last_seen_at - ?
+    AND NOT (job_history.last_seen_feed <> excluded.last_seen_feed AND ? < job_history.last_seen_at)
     AND job_history.last_seen_at < COALESCE((
       SELECT CASE
         WHEN last_success_at < ? THEN last_success_at
@@ -496,6 +500,7 @@ ON CONFLICT (fingerprint) DO UPDATE SET
       seenAt,
       job.feed,
       REPOST_GAP,
+      job.postedAt,
       seenAt,
       seenAt,
     ]
@@ -510,6 +515,7 @@ const reopenIntelStatement = (job: Sighted, seenAt: number): SqlStatement =>
   stint_started_at = ?
 WHERE company_slug = ? AND fingerprint = ?
   AND last_seen_at < ? - ?
+  AND NOT (last_seen_feed <> ? AND ? < last_seen_at)
   AND last_seen_at < COALESCE((
     SELECT CASE
       WHEN last_success_at < ? THEN last_success_at
@@ -523,6 +529,8 @@ WHERE company_slug = ? AND fingerprint = ?
       fingerprintOf(job),
       seenAt,
       REPOST_GAP,
+      job.feed,
+      job.postedAt,
       seenAt,
       seenAt,
     ]
@@ -711,22 +719,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ]
   );
 
-export const activeCountStatement = (
-  now: number,
-  sources: readonly SourceNameValue[]
-) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
-
-  return statement(
-    `SELECT COUNT(*) AS total FROM jobs WHERE ${active.where}`,
-    active.params
-  );
-};
-
 export const newTodayStatement = (
   now: number,
   sources: readonly SourceNameValue[]
@@ -739,79 +731,53 @@ export const newTodayStatement = (
   );
 };
 
-export const regionCountsStatement = (
+const activeSince = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
+
+export const boardCountsStatement = (
   now: number,
   sources: readonly SourceNameValue[]
 ) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
+  const active = servedJobsSince("posted_at", activeSince(now), sources);
 
   return statement(
-    `SELECT region, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY region ORDER BY count DESC`,
-    active.params
-  );
-};
-
-export const roleCountsStatement = (
-  now: number,
-  sources: readonly SourceNameValue[]
-) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
-
-  return statement(
-    `SELECT role, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY role ORDER BY count DESC`,
-    active.params
-  );
-};
-
-const dedupedActive = (where: string) => `WITH ranked AS (
+    `WITH ranked AS (
   SELECT role, region, company, company_slug,
     ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM jobs
-  WHERE ${where}
-), deduped AS (
-  SELECT role, region, company, company_slug FROM ranked WHERE duplicate_rank = 1
-)`;
-
-export const placementCountsStatement = (
-  now: number,
-  sources: readonly SourceNameValue[]
-) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
-
-  return statement(
-    `${dedupedActive(active.where)}
-SELECT role, region, COUNT(*) AS count FROM deduped GROUP BY role, region ORDER BY count DESC`,
+  WHERE ${active.where}
+)
+SELECT role, region, company_slug AS slug,
+  MIN(CASE WHEN duplicate_rank = 1 THEN company END) AS company,
+  COUNT(*) AS listed,
+  SUM(duplicate_rank = 1) AS deduped
+FROM ranked
+GROUP BY role, region, company_slug`,
     active.params
   );
 };
 
 export const TOP_COMPANIES = 12;
 
-export const companyCountsStatement = (
+export const SITEMAP_JOBS = 3000;
+
+export const sitemapJobsStatement = (
   now: number,
   sources: readonly SourceNameValue[]
 ) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
+  const active = servedJobsSince("posted_at", activeSince(now), sources);
 
   return statement(
-    `${dedupedActive(active.where)}
-SELECT company_slug AS slug, MIN(company) AS company, COUNT(*) AS count FROM deduped WHERE company_slug <> '' GROUP BY company_slug ORDER BY count DESC, slug LIMIT ${TOP_COMPANIES}`,
+    `WITH ranked AS (
+  SELECT id, company, role, region, posted_at, first_seen_at,
+    ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
+  FROM jobs
+  WHERE ${active.where}
+)
+SELECT id, company, role, region, first_seen_at
+FROM ranked
+WHERE duplicate_rank = 1
+ORDER BY posted_at DESC, id ASC
+LIMIT ${SITEMAP_JOBS}`,
     active.params
   );
 };

@@ -9,6 +9,7 @@ import type { FeedStateValue } from "./feed.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import type {
   BoardStatsValue,
+  SitemapJobValue,
   EnrichmentValue,
   IngestReceiptValue,
   JobDetailValue,
@@ -64,7 +65,7 @@ export interface ListingHistory {
   readonly sightings: number;
 }
 
-export type Sighted = Pick<JobValue, "company" | "feed" | "title">;
+export type Sighted = Pick<JobValue, "company" | "feed" | "postedAt" | "title">;
 
 export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
   `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
@@ -185,6 +186,10 @@ export class JobStore extends Context.Service<
       Omit<BoardStatsValue, "generatedAt">,
       JobStoreUnavailable
     >;
+    readonly sitemapJobs: (
+      now: number,
+      sources: readonly SourceNameValue[]
+    ) => Effect.Effect<readonly SitemapJobValue[], JobStoreUnavailable>;
     readonly unenrichedListings: (
       sweep: UnenrichedSweep
     ) => Effect.Effect<readonly string[], JobStoreUnavailable>;
