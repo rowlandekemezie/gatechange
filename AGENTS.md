@@ -62,7 +62,7 @@ Run `pnpm fix` only when you intend to rewrite files. Finish with `pnpm turbo ru
 
 ## Deploy
 
-- CI (`.github/workflows/ci.yml`) runs `pnpm turbo run check test build --concurrency=1` on every pull request and push. A push to `main` that passes deploys the `prod` stage and smoke-tests `https://jobs.rowlandekemezie.com`.
+- CI (`.github/workflows/ci.yml`) runs `pnpm turbo run check test build --concurrency=1` on every pull request and push that changes more than Markdown, `docs/`, or `LICENSE`. A new push to a pull request cancels its running CI, and runs share Turbo's cache through the Actions cache. A push to `main` that passes deploys the `prod` stage and smoke-tests `https://jobs.rowlandekemezie.com`.
 - CI authenticates with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `apps/infra/stacks/github.ts` mints that scoped token and writes both secrets; run it with `pnpm infra:ci-credentials --profile admin` to create or rotate them.
 - Local deploys use an Alchemy profile: `pnpm alchemy profile edit --add Cloudflare`, then `ALCHEMY_PROFILE=<name> pnpm infra:plan --stage prod` and `pnpm infra:deploy --stage prod`.
 - The zone `rowlandekemezie.com` must already be on the Cloudflare account. Alchemy attaches `jobs.rowlandekemezie.com` as a Worker custom domain.
@@ -87,6 +87,7 @@ Run `pnpm fix` only when you intend to rewrite files. Finish with `pnpm turbo ru
 Why lives in `AGENTS.md` / `VISION.md`. The stack and hooks are the enforceable fence. Fence wins over prose.
 
 - Lefthook pre-commit runs `pnpm check` and `pnpm test`
+- Lefthook pre-push runs the full gate, `pnpm turbo run check test build --concurrency=1`. Turbo's cache makes it fast after a clean commit
 - Agents must not use `git … --no-verify` (or equivalent hook bypass)
 - Blocked by: Pi `.pi/extensions/git-interceptor`, Cursor `.cursor/hooks.json`, Claude Code `.claude/settings.json`
 - Policy source: `scripts/vcs-command-policy.js`
