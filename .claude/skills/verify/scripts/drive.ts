@@ -343,11 +343,17 @@ const boardState = async () =>
 const clickButton = async (selector: string, text: string) =>
   await evaluate(
     Schema.Boolean,
-    `(() => {
+    `(async () => {
     const button = [...document.querySelectorAll(${JSON.stringify(selector)})]
       .find((node) => node.textContent.trim().startsWith(${JSON.stringify(text)}));
-    button?.click();
-    return button !== undefined;
+    if (button === undefined) return false;
+    if (!button.checkVisibility()) {
+      document.querySelector(".filters-toggle")?.click();
+      await new Promise((settled) => requestAnimationFrame(settled));
+      if (!button.isConnected || !button.checkVisibility()) return false;
+    }
+    button.click();
+    return true;
   })()`
   );
 

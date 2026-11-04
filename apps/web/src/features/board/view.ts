@@ -887,11 +887,12 @@ const moreView = (
   });
 };
 
-const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
+const emptyView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.div(
     [h.Class("empty")],
     [
       h.p([], ["No roles match that sentence yet."]),
+      statusLine(model, h),
       h.p(
         [],
         [
@@ -965,7 +966,7 @@ export const boardPage = (
       ),
     Loaded: (page) =>
       Array.isReadonlyArrayEmpty(page.jobs)
-        ? emptyView(h)
+        ? emptyView(model, h)
         : boardList(model, h, page, false),
     Loading: () => findingRoles(h),
     NotAsked: () => findingRoles(h),

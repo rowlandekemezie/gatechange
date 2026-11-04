@@ -71,7 +71,7 @@ mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
 Scenarios:
 
 - `board` loads the board and screenshots it.
-- `filter` clicks the `day` age chip and requires the count line and the row count to drop.
+- `filter` clicks the `day` age chip and requires the count line and the row count to drop. Every chip click needs a visible chip, so on `--mobile` the scenario opens the `Filters` panel first and fails if that does not reveal it.
 - `filter-steady` clicks the `day` age chip and fails if the board leaves the page at any point before the new rows arrive.
 - `search` types the first row's company into the search box, submits, and requires every row to show that company.
 - `shortlist` saves the first row (the `Save` icon button on desktop; on `--mobile` the row's `Save` text button on its job page, because the row's buttons are hidden on a phone), opens the `Shortlist (n)` header link, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
