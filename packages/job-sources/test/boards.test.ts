@@ -110,6 +110,14 @@ describe("company board registry", () => {
     );
   });
 
+  it("registers no SmartRecruiters board, whose robots.txt disallows every other crawler", () => {
+    const keys = feedSpecs(companyBoards).map(feedKey);
+
+    expect(
+      keys.filter((key) => key.startsWith("smartrecruiters:"))
+    ).toStrictEqual([]);
+  });
+
   it("keeps the registry sorted by company name", () => {
     const names = companyBoards.map((board) => board.name.toLowerCase());
 

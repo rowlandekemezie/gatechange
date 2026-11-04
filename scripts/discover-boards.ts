@@ -40,7 +40,6 @@ const ATS_ORDER: readonly (typeof CompanyAts.Type)[] = [
   "ashby",
   "lever",
   "workable",
-  "smartrecruiters",
 ];
 
 const Candidate = Schema.Struct({
