@@ -148,6 +148,36 @@ describe("oversized and unstorable text", () => {
     expect(listing.arrangement).toBe("Remote");
   });
 
+  it("classifies the whole location, even past the stored cut", () => {
+    const listing = Option.getOrThrow(
+      normalized({
+        location: `Germany, ${"Remote, ".repeat(200)}Canada`,
+      })
+    );
+
+    expect(listing.region).toBe("RemoteCanada");
+    expect(listing.location.length).toBeLessThanOrEqual(MAX_DETAIL_LENGTH);
+    expect(listing.location).not.toContain("Canada");
+  });
+
+  it("cleans the external id and link the way it cleans other feed text", () => {
+    const listing = Option.getOrThrow(
+      normalized({
+        externalId: "12\u0000  3\uD800",
+        url: "https://jobs.example/1\u0000\uD800",
+      })
+    );
+
+    expect(listing.id).toBe("himalayas:12  3\uFFFD");
+    expect(Option.getOrThrow(listing.url)).toBe(
+      "https://jobs.example/1%EF%BF%BD"
+    );
+  });
+
+  it("skips a listing whose external id is empty once cleaned", () => {
+    expect(Option.isNone(normalized({ externalId: "\u0000" }))).toBe(true);
+  });
+
   it("drops NUL characters and repairs lone surrogates", () => {
     const listing = Option.getOrThrow(
       normalized({

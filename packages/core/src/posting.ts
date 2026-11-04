@@ -42,15 +42,14 @@ export const MAX_DETAIL_LENGTH = 1000;
 
 export const MAX_URL_LENGTH = 2048;
 
+const storableText = (text: string) =>
+  text.replaceAll("\u0000", "").replaceAll(/\p{Cs}/gu, "\uFFFD");
+
 const cleanText = (text: string) =>
-  text
-    .replaceAll("\u0000", "")
-    .replaceAll(/\p{Cs}/gu, "\uFFFD")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
+  storableText(text).replaceAll(/\s+/gu, " ").trim();
 
 const boundedDetail = (text: string) =>
-  cleanText(cleanText(text).slice(0, MAX_DETAIL_LENGTH));
+  cleanText(text.slice(0, MAX_DETAIL_LENGTH));
 
 export const normalizePosting = (
   feed: FeedRef,
@@ -65,13 +64,17 @@ export const normalizePosting = (
       : Option.getOrElse(feed.company, () => "")
   );
 
+  const externalId = storableText(posting.externalId);
+  const url = storableText(posting.url);
+
   if (
     title.length === 0 ||
     company.length === 0 ||
+    externalId.length === 0 ||
     title.length > MAX_TITLE_LENGTH ||
     company.length > MAX_TITLE_LENGTH ||
-    posting.externalId.length > MAX_TITLE_LENGTH ||
-    posting.url.length > MAX_URL_LENGTH
+    externalId.length > MAX_TITLE_LENGTH ||
+    url.length > MAX_URL_LENGTH
   ) {
     return Option.none();
   }
@@ -79,7 +82,7 @@ export const normalizePosting = (
   return pipe(
     classifyRole(title),
     Option.map((role) => {
-      const location = boundedDetail(posting.location);
+      const location = cleanText(posting.location);
 
       const placement = classifyPlacement({
         country: posting.country,
@@ -88,7 +91,9 @@ export const normalizePosting = (
       });
 
       const salary =
-        posting.salary === null ? null : boundedDetail(posting.salary);
+        posting.salary === null
+          ? null
+          : boundedDetail(cleanText(posting.salary));
 
       const hasSalary = salary !== null && salary.length > 0;
 
@@ -97,9 +102,9 @@ export const normalizePosting = (
         company,
         feed: feed.key,
         firstSeenAt: seenAt,
-        id: `${feed.key}:${posting.externalId}`,
+        id: `${feed.key}:${externalId}`,
         lastSeenAt: seenAt,
-        location,
+        location: boundedDetail(location),
         postedAt: Math.min(posting.postedAt ?? seenAt, seenAt),
         region: placement.region,
         relevance:
@@ -111,7 +116,7 @@ export const normalizePosting = (
         salary: hasSalary ? salary : null,
         source: feed.source,
         title,
-        url: offSiteHref(posting.url),
+        url: offSiteHref(url),
       };
     })
   );
