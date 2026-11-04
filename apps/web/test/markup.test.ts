@@ -72,4 +72,25 @@ describe("job posting markup", () => {
       )
     );
   });
+
+  it("a window feed's role still listed past its hold is valid through its last sighting", () => {
+    const posting = jobPostingOf(
+      {
+        ...longOpen,
+        feed: "jobicy:engineering-manager",
+        id: "jobicy:engineering-manager:3",
+        postedAt: SEEN - 40 * DAY_MILLIS,
+        source: "Jobicy",
+      },
+      "https://jobs.rowlandekemezie.com/jobs/3",
+      allowedOrUnstated
+    );
+
+    expect(
+      pipe(
+        posting,
+        Option.map(({ validThrough }) => validThrough)
+      )
+    ).toStrictEqual(Option.some(DateTime.formatIso(DateTime.makeUnsafe(SEEN))));
+  });
 });
