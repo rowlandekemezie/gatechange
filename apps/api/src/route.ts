@@ -8,6 +8,8 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 const pathOf = (url: string) => new URL(url, SITE_ORIGIN).pathname;
 
+const RPC_PATH = "/rpc";
+
 const BATCHED_RPC = /^\s*\[/u;
 
 export interface Routes<Error, Context> {
@@ -58,6 +60,10 @@ export const handleRoutes = <Error, Context>(routes: Routes<Error, Context>) =>
 
     if (path === STRIPE_WEBHOOK_PATH) {
       return yield* routes.stripeWebhook(request);
+    }
+
+    if (path !== RPC_PATH && !path.startsWith(`${RPC_PATH}/`)) {
+      return HttpServerResponse.empty({ status: 404 });
     }
 
     const body = yield* Effect.orElseSucceed(request.text, () => "");

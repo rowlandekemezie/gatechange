@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 export interface RateLimiter {
   readonly limit: (options: {
     readonly key: string;
@@ -51,11 +53,20 @@ export const readAllowed = async (request: Request, limits: ReadLimits) => {
     request.headers.get("cf-connecting-ip") ?? "unknown"
   );
 
-  const { success } = await limiter.limit({
-    key: `${new URL(request.url).host}|${caller}`,
-  });
+  const key = `${new URL(request.url).host}|${caller}`;
 
-  return success;
+  return await Effect.runPromise(
+    // @effect-diagnostics-next-line asyncFunction:off -- The Rate Limiting binding is Promise-based.
+    Effect.tryPromise(async () => await limiter.limit({ key })).pipe(
+      Effect.map(({ success }) => success),
+      Effect.catch((error) =>
+        Effect.as(
+          Effect.logError("read limit unavailable, serving anyway", error),
+          true
+        )
+      )
+    )
+  );
 };
 
 export const tooManyReads = () =>

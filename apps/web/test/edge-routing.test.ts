@@ -1,3 +1,5 @@
+import { inspect } from "node:util";
+
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { vi } from "vitest";
@@ -90,7 +92,30 @@ const edge = (
         )
     );
 
-  return { get, limited, seen };
+  return { bindings, get, lifetime, limited, seen };
+};
+
+const servedByBrokenLimiter = (path: string, method: string) => {
+  const site = edge();
+
+  const broken = {
+    // @effect-diagnostics-next-line asyncFunction:off -- Fakes the Promise-returning Rate Limiting binding.
+    limit: async () => await Promise.reject(new Error("binding down")),
+  };
+
+  return Effect.promise(
+    // @effect-diagnostics-next-line asyncFunction:off -- The edge Worker's fetch is Promise-based.
+    async () =>
+      await worker.fetch(
+        new Request(`https://jobs.example${path}`, { method }),
+        {
+          ...site.bindings,
+          PUBLIC_READ_LIMIT: broken,
+          SESSION_READ_LIMIT: broken,
+        },
+        site.lifetime
+      )
+  ).pipe(Effect.map((response) => ({ response, seen: site.seen })));
 };
 
 const bodyOf = (response: Response) =>
@@ -109,6 +134,7 @@ beforeEach(() => {
 afterEach(() => {
   stored.clear();
   pending.length = 0;
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -208,6 +234,23 @@ describe("public read limit", () => {
 
       expect(response.status).toBe(200);
       expect(site.limited).toHaveLength(0);
+    })
+  );
+
+  it.effect.each([
+    ["POST", "/rpc"],
+    ["GET", "/?q=a"],
+  ] as const)("still serves %s %s when the limiter rejects", ([method, path]) =>
+    Effect.gen(function* failOpen() {
+      const logged = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const { response, seen } = yield* servedByBrokenLimiter(path, method);
+
+      expect(response.status).toBe(200);
+      expect(seen.some(({ binding }) => binding === "BACKEND")).toBe(true);
+      expect(inspect(logged.mock.calls, { depth: 4 })).toContain(
+        "binding down"
+      );
     })
   );
 
