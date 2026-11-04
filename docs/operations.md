@@ -36,7 +36,7 @@ pnpm infra:deploy --stage prod
 
 Alchemy creates the D1 database and applies `packages/job-store/migrations/`, deploys `JobsBackend` with its cron trigger, builds the Foldkit site, and attaches `SITE_HOSTNAME` as a Worker custom domain.
 
-The board fills over the first few hours. Each cron run fetches up to 30 due feeds (`DEFAULT_FEEDS_PER_RUN` in `packages/core/src/feed.ts`), so the 418 feeds take about 14 runs.
+The board fills over the first few hours. Each cron run fetches up to 60 due feeds (`DEFAULT_FEEDS_PER_RUN` in `packages/core/src/feed.ts`), so the 813 feeds take about 14 runs.
 
 ## Production billing
 
@@ -108,4 +108,4 @@ Public `/about`, `/privacy`, `/terms` and `/contact` pages describe coverage, da
 
 ## Workers plan
 
-Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse the default 30 job boards a run. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.
+Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse the default 60 job boards a run. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.
