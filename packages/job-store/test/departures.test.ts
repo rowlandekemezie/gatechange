@@ -391,6 +391,77 @@ describe("job departures over SQL", () => {
       })
   );
 
+  it.effect(
+    "a listed role whose title no longer classifies departs on its feed's next fetch and is pruned a day later",
+    () =>
+      Effect.gen(function* reclassifiedRole() {
+        const layer = yield* sqlJsJobStore;
+
+        const feed: FeedRef = {
+          company: Option.some("Acme"),
+          coverage: "Complete",
+          key: FEED,
+          minIntervalMinutes: 1,
+          source: "Greenhouse",
+        };
+
+        const ingest = runIngest({ feedConcurrency: 1, feedsPerRun: 1 }).pipe(
+          Effect.provideService(
+            PostingFeeds,
+            PostingFeeds.of({
+              catalog: [feed],
+              fetch: () =>
+                Effect.succeed([
+                  {
+                    company: "",
+                    externalId: "1",
+                    location: "Remote - Canada",
+                    postedAt: NOW,
+                    salary: null,
+                    title: "Manager, Technical Accounting",
+                    url: "https://jobs.example/1",
+                    workplace: "Remote",
+                  },
+                ]),
+            })
+          )
+        );
+
+        yield* Effect.gen(function* withStore() {
+          const store = yield* JobStore;
+
+          const title = "Manager, Technical Accounting";
+
+          yield* store.replaceFeed(
+            FEED,
+            [job("greenhouse:acme:1", { title })],
+            NOW
+          );
+
+          const fetchedAt = NOW + DAY_MILLIS;
+
+          yield* TestClock.setTime(fetchedAt);
+
+          const fetched = yield* ingest;
+
+          expect(fetched.outcomes).toMatchObject([
+            { departed: 1, upserted: 0 },
+          ]);
+          expect(yield* jobRows).toMatchObject([{ departed_at: fetchedAt }]);
+          expect(yield* listedIds(fetchedAt)).toStrictEqual([]);
+
+          yield* TestClock.setTime(fetchedAt + DAY_MILLIS + 1);
+
+          yield* ingest;
+
+          expect(yield* jobRows).toStrictEqual([]);
+          expect(
+            Option.isSome(yield* store.historyOf({ company: "Acme", title }))
+          ).toBe(true);
+        }).pipe(Effect.provide(layer));
+      })
+  );
+
   it.effect("migration 0012 leaves rows written before it on the board", () =>
     Effect.gen(function* migrationKeepsRowsLive() {
       const layer = yield* seededSqlJsJobStore({
