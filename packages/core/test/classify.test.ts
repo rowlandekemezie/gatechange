@@ -183,6 +183,23 @@ const placements: readonly (readonly [
   ["Santa Clara", "Remote", "Remote", "RemoteUnitedStates"],
   ["KOHO (CAN)", "Remote", "Remote", "RemoteCanada"],
   ["Remote - Singapore", "Remote", "Remote", "Elsewhere"],
+  ["Hyderabad, IN", "Remote", "Remote", "Elsewhere"],
+  ["Chennai, TN", "Unspecified", "Unspecified", "Elsewhere"],
+  ["Berlin, DE", "Remote", "Remote", "Elsewhere"],
+  ["Bogota, CO", "Unspecified", "Unspecified", "Elsewhere"],
+  ["Buenos Aires, AR", "Remote", "Remote", "Elsewhere"],
+  ["Tel Aviv, IL", "Unspecified", "Unspecified", "Elsewhere"],
+  ["Jakarta, ID", "Remote", "Remote", "Elsewhere"],
+  ["Rome, GA", "Unspecified", "Unspecified", "UnitedStatesOnsite"],
+  ["Dublin, CA", "Unspecified", "Unspecified", "UnitedStatesOnsite"],
+  ["Lebanon, PA", "Unspecified", "Unspecified", "UnitedStatesOnsite"],
+  ["Denver, CO", "Unspecified", "Unspecified", "UnitedStatesOnsite"],
+  [
+    "Austin, TX; Berlin, DE",
+    "Unspecified",
+    "Unspecified",
+    "UnitedStatesOnsite",
+  ],
 ];
 
 describe("seniority from a title", () => {

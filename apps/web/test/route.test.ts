@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   companySlugOf,
   JobQuery,
+  MAX_AGE_DAYS,
   RoleLevel,
   roleLevels,
   seniorities,
@@ -11,6 +12,7 @@ import { Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
 
 import {
+  ageWindows,
   defaultFilters,
   Filters,
   inOrderOf,
@@ -172,6 +174,15 @@ describe("board route", () => {
     expect(routeAt("/?role=director,ceo&age=30")).toStrictEqual(
       Route.Board({
         filters: { ...defaultFilters, maxAgeDays: 30, roles: ["Director"] },
+      })
+    );
+  });
+
+  it("an age window reaches every role the board holds", () => {
+    expect(ageWindows.at(-1)).toBe(MAX_AGE_DAYS);
+    expect(routeAt(`/?age=${MAX_AGE_DAYS}`)).toStrictEqual(
+      Route.Board({
+        filters: { ...defaultFilters, maxAgeDays: MAX_AGE_DAYS },
       })
     );
   });

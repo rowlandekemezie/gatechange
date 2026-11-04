@@ -633,7 +633,7 @@ describe("original posting links", () => {
           [{ ...markOf(acmeDirector), url }]
         ),
         ({ html }) => {
-          expect(textOf(html)).toContain("Open the original posting");
+          expect(textOf(html)).toContain(acmeDirector.title);
           expect(
             linksHome(html, jobRouter({ id: acmeDirector.id }))
           ).toStrictEqual([]);
@@ -733,7 +733,7 @@ describe("listing page render", () => {
         expect(html).toContain('href="/jobs/Z3JlZW5ob3VzZTphY21lLzE"');
         expect(textOf(html)).toContain("30 roles match");
         expect(html).toContain(
-          'href="/?age=30&amp;place=remote-canada&amp;role=director"'
+          'href="/?age=3650&amp;place=remote-canada&amp;role=director"'
         );
         expect(textOf(html)).toContain("See all 30 on the board");
       }
@@ -950,7 +950,7 @@ describe("sitemap", () => {
 
 describe("site header", () => {
   it.effect.each(["/", "/pricing", "/shortlist", "/about"])(
-    "names the site and links every section from %s",
+    "names the site and reaches every section from %s",
     (path) =>
       Effect.map(render(path, Preload.Nothing()), ({ html }) => {
         const header = html.slice(
@@ -958,9 +958,13 @@ describe("site header", () => {
           html.indexOf("</header>")
         );
 
+        const footer = html.slice(html.indexOf('<footer class="footer"'));
+
         expect(header).toContain(SITE_NAME);
         expect(header).toContain('href="/#agents"');
-        expect(header).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(header).not.toContain(`href="${SOURCE_REPOSITORY_URL}"`);
+        expect(footer).not.toContain('href="/#agents"');
+        expect(footer).toContain(`href="${SOURCE_REPOSITORY_URL}"`);
         expect(textOf(header)).toContain("Shortlist (0)");
         expect(textOf(header)).toContain("Sign in");
       })
@@ -984,9 +988,11 @@ describe("site header", () => {
   );
 });
 
+const homeGeneratedAt = 1_760_500_000_000;
+
 const homeBoard = Preload.Board({
   filters: defaultFilters,
-  generatedAt: 1_760_500_000_000,
+  generatedAt: homeGeneratedAt,
   jobs: [acmeDirector],
   stats: null,
   total: 45,
@@ -1016,6 +1022,43 @@ const boardStats = {
   regions: [],
   roles: [],
 };
+
+describe("the New badge on a listing row", () => {
+  const DAY = 86_400_000;
+  const FRESH_BADGE = `class="fresh"`;
+  const arrivedAt = homeGeneratedAt - DAY / 2;
+
+  const row = (postedAt: number) =>
+    Preload.Listing({
+      generatedAt: homeGeneratedAt,
+      jobs: [
+        jobFrom("Greenhouse", "greenhouse:acme/new", {
+          firstSeenAt: arrivedAt,
+          postedAt,
+        }),
+      ],
+      summary: null,
+      total: 1,
+    });
+
+  it.effect("marks a role first seen today that was posted recently", () =>
+    Effect.map(
+      render("/companies/acme-robotics", row(arrivedAt - DAY)),
+      ({ html }) => {
+        expect(html).toContain(FRESH_BADGE);
+      }
+    )
+  );
+
+  it.effect("leaves it off a role that arrived long open", () =>
+    Effect.map(
+      render("/companies/acme-robotics", row(arrivedAt - 31 * DAY)),
+      ({ html }) => {
+        expect(html).not.toContain(FRESH_BADGE);
+      }
+    )
+  );
+});
 
 describe("internal links", () => {
   it.effect(
@@ -1104,6 +1147,80 @@ describe("home page render", () => {
           'href="https://github.com/rowlandekemezie/jobs"'
         );
       })
+  );
+});
+
+describe("home filters", () => {
+  it.effect("keep every filter in the panel the Filters button controls", () =>
+    Effect.map(render("/", homeBoard), ({ html }) => {
+      const toggle = /<button[^>]*filters-toggle.*?<\/button>/su.exec(
+        html
+      )?.[0];
+
+      expect(toggle).toContain('aria-controls="filter-panel"');
+      expect(toggle).toContain('aria-expanded="false"');
+      expect(textOf(toggle ?? "")).toContain("4 roles, 3 places, last week");
+
+      const panel = html.slice(
+        html.indexOf('id="filter-panel"'),
+        html.indexOf('class="count"')
+      );
+
+      expect(panel).toContain("remote in Canada");
+      expect(panel).toContain("Salary and seniority");
+      expect(panel).toContain("Sign in to get new matches by email");
+    })
+  );
+
+  it.effect("say how fresh the board is when nothing matches", () =>
+    Effect.map(
+      render(
+        "/",
+        Preload.Board({
+          filters: defaultFilters,
+          generatedAt: 1_760_500_000_000,
+          jobs: [],
+          stats: boardStats,
+          total: 0,
+        })
+      ),
+      ({ html }) => {
+        expect(html).toContain("No roles match that sentence yet.");
+        expect(html).toContain('class="status"');
+        expect(html).toContain("The first refresh has not run yet.");
+      }
+    )
+  );
+
+  it.effect("name a Pro selection while the panel is closed", () =>
+    Effect.map(render("/?pay=200000", Preload.Nothing()), ({ html }) => {
+      expect(html).toContain("last week, Pro filters");
+    })
+  );
+});
+
+describe("job page", () => {
+  it.effect("puts Apply before the facts and names each fact once", () =>
+    Effect.map(renderJob(greenhouse, allowedOnly), ({ html }) => {
+      const facts = html.slice(html.indexOf('class="detail-facts"'));
+
+      expect(html.indexOf('class="apply"')).toBeLessThan(
+        html.indexOf('class="detail-facts"')
+      );
+      expect(textOf(facts)).not.toContain("Source");
+    })
+  );
+
+  it.effect("leaves out Where when the region is all it would say", () =>
+    Effect.map(
+      renderJob({ ...greenhouse, location: "" }, allowedOnly),
+      ({ html }) => {
+        const facts = html.slice(html.indexOf('class="detail-facts"'));
+
+        expect(textOf(facts)).toContain("Region");
+        expect(textOf(facts)).not.toContain("Where");
+      }
+    )
   );
 });
 

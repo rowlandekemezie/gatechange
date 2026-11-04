@@ -6,9 +6,9 @@ import { selectDueFeeds } from "./feed.js";
 import type { FeedOutcomeValue, FeedRef } from "./feed.js";
 import { JobStore } from "./job-store.js";
 import type { Sighted } from "./job-store.js";
-import { MAX_AGE_DAYS } from "./job.js";
+import { ADMISSION_DAYS } from "./job.js";
 import type { IngestReceiptValue, JobValue } from "./job.js";
-import { retentionAt } from "./listing-status.js";
+import { coverageRules, retentionAt } from "./listing-status.js";
 import { PostingFeeds } from "./posting-feeds.js";
 import { DAY_MILLIS, normalizePosting } from "./posting.js";
 import type { PostingValue } from "./posting.js";
@@ -25,11 +25,18 @@ export class IngestInProgress extends Schema.TaggedError<IngestInProgress>()(
   { startedAt: Schema.Finite }
 ) {}
 
-export const admissionCutoff = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
+export const admissionCutoff = (now: number) =>
+  now - ADMISSION_DAYS * DAY_MILLIS;
+
+export interface LongOpenListing {
+  readonly facts: BoardFactsRow | null;
+  readonly job: JobValue;
+}
 
 export interface FeedListings {
   readonly boardFacts: readonly BoardFactsRow[];
   readonly jobs: readonly JobValue[];
+  readonly longOpen: readonly LongOpenListing[];
   readonly stillListed: readonly string[];
   readonly unlinked: readonly Sighted[];
   readonly historySightings: readonly Sighted[];
@@ -57,6 +64,7 @@ export const listingsFromPostings = (
 
   const boardFacts: BoardFactsRow[] = [];
   const jobs: JobValue[] = [];
+  const longOpen: LongOpenListing[] = [];
   const stillListed: string[] = [];
   const unlinked: Sighted[] = [];
   const historySightings: Sighted[] = [];
@@ -66,6 +74,13 @@ export const listingsFromPostings = (
 
     if (listing.postedAt < admissionCutoff(seenAt)) {
       stillListed.push(listing.id);
+
+      if (Option.isSome(url) && coverageRules[feed.coverage].admitsLongOpen) {
+        longOpen.push({
+          facts: boardFactsOf(listing, posting),
+          job: { ...sighting, url: url.value },
+        });
+      }
     } else if (Option.isSome(url)) {
       jobs.push({ ...sighting, url: url.value });
 
@@ -83,7 +98,14 @@ export const listingsFromPostings = (
     }
   }
 
-  return { boardFacts, historySightings, jobs, stillListed, unlinked };
+  return {
+    boardFacts,
+    historySightings,
+    jobs,
+    longOpen,
+    stillListed,
+    unlinked,
+  };
 };
 
 const warnOfUnlinked = (feed: FeedRef, unlinked: readonly Sighted[]) =>
@@ -114,24 +136,48 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
             upserted: 0,
           })
         ),
-      onSuccess: (postings) => {
-        const { boardFacts, jobs, stillListed, unlinked, historySightings } =
-          listingsFromPostings(feed, postings, seenAt);
+      onSuccess: (postings) =>
+        Effect.gen(function* recordListings() {
+          const listings = listingsFromPostings(feed, postings, seenAt);
 
-        return store.recordSightings(historySightings, seenAt).pipe(
-          Effect.andThen(store.markListed(feed.key, stillListed, seenAt)),
-          Effect.andThen(store.replaceFeed(feed.key, jobs, seenAt)),
-          Effect.tap(() => store.saveBoardFacts(boardFacts, seenAt)),
-          Effect.tap(() => warnOfUnlinked(feed, unlinked)),
-          Effect.map((replacement): FeedOutcomeValue => ({
+          const held = yield* store.heldListings(
+            feed.key,
+            listings.longOpen.map(({ job }) => job.id)
+          );
+
+          const admitted = listings.longOpen.filter(
+            ({ job }) => !held.includes(job.id)
+          );
+
+          yield* store.recordSightings(listings.historySightings, seenAt);
+          yield* store.markListed(feed.key, listings.stillListed, seenAt);
+
+          const replacement = yield* store.replaceFeed(
+            feed.key,
+            [...listings.jobs, ...admitted.map(({ job }) => job)],
+            seenAt,
+            coverageRules[feed.coverage].departPostedBefore(seenAt)
+          );
+
+          yield* store.saveBoardFacts(
+            [
+              ...listings.boardFacts,
+              ...admitted.flatMap(({ facts }) =>
+                facts === null ? [] : [facts]
+              ),
+            ],
+            seenAt
+          );
+          yield* warnOfUnlinked(feed, listings.unlinked);
+
+          return {
             departed: replacement.departed,
             error: null,
             key: feed.key,
             source: feed.source,
             upserted: replacement.upserted,
-          }))
-        );
-      },
+          } satisfies FeedOutcomeValue;
+        }),
     })
   );
 });

@@ -8,6 +8,7 @@ const SEEN_AT = 1_760_000_000_000;
 
 const leverFeed: FeedRef = {
   company: Option.some("Acme"),
+  coverage: "Complete",
   key: "lever:acme",
   minIntervalMinutes: 1,
   source: "Lever",

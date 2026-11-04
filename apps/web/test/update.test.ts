@@ -8,7 +8,12 @@ import { defaultFilters } from "../src/client/board/filters.js";
 import type { FiltersValue } from "../src/client/board/filters.js";
 import { Message } from "../src/client/board/message.js";
 import type { MessageValue } from "../src/client/board/message.js";
-import { JobState, ListingState, Preload } from "../src/client/board/model.js";
+import {
+  JobsState,
+  JobState,
+  ListingState,
+  Preload,
+} from "../src/client/board/model.js";
 import type { PreloadValue, ModelValue } from "../src/client/board/model.js";
 import { init, update } from "../src/client/board/update.js";
 import { boardUrl, jobRouter, Route } from "../src/client/route.js";
@@ -86,6 +91,55 @@ const listed: ListedJobValue = {
   url: "https://himalayas.app/companies/moniepoint/jobs/engineering-manager-9245044553",
 };
 
+const stats = {
+  activeJobs: 1,
+  companies: [],
+  feedsFailing: 0,
+  feedsTotal: 1,
+  generatedAt: 1_760_000_000_000,
+  lastRun: null,
+  newToday: 0,
+  placements: [],
+  regions: [],
+  roles: [],
+};
+
+describe("board stats", () => {
+  it("uses the preloaded stats without asking the backend", () => {
+    const opened = started(
+      "/",
+      Preload.Board({
+        filters: defaultFilters,
+        generatedAt: 1_760_000_000_000,
+        jobs: [],
+        stats,
+        total: 0,
+      })
+    );
+
+    expect(named(opened, "FetchStats")).toHaveLength(0);
+  });
+
+  it("asks the backend on the board when the preload has no stats", () => {
+    expect(named(started("/"), "FetchStats")).toHaveLength(1);
+  });
+
+  it("waits until the visitor reaches the board", () => {
+    const opened = started(jobRouter({ id: listed.id }));
+
+    expect(named(opened, "FetchStats")).toHaveLength(0);
+    expect(named(sent(opened, urlChange("/")), "FetchStats")).toHaveLength(1);
+  });
+
+  it("does not ask again once stats have loaded", () => {
+    const loaded = sent(started("/"), Message.SucceededFetchStats({ stats }));
+
+    expect(
+      named(sent(loaded, urlChange("/?sort=newest")), "FetchStats")
+    ).toHaveLength(0);
+  });
+});
+
 describe("URL-driven board state", () => {
   it("refetches only when the URL's filters differ from the Model's", () => {
     const opened = started(boardUrl(directorOnly));
@@ -140,6 +194,78 @@ describe("URL-driven board state", () => {
     );
 
     expect(stale.model.jobs._tag).toBe("Loading");
+  });
+
+  describe("changing filters with roles on screen", () => {
+    const page = { generatedAt: 1, jobs: [listed], total: 1 };
+
+    const refreshing = () =>
+      sentAll(started("/"), [
+        Message.SucceededFetchJobs({
+          generation: started("/").model.generation,
+          page,
+        }),
+        Message.ChangedSort({ sort: "Newest" }),
+      ]);
+
+    it("keeps the current roles until the new ones arrive", () => {
+      expect(refreshing().model.jobs).toStrictEqual(JobsState.Refreshing(page));
+    });
+
+    it("keeps them through a second change", () => {
+      const step = sent(
+        refreshing(),
+        Message.ToggledRole({ role: "Director" })
+      );
+
+      expect(step.model.jobs).toStrictEqual(JobsState.Refreshing(page));
+    });
+
+    it("replaces them with the newest response only", () => {
+      const before = refreshing();
+
+      const stale = sent(
+        before,
+        Message.SucceededFetchJobs({
+          generation: before.model.generation - 1,
+          page: { generatedAt: 2, jobs: [], total: 0 },
+        })
+      );
+
+      expect(stale.model.jobs).toStrictEqual(JobsState.Refreshing(page));
+
+      const fresh = sent(
+        before,
+        Message.SucceededFetchJobs({
+          generation: before.model.generation,
+          page: { generatedAt: 2, jobs: [], total: 0 },
+        })
+      );
+
+      expect(fresh.model.jobs).toStrictEqual(
+        JobsState.Loaded({ generatedAt: 2, jobs: [], total: 0 })
+      );
+    });
+
+    it("shows the failure when the refresh fails", () => {
+      const before = refreshing();
+
+      const failed = sent(
+        before,
+        Message.FailedFetchJobs({
+          generation: before.model.generation,
+          message: "down",
+        })
+      );
+
+      expect(failed.model.jobs._tag).toBe("Failed");
+    });
+
+    it("does not load more while refreshing", () => {
+      const step = sent(refreshing(), Message.ClickedLoadMore());
+
+      expect(step.commands ?? []).toStrictEqual([]);
+    });
   });
 
   it("drops a job detail response for a job the reader already left", () => {
@@ -282,6 +408,18 @@ describe("URL-driven board state", () => {
       sent(opened, Message.UpdatedDraftSearch({ value: "vp" })).model
         .proFiltersOpen
     ).toBe(true);
+  });
+
+  it("toggles the filter panel, and opens it for a link with Pro filters", () => {
+    expect(started("/").model.filtersOpen).toBe(false);
+    expect(started("/?pay=200000").model.filtersOpen).toBe(true);
+
+    const opened = sent(started("/"), Message.ClickedFilters());
+
+    expect(opened.model.filtersOpen).toBe(true);
+    expect(sent(opened, Message.ClickedFilters()).model.filtersOpen).toBe(
+      false
+    );
   });
 
   it("submitting an unchanged search replaces the history entry", () => {

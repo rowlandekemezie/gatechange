@@ -5,6 +5,7 @@ import {
   fingerprintOf,
   DAY_MILLIS,
   JobStore,
+  MAX_AGE_DAYS,
   PostingFeeds,
   runIngest,
   ShownTrend,
@@ -46,30 +47,35 @@ type FeedKey =
 const catalog: readonly FeedRef[] = [
   {
     company: Option.some("Acme Cloud"),
+    coverage: "Complete",
     key: BOARD,
     minIntervalMinutes: 1,
     source: "Greenhouse",
   },
   {
     company: Option.some("AcmeCloud"),
+    coverage: "Complete",
     key: LOOKALIKE_BOARD,
     minIntervalMinutes: 1,
     source: "Lever",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: REMOTIVE,
     minIntervalMinutes: 1,
     source: "Remotive",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: HACKER_NEWS,
     minIntervalMinutes: 1,
     source: "HackerNews",
   },
   {
     company: Option.none(),
+    coverage: "Window",
     key: HIMALAYAS,
     minIntervalMinutes: 1,
     source: "Himalayas",
@@ -534,6 +540,71 @@ it.effect(
 
         expect(intel.roles).toHaveLength(1);
         expect(intel.roles[0]).toMatchObject({ daysOpen: 0, reposts: 0 });
+      })
+    )
+);
+
+const dayOf = (day: number) => NOW + day * DAY_MILLIS;
+
+it.effect(
+  "a role that arrived long open counts its days from the posting, not the backfill",
+  () =>
+    withStore(
+      Effect.gen(function* backfilledRole() {
+        const longOpen = { ...vp, postedAt: dayOf(-700) };
+
+        yield* ingestListing(0, { [BOARD]: [longOpen] });
+        yield* ingestListing(1, { [BOARD]: [longOpen] });
+
+        const store = yield* JobStore;
+        const listing = yield* store.companyJobs("acme-cloud", dayOf(1));
+
+        const board = yield* store.list(
+          { ...everything, maxAgeDays: MAX_AGE_DAYS },
+          dayOf(1),
+          SourceName.literals
+        );
+
+        expect(listing.summary.longestOpenDays).toBe(701);
+        expect(board.jobs).toMatchObject([{ daysOpen: 701 }]);
+        expect((yield* intelOn(1)).roles).toMatchObject([{ daysOpen: 701 }]);
+      })
+    )
+);
+
+it.effect(
+  "a board role an aggregator listed earlier is neither reposted nor reopened",
+  () =>
+    withStore(
+      Effect.gen(function* aggregatorThenBoard() {
+        const posted = { ...vp, postedAt: dayOf(-20) };
+
+        yield* ingestListing(0, { [HIMALAYAS]: [posted] });
+        yield* ingestListing(1, {});
+        yield* ingestListing(20, { [BOARD]: [posted] });
+
+        const store = yield* JobStore;
+
+        expect((yield* intelOn(20)).roles).toMatchObject([
+          { daysOpen: 40, reposts: 0 },
+        ]);
+        expect(Option.getOrThrow(yield* store.historyOf(vp)).reposts).toBe(0);
+      })
+    )
+);
+
+it.effect(
+  "the same feed bringing a role back after the gap still counts a repost",
+  () =>
+    withStore(
+      Effect.gen(function* sameFeedReturns() {
+        const posted = { ...vp, postedAt: dayOf(-5) };
+
+        yield* ingestListing(0, { [BOARD]: [posted] });
+        yield* ingestListing(1, {});
+        yield* ingestListing(20, { [BOARD]: [posted] });
+
+        expect((yield* intelOn(20)).roles).toMatchObject([{ reposts: 1 }]);
       })
     )
 );

@@ -6,6 +6,7 @@ import type { FeedRef, PostingValue } from "../src/index.js";
 
 const himalayas: FeedRef = {
   company: Option.none(),
+  coverage: "Window",
   key: "himalayas",
   minIntervalMinutes: 60,
   source: "Himalayas",

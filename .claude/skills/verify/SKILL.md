@@ -71,7 +71,8 @@ mise exec node@24.18.0 -- node .claude/skills/verify/scripts/drive.ts \
 Scenarios:
 
 - `board` loads the board and screenshots it.
-- `filter` clicks the `day` age chip and requires the count line and the row count to drop.
+- `filter` clicks the `day` age chip and requires the count line and the row count to drop. Every chip click needs a visible chip, so on `--mobile` the scenario opens the `Filters` panel first and fails if that does not reveal it.
+- `filter-steady` clicks the `day` age chip and fails if the board leaves the page at any point before the new rows arrive.
 - `search` types the first row's company into the search box, submits, and requires every row to show that company.
 - `shortlist` saves the first row (the `Save` icon button on desktop; on `--mobile` the row's `Save` text button on its job page, because the row's buttons are hidden on a phone), opens the `Shortlist (n)` header link, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
 - `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest `/account/confirm` link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), presses `Finish signing in`, and requires the header to show the email.
@@ -85,6 +86,7 @@ Scenarios:
 - `tracker-note` signs in, writes a note on the first card, reloads, and requires the note.
 - `tracker-remove` signs in, removes the first card, reloads, and requires it gone.
 - `tracker-closed` signs in and requires at least one card with the closed-posting note. Delete that job's row from the stage's local D1 first.
+- `tracker-gone` signs in, opens the first closed card, and requires the job page to show the saved title and a link to the original posting. Set that job's `departed_at` in the stage's local D1 first.
 - `tracker-isolation` calls `/rpc` signed out and requires `Unauthorized`, then signs in as `--email` and calls `trackedJobs`, `noteTrackedJob`, and `untrackJob` with `--victim-job`, another member's tracked job id. It fails if that id comes back. It then reads the session cookie over the DevTools protocol and replays it from Node: a `trackJob` with `sec-fetch-site: cross-site` and a foreign `Origin` must answer 403, and a `trackedJobs` with the same cookie and same-origin headers must answer as a member, which proves the refusal came from the cross-site guard. Read the victim's row from the local D1 afterwards to prove it did not change.
 
 - `pricing` opens `/pricing` and requires three plan cards with their prices and no sideways scroll. Add `--mobile` for the phone check.

@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   AccountId,
   alertsAllowed,
+  DAY_MILLIS,
   digestFor,
   digestSourceLabels,
   Permission,
@@ -49,6 +50,34 @@ const role = (source: JobValue["source"]): JobValue => ({
 });
 
 const citation = { quote: "Alerts are fine.", url: "https://example.com" };
+
+describe("digest freshness", () => {
+  it("leaves out a long-open company board role even where its terms allow alerts", () => {
+    const firstSeenAt = 200 * DAY_MILLIS;
+
+    const terms = {
+      ...SourceTerms,
+      Greenhouse: {
+        ...SourceTerms.Greenhouse,
+        emailAlerts: Permission.Allowed({
+          quote: "Alerts are fine.",
+          url: "https://example.com",
+        }),
+      },
+    };
+
+    const longOpen = {
+      ...role("Greenhouse"),
+      firstSeenAt,
+      postedAt: firstSeenAt - 31 * DAY_MILLIS,
+    };
+
+    const justPosted = { ...longOpen, id: "fresh", postedAt: firstSeenAt };
+
+    expect(digestFor(recipient, 0, [longOpen], terms).total).toBe(0);
+    expect(digestFor(recipient, 0, [justPosted], terms).total).toBe(1);
+  });
+});
 
 describe("digest eligibility follows SourceTerms", () => {
   it("excludes a company board whose alert terms are Unstated", () => {

@@ -370,6 +370,30 @@ const foreignPlaces = [
 
 const georgiaCountryWords = /\b(?:tbilisi|batumi|kutaisi),?\s+georgia\b/giu;
 
+const regionCodesAbroad = [
+  {
+    codes: ["in", "tn"],
+    places:
+      "india|bangalore|bengaluru|hyderabad|pune|chennai|mumbai|delhi|gurgaon|gurugram|noida",
+  },
+  { codes: ["de"], places: "germany|berlin|munich|hamburg|frankfurt|cologne" },
+  { codes: ["co"], places: "colombia|bogot[aá]|medell[ií]n" },
+  { codes: ["ar"], places: "argentina|buenos aires" },
+  { codes: ["il"], places: "israel|tel aviv" },
+  { codes: ["id"], places: "indonesia|jakarta" },
+  { codes: ["mt"], places: "malta|valletta" },
+];
+
+const foreignRegionCodes = new RegExp(
+  regionCodesAbroad
+    .map(
+      ({ codes, places }) =>
+        `(?<![\\p{L}\\p{N}])(?:${places}),\\s*(?:${codes.join("|")})\\b`
+    )
+    .join("|"),
+  "giu"
+);
+
 const foreignWords = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${foreignPlaces.join("|")})(?![\\p{L}\\p{N}])`,
   "iu"
@@ -413,7 +437,9 @@ const signalsOf = (text: string): Signals => {
     foreign: foreignWords.test(text),
     global: globalWords.test(text),
     northAmerica: northAmericaWords.test(text),
-    unitedStates: unitedStatesWords.test(text.replace(georgiaCountryWords, "")),
+    unitedStates: unitedStatesWords.test(
+      text.replace(georgiaCountryWords, "").replace(foreignRegionCodes, "")
+    ),
   };
 };
 

@@ -1,5 +1,7 @@
 import {
+  arrivedLongOpen,
   currencies,
+  NEW_WINDOW_MILLIS,
   offSiteHref,
   roleLevels,
   seniorities,
@@ -40,6 +42,7 @@ import {
 } from "../../client/board/filters.js";
 import type {
   AgeWindowValue,
+  FiltersValue,
   PayFloorValue,
   RegionGroupValue,
 } from "../../client/board/filters.js";
@@ -58,8 +61,6 @@ import {
 import { addServerCommandOf } from "../agent-tokens/view.js";
 import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
-
-const NEW_WINDOW = 86_400_000;
 
 const chip = (
   h: HtmlBuilder<MessageValue>,
@@ -347,13 +348,38 @@ const proFilterView = (
   );
 };
 
+const filterSummary = (filters: FiltersValue) =>
+  [
+    filters.roles.length === 1 ? "1 role" : `${filters.roles.length} roles`,
+    filters.regionGroups.length === 1
+      ? "1 place"
+      : `${filters.regionGroups.length} places`,
+    `last ${ageChip(filters.maxAgeDays)}`,
+    ...(hasProSelection(filters) ? ["Pro filters"] : []),
+  ].join(", ");
+
+const filtersToggle = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
+  h.button(
+    [
+      h.Type("button"),
+      h.Class("search-button filters-toggle"),
+      h.AriaExpanded(model.filtersOpen),
+      h.AriaControls("filter-panel"),
+      h.OnClick(Message.ClickedFilters()),
+    ],
+    [
+      "Filters",
+      h.span([h.Class("filters-summary")], [filterSummary(model.filters)]),
+    ]
+  );
+
 const statusLine = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   StatsState.match<Html>(model.stats, {
     Loaded: ({ stats }) =>
       h.p(
         [h.Class("status")],
         [
-          `${stats.activeJobs} leadership roles from the last 30 days, ${stats.newToday} new today. `,
+          `${stats.activeJobs} live roles, ${stats.newToday} new today. `,
           pipe(
             Option.fromNullishOr(stats.lastRun),
             Option.match({
@@ -377,15 +403,11 @@ export const boardMasthead = (
       h.div(
         [h.Class("hero")],
         [
-          h.p(
-            [h.Class("kicker")],
-            ["Remote · US & Canada · Checked every 20 min"]
-          ),
           h.h1([h.Class("hero-title")], ["Your next move is on the board."]),
           h.p(
             [h.Class("hero-lede")],
             [
-              "Director, VP and Head of Engineering roles, straight from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
+              "Engineering manager to VP roles from company job boards. No ghost jobs: when a company takes a role down, it leaves the board.",
             ]
           ),
         ]
@@ -393,23 +415,38 @@ export const boardMasthead = (
       h.div(
         [h.Class("filters")],
         [
-          sentenceView(model, h),
+          searchView(model, h),
+          filtersToggle(model, h),
           h.div(
-            [h.Class("filter-tools")],
-            [searchView(model, h), proFilterView(model, h)]
+            [
+              h.Id("filter-panel"),
+              h.Class(
+                model.filtersOpen
+                  ? "filter-panel filter-panel-open"
+                  : "filter-panel"
+              ),
+            ],
+            [
+              sentenceView(model, h),
+              h.div(
+                [h.Class("filter-tools")],
+                [
+                  proFilterView(model, h),
+                  h.submodel({
+                    model: model.savedSearches,
+                    slotId: "save-search",
+                    toParentMessage: (message) =>
+                      Message.GotSavedSearchesMessage({ message }),
+                    view: saveSearchControl,
+                    viewInputs: {
+                      filters: model.filters,
+                      session: model.account.session,
+                    },
+                  }),
+                ]
+              ),
+            ]
           ),
-          h.submodel({
-            model: model.savedSearches,
-            slotId: "save-search",
-            toParentMessage: (message) =>
-              Message.GotSavedSearchesMessage({ message }),
-            view: saveSearchControl,
-            viewInputs: {
-              filters: model.filters,
-              session: model.account.session,
-            },
-          }),
-          statusLine(model, h),
         ]
       ),
     ]
@@ -633,7 +670,8 @@ export const jobRow = (
 ): Html => {
   const isApplied = isAppliedTo(model, job);
 
-  const isNew = now - job.firstSeenAt < NEW_WINDOW;
+  const isNew =
+    now - job.firstSeenAt < NEW_WINDOW_MILLIS && !arrivedLongOpen(job);
 
   return h.keyed("li")(
     job.id,
@@ -849,15 +887,16 @@ const moreView = (
   });
 };
 
-const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
+const emptyView = (model: ModelValue, h: HtmlBuilder<MessageValue>): Html =>
   h.div(
     [h.Class("empty")],
     [
       h.p([], ["No roles match that sentence yet."]),
+      statusLine(model, h),
       h.p(
         [],
         [
-          "Pick at least one role and one place, widen the window to a month, open up the level or pay, or clear the search.",
+          "Pick at least one role and one place, widen the window, open up the level or pay, or clear the search.",
         ]
       ),
       h.button(
@@ -871,8 +910,39 @@ const emptyView = (h: HtmlBuilder<MessageValue>): Html =>
     ]
   );
 
+interface BoardPageValue {
+  readonly generatedAt: number;
+  readonly jobs: readonly ListedJobValue[];
+  readonly total: number;
+}
+
 const findingRoles = (h: HtmlBuilder<MessageValue>): Html =>
   h.p([h.Class("count"), h.Role("status")], ["Finding roles"]);
+
+const boardList = (
+  model: ModelValue,
+  h: HtmlBuilder<MessageValue>,
+  { generatedAt, jobs, total }: BoardPageValue,
+  refreshing: boolean
+): Html =>
+  h.div(
+    [h.AriaBusy(refreshing)],
+    [
+      h.div(
+        [h.Class("board-top")],
+        [
+          h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
+          statusLine(model, h),
+        ]
+      ),
+      h.div(
+        [h.Class("board")],
+        [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
+      ),
+      legendView(h),
+      ...(refreshing ? [] : [moreView(model, h, jobs.length, total)]),
+    ]
+  );
 
 export const boardPage = (
   model: ModelValue,
@@ -894,23 +964,13 @@ export const boardPage = (
           ),
         ]
       ),
-    Loaded: ({ generatedAt, jobs, total }) =>
-      Array.isReadonlyArrayEmpty(jobs)
-        ? emptyView(h)
-        : h.div(
-            [],
-            [
-              h.p([h.Class("count"), h.AriaLive("polite")], [roleCount(total)]),
-              h.div(
-                [h.Class("board")],
-                [boardHead(h), ...groupedRows(model, h, jobs, generatedAt)]
-              ),
-              legendView(h),
-              moreView(model, h, jobs.length, total),
-            ]
-          ),
+    Loaded: (page) =>
+      Array.isReadonlyArrayEmpty(page.jobs)
+        ? emptyView(model, h)
+        : boardList(model, h, page, false),
     Loading: () => findingRoles(h),
     NotAsked: () => findingRoles(h),
+    Refreshing: (page) => boardList(model, h, page, true),
   });
 
 export const boardTitle = (model: ModelValue) =>
@@ -919,4 +979,5 @@ export const boardTitle = (model: ModelValue) =>
     Loaded: ({ total }) => `${total} engineering leadership roles`,
     Loading: () => "Engineering leadership roles",
     NotAsked: () => "Engineering leadership roles",
+    Refreshing: ({ total }) => `${total} engineering leadership roles`,
   });

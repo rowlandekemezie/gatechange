@@ -63,27 +63,36 @@ const publicJobs = vi.fn((query: JobQueryValue) =>
   })
 );
 
+const statsQueries = vi.fn(() =>
+  Effect.succeed({
+    activeJobs: 1,
+    companies: [{ company: director.company, count: 1, slug: "acme" }],
+    feedsFailing: 0,
+    feedsTotal: 1,
+    generatedAt: 1_760_500_000_000,
+    lastRun: null,
+    newToday: 0,
+    placements: [{ count: 1, region: director.region, role: director.role }],
+    regions: [],
+    roles: [],
+  })
+);
+
+const sitemapRows = Array.from({ length: 250 }, (_, index) => ({
+  company: director.company,
+  firstSeenAt: director.firstSeenAt,
+  id: `greenhouse:acme/${index}`,
+  region: director.region,
+  role: director.role,
+}));
+
 const backend = HttpRouter.toWebHandler(
   RpcServer.layerHttp({ group, path: "/rpc", protocol: "http" }).pipe(
     Layer.provide([
       group.toLayer({
         account: () => Effect.die("account is not served here"),
         agentTokens: () => Effect.die("agent tokens are not served here"),
-        boardStats: () =>
-          Effect.succeed({
-            activeJobs: 1,
-            companies: [{ company: director.company, count: 1, slug: "acme" }],
-            feedsFailing: 0,
-            feedsTotal: 1,
-            generatedAt: 1_760_500_000_000,
-            lastRun: null,
-            newToday: 0,
-            placements: [
-              { count: 1, region: director.region, role: director.role },
-            ],
-            regions: [],
-            roles: [],
-          }),
+        boardStats: statsQueries,
         companyIntel: () => Effect.die("company intel is not served here"),
         companyJobs: ({ slug }) =>
           Effect.succeed({
@@ -106,6 +115,7 @@ const backend = HttpRouter.toWebHandler(
         savedSearches: () => Effect.die("savedSearches is not served here"),
         setInstantAlerts: () => Effect.die("billing is not served here"),
         signInOptions: () => Effect.succeed({ socialProviders: [] }),
+        sitemapJobs: () => Effect.succeed(sitemapRows),
         startCheckout: () => Effect.die("billing is not served here"),
         trackJob: () => Effect.die("the tracker is not served here"),
         trackedJobs: () => Effect.die("the tracker is not served here"),
@@ -200,8 +210,12 @@ const pageCache = {
   },
 };
 
+const storedPages = () =>
+  [...stored.keys()].filter((key) => !key.includes("/board-stats"));
+
 beforeEach(() => {
   publicJobs.mockClear();
+  statsQueries.mockClear();
   vi.stubGlobal("caches", {
     open: async () => await Promise.resolve(pageCache),
   });
@@ -287,8 +301,8 @@ describe("public landing pages", () => {
         search: "absent",
       })
     );
-    expect(stored.size).toBe(1);
-    expect(site.calls.backend).toBe(4);
+    expect(storedPages()).toHaveLength(1);
+    expect(site.calls.backend).toBe(3);
   });
 
   it.each(["?shell=0", "?role="])(
@@ -302,7 +316,7 @@ describe("public landing pages", () => {
       expect(variant.html).toContain('<meta name="robots" content="noindex"');
       expect(plain.headers.has("x-robots-tag")).toBe(false);
       expect(plain.html).not.toContain('<meta name="robots" content="noindex"');
-      expect(stored.size).toBe(1);
+      expect(storedPages()).toHaveLength(1);
     }
   );
 
@@ -320,7 +334,7 @@ describe("public landing pages", () => {
       expect(page.html).not.toContain("You have Pro");
       expect(page.headers.get("cache-control")).toBe("private, no-store");
       expect(site.backendCredentials).toStrictEqual([false, false]);
-      expect(stored.size).toBe(0);
+      expect(storedPages()).toHaveLength(0);
     }
   );
 });
@@ -454,7 +468,7 @@ describe("tracking parameters", () => {
     );
     expect(tagged.headers.has("x-robots-tag")).toBe(false);
     expect(site.calls.backend).toBe(2);
-    expect(stored.size).toBe(1);
+    expect(storedPages()).toHaveLength(1);
   });
 
   it("keeps real filters private and noindex next to a tracking parameter", async () => {
@@ -464,7 +478,7 @@ describe("tracking parameters", () => {
     expect(page.html).toContain('value="absent"');
     expect(page.headers.get("cache-control")).toBe("private, no-store");
     expect(page.headers.get("x-robots-tag")).toBe("noindex");
-    expect(stored.size).toBe(0);
+    expect(storedPages()).toHaveLength(0);
   });
 });
 
@@ -483,7 +497,7 @@ describe("unknown paths", () => {
       expect(page.headers.get("x-robots-tag")).toBe("noindex");
       expect(page.headers.get("cache-control")).toBe("private, no-store");
       expect(site.calls.backend).toBe(0);
-      expect(stored.size).toBe(0);
+      expect(storedPages()).toHaveLength(0);
     }
   );
 
@@ -557,7 +571,7 @@ describe("rendered page cache", () => {
     const page = await edge(indexHtml, { backendStatus: 503 }).get(ROLE_PAGE);
 
     expect(page.html).toBe(indexHtml);
-    expect(stored.size).toBe(0);
+    expect(storedPages()).toHaveLength(0);
   });
 
   it("keys a page on its route, so query strings share one render", async () => {
@@ -570,7 +584,7 @@ describe("rendered page cache", () => {
     expect(tagged.html).toBe(plain.html);
     expect(busted.html).toBe(plain.html);
     expect(site.calls.backend).toBe(1);
-    expect(stored.size).toBe(1);
+    expect(storedPages()).toHaveLength(1);
   });
 
   it.each([
@@ -585,7 +599,7 @@ describe("rendered page cache", () => {
       const page = await site.get(variant);
 
       expect(page.status).toBe(404);
-      expect(stored.size).toBe(1);
+      expect(storedPages()).toHaveLength(1);
     }
   );
 
@@ -597,7 +611,7 @@ describe("rendered page cache", () => {
 
     expect(slashed.html).toBe(plain.html);
     expect(site.calls.backend).toBe(1);
-    expect(stored.size).toBe(1);
+    expect(storedPages()).toHaveLength(1);
   });
 });
 
@@ -615,7 +629,7 @@ describe("not-found pages", () => {
     expect(first.status).toBe(404);
     expect(first.headers.get("cache-control")).toBe("private, no-store");
     expect(second.status).toBe(404);
-    expect(stored.size).toBe(0);
+    expect(storedPages()).toHaveLength(0);
   });
 
   it("asks the backend again for a job that was missing", async () => {
@@ -637,7 +651,7 @@ describe("per-viewer requests", () => {
 
       expect(page.status).toBe(200);
       expect(page.headers.get("cache-control")).toBe("private, no-store");
-      expect(stored.size).toBe(0);
+      expect(storedPages()).toHaveLength(0);
     }
   );
 
@@ -661,7 +675,7 @@ describe("per-viewer requests", () => {
 
       expect(page.html).toBe(indexHtml);
       expect(site.calls.backend).toBe(0);
-      expect(stored.size).toBe(0);
+      expect(storedPages()).toHaveLength(0);
     }
   );
 });
@@ -676,7 +690,7 @@ describe("sitemap", () => {
     expect(page.html).not.toContain("<loc>");
     expect(page.headers.get("x-robots-tag")).toBe("noindex");
     expect(site.calls.backend).toBe(0);
-    expect(stored.size).toBe(0);
+    expect(storedPages()).toHaveLength(0);
   });
   it("serves repeat sitemap requests from the cache", async () => {
     const site = edge(indexHtml);
@@ -696,6 +710,42 @@ describe("sitemap", () => {
     );
 
     expect(page.status).toBe(503);
+    expect(storedPages()).toHaveLength(0);
+  });
+});
+
+describe("sitemap reads", () => {
+  it("lists every role from one backend call", async () => {
+    const site = edge(indexHtml);
+
+    const { html } = await site.get(`${ORIGIN}/sitemap.xml`);
+
+    expect(site.calls.backend).toBe(1);
+    expect(html.match(/\/jobs\//gu)).toHaveLength(sitemapRows.length);
+    expect(publicJobs).not.toHaveBeenCalled();
+  });
+});
+
+describe("board stats", () => {
+  it("costs one query across a burst of filtered pages and signed-in viewers", async () => {
+    const site = edge(indexHtml);
+
+    await site.get(`${ORIGIN}/?role=director`);
+    await site.get(`${ORIGIN}/?role=vice-president`);
+
+    const signedIn = await site.get(`${ORIGIN}/?role=director`, {
+      cookie: "session=abc",
+    });
+
+    expect(statsQueries).toHaveBeenCalledOnce();
+    expect(signedIn.html).toContain("1 live roles");
+  });
+
+  it("caches nothing when the backend is down", async () => {
+    await edge(indexHtml, { backendStatus: 503 }).get(
+      `${ORIGIN}/?role=director`
+    );
+
     expect(stored.size).toBe(0);
   });
 });

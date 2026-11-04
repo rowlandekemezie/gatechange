@@ -49,6 +49,7 @@ const cases: readonly (readonly [string, FeedRef, string, boolean])[] = [
     "aggregator company",
     {
       company: Option.none(),
+      coverage: "Window",
       key: "remoteok:test",
       minIntervalMinutes: 1,
       source: "RemoteOK",
@@ -60,6 +61,7 @@ const cases: readonly (readonly [string, FeedRef, string, boolean])[] = [
     "forbidden paid aggregator company",
     {
       company: Option.none(),
+      coverage: "Window",
       key: "remotive:test",
       minIntervalMinutes: 1,
       source: "Remotive",
@@ -71,6 +73,7 @@ const cases: readonly (readonly [string, FeedRef, string, boolean])[] = [
     "catalog company",
     {
       company: Option.some("Acme"),
+      coverage: "Complete",
       key: "greenhouse:test",
       minIntervalMinutes: 1,
       source: "Greenhouse",
@@ -82,6 +85,7 @@ const cases: readonly (readonly [string, FeedRef, string, boolean])[] = [
     "catalog company with matching payload name",
     {
       company: Option.some("Acme"),
+      coverage: "Complete",
       key: "greenhouse:test",
       minIntervalMinutes: 1,
       source: "Greenhouse",
@@ -93,6 +97,7 @@ const cases: readonly (readonly [string, FeedRef, string, boolean])[] = [
     "catalog company overridden by payload",
     {
       company: Option.some("Acme"),
+      coverage: "Complete",
       key: "greenhouse:test",
       minIntervalMinutes: 1,
       source: "Greenhouse",
@@ -121,6 +126,7 @@ describe("unlinked company-history provenance", () => {
                 company: "Old Company",
                 feed: feed.key,
                 id: "old",
+                postedAt: NOW - 31 * DAY_MILLIS,
                 source: feed.source,
               },
             ],
@@ -224,6 +230,7 @@ describe("unlinked company-history provenance", () => {
 
         const feed: FeedRef = {
           company: Option.some("Acme"),
+          coverage: "Complete",
           key: original.feed,
           minIntervalMinutes: 1,
           source: "Greenhouse",

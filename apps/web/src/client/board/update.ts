@@ -206,6 +206,17 @@ const sameFilters = Schema.toEquivalence(Filters);
 
 const sameRoute = Schema.toEquivalence(Route);
 
+const keepingRoles = (jobs: typeof JobsState.Type) =>
+  (Schema.is(JobsState.Loaded)(jobs) ||
+    Schema.is(JobsState.Refreshing)(jobs)) &&
+  Array.isReadonlyArrayNonEmpty(jobs.jobs)
+    ? JobsState.Refreshing({
+        generatedAt: jobs.generatedAt,
+        jobs: jobs.jobs,
+        total: jobs.total,
+      })
+    : JobsState.Loading();
+
 const withFilters = (
   model: ModelValue,
   filters: FiltersValue
@@ -229,7 +240,7 @@ const withFilters = (
 
   return {
     commands: [FetchJobs({ generation, query: queryOf(filters, 0) })],
-    model: modifyFields(nextModel, { jobs: () => JobsState.Loading() }),
+    model: modifyFields(nextModel, { jobs: keepingRoles }),
   };
 };
 
@@ -367,9 +378,15 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   });
 };
 
+const withStats = (step: UpdateReturn): UpdateReturn =>
+  Schema.is(Route.Board)(step.model.route) &&
+  Schema.is(StatsState.Unavailable)(step.model.stats)
+    ? { ...step, commands: [...(step.commands ?? []), FetchStats()] }
+    : step;
+
 const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
   const route = routeOfUrl(url);
-  const routed = entered(model, route);
+  const routed = withStats(entered(model, route));
 
   const address = addressOf(url);
 
@@ -686,6 +703,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         billing: billing.model,
         draftSearch: "",
         filters: defaultFilters,
+        filtersOpen: false,
         generation: 0,
         intel: IntelState.NotAsked(),
         job: JobState.NotAsked(),
@@ -709,7 +727,6 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   return {
     commands: [
       ...(routed.commands ?? []),
-      FetchStats(),
       ReadShortlist(),
       ...Command.mapMessages(account.commands, accountChild.toParentMessage),
       ...Command.mapMessages(
@@ -718,6 +735,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
       ),
     ],
     model: modifyFields(routed.model, {
+      filtersOpen: () => hasProSelection(routed.model.filters),
       proFiltersOpen: () => hasProSelection(routed.model.filters),
     }),
   };
@@ -794,6 +812,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     ClickedAnySeniority: () =>
       navigatedTo(model, { ...model.filters, seniorities: [] }),
     ClickedClearMark: ({ id }) => unmarked(model, id),
+    ClickedFilters: () => ({
+      model: modifyFields(model, { filtersOpen: (isOpen) => !isOpen }),
+    }),
     ClickedKeepShortlist: () => ({
       model: withOffer(model, (offer) =>
         Schema.is(ImportOffer.Asking)(offer) ? ImportOffer.Declined() : offer

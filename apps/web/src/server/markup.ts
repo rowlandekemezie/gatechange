@@ -1,5 +1,6 @@
 import {
-  MAX_AGE_DAYS,
+  coverageOfSource,
+  coverageRules,
   Permission,
   SourceTerms,
 } from "@rat-stack/core/contracts";
@@ -63,9 +64,9 @@ export const jobPostingOf = (
         title: job.title,
         url: canonicalUrl,
         validThrough: DateTime.formatIso(
-          DateTime.add(DateTime.makeUnsafe(job.postedAt), {
-            days: MAX_AGE_DAYS,
-          })
+          DateTime.makeUnsafe(
+            coverageRules[coverageOfSource(job.source)].validThrough(job)
+          )
         ),
         ...locationTypeOf(job.arrangement),
       })

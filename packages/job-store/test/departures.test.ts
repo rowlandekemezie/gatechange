@@ -3,6 +3,7 @@ import {
   DAY_MILLIS,
   FeedUnavailable,
   JobStore,
+  MAX_AGE_DAYS,
   PostingFeeds,
   runIngest,
   SourceName,
@@ -107,6 +108,97 @@ const relistings = {
 };
 
 describe("job departures over SQL", () => {
+  it.effect(
+    "the board counts a long-open role as open but not as new today",
+    () =>
+      Effect.gen(function* longOpenStats() {
+        const layer = yield* sqlJsJobStore;
+
+        yield* Effect.gen(function* withStore() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            FEED,
+            [
+              job("greenhouse:acme:1", {
+                company: "Fresh Co",
+              }),
+              job("greenhouse:acme:2", {
+                company: "Long Open Co",
+                postedAt: NOW - 106 * DAY_MILLIS,
+              }),
+            ],
+            NOW
+          );
+
+          const stats = yield* store.stats(NOW, SourceName.literals, [FEED]);
+
+          const page = yield* store.list(
+            {
+              limit: 10,
+              maxAgeDays: MAX_AGE_DAYS,
+              offset: 0,
+              regions: [],
+              roles: [],
+              salaryFloor: null,
+              salaryListed: false,
+              search: "",
+              seniorities: [],
+              sort: "Relevance",
+            },
+            NOW,
+            SourceName.literals
+          );
+
+          expect([stats.activeJobs, stats.newToday]).toStrictEqual([2, 1]);
+          expect(page.jobs.map((listed) => listed.company)).toStrictEqual([
+            "Fresh Co",
+            "Long Open Co",
+          ]);
+        }).pipe(Effect.provide(layer));
+      })
+  );
+
+  it.effect(
+    "an absent aggregator row departs only once its posting is older than the cutoff",
+    () =>
+      Effect.gen(function* holdsAggregatorRow() {
+        const layer = yield* sqlJsJobStore;
+
+        yield* Effect.gen(function* withStore() {
+          const store = yield* JobStore;
+          const feed = "jobicy:engineering-manager";
+          const held = job(`${feed}:1`, { feed, source: "Jobicy" });
+
+          yield* store.replaceFeed(feed, [held], NOW);
+
+          const first = yield* store.replaceFeed(
+            feed,
+            [],
+            NOW + DAY_MILLIS,
+            NOW
+          );
+
+          const second = yield* store.replaceFeed(
+            feed,
+            [],
+            NOW + 2 * DAY_MILLIS,
+            NOW + 1
+          );
+
+          expect([first.departed, second.departed]).toStrictEqual([0, 1]);
+          expect(yield* jobRows).toStrictEqual([
+            {
+              departed_at: NOW + 2 * DAY_MILLIS,
+              first_seen_at: NOW,
+              id: held.id,
+              last_seen_at: NOW,
+            },
+          ]);
+        }).pipe(Effect.provide(layer));
+      })
+  );
+
   it.effect.each(Object.entries(relistings))(
     "a departed role that reappears, %s, is live again and keeps its first sighting",
     ([, relist]) =>
@@ -173,6 +265,7 @@ describe("job departures over SQL", () => {
 
           const feed: FeedRef = {
             company: Option.some("Acme"),
+            coverage: "Complete",
             key: FEED,
             minIntervalMinutes: 1,
             source: "Greenhouse",

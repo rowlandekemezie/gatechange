@@ -163,7 +163,9 @@ export const JobSort = Schema.Literals(["Relevance", "Newest"]);
 
 export type JobSortValue = typeof JobSort.Type;
 
-export const MAX_AGE_DAYS = 30;
+export const ADMISSION_DAYS = 30;
+
+export const MAX_AGE_DAYS = 3650;
 
 export const DEFAULT_AGE_DAYS = 7;
 
@@ -283,3 +285,13 @@ export const BoardStats = Schema.Struct({
 });
 
 export type BoardStatsValue = typeof BoardStats.Type;
+
+export const SitemapJob = Schema.Struct({
+  company: Schema.String,
+  firstSeenAt: EpochMillis,
+  id: Schema.String,
+  region: Region,
+  role: RoleLevel,
+});
+
+export type SitemapJobValue = typeof SitemapJob.Type;

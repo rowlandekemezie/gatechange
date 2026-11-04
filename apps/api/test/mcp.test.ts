@@ -114,12 +114,14 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
         catalog: [
           ...board.map((row) => ({
             company: Option.some(row.company),
+            coverage: "Complete" as const,
             key: row.feed,
             minIntervalMinutes: 60,
             source: row.source,
           })),
           {
             company: Option.none(),
+            coverage: "Complete" as const,
             key: "Greenhouse:unattempted",
             minIntervalMinutes: 60,
             source: "Greenhouse" as const,
@@ -143,6 +145,7 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
                 )
               ),
             findIncludingDeparted: unserved("findIncludingDeparted"),
+            heldListings: unserved("heldListings"),
             historyOf: unserved("historyOf"),
             list: (_query, _now, sources) => {
               listedSources.push(sources);
@@ -169,6 +172,7 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
             replaceFeed: unserved("replaceFeed"),
             saveBoardFacts: unserved("saveBoardFacts"),
             saveEnrichment: unserved("saveEnrichment"),
+            sitemapJobs: unserved("sitemapJobs"),
             stats: (_now, sources, catalogKeys) => {
               countedCatalogs.push(catalogKeys);
 
