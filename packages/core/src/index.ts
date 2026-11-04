@@ -381,6 +381,7 @@ export {
 export type {
   ArrangementValue,
   BoardStatsValue,
+  SitemapJobValue,
   CurrencyValue,
   EnrichmentValue,
   IngestReceiptValue,

@@ -587,6 +587,22 @@ export const makeMemoryJobStore = Effect.sync((): MemoryJobStore => {
         enrichments.set(id, enrichment);
         skips.delete(id);
       }),
+    sitemapJobs: (_now, sources) =>
+      Effect.sync(() =>
+        [...jobs.values()].flatMap((job) =>
+          sources.includes(job.source) && !departed.has(job.id)
+            ? [
+                {
+                  company: job.company,
+                  firstSeenAt: job.firstSeenAt,
+                  id: job.id,
+                  region: job.region,
+                  role: job.role,
+                },
+              ]
+            : []
+        )
+      ),
     stats: (_now, sources, catalogKeys) =>
       Effect.sync(() => ({
         activeJobs: [...jobs.values()].filter(

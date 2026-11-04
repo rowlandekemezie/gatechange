@@ -91,6 +91,55 @@ const listed: ListedJobValue = {
   url: "https://himalayas.app/companies/moniepoint/jobs/engineering-manager-9245044553",
 };
 
+const stats = {
+  activeJobs: 1,
+  companies: [],
+  feedsFailing: 0,
+  feedsTotal: 1,
+  generatedAt: 1_760_000_000_000,
+  lastRun: null,
+  newToday: 0,
+  placements: [],
+  regions: [],
+  roles: [],
+};
+
+describe("board stats", () => {
+  it("uses the preloaded stats without asking the backend", () => {
+    const opened = started(
+      "/",
+      Preload.Board({
+        filters: defaultFilters,
+        generatedAt: 1_760_000_000_000,
+        jobs: [],
+        stats,
+        total: 0,
+      })
+    );
+
+    expect(named(opened, "FetchStats")).toHaveLength(0);
+  });
+
+  it("asks the backend on the board when the preload has no stats", () => {
+    expect(named(started("/"), "FetchStats")).toHaveLength(1);
+  });
+
+  it("waits until the visitor reaches the board", () => {
+    const opened = started(jobRouter({ id: listed.id }));
+
+    expect(named(opened, "FetchStats")).toHaveLength(0);
+    expect(named(sent(opened, urlChange("/")), "FetchStats")).toHaveLength(1);
+  });
+
+  it("does not ask again once stats have loaded", () => {
+    const loaded = sent(started("/"), Message.SucceededFetchStats({ stats }));
+
+    expect(
+      named(sent(loaded, urlChange("/?sort=newest")), "FetchStats")
+    ).toHaveLength(0);
+  });
+});
+
 describe("URL-driven board state", () => {
   it("refetches only when the URL's filters differ from the Model's", () => {
     const opened = started(boardUrl(directorOnly));

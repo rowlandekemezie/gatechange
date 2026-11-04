@@ -378,9 +378,15 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
   });
 };
 
+const withStats = (step: UpdateReturn): UpdateReturn =>
+  Schema.is(Route.Board)(step.model.route) &&
+  Schema.is(StatsState.Unavailable)(step.model.stats)
+    ? { ...step, commands: [...(step.commands ?? []), FetchStats()] }
+    : step;
+
 const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
   const route = routeOfUrl(url);
-  const routed = entered(model, route);
+  const routed = withStats(entered(model, route));
 
   const address = addressOf(url);
 
@@ -721,7 +727,6 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   return {
     commands: [
       ...(routed.commands ?? []),
-      FetchStats(),
       ReadShortlist(),
       ...Command.mapMessages(account.commands, accountChild.toParentMessage),
       ...Command.mapMessages(

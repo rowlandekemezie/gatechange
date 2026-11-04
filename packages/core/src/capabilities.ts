@@ -29,6 +29,7 @@ import {
   importShortlistContract,
   issueAgentTokenContract,
   listJobsContract,
+  sitemapJobsContract,
   membershipContract,
   openBillingPortalContract,
   revokeAgentTokenContract,
@@ -113,6 +114,15 @@ export const boardStats = implement(boardStatsContract, () =>
     );
 
     return { ...stats, generatedAt };
+  })
+);
+
+export const sitemapJobs = implement(sitemapJobsContract, () =>
+  Effect.gen(function* sitemapJobsHandler() {
+    const store = yield* JobStore;
+    const now = yield* Clock.currentTimeMillis;
+
+    return yield* store.sitemapJobs(now, yield* ServedSources);
   })
 );
 
@@ -389,6 +399,7 @@ export const capabilities = [
   listJobs,
   companyJobs,
   boardStats,
+  sitemapJobs,
   getJob,
   account,
   signInOptions,

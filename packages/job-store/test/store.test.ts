@@ -487,6 +487,121 @@ describe("D1 job store queries", () => {
   );
 
   it.effect(
+    "stats counts every listing for totals and each role once for placements and companies",
+    () =>
+      withStore(
+        Effect.gen(function* rawAndDeduped() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({ feed: "greenhouse:acme", id: "g:1", title: "EM" }),
+              job({ feed: "greenhouse:acme", id: "g:2", title: "EM, Data" }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "remoteok:all",
+            [
+              job({
+                feed: "remoteok:all",
+                id: "r:1",
+                source: "RemoteOK",
+                title: "EM",
+              }),
+              job({
+                company: "Zeta",
+                feed: "remoteok:all",
+                id: "r:2",
+                region: "BritishColumbia",
+                role: "Director",
+                source: "RemoteOK",
+                title: "Director",
+              }),
+            ],
+            NOW
+          );
+
+          const stats = yield* store.stats(NOW, SourceName.literals, []);
+
+          expect(stats.activeJobs).toBe(4);
+          expect(stats.regions).toStrictEqual([
+            { count: 3, region: "RemoteCanada" },
+            { count: 1, region: "BritishColumbia" },
+          ]);
+          expect(stats.roles).toStrictEqual([
+            { count: 3, role: "EngineeringManager" },
+            { count: 1, role: "Director" },
+          ]);
+          expect(stats.placements).toStrictEqual([
+            { count: 2, region: "RemoteCanada", role: "EngineeringManager" },
+            { count: 1, region: "BritishColumbia", role: "Director" },
+          ]);
+          expect(stats.companies).toStrictEqual([
+            { company: "Acme", count: 2, slug: "acme" },
+            { company: "Zeta", count: 1, slug: "zeta" },
+          ]);
+        })
+      )
+  );
+
+  it.effect(
+    "sitemapJobs lists each open role once, newest first, with only what the sitemap needs",
+    () =>
+      withStore(
+        Effect.gen(function* sitemapRows() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            "greenhouse:acme",
+            [
+              job({
+                feed: "greenhouse:acme",
+                id: "g:old",
+                postedAt: NOW - DAY_MILLIS,
+                title: "EM",
+              }),
+              job({ feed: "greenhouse:acme", id: "g:new", title: "Director" }),
+            ],
+            NOW
+          );
+          yield* store.replaceFeed(
+            "remoteok:all",
+            [
+              job({
+                feed: "remoteok:all",
+                id: "r:dup",
+                source: "RemoteOK",
+                title: "EM",
+              }),
+            ],
+            NOW
+          );
+
+          const rows = yield* store.sitemapJobs(NOW, SourceName.literals);
+
+          expect(rows).toStrictEqual([
+            {
+              company: "Acme",
+              firstSeenAt: NOW,
+              id: "g:new",
+              region: "RemoteCanada",
+              role: "EngineeringManager",
+            },
+            {
+              company: "Acme",
+              firstSeenAt: NOW,
+              id: "g:old",
+              region: "RemoteCanada",
+              role: "EngineeringManager",
+            },
+          ]);
+        })
+      )
+  );
+
+  it.effect(
     "filters respect age, role, region and a search containing LIKE wildcards",
     () =>
       withStore(
