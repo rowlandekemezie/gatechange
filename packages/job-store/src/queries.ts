@@ -1,4 +1,5 @@
 import {
+  ADMISSION_DAYS,
   companySlugOf,
   COMPANY_LISTING_ROWS,
   DAY_MILLIS,
@@ -113,6 +114,8 @@ const servedJobsSince = (
     ),
   };
 };
+
+const arrivedFresh = `first_seen_at - posted_at <= ${ADMISSION_DAYS * DAY_MILLIS}`;
 
 const filteredJobs = (
   query: JobQueryValue,
@@ -569,11 +572,12 @@ export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
 
 export const departUnseenStatement = (
   feedKey: string,
-  seenAt: number
+  seenAt: number,
+  postedBefore: number
 ): SqlStatement =>
   statement(
-    "UPDATE jobs SET departed_at = ? WHERE feed = ? AND last_seen_at < ? AND departed_at IS NULL",
-    [seenAt, feedKey, seenAt]
+    "UPDATE jobs SET departed_at = ? WHERE feed = ? AND last_seen_at < ? AND posted_at < ? AND departed_at IS NULL",
+    [seenAt, feedKey, seenAt, postedBefore]
   );
 
 export const markListedStatement = (
@@ -584,6 +588,15 @@ export const markListedStatement = (
   statement(
     "UPDATE jobs SET last_seen_at = MAX(last_seen_at, ?), departed_at = NULL WHERE feed = ? AND id IN (SELECT value FROM json_each(?))",
     [seenAt, feedKey, JSON.stringify(ids)]
+  );
+
+export const heldListingsStatement = (
+  feedKey: string,
+  ids: readonly string[]
+): SqlStatement =>
+  statement(
+    "SELECT id FROM jobs WHERE feed = ? AND id IN (SELECT value FROM json_each(?))",
+    [feedKey, JSON.stringify(ids)]
   );
 
 export const feedSucceededStatement = (
@@ -721,7 +734,7 @@ export const newTodayStatement = (
   const fresh = servedJobsSince("first_seen_at", now - DAY_MILLIS, sources);
 
   return statement(
-    `SELECT COUNT(*) AS total FROM jobs WHERE ${fresh.where}`,
+    `SELECT COUNT(*) AS total FROM jobs WHERE ${fresh.where} AND ${arrivedFresh}`,
     fresh.params
   );
 };

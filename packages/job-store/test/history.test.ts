@@ -43,6 +43,7 @@ const catalogIn = (order: readonly FeedKey[]): readonly FeedRef[] =>
     order,
     Array.map((key) => ({
       company: Option.some("Acme"),
+      coverage: "Complete" as const,
       key,
       minIntervalMinutes: 1,
       source: "Greenhouse" as const,

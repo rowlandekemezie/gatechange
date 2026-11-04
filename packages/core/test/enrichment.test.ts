@@ -2573,6 +2573,7 @@ describe("sweepLimitOf", () => {
 
 const boardFeed: FeedRef = {
   company: Option.some("Acme"),
+  coverage: "Complete",
   key: "greenhouse:acme",
   minIntervalMinutes: 1,
   source: "Greenhouse",
@@ -2580,6 +2581,7 @@ const boardFeed: FeedRef = {
 
 const aggregatorFeed: FeedRef = {
   company: Option.some("Globex"),
+  coverage: "Window",
   key: "remoteok:all",
   minIntervalMinutes: 1,
   source: "RemoteOK",

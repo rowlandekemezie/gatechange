@@ -3,6 +3,7 @@ import {
   Currency,
   daysOpen,
   Enrichment,
+  EVERY_POSTING,
   IngestOutcome,
   JobStore,
   JobStoreUnavailable,
@@ -45,6 +46,7 @@ import {
   intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
+  heldListingsStatement,
   markListedStatement,
   newTodayStatement,
   pruneJobsStatement,
@@ -91,6 +93,8 @@ export const JobRow = Schema.Struct({
   title: Schema.String,
   url: Schema.String,
 });
+
+const HeldListingRow = Schema.Struct({ id: Schema.String });
 
 const CompanySummaryRow = Schema.Struct({
   opened_at: Schema.NullOr(Count),
@@ -441,6 +445,17 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
 
     findIncludingDeparted: (id) => findJob(id, true),
 
+    heldListings: (feedKey, ids) =>
+      ids.length === 0
+        ? Effect.succeed([])
+        : sql
+            .all(
+              "heldListings",
+              heldListingsStatement(feedKey, ids),
+              HeldListingRow
+            )
+            .pipe(Effect.map(Array.map((row) => row.id))),
+
     historyOf: (job) =>
       sql
         .all("historyOf", historyStatement(job), HistoryRow)
@@ -553,7 +568,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         .batch("releaseIngest", [releaseIngestStatement(startedAt)])
         .pipe(Effect.asVoid),
 
-    replaceFeed: (feedKey, jobs, seenAt) =>
+    replaceFeed: (feedKey, jobs, seenAt, departPostedBefore = EVERY_POSTING) =>
       Effect.gen(function* replaceFeed() {
         const chunks = pipe(
           Array.chunksOf(jobs, UPSERT_CHUNK),
@@ -575,7 +590,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
         );
 
         const [departed] = yield* sql.batch("replaceFeed", [
-          departUnseenStatement(feedKey, seenAt),
+          departUnseenStatement(feedKey, seenAt, departPostedBefore),
           feedSucceededStatement(feedKey, seenAt),
         ]);
 

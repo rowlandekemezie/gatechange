@@ -8,6 +8,7 @@ import { paidFeaturesAllowed } from "./entitlement.js";
 import { fingerprintOf } from "./job-store.js";
 import { EpochMillis, Region, RoleLevel, SourceName } from "./job.js";
 import type { JobValue, SourceNameValue } from "./job.js";
+import { arrivedLongOpen } from "./listing-status.js";
 import { DAY_MILLIS } from "./posting.js";
 import { SourceTerms } from "./source-terms.js";
 import type { SourceTermsValue } from "./source-terms.js";
@@ -148,6 +149,7 @@ export const digestFor = (
       .filter(
         (job) =>
           job.firstSeenAt >= recipient.since &&
+          !arrivedLongOpen(job) &&
           alertsAllowed(job.source, terms) &&
           (cadence === "Weekly" || paidFeaturesAllowed(job.source, terms)) &&
           recipient.searches.some((search) =>

@@ -122,6 +122,7 @@ describe("agent sources", () => {
 
           const catalog = seeded.map((row) => ({
             company: Option.some(row.company),
+            coverage: "Complete" as const,
             key: row.feed,
             minIntervalMinutes: 60,
             source: row.source,

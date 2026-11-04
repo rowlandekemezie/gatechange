@@ -5,6 +5,7 @@ import {
   companyJobsContract,
   DAY_MILLIS,
   JobStore,
+  MAX_AGE_DAYS,
   PostingFeeds,
   retentionAt,
   SourceName,
@@ -129,7 +130,7 @@ describe("D1 job store queries", () => {
                 company: "Remote",
                 feed: "greenhouse:other",
                 id: "expired",
-                postedAt: NOW - 31 * DAY_MILLIS,
+                postedAt: NOW - (MAX_AGE_DAYS + 1) * DAY_MILLIS,
               }),
             ],
             NOW
@@ -397,7 +398,7 @@ describe("D1 job store queries", () => {
               job({
                 feed: "a",
                 id: "a:old",
-                postedAt: NOW - 40 * DAY_MILLIS,
+                postedAt: NOW - (MAX_AGE_DAYS + 1) * DAY_MILLIS,
                 title: "Old EM",
               }),
             ],
@@ -633,7 +634,7 @@ describe("D1 job store queries", () => {
             stats.activeJobs,
             stats.feedsTotal,
             stats.feedsFailing,
-          ]).toStrictEqual([1, 2, 1]);
+          ]).toStrictEqual([2, 2, 1]);
         })
       )
   );
@@ -711,6 +712,7 @@ describe("D1 job store queries", () => {
             Effect.provideService(PostingFeeds, {
               catalog: catalog.map((key) => ({
                 company: Option.none(),
+                coverage: "Complete" as const,
                 key,
                 minIntervalMinutes: 60,
                 source: "Greenhouse" as const,

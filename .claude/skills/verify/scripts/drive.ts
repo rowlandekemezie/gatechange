@@ -61,6 +61,7 @@ const scenarios = [
   "tracker-note",
   "tracker-remove",
   "tracker-closed",
+  "tracker-gone",
   "tracker-isolation",
   "pricing",
   "free-gate",
@@ -646,6 +647,13 @@ const TrackerState = Schema.Struct({
 });
 
 type TrackerStateValue = typeof TrackerState.Type;
+
+const GonePage = Schema.Struct({
+  company: Schema.String,
+  link: Schema.String,
+  pageTitle: Schema.String,
+  title: Schema.String,
+});
 
 const trackerState = async () =>
   await evaluate(
@@ -1400,6 +1408,40 @@ const run = async () => {
 
       if (tracker.closed.length === 0) {
         throw new Error("no tracked job shows the closed-posting note");
+      }
+    },
+    "tracker-gone": async () => {
+      await signIn();
+
+      const tracker = await openTracker("opened the tracker");
+      const [saved] = tracker.closed;
+
+      if (saved === undefined) {
+        throw new Error("no tracked job shows the closed-posting note");
+      }
+
+      await inCard(saved, 'card.querySelector("a.job-title").click();');
+
+      const shown = await waitFor("the saved role's page", async () => {
+        const gone = await evaluate(
+          GonePage,
+          `({
+    company: document.querySelector(".job-company")?.textContent ?? "",
+    link: document.querySelector("a.apply")?.getAttribute("href") ?? "",
+    pageTitle: document.title,
+    title: document.querySelector("h1.detail-title")?.textContent ?? "",
+  })`
+        );
+
+        return gone.title === saved ? gone : undefined;
+      });
+
+      steps.push({
+        step: `opened the gone role: ${shown.pageTitle}; ${shown.link}`,
+      });
+
+      if (shown.link === "") {
+        throw new Error(`the gone role has no original posting link: ${saved}`);
       }
     },
     "tracker-import": async () => {

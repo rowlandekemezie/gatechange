@@ -110,6 +110,7 @@ export const ageChip = Match.type<AgeWindowValue>().pipe(
   Match.when(7, () => "week"),
   Match.when(14, () => "2 weeks"),
   Match.when(30, () => "month"),
+  Match.when(3650, () => "10 years"),
   Match.exhaustive
 );
 
@@ -195,7 +196,7 @@ export const dayHeading = (now: number, at: number) => {
     return "Last week";
   }
 
-  return "Earlier this month";
+  return days <= 30 ? "Earlier this month" : "Over a month ago";
 };
 
 export const roleCount = (count: number) =>
