@@ -36,9 +36,11 @@ jobs:
     name: Check, test, build
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
 
@@ -62,17 +64,39 @@ jobs:
           set -o pipefail
           pnpm turbo run check test build --concurrency=1 --continue --output-logs=errors-only 2>&1 | tee ci.log
 
-      - name: Report failures on the commit
+      - name: Keep the log for the failure report
         if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-log
+          path: ci.log
+          if-no-files-found: ignore
+          retention-days: 1
+
+  report-failure:
+    name: Report failures on the commit
+    needs: check
+    if: failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ci-log
+
+      - name: Comment on the commit
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          touch ci.log
           {
             echo "### CI failed on ${GITHUB_SHA::7}"
             echo
             echo '```text'
-            grep -E "error|Error|ERR|✗|×|FAIL|failed|warning" ci.log | grep -v "^\s*$" | head -c 60000
+            grep -E "error|Error|ERR|✗|×|FAIL|failed|warning" ci.log | grep -v "^\s*$" | head -c 60000 || true
             echo '```'
           } > report.md
           gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@report.md > /dev/null
@@ -109,6 +133,12 @@ jobs:
 
       - name: Build packages
         run: pnpm turbo run build
+
+      - name: Require CLOUDFLARE_API_TOKEN
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::error::Set CLOUDFLARE_API_TOKEN on the production environment. docs/operations.md lists the steps."; exit 1; fi
 
       - name: Check Cloudflare credentials
         working-directory: apps/infra
@@ -225,18 +255,24 @@ jobs:
           run(['profile', 'edit', '--profile', 'preview', '--add', 'Stripe', '--method', 'stored', '--set', 'apiKey=-'], key);
           JS
 
+      - name: Require PREVIEW_CLOUDFLARE_API_TOKEN
+        env:
+          TOKEN: ${{ secrets.PREVIEW_CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::error::Set PREVIEW_CLOUDFLARE_API_TOKEN on the preview environment. docs/operations.md lists the steps."; exit 1; fi
+
       - name: Check Cloudflare credentials
         working-directory: apps/infra
         run: pnpm exec alchemy provider check-env --provider Cloudflare --no-input
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PREVIEW_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Plan persistent preview
         working-directory: apps/infra
         env:
           CI: "false"
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PREVIEW_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           PRO_PLANS: ${{ vars.PRO_PLANS }}
@@ -254,7 +290,7 @@ jobs:
         working-directory: apps/infra
         env:
           CI: "false"
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PREVIEW_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           PRO_PLANS: ${{ vars.PRO_PLANS }}
@@ -302,7 +338,7 @@ jobs:
       contents: read
       pull-requests: write
     environment:
-      name: preview
+      name: pr-preview
       url: ${{ steps.preview.outputs.url }}
     concurrency:
       group: deploy-pr-preview-${{ github.event.pull_request.number }}
@@ -332,6 +368,12 @@ jobs:
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
 
+      - name: Require PR_PREVIEW_CLOUDFLARE_API_TOKEN
+        env:
+          TOKEN: ${{ secrets.PR_PREVIEW_CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::error::Set PR_PREVIEW_CLOUDFLARE_API_TOKEN on the pr-preview environment. docs/operations.md lists the steps."; exit 1; fi
+
       - name: Install and build
         run: |
           pnpm install --frozen-lockfile
@@ -357,7 +399,7 @@ jobs:
         working-directory: apps/infra
         env:
           CI: "false"
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PR_PREVIEW_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_SECRET: ${{ secrets.PREVIEW_BETTER_AUTH_SECRET }}
           POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}

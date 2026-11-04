@@ -10,6 +10,9 @@ export const REPOSITORY = {
   repository: "jobs",
 } as const;
 
+const accountResource = (accountId: string) =>
+  ({ [`com.cloudflare.api.account.${accountId}`]: "*" }) as const;
+
 export default Alchemy.Stack(
   "JobBoardCi",
   {
@@ -36,7 +39,7 @@ export default Alchemy.Stack(
               "Secrets Store Write",
               "Workers Tail Read",
             ],
-            resources: { [`com.cloudflare.api.account.${accountId}`]: "*" },
+            resources: accountResource(accountId),
           },
           {
             effect: "allow",
@@ -51,10 +54,70 @@ export default Alchemy.Stack(
       }
     );
 
+    const pullRequestToken = yield* Cloudflare.ApiToken.AccountApiToken(
+      "JobBoardPrPreviewToken",
+      {
+        accountId,
+        policies: [
+          {
+            effect: "allow",
+            permissionGroups: [
+              "Workers Scripts Write",
+              "Secrets Store Write",
+              "Account Settings Read",
+            ],
+            resources: accountResource(accountId),
+          },
+        ],
+      }
+    );
+
+    const previewToken = yield* Cloudflare.ApiToken.AccountApiToken(
+      "JobBoardPreviewToken",
+      {
+        accountId,
+        policies: [
+          {
+            effect: "allow",
+            permissionGroups: [
+              "Workers Scripts Write",
+              "Workers KV Storage Write",
+              "Workers R2 Storage Write",
+              "D1 Write",
+              "Queues Write",
+              "Account Settings Write",
+              "Secrets Store Write",
+            ],
+            resources: accountResource(accountId),
+          },
+        ],
+      }
+    );
+
+    const pullRequestEnvironment = yield* GitHub.Environment(
+      "PrPreviewEnvironment",
+      { ...REPOSITORY, name: "pr-preview" }
+    );
+
     yield* GitHub.Secret("CloudflareApiToken", {
       ...REPOSITORY,
+      environment: "production",
       name: "CLOUDFLARE_API_TOKEN",
       value: deployToken.value,
+    });
+
+    yield* GitHub.Secret("PreviewCloudflareApiToken", {
+      ...REPOSITORY,
+      environment: "preview",
+      name: "PREVIEW_CLOUDFLARE_API_TOKEN",
+      value: previewToken.value,
+    });
+
+    yield* GitHub.Secret("PrPreviewCloudflareApiToken", {
+      ...REPOSITORY,
+      environment: pullRequestEnvironment,
+      name: "PR_PREVIEW_CLOUDFLARE_API_TOKEN",
+      value: pullRequestToken.value,
     });
 
     yield* GitHub.Secret("CloudflareAccountId", {
