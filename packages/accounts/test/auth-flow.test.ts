@@ -23,7 +23,11 @@ import { DateTime, Effect, Layer, Option, Schema } from "effect";
 import { HttpServerResponse } from "effect/http";
 import { vi } from "vitest";
 
-import { CLIENT_DAILY_SEND_LIMIT } from "../src/email-send-limit.js";
+import {
+  CLIENT_DAILY_SEND_LIMIT,
+  INBOX_DAILY_SEND_LIMIT,
+  newAddressDailySendLimit,
+} from "../src/email-send-limit.js";
 import {
   authOptions,
   EMAIL_SEND_LIMIT,
@@ -504,6 +508,8 @@ describe("magic link storage and lifetime", () => {
         "magic-link-client:2026-10-17:203.0.113.7",
         "magic-link-email:ada@example.com",
         "magic-link-global:2026-10-17",
+        "magic-link-inbox:2026-10-17:ada@example.com",
+        "magic-link-new:2026-10-17",
       ]);
     })
   );
@@ -562,7 +568,7 @@ describe("per-email send limit", () => {
           LOCAL_HOSTS,
           migratedDatabase(),
           () => true,
-          3
+          7
         );
 
         const responses = yield* Effect.forEach(
@@ -655,7 +661,7 @@ describe("per-email send limit", () => {
           LOCAL_HOSTS,
           migratedDatabase(),
           () => true,
-          3
+          7
         );
 
         const statuses: number[] = [];
@@ -1063,6 +1069,12 @@ describe("per-email send limit", () => {
           },
           { count: 1, key: "magic-link-email:victim@example.com", racer: 0 },
           { count: 1, key: "magic-link-global:2026-10-17", racer: 0 },
+          {
+            count: 1,
+            key: "magic-link-inbox:2026-10-17:victim@example.com",
+            racer: 0,
+          },
+          { count: 1, key: "magic-link-new:2026-10-17", racer: 0 },
         ]);
       })
   );
@@ -1328,13 +1340,219 @@ describe("per-client daily send limit", () => {
         expect(
           database
             .prepare(
-              "SELECT key FROM \"rateLimit\" WHERE key LIKE 'magic-link-client:%' OR key LIKE 'magic-link-global:%' ORDER BY key"
+              "SELECT key FROM \"rateLimit\" WHERE key GLOB 'magic-link-*:20*' ORDER BY key"
             )
             .all()
             .map(({ key }) => String(key))
         ).toStrictEqual([
           "magic-link-client:2026-10-19:203.0.113.7",
           "magic-link-global:2026-10-19",
+          "magic-link-inbox:2026-10-19:bob@example.com",
+          "magic-link-new:2026-10-19",
+        ]);
+      })
+  );
+});
+
+const signInOnce = (auth: Auth, sent: MagicLinkRequest[], email: string) =>
+  Effect.gen(function* signIn() {
+    yield* requestLink(auth, email, "192.0.2.200");
+
+    return yield* call(auth, pathOf(sent.at(-1)?.url ?? ""), CONFIRM_FORM);
+  });
+
+const newAddressRequests = (
+  auth: Auth,
+  length: number,
+  startAt = 0
+): Effect.Effect<readonly number[]> =>
+  Effect.forEach(
+    Array.from({ length }, (_, index) => index + startAt),
+    (index) =>
+      requestLink(
+        auth,
+        `stranger${index}@example.com`,
+        `198.51.${Math.floor(index / 250)}.${(index % 250) + 1}`
+      ).pipe(Effect.map(({ status }) => status))
+  );
+
+describe("site-wide budget", () => {
+  const LIMIT = 10;
+  const NEW_SHARE = newAddressDailySendLimit(LIMIT);
+
+  it.effect("sets aside most of the budget for existing members", () =>
+    Effect.sync(() => {
+      expect(newAddressDailySendLimit(900)).toBe(360);
+      expect(NEW_SHARE).toBe(4);
+    })
+  );
+
+  it.effect(
+    "lets a member sign in after new addresses have spent their share",
+    () =>
+      Effect.gen(function* memberReserve() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          LIMIT
+        );
+
+        yield* signInOnce(auth, sent, "member@example.com");
+
+        const strangers = yield* newAddressRequests(auth, NEW_SHARE);
+
+        travelTo(T0 + 16 * MINUTE);
+
+        const member = yield* requestLink(
+          auth,
+          "member@example.com",
+          "203.0.113.50"
+        );
+
+        expect(strangers).toStrictEqual([
+          ...Array.from({ length: NEW_SHARE - 1 }, () => 200),
+          429,
+        ]);
+        expect(member.status).toBe(200);
+      })
+  );
+
+  it.effect("still stops every send at the overall cap", () =>
+    Effect.gen(function* overallCap() {
+      travelTo(T0);
+
+      const { auth, sent } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        2
+      );
+
+      yield* signInOnce(auth, sent, "member@example.com");
+
+      travelTo(T0 + 16 * MINUTE);
+
+      yield* requestLink(auth, "member@example.com", "203.0.113.50");
+
+      travelTo(T0 + 32 * MINUTE);
+
+      const over = yield* requestLink(
+        auth,
+        "member@example.com",
+        "203.0.113.51"
+      );
+
+      expect(over.status).toBe(429);
+      expect(sent).toHaveLength(2);
+    })
+  );
+
+  it.effect("treats an account with an unverified address as new", () =>
+    Effect.gen(function* unverified() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        1
+      );
+
+      database
+        .prepare(
+          `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+           VALUES ('u1', '', 'unproven@example.com', 0, '2026-10-17', '2026-10-17')`
+        )
+        .run();
+
+      yield* requestLink(auth, "stranger@example.com", "203.0.113.50");
+
+      const refused = yield* requestLink(
+        auth,
+        "unproven@example.com",
+        "203.0.113.51"
+      );
+
+      expect(refused.status).toBe(429);
+    })
+  );
+
+  it.effect("gives back every daily count when the new share refuses", () =>
+    Effect.gen(function* refundOnRefusal() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        1
+      );
+
+      yield* requestLink(auth, "first@example.com", "203.0.113.50");
+
+      const refused = yield* requestLink(
+        auth,
+        "second@example.com",
+        "203.0.113.51"
+      );
+
+      const counts = Object.fromEntries(
+        database
+          .prepare(
+            "SELECT key, count FROM \"rateLimit\" WHERE key LIKE 'magic-link-%:2026-10-17%'"
+          )
+          .all()
+          .map(({ count, key }) => [String(key), Number(count)])
+      );
+
+      expect(refused.status).toBe(429);
+      expect(counts).toMatchObject({
+        "magic-link-client:2026-10-17:203.0.113.50": 1,
+        "magic-link-client:2026-10-17:203.0.113.51": 0,
+        "magic-link-global:2026-10-17": 1,
+        "magic-link-inbox:2026-10-17:second@example.com": 0,
+        "magic-link-new:2026-10-17": 1,
+      });
+    })
+  );
+});
+
+describe("per-inbox daily send limit", () => {
+  it.effect.each(["a member", "a new address"])(
+    `sends %s at most ${INBOX_DAILY_SEND_LIMIT} links a UTC day, so the answer never reveals which it is`,
+    (kind) =>
+      Effect.gen(function* inboxDay() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth();
+        const email = "someone@example.com";
+
+        if (kind === "a member") {
+          yield* signInOnce(auth, sent, "someone@example.com");
+        }
+
+        const asked = kind === "a member" ? 1 : 0;
+
+        const statuses = yield* Effect.forEach(
+          Array.from(
+            { length: INBOX_DAILY_SEND_LIMIT + 1 - asked },
+            (_, index) => index
+          ),
+          (index) => {
+            travelTo(T0 + (index + 1) * 16 * MINUTE);
+
+            return statusOf(
+              requestLink(auth, email, `203.0.113.${index + 60}`)
+            );
+          }
+        );
+
+        expect(statuses).toStrictEqual([
+          ...Array.from({ length: INBOX_DAILY_SEND_LIMIT - asked }, () => 200),
+          429,
         ]);
       })
   );

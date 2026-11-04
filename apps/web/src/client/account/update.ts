@@ -30,7 +30,7 @@ const linkProblems: Record<Exclude<LinkOutcomeValue, "Sent">, string> = {
   Failed: "We could not send the link. Try again in a minute.",
   Invalid: "That email address does not look right. Check it and try again.",
   Limited:
-    "Too many sign-in links went to this address. Use the newest one, or wait 15 minutes and ask again.",
+    "We cannot send another sign-in link right now. Use the newest one, or try again later.",
 };
 
 const typedEmail = (model: ModelValue) =>

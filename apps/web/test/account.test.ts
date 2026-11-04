@@ -118,7 +118,7 @@ describe("account", () => {
       SignInState.Editing({
         email: "a@b.c",
         problem: Option.some(
-          "Too many sign-in links went to this address. Use the newest one, or wait 15 minutes and ask again."
+          "We cannot send another sign-in link right now. Use the newest one, or try again later."
         ),
       })
     );
