@@ -601,6 +601,20 @@ describe("sitemap", () => {
     expect(site.calls.backend).toBe(1);
   });
 
+  it("fills the cache from a request that carries a cookie", async () => {
+    const site = edge(indexHtml);
+    const cookie = { cookie: "a=1" };
+
+    const first = await site.get(`${ORIGIN}/sitemap.xml`, cookie);
+    const second = await site.get(`${ORIGIN}/sitemap.xml`, cookie);
+
+    expect(first.status).toBe(200);
+    expect(second.html).toBe(first.html);
+    expect(site.calls.backend).toBe(1);
+    expect(site.backendCredentials).toStrictEqual([false]);
+    expect(storedPages()).toHaveLength(1);
+  });
+
   it("caches nothing when the backend is down", async () => {
     const page = await edge(indexHtml, { backendStatus: 503 }).get(
       `${ORIGIN}/sitemap.xml`
