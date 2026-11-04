@@ -39,7 +39,7 @@ export const coverageRules: Readonly<Record<FeedCoverageValue, CoverageRule>> =
       admitsLongOpen: false,
       departPostedBefore: (now) => now - WINDOW_HOLD_MILLIS,
       validThrough: ({ lastSeenAt, postedAt }) =>
-        Math.min(lastSeenAt + ADMISSION_MILLIS, postedAt + WINDOW_HOLD_MILLIS),
+        Math.max(postedAt + WINDOW_HOLD_MILLIS, lastSeenAt),
     },
   };
 
