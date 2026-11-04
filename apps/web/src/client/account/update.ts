@@ -7,13 +7,14 @@ import type { AuthClient } from "./auth-client.js";
 import {
   FetchSession,
   FetchSignInOptions,
+  PreviewLink,
   RequestLink,
   SignOut,
   StartSocialSignIn,
 } from "./command.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { editing, SessionState, SignInState } from "./model.js";
+import { editing, LinkPreview, SessionState, SignInState } from "./model.js";
 import type { LinkOutcomeValue, ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<
@@ -43,6 +44,7 @@ const typedEmail = (model: ModelValue) =>
 export const init = (): UpdateReturn => ({
   commands: [FetchSession()],
   model: {
+    link: LinkPreview.Checking(),
     session: SessionState.Checking(),
     signIn: editing(""),
     socialProviders: [],
@@ -53,6 +55,13 @@ export const entered = (model: ModelValue): UpdateReturn =>
   Schema.is(SessionState.SignedIn)(model.session)
     ? { model }
     : { commands: [FetchSignInOptions()], model };
+
+export const enteredConfirm =
+  (token: string) =>
+  (model: ModelValue): UpdateReturn => ({
+    commands: [PreviewLink({ token })],
+    model: modifyFields(model, { link: () => LinkPreview.Checking() }),
+  });
 
 const submitted = (model: ModelValue): UpdateReturn => {
   if (!Schema.is(SignInState.Editing)(model.signIn)) {
@@ -102,6 +111,9 @@ export const update = (
     }),
     CompletedFetchSignInOptions: ({ socialProviders }) => ({
       model: modifyFields(model, { socialProviders: () => socialProviders }),
+    }),
+    CompletedPreviewLink: ({ preview }) => ({
+      model: modifyFields(model, { link: () => preview }),
     }),
     CompletedRequestLink: ({ email, outcome }) => ({
       model: modifyFields(model, {

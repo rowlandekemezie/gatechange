@@ -1616,6 +1616,143 @@ describe("magic link verify", () => {
   );
 });
 
+const previewPath = (token: string) =>
+  `/api/auth/magic-link/preview?token=${token}`;
+
+const textOf = (response: Response) =>
+  Effect.promise(
+    // @effect-diagnostics-next-line asyncFunction:off -- Response bodies are Promise-based.
+    async () => await response.text()
+  );
+
+describe("magic link preview", () => {
+  it.effect("names the account a live link belongs to and spends nothing", () =>
+    Effect.gen(function* preview() {
+      const { auth, database, sent } = makeAuth();
+
+      yield* requestLink(auth, "Ada@example.com");
+
+      const url = sent[0]?.url ?? "";
+
+      const named = yield* call(auth, previewPath(tokenOf(url)), CONFIRM_FORM);
+
+      expect(named.status).toBe(200);
+      expect(named.headers.get("cache-control")).toContain("no-store");
+      expect(cookieOf(named)).not.toContain("session_token=");
+      expect(yield* textOf(named)).toBe('{"email":"Ada@example.com"}');
+      expect(
+        database.prepare('SELECT identifier FROM "verification"').all()
+      ).toHaveLength(1);
+
+      const verified = yield* call(auth, pathOf(url), CONFIRM_FORM);
+
+      expect(verified.status).toBe(302);
+      expect(cookieOf(verified)).toContain("session_token=");
+    })
+  );
+
+  it.effect("tells a link holder nothing about an unknown token", () =>
+    Effect.gen(function* unknown() {
+      const { auth } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const refused = yield* call(
+        auth,
+        previewPath("not-a-token"),
+        CONFIRM_FORM
+      );
+
+      expect(refused.status).toBe(404);
+      expect(yield* textOf(refused)).not.toContain("ada@");
+    })
+  );
+
+  it.effect("names nobody for an expired link", () =>
+    Effect.gen(function* expired() {
+      travelTo(T0);
+
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      travelTo(T0 + (MAGIC_LINK_TTL_MINUTES + 1) * MINUTE);
+
+      const refused = yield* call(
+        auth,
+        previewPath(tokenOf(sent[0]?.url ?? "")),
+        CONFIRM_FORM
+      );
+
+      expect(refused.status).toBe(404);
+      expect(yield* textOf(refused)).not.toContain("ada@");
+    })
+  );
+
+  it.effect("names nobody for a link already used", () =>
+    Effect.gen(function* used() {
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const url = sent[0]?.url ?? "";
+
+      yield* call(auth, pathOf(url), CONFIRM_FORM);
+
+      const refused = yield* call(
+        auth,
+        previewPath(tokenOf(url)),
+        CONFIRM_FORM
+      );
+
+      expect(refused.status).toBe(404);
+      expect(yield* textOf(refused)).not.toContain("ada@");
+    })
+  );
+
+  it.effect.each([
+    ["a cross-site", "cross-site"],
+    ["a same-site", "same-site"],
+    ["an unlabelled", undefined],
+  ])(
+    "refuses %s preview, so another page cannot read the name",
+    ([, fetchSite]) =>
+      Effect.gen(function* crossSite() {
+        const { auth, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const refused = yield* call(
+          auth,
+          previewPath(tokenOf(sent[0]?.url ?? "")),
+          { fetchSite }
+        );
+
+        expect(refused.status).toBe(403);
+        expect(yield* textOf(refused)).not.toContain("ada@");
+      })
+  );
+
+  it.effect("limits a client to 10 previews a minute", () =>
+    Effect.gen(function* limited() {
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const path = previewPath(tokenOf(sent[0]?.url ?? ""));
+
+      const statuses = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+        statusOf(call(auth, path, CONFIRM_FORM))
+      );
+
+      expect(statuses.slice(0, 10).every((status) => status === 200)).toBe(
+        true
+      );
+      expect(statuses[10]).toBe(429);
+    })
+  );
+});
+
 describe("stage hosts", () => {
   const PREVIEW = "https://jobs-verify-x.acct.workers.dev";
 
