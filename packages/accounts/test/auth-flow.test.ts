@@ -1515,6 +1515,48 @@ describe("magic link preview", () => {
       })
   );
 
+  it.effect(
+    "lets a cross-site page spend none of a visitor's preview budget",
+    () =>
+      Effect.gen(function* crossSiteBudget() {
+        const { auth, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const path = previewPath(tokenOf(sent[0]?.url ?? ""));
+
+        const forged = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+          statusOf(call(auth, path, { fetchSite: "cross-site" }))
+        );
+
+        const own = yield* statusOf(call(auth, path, CONFIRM_FORM));
+
+        expect(forged.every((status) => status === 403)).toBe(true);
+        expect(own).toBe(200);
+      })
+  );
+
+  it.effect(
+    "lets a cross-site page spend none of a visitor's verify budget",
+    () =>
+      Effect.gen(function* crossSiteVerifyBudget() {
+        const { auth, database, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const forged = yield* statusOf(
+          call(auth, pathOf(sent[0]?.url ?? ""), { fetchSite: "cross-site" })
+        );
+
+        expect(forged).toBe(403);
+        expect(
+          database
+            .prepare(`SELECT key FROM "rateLimit" WHERE key LIKE '%verify%'`)
+            .all()
+        ).toStrictEqual([]);
+      })
+  );
+
   it.effect("limits a client to 10 previews a minute", () =>
     Effect.gen(function* limited() {
       const { auth, sent } = makeAuth();
