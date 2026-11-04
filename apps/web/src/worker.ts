@@ -201,6 +201,21 @@ const isPage = (pathname: string) =>
     pathname
   ) || PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
+const pageUrlOf = (url: URL, route: RouteValue) => {
+  if (Schema.is(Route.Board)(route)) {
+    return url;
+  }
+
+  const pageUrl = new URL(url.origin);
+
+  pageUrl.pathname = Option.getOrElse(
+    canonicalPathOf(route),
+    () => url.pathname
+  );
+
+  return pageUrl;
+};
+
 const servePage = (
   bindings: EdgeBindings,
   request: Request,
@@ -210,12 +225,7 @@ const servePage = (
   Effect.gen(function* serveRenderedPage() {
     const route = routeOfUrl(yield* Effect.fromOption(fromString(url.href)));
 
-    const pageUrl = Schema.is(Route.Board)(route)
-      ? url
-      : new URL(
-          Option.getOrElse(canonicalPathOf(route), () => url.pathname),
-          url.origin
-        );
+    const pageUrl = pageUrlOf(url, route);
 
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
 
