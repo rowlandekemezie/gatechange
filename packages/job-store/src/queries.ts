@@ -711,22 +711,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ]
   );
 
-export const activeCountStatement = (
-  now: number,
-  sources: readonly SourceNameValue[]
-) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
-
-  return statement(
-    `SELECT COUNT(*) AS total FROM jobs WHERE ${active.where}`,
-    active.params
-  );
-};
-
 export const newTodayStatement = (
   now: number,
   sources: readonly SourceNameValue[]
@@ -739,79 +723,53 @@ export const newTodayStatement = (
   );
 };
 
-export const regionCountsStatement = (
+const activeSince = (now: number) => now - MAX_AGE_DAYS * DAY_MILLIS;
+
+export const boardCountsStatement = (
   now: number,
   sources: readonly SourceNameValue[]
 ) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
+  const active = servedJobsSince("posted_at", activeSince(now), sources);
 
   return statement(
-    `SELECT region, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY region ORDER BY count DESC`,
-    active.params
-  );
-};
-
-export const roleCountsStatement = (
-  now: number,
-  sources: readonly SourceNameValue[]
-) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
-
-  return statement(
-    `SELECT role, COUNT(*) AS count FROM jobs WHERE ${active.where} GROUP BY role ORDER BY count DESC`,
-    active.params
-  );
-};
-
-const dedupedActive = (where: string) => `WITH ranked AS (
+    `WITH ranked AS (
   SELECT role, region, company, company_slug,
     ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
   FROM jobs
-  WHERE ${where}
-), deduped AS (
-  SELECT role, region, company, company_slug FROM ranked WHERE duplicate_rank = 1
-)`;
-
-export const placementCountsStatement = (
-  now: number,
-  sources: readonly SourceNameValue[]
-) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
-
-  return statement(
-    `${dedupedActive(active.where)}
-SELECT role, region, COUNT(*) AS count FROM deduped GROUP BY role, region ORDER BY count DESC`,
+  WHERE ${active.where}
+)
+SELECT role, region, company_slug AS slug,
+  MIN(CASE WHEN duplicate_rank = 1 THEN company END) AS company,
+  COUNT(*) AS listed,
+  SUM(duplicate_rank = 1) AS deduped
+FROM ranked
+GROUP BY role, region, company_slug`,
     active.params
   );
 };
 
 export const TOP_COMPANIES = 12;
 
-export const companyCountsStatement = (
+export const SITEMAP_JOBS = 3000;
+
+export const sitemapJobsStatement = (
   now: number,
   sources: readonly SourceNameValue[]
 ) => {
-  const active = servedJobsSince(
-    "posted_at",
-    now - MAX_AGE_DAYS * DAY_MILLIS,
-    sources
-  );
+  const active = servedJobsSince("posted_at", activeSince(now), sources);
 
   return statement(
-    `${dedupedActive(active.where)}
-SELECT company_slug AS slug, MIN(company) AS company, COUNT(*) AS count FROM deduped WHERE company_slug <> '' GROUP BY company_slug ORDER BY count DESC, slug LIMIT ${TOP_COMPANIES}`,
+    `WITH ranked AS (
+  SELECT id, company, role, region, posted_at, first_seen_at,
+    ROW_NUMBER() OVER (PARTITION BY fingerprint ORDER BY ${sourcePriority}, posted_at ASC, id ASC) AS duplicate_rank
+  FROM jobs
+  WHERE ${active.where}
+)
+SELECT id, company, role, region, first_seen_at
+FROM ranked
+WHERE duplicate_rank = 1
+ORDER BY posted_at DESC, id ASC
+LIMIT ${SITEMAP_JOBS}`,
     active.params
   );
 };

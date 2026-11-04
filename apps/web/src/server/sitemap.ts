@@ -1,5 +1,5 @@
 import { companySlugOf } from "@rat-stack/core/contracts";
-import type { JobValue } from "@rat-stack/core/contracts";
+import type { SitemapJobValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Option, pipe } from "effect";
 
 import { regionsOfGroup } from "../client/board/filters.js";
@@ -27,7 +27,7 @@ const urlEntry = (
       `<lastmod>${DateTime.formatIso(DateTime.makeUnsafe(at))}</lastmod>`,
   })}</url>`;
 
-const newestListingOf = (jobs: readonly JobValue[]) =>
+const newestListingOf = (jobs: readonly SitemapJobValue[]) =>
   Option.liftPredicate(
     Math.max(...jobs.map((job) => job.firstSeenAt)),
     Number.isFinite
@@ -38,7 +38,7 @@ export const emptySitemapXml = [
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',
 ].join("\n");
 
-const companyEntries = (origin: string, jobs: readonly JobValue[]) =>
+const companyEntries = (origin: string, jobs: readonly SitemapJobValue[]) =>
   pipe(
     jobs,
     Array.groupBy((job) =>
@@ -51,7 +51,7 @@ const companyEntries = (origin: string, jobs: readonly JobValue[]) =>
     )
   );
 
-const roleEntries = (origin: string, jobs: readonly JobValue[]) =>
+const roleEntries = (origin: string, jobs: readonly SitemapJobValue[]) =>
   roleHubsWhere((role, region) =>
     jobs.some((job) => job.role === role && job.region === region)
   ).map(({ place, role }) =>
@@ -68,7 +68,7 @@ const roleEntries = (origin: string, jobs: readonly JobValue[]) =>
     )
   );
 
-export const sitemapXml = (origin: string, jobs: readonly JobValue[]) =>
+export const sitemapXml = (origin: string, jobs: readonly SitemapJobValue[]) =>
   [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',

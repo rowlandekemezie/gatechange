@@ -1,4 +1,6 @@
-import { Effect, Option, Schema } from "effect";
+import { BoardStats } from "@rat-stack/core/contracts";
+import type { BoardStatsValue } from "@rat-stack/core/contracts";
+import { Clock, Effect, Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
 
 import { hasNoSelection, queryOf } from "./client/board/filters.js";
@@ -19,7 +21,7 @@ import {
   withAnalyticsKey,
 } from "./server/analytics.js";
 import type { AnalyticsBindings } from "./server/analytics.js";
-import { clientOf, listedJobs, shellOf } from "./server/backend.js";
+import { clientOf, shellOf, sitemapJobs } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
@@ -94,7 +96,42 @@ const pageKeyOf = (pageUrl: URL, shell: string) =>
     return new Request(keyUrl);
   });
 
-const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
+const STATS_PATH = "/board-stats";
+
+const bodyOf = (response: Response) =>
+  // @effect-diagnostics-next-line asyncFunction:off -- Response.text is Promise-based.
+  Effect.promise(async () => await response.text());
+
+const cachedStats = <E>(
+  query: Effect.Effect<BoardStatsValue, E>,
+  origin: string,
+  shell: string,
+  lifetime: Lifetime
+) =>
+  Effect.gen(function* readCachedStats() {
+    const key = yield* pageKeyOf(new URL(STATS_PATH, origin), shell);
+
+    const response = yield* throughEdgeCache(
+      key,
+      key,
+      lifetime,
+      query.pipe(Effect.map((stats) => Response.json(stats)))
+    );
+
+    const stats = yield* Schema.decodeEffect(Schema.fromJsonString(BoardStats))(
+      yield* bodyOf(response)
+    );
+
+    return { ...stats, generatedAt: yield* Clock.currentTimeMillis };
+  });
+
+const preloadOf = (
+  backend: ServiceBinding,
+  route: RouteValue,
+  origin: string,
+  shell: string,
+  lifetime: Lifetime
+) =>
   Effect.scoped(
     Effect.gen(function* fetchPreload() {
       if (
@@ -113,15 +150,18 @@ const preloadOf = (backend: ServiceBinding, route: RouteValue) =>
             page: hasNoSelection(route.filters)
               ? Effect.succeed({ generatedAt: 0, jobs: [], total: 0 })
               : client.listJobs(queryOf(route.filters, 0)),
-            stats: client
-              .boardStats({})
-              .pipe(
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("board stats unavailable", cause).pipe(
-                    Effect.as(null)
-                  )
+            stats: cachedStats(
+              client.boardStats({}),
+              origin,
+              shell,
+              lifetime
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("board stats unavailable", cause).pipe(
+                  Effect.as(null)
                 )
-              ),
+              )
+            ),
           },
           { concurrency: 2 }
         );
@@ -180,7 +220,14 @@ const servePage = (
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
 
     const fresh = Effect.gen(function* renderFreshPage() {
-      const preload = yield* preloadOf(bindings.BACKEND, route);
+      const preload = yield* preloadOf(
+        bindings.BACKEND,
+        route,
+        url.origin,
+        shell,
+        lifetime
+      );
+
       const page = yield* renderPage(shell, pageUrl, route, preload);
 
       return respond(page.html, "text/html", page.status);
@@ -216,7 +263,7 @@ const serveSitemap = (
     request,
     new Request(new URL("/sitemap.xml", url.origin)),
     lifetime,
-    listedJobs(bindings.BACKEND).pipe(
+    sitemapJobs(bindings.BACKEND).pipe(
       Effect.match({
         onFailure: () => respond("", "application/xml", 503),
         onSuccess: (jobs) =>
