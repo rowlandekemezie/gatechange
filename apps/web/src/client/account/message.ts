@@ -5,6 +5,7 @@ import { defineMessageUnion } from "foldkit/message";
 import { LinkOutcome, LinkPreview } from "./model.js";
 
 export const Message = defineMessageUnion({
+  ClickedRetryLinkCheck: { token: Schema.String },
   ClickedSignOut: {},
   ClickedSocialSignIn: { provider: SocialProvider },
   ClickedUseAnotherEmail: {},

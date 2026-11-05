@@ -194,7 +194,14 @@ export const view = (model: ModelValue, h: H): Document =>
           Board: () => boardPage(model, h),
           Company: () => listingPage(model, h),
           ConfirmSignIn: ({ token }) =>
-            confirmSignInPage(token, model.account, h),
+            h.submodel({
+              model: model.account,
+              slotId: "confirm-sign-in",
+              toParentMessage: (message) =>
+                Message.GotAccountMessage({ message }),
+              view: confirmSignInPage,
+              viewInputs: { token },
+            }),
           Information: ({ page }) => informationPage(page, h),
           Job: () => jobPage(model, h),
           NotFound: () => notFoundPage(model, h),
