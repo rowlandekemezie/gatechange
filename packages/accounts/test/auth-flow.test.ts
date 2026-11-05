@@ -23,7 +23,12 @@ import { DateTime, Effect, Layer, Option, Schema } from "effect";
 import { HttpServerResponse } from "effect/http";
 import { vi } from "vitest";
 
-import { CLIENT_DAILY_SEND_LIMIT } from "../src/email-send-limit.js";
+import {
+  CLIENT_DAILY_REFUND_LIMIT,
+  CLIENT_DAILY_SEND_LIMIT,
+  INBOX_DAILY_SEND_LIMIT,
+  newAddressDailySendLimit,
+} from "../src/email-send-limit.js";
 import {
   authOptions,
   EMAIL_SEND_LIMIT,
@@ -224,6 +229,12 @@ const requestLink = (
     body: JSON.stringify({ callbackURL: "/account", email }),
     ip,
   });
+
+const textOf = (response: Response) =>
+  Effect.promise(
+    // @effect-diagnostics-next-line asyncFunction:off -- Response bodies are Promise-based.
+    async () => await response.text()
+  );
 
 const statusOf = (response: Effect.Effect<Response>) =>
   response.pipe(
@@ -504,6 +515,8 @@ describe("magic link storage and lifetime", () => {
         "magic-link-client:2026-10-17:203.0.113.7",
         "magic-link-email:ada@example.com",
         "magic-link-global:2026-10-17",
+        "magic-link-inbox:2026-10-17:ada@example.com",
+        "magic-link-new:2026-10-17",
       ]);
     })
   );
@@ -562,7 +575,7 @@ describe("per-email send limit", () => {
           LOCAL_HOSTS,
           migratedDatabase(),
           () => true,
-          3
+          7
         );
 
         const responses = yield* Effect.forEach(
@@ -655,7 +668,7 @@ describe("per-email send limit", () => {
           LOCAL_HOSTS,
           migratedDatabase(),
           () => true,
-          3
+          7
         );
 
         const statuses: number[] = [];
@@ -1063,6 +1076,12 @@ describe("per-email send limit", () => {
           },
           { count: 1, key: "magic-link-email:victim@example.com", racer: 0 },
           { count: 1, key: "magic-link-global:2026-10-17", racer: 0 },
+          {
+            count: 1,
+            key: "magic-link-inbox:2026-10-17:victim@example.com",
+            racer: 0,
+          },
+          { count: 1, key: "magic-link-new:2026-10-17", racer: 0 },
         ]);
       })
   );
@@ -1328,14 +1347,626 @@ describe("per-client daily send limit", () => {
         expect(
           database
             .prepare(
-              "SELECT key FROM \"rateLimit\" WHERE key LIKE 'magic-link-client:%' OR key LIKE 'magic-link-global:%' ORDER BY key"
+              "SELECT key FROM \"rateLimit\" WHERE key GLOB 'magic-link-*:20*' ORDER BY key"
             )
             .all()
             .map(({ key }) => String(key))
         ).toStrictEqual([
           "magic-link-client:2026-10-19:203.0.113.7",
           "magic-link-global:2026-10-19",
+          "magic-link-inbox:2026-10-19:bob@example.com",
+          "magic-link-new:2026-10-19",
         ]);
+      })
+  );
+});
+
+const signInOnce = (auth: Auth, sent: MagicLinkRequest[], email: string) =>
+  Effect.gen(function* signIn() {
+    yield* requestLink(auth, email, "192.0.2.200");
+
+    return yield* call(auth, pathOf(sent.at(-1)?.url ?? ""), CONFIRM_FORM);
+  });
+
+const newAddressRequests = (
+  auth: Auth,
+  length: number,
+  startAt = 0
+): Effect.Effect<readonly number[]> =>
+  Effect.forEach(
+    Array.from({ length }, (_, index) => index + startAt),
+    (index) =>
+      requestLink(
+        auth,
+        `stranger${index}@example.com`,
+        `198.51.${Math.floor(index / 250)}.${(index % 250) + 1}`
+      ).pipe(Effect.map(({ status }) => status))
+  );
+
+describe("site-wide budget", () => {
+  const LIMIT = 10;
+  const NEW_SHARE = newAddressDailySendLimit(LIMIT);
+
+  it.effect("sets aside most of the budget for existing members", () =>
+    Effect.sync(() => {
+      expect(newAddressDailySendLimit(900)).toBe(360);
+      expect(NEW_SHARE).toBe(4);
+    })
+  );
+
+  it.effect(
+    "lets a member sign in after new addresses have spent their share",
+    () =>
+      Effect.gen(function* memberReserve() {
+        travelTo(T0);
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          LIMIT
+        );
+
+        yield* signInOnce(auth, sent, "member@example.com");
+
+        const strangers = yield* newAddressRequests(auth, NEW_SHARE);
+
+        travelTo(T0 + 16 * MINUTE);
+
+        const member = yield* requestLink(
+          auth,
+          "member@example.com",
+          "203.0.113.50"
+        );
+
+        expect(strangers).toStrictEqual([
+          ...Array.from({ length: NEW_SHARE - 1 }, () => 200),
+          429,
+        ]);
+        expect(member.status).toBe(200);
+      })
+  );
+
+  it.effect("still stops every send at the overall cap", () =>
+    Effect.gen(function* overallCap() {
+      travelTo(T0);
+
+      const { auth, sent } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        2
+      );
+
+      yield* signInOnce(auth, sent, "member@example.com");
+
+      travelTo(T0 + 16 * MINUTE);
+
+      yield* requestLink(auth, "member@example.com", "203.0.113.50");
+
+      travelTo(T0 + 32 * MINUTE);
+
+      const over = yield* requestLink(
+        auth,
+        "member@example.com",
+        "203.0.113.51"
+      );
+
+      expect(over.status).toBe(429);
+      expect(sent).toHaveLength(2);
+    })
+  );
+
+  it.effect("treats an account with an unverified address as new", () =>
+    Effect.gen(function* unverified() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        1
+      );
+
+      database
+        .prepare(
+          `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+           VALUES ('u1', '', 'unproven@example.com', 0, '2026-10-17', '2026-10-17')`
+        )
+        .run();
+
+      yield* requestLink(auth, "stranger@example.com", "203.0.113.50");
+
+      const refused = yield* requestLink(
+        auth,
+        "unproven@example.com",
+        "203.0.113.51"
+      );
+
+      expect(refused.status).toBe(429);
+    })
+  );
+
+  it.effect("gives back every daily count when the new share refuses", () =>
+    Effect.gen(function* refundOnRefusal() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        1
+      );
+
+      yield* requestLink(auth, "first@example.com", "203.0.113.50");
+
+      const refused = yield* requestLink(
+        auth,
+        "second@example.com",
+        "203.0.113.51"
+      );
+
+      const counts = Object.fromEntries(
+        database
+          .prepare(
+            "SELECT key, count FROM \"rateLimit\" WHERE key LIKE 'magic-link-%:2026-10-17%'"
+          )
+          .all()
+          .map(({ count, key }) => [String(key), Number(count)])
+      );
+
+      expect(refused.status).toBe(429);
+      expect(counts).toMatchObject({
+        "magic-link-client:2026-10-17:203.0.113.50": 1,
+        "magic-link-client:2026-10-17:203.0.113.51": 0,
+        "magic-link-global:2026-10-17": 1,
+        "magic-link-new:2026-10-17": 1,
+      });
+    })
+  );
+});
+
+const verifiedMember = (database: DatabaseSync, email: string) => {
+  database
+    .prepare(
+      `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+       VALUES (?, '', ?, 1, '2026-10-17', '2026-10-17')`
+    )
+    .run(email, email);
+};
+
+const dayCounts = (database: DatabaseSync) =>
+  Object.fromEntries(
+    database
+      .prepare(
+        `SELECT key, count FROM "rateLimit" WHERE key LIKE 'magic-link-%'`
+      )
+      .all()
+      .map(({ count, key }) => [String(key), Number(count)])
+  );
+
+describe("per-inbox daily send limit", () => {
+  it.effect(
+    "stops a verified member's inbox only at the 15-minute limit, so strangers cannot lock a member out",
+    () =>
+      Effect.gen(function* memberLockout() {
+        travelTo(T0);
+
+        const { auth, database, sent } = makeAuth();
+        const email = "member@example.com";
+
+        verifiedMember(database, email);
+
+        const first = yield* Effect.forEach([1, 2, 3], () =>
+          statusOf(requestLink(auth, email, "198.51.100.40"))
+        );
+
+        travelTo(T0 + 16 * MINUTE);
+
+        const second = yield* Effect.forEach([1, 2, 3], () =>
+          statusOf(requestLink(auth, email, "198.51.100.41"))
+        );
+
+        const refused = yield* statusOf(
+          requestLink(auth, email, "198.51.100.42")
+        );
+
+        travelTo(T0 + 32 * MINUTE);
+
+        const later = yield* statusOf(
+          requestLink(auth, email, "198.51.100.43")
+        );
+
+        expect([...first, ...second]).toStrictEqual(
+          Array.from({ length: 6 }, () => 200)
+        );
+        expect(refused).toBe(429);
+        expect(later).toBe(200);
+        expect(sent).toHaveLength(7);
+      })
+  );
+
+  it.effect.each(["a verified member", "an address with no verified account"])(
+    "answers for %s alike past the daily cap, so the response never says which it is",
+    (kind) =>
+      Effect.gen(function* inboxDay() {
+        travelTo(T0);
+
+        const { auth, database, sent } = makeAuth();
+        const email = "someone@example.com";
+        const isMember = kind === "a verified member";
+
+        if (isMember) {
+          verifiedMember(database, email);
+        }
+
+        const answers = yield* Effect.forEach(
+          Array.from(
+            { length: INBOX_DAILY_SEND_LIMIT + 2 },
+            (_, index) => index
+          ),
+          (index) =>
+            Effect.gen(function* ask() {
+              travelTo(T0 + index * 16 * MINUTE);
+
+              const response = yield* requestLink(
+                auth,
+                email,
+                `203.0.113.${index + 60}`
+              );
+
+              return `${response.status} ${yield* textOf(response)}`;
+            })
+        );
+
+        expect(new Set(answers).size).toBe(1);
+        expect(answers[0]).toContain("200");
+        expect(sent).toHaveLength(
+          isMember ? INBOX_DAILY_SEND_LIMIT + 2 : INBOX_DAILY_SEND_LIMIT
+        );
+      })
+  );
+
+  it.effect(
+    "charges a silently dropped request to its client and address, but not to the site",
+    () =>
+      Effect.gen(function* droppedCounts() {
+        travelTo(T0);
+
+        const { auth, database } = makeAuth();
+        const email = "someone@example.com";
+
+        yield* Effect.forEach(
+          Array.from({ length: INBOX_DAILY_SEND_LIMIT }, (_, index) => index),
+          (index) => {
+            travelTo(T0 + index * 16 * MINUTE);
+
+            return requestLink(auth, email, `203.0.113.${index + 60}`);
+          }
+        );
+
+        travelTo(T0 + 2 * 60 * MINUTE);
+
+        yield* requestLink(auth, email, "198.51.100.50");
+
+        expect(dayCounts(database)).toMatchObject({
+          "magic-link-attempt:someone@example.com": 1,
+          "magic-link-client:2026-10-17:198.51.100.50": 1,
+          "magic-link-email:someone@example.com": 1,
+          "magic-link-global:2026-10-17": INBOX_DAILY_SEND_LIMIT,
+          "magic-link-inbox:2026-10-17:someone@example.com":
+            INBOX_DAILY_SEND_LIMIT,
+          "magic-link-new:2026-10-17": INBOX_DAILY_SEND_LIMIT,
+        });
+      })
+  );
+
+  it.effect(
+    "refuses an address past its daily cap once the new share is spent, like any stranger",
+    () =>
+      Effect.gen(function* capThenShare() {
+        travelTo(T0);
+
+        const { auth } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          15
+        );
+
+        const email = "someone@example.com";
+
+        yield* Effect.forEach(
+          Array.from({ length: INBOX_DAILY_SEND_LIMIT }, (_, index) => index),
+          (index) => {
+            travelTo(T0 + index * 16 * MINUTE);
+
+            return requestLink(auth, email, `203.0.113.${index + 60}`);
+          }
+        );
+
+        travelTo(T0 + 2 * 60 * MINUTE);
+
+        const statuses = yield* statusOf(
+          requestLink(auth, email, "198.51.100.51")
+        );
+
+        expect(statuses).toBe(429);
+      })
+  );
+});
+
+describe("a provider fault", () => {
+  it.effect(
+    "gives the client its count back up to the refund limit, then keeps it charged",
+    () =>
+      Effect.gen(function* faultRefundsClient() {
+        travelTo(T0);
+
+        let failing = true;
+
+        const { auth, database, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () =>
+            failing ? cloudflareSendError("E_INTERNAL_SERVER_ERROR") : true
+        );
+
+        const failed = yield* fillClientBudget(auth, "198.51.100.60", "fault");
+
+        failing = false;
+        travelTo(T0 + CLIENT_DAILY_SEND_LIMIT * 2 * MINUTE);
+
+        const after = yield* requestLink(
+          auth,
+          "after@example.com",
+          "198.51.100.60"
+        );
+
+        expect(failed).toStrictEqual(
+          Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () => 500)
+        );
+        expect(after.status).toBe(200);
+        expect(sent).toHaveLength(1);
+        expect(dayCounts(database)).toMatchObject({
+          "magic-link-client:2026-10-17:198.51.100.60":
+            CLIENT_DAILY_SEND_LIMIT - CLIENT_DAILY_REFUND_LIMIT + 1,
+          "magic-link-global:2026-10-17": CLIENT_DAILY_SEND_LIMIT + 1,
+        });
+      })
+  );
+
+  it.effect.each([
+    ["E_INTERNAL_SERVER_ERROR", { "magic-link-global:2026-10-17": 8 }],
+    ["E_RATE_LIMIT_EXCEEDED", { "magic-link-global:2026-10-17": 0 }],
+    ["E_DAILY_LIMIT_EXCEEDED", { "magic-link-global:2026-10-17": 0 }],
+  ] as const)("stops one client at 8 tries a day on %s", ([code, overall]) =>
+    Effect.gen(function* faultsStopAtTheLimit() {
+      travelTo(T0);
+
+      let tries = 0;
+
+      const { auth, database } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => {
+          tries += 1;
+
+          return cloudflareSendError(code);
+        }
+      );
+
+      const statuses: number[] = [];
+
+      for (const index of Array.from(
+        { length: CLIENT_DAILY_SEND_LIMIT + CLIENT_DAILY_REFUND_LIMIT + 1 },
+        (_, at) => at
+      )) {
+        travelTo(T0 + index * 2 * MINUTE);
+        statuses.push(
+          yield* statusOf(
+            requestLink(auth, `drain${index}@example.com`, "198.51.100.64")
+          )
+        );
+      }
+
+      expect(statuses).toStrictEqual([
+        ...Array.from({ length: 8 }, () => 500),
+        429,
+      ]);
+      expect(tries).toBe(8);
+      expect(dayCounts(database)).toMatchObject({
+        ...overall,
+        "magic-link-client:2026-10-17:198.51.100.64": CLIENT_DAILY_SEND_LIMIT,
+      });
+    })
+  );
+
+  it.effect.each([0, 1, 2, 3, 4])(
+    "lets a person retry once a minute through a fault after %i earlier sends from that client",
+    (earlier) =>
+      Effect.gen(function* retriesThroughAFault() {
+        travelTo(T0);
+
+        let failing = false;
+
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+          failing ? cloudflareSendError("E_INTERNAL_SERVER_ERROR") : true
+        );
+
+        for (const index of Array.from({ length: earlier }, (_, at) => at)) {
+          yield* requestLink(
+            auth,
+            `earlier${index}@example.com`,
+            "198.51.100.65"
+          );
+        }
+
+        failing = true;
+
+        const retries = CLIENT_DAILY_REFUND_LIMIT + 4 - earlier;
+        const statuses: number[] = [];
+
+        for (const minute of Array.from({ length: retries }, (_, at) => at)) {
+          travelTo(T0 + (minute + 1) * MINUTE);
+          statuses.push(
+            yield* statusOf(
+              requestLink(auth, "retry@example.com", "198.51.100.65")
+            )
+          );
+        }
+
+        failing = false;
+        travelTo(T0 + (retries + 1) * MINUTE);
+
+        const recovered = yield* requestLink(
+          auth,
+          "retry@example.com",
+          "198.51.100.65"
+        );
+
+        expect(statuses).toStrictEqual(
+          Array.from({ length: retries }, () => 500)
+        );
+        expect(recovered.status).toBe(200);
+        expect(sent.map(({ email }) => email)).toContain("retry@example.com");
+      })
+  );
+
+  it.effect(
+    "gives each client its own refunds, and fresh ones each UTC day",
+    () =>
+      Effect.gen(function* refundsPerClientPerDay() {
+        travelTo(T0);
+
+        const { auth, database } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => cloudflareSendError("E_INTERNAL_SERVER_ERROR")
+        );
+
+        yield* fillClientBudget(auth, "198.51.100.66", "spent");
+        yield* statusOf(
+          requestLink(auth, "other@example.com", "198.51.100.67")
+        );
+
+        travelTo(T0 + 24 * 60 * MINUTE);
+        yield* statusOf(
+          requestLink(auth, "tomorrow@example.com", "198.51.100.66")
+        );
+
+        expect(dayCounts(database)).toMatchObject({
+          "magic-link-client:2026-10-17:198.51.100.66":
+            CLIENT_DAILY_SEND_LIMIT - CLIENT_DAILY_REFUND_LIMIT,
+          "magic-link-client:2026-10-17:198.51.100.67": 0,
+          "magic-link-client:2026-10-18:198.51.100.66": 0,
+        });
+      })
+  );
+
+  it.effect("keeps the client count when the refund cannot be recorded", () =>
+    Effect.gen(function* refundStoreFailure() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+        cloudflareSendError("E_INTERNAL_SERVER_ERROR")
+      );
+
+      database.exec(`
+        CREATE TRIGGER refuse_refund_count BEFORE INSERT ON "rateLimit"
+        WHEN NEW.key LIKE 'magic-link-client-refund:%'
+        BEGIN SELECT RAISE(ABORT, 'D1 refused the write'); END;
+      `);
+
+      const status = yield* statusOf(
+        requestLink(auth, "ada@example.com", "198.51.100.68")
+      );
+
+      expect(status).toBe(500);
+      expect(dayCounts(database)).toMatchObject({
+        "magic-link-attempt:ada@example.com": 0,
+        "magic-link-client:2026-10-17:198.51.100.68": 1,
+        "magic-link-email:ada@example.com": 0,
+      });
+    })
+  );
+
+  it.effect("keeps the client count when the recipient is rejected", () =>
+    Effect.gen(function* rejectionKeepsClient() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+        cloudflareSendError("E_RECIPIENT_SUPPRESSED")
+      );
+
+      yield* statusOf(requestLink(auth, "gone@example.com", "198.51.100.61"));
+
+      expect(dayCounts(database)).toMatchObject({
+        "magic-link-client:2026-10-17:198.51.100.61": 1,
+      });
+    })
+  );
+});
+
+describe("a store failure while claiming", () => {
+  it.effect("gives back every count it took before failing", () =>
+    Effect.gen(function* failedClaim() {
+      travelTo(T0);
+
+      const { auth, database, sent } = makeAuth();
+
+      database.exec(`
+        CREATE TRIGGER refuse_global_count BEFORE INSERT ON "rateLimit"
+        WHEN NEW.key LIKE 'magic-link-global:%'
+        BEGIN SELECT RAISE(ABORT, 'D1 refused the write'); END;
+      `);
+
+      const status = yield* statusOf(
+        requestLink(auth, "ada@example.com", "198.51.100.62")
+      );
+
+      expect(status).toBe(500);
+      expect(sent).toHaveLength(0);
+      expect(dayCounts(database)).toStrictEqual({
+        "magic-link-attempt:ada@example.com": 0,
+        "magic-link-client:2026-10-17:198.51.100.62": 0,
+        "magic-link-email:ada@example.com": 0,
+        "magic-link-new:2026-10-17": 0,
+      });
+    })
+  );
+});
+
+describe("the client budget", () => {
+  it.effect(
+    "refuses a verified member and a stranger alike, so a spent client cannot probe for accounts",
+    () =>
+      Effect.gen(function* clientParity() {
+        travelTo(T0);
+
+        const { auth, database, sent } = makeAuth();
+
+        verifiedMember(database, "member@example.com");
+
+        yield* fillClientBudget(auth, "198.51.100.63", "spender");
+
+        travelTo(T0 + CLIENT_DAILY_SEND_LIMIT * 2 * MINUTE);
+
+        const member = yield* requestLink(
+          auth,
+          "member@example.com",
+          "198.51.100.63"
+        );
+
+        const stranger = yield* requestLink(
+          auth,
+          "stranger@example.com",
+          "198.51.100.63"
+        );
+
+        expect(member.status).toBe(429);
+        expect(yield* textOf(member)).toBe(yield* textOf(stranger));
+        expect(sent).toHaveLength(CLIENT_DAILY_SEND_LIMIT);
       })
   );
 });
@@ -1394,6 +2025,179 @@ describe("magic link verify", () => {
 
       expect(verified.status).toBe(302);
       expect(cookieOf(verified)).toContain("session_token=");
+    })
+  );
+});
+
+const previewPath = (token: string) =>
+  `/api/auth/magic-link/preview?token=${token}`;
+
+describe("magic link preview", () => {
+  it.effect("names the account a live link belongs to and spends nothing", () =>
+    Effect.gen(function* preview() {
+      const { auth, database, sent } = makeAuth();
+
+      yield* requestLink(auth, "Ada@example.com");
+
+      const url = sent[0]?.url ?? "";
+
+      const named = yield* call(auth, previewPath(tokenOf(url)), CONFIRM_FORM);
+
+      expect(named.status).toBe(200);
+      expect(named.headers.get("cache-control")).toContain("no-store");
+      expect(cookieOf(named)).not.toContain("session_token=");
+      expect(yield* textOf(named)).toBe('{"email":"Ada@example.com"}');
+      expect(
+        database.prepare('SELECT identifier FROM "verification"').all()
+      ).toHaveLength(1);
+
+      const verified = yield* call(auth, pathOf(url), CONFIRM_FORM);
+
+      expect(verified.status).toBe(302);
+      expect(cookieOf(verified)).toContain("session_token=");
+    })
+  );
+
+  it.effect("tells a link holder nothing about an unknown token", () =>
+    Effect.gen(function* unknown() {
+      const { auth } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const refused = yield* call(
+        auth,
+        previewPath("not-a-token"),
+        CONFIRM_FORM
+      );
+
+      expect(refused.status).toBe(404);
+      expect(yield* textOf(refused)).not.toContain("ada@");
+    })
+  );
+
+  it.effect("names nobody for an expired link", () =>
+    Effect.gen(function* expired() {
+      travelTo(T0);
+
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      travelTo(T0 + (MAGIC_LINK_TTL_MINUTES + 1) * MINUTE);
+
+      const refused = yield* call(
+        auth,
+        previewPath(tokenOf(sent[0]?.url ?? "")),
+        CONFIRM_FORM
+      );
+
+      expect(refused.status).toBe(404);
+      expect(yield* textOf(refused)).not.toContain("ada@");
+    })
+  );
+
+  it.effect("names nobody for a link already used", () =>
+    Effect.gen(function* used() {
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const url = sent[0]?.url ?? "";
+
+      yield* call(auth, pathOf(url), CONFIRM_FORM);
+
+      const refused = yield* call(
+        auth,
+        previewPath(tokenOf(url)),
+        CONFIRM_FORM
+      );
+
+      expect(refused.status).toBe(404);
+      expect(yield* textOf(refused)).not.toContain("ada@");
+    })
+  );
+
+  it.effect.each([
+    ["a cross-site", "cross-site"],
+    ["a same-site", "same-site"],
+    ["an unlabelled", undefined],
+  ])(
+    "refuses %s preview, so another page cannot read the name",
+    ([, fetchSite]) =>
+      Effect.gen(function* crossSite() {
+        const { auth, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const refused = yield* call(
+          auth,
+          previewPath(tokenOf(sent[0]?.url ?? "")),
+          { fetchSite }
+        );
+
+        expect(refused.status).toBe(403);
+        expect(yield* textOf(refused)).not.toContain("ada@");
+      })
+  );
+
+  it.effect(
+    "lets a cross-site page spend none of a visitor's preview budget",
+    () =>
+      Effect.gen(function* crossSiteBudget() {
+        const { auth, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const path = previewPath(tokenOf(sent[0]?.url ?? ""));
+
+        const forged = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+          statusOf(call(auth, path, { fetchSite: "cross-site" }))
+        );
+
+        const own = yield* statusOf(call(auth, path, CONFIRM_FORM));
+
+        expect(forged.every((status) => status === 403)).toBe(true);
+        expect(own).toBe(200);
+      })
+  );
+
+  it.effect(
+    "lets a cross-site page spend none of a visitor's verify budget",
+    () =>
+      Effect.gen(function* crossSiteVerifyBudget() {
+        const { auth, database, sent } = makeAuth();
+
+        yield* requestLink(auth, "ada@example.com");
+
+        const forged = yield* statusOf(
+          call(auth, pathOf(sent[0]?.url ?? ""), { fetchSite: "cross-site" })
+        );
+
+        expect(forged).toBe(403);
+        expect(
+          database
+            .prepare(`SELECT key FROM "rateLimit" WHERE key LIKE '%verify%'`)
+            .all()
+        ).toStrictEqual([]);
+      })
+  );
+
+  it.effect("limits a client to 10 previews a minute", () =>
+    Effect.gen(function* limited() {
+      const { auth, sent } = makeAuth();
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const path = previewPath(tokenOf(sent[0]?.url ?? ""));
+
+      const statuses = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+        statusOf(call(auth, path, CONFIRM_FORM))
+      );
+
+      expect(statuses.slice(0, 10).every((status) => status === 200)).toBe(
+        true
+      );
+      expect(statuses[10]).toBe(429);
     })
   );
 });

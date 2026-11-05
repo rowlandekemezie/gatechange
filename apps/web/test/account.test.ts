@@ -1,14 +1,20 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Account } from "@rat-stack/core/contracts";
 import { Effect, Option, Schema } from "effect";
+import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
 import { vi } from "vitest";
 
 import { Message } from "../src/client/account/message.js";
 import type { MessageValue } from "../src/client/account/message.js";
-import { SessionState, SignInState } from "../src/client/account/model.js";
+import {
+  LinkPreview,
+  SessionState,
+  SignInState,
+} from "../src/client/account/model.js";
 import type { ModelValue } from "../src/client/account/model.js";
 import { init, update } from "../src/client/account/update.js";
+import { application } from "../src/client/application.js";
 import { ForgetSignInToken } from "../src/client/board/command.js";
 import { Preload } from "../src/client/board/model.js";
 import { init as boardInit } from "../src/client/board/update.js";
@@ -118,7 +124,7 @@ describe("account", () => {
       SignInState.Editing({
         email: "a@b.c",
         problem: Option.some(
-          "Too many sign-in links went to this address. Use the newest one, or wait 15 minutes and ask again."
+          "We cannot send another sign-in link right now. Use the newest one, or try again later."
         ),
       })
     );
@@ -204,5 +210,165 @@ describe("account", () => {
           Route.ConfirmSignIn({ token: "abc123" })
         );
       })
+  );
+});
+
+const confirmPage = (
+  session: ModelValue["session"],
+  link: ModelValue["link"]
+) =>
+  renderToString(
+    {
+      ...application,
+      init: (...args: Parameters<typeof application.init>) => {
+        const started = application.init(...args);
+
+        return {
+          ...started,
+          model: {
+            ...started.model,
+            account: { ...started.model.account, link, session },
+          },
+        };
+      },
+    },
+    {
+      flags,
+      url: "https://jobs.example/account/confirm?token=abc123",
+    }
+  ).pipe(Effect.map(({ html }) => html));
+
+describe("confirming a sign-in link", () => {
+  const carol = Schema.decodeSync(Account)({
+    email: "carol@example.com",
+    id: "user_carol",
+    name: "",
+  });
+
+  const adaUpperCase = Schema.decodeSync(Account)({
+    email: "ADA@example.com",
+    id: "user_ada",
+    name: "",
+  });
+
+  const signedOutSession = SessionState.SignedOut();
+  const adaLink = LinkPreview.Named({ email: "ada@example.com" });
+
+  it("asks who the link belongs to when the page opens", () => {
+    const { commands = [] } = boardInit(
+      flags,
+      urlAt("/account/confirm?token=abc123")
+    );
+
+    expect(commands.map(({ name }) => name)).toContain("PreviewLink");
+  });
+
+  it("stores what the server said about the link", () => {
+    const { model } = update(
+      init().model,
+      Message.CompletedPreviewLink({ preview: adaLink })
+    );
+
+    expect(model.link).toStrictEqual(adaLink);
+  });
+
+  it.effect("offers no way in until the link has been named", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(signedOutSession, LinkPreview.Checking());
+
+      expect(page).not.toContain("<form");
+      expect(page).not.toContain("abc123");
+    })
+  );
+
+  it.effect("names the account beside the only way in", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(signedOutSession, adaLink);
+
+      expect(page).toContain("ada@example.com");
+      expect(page).toContain("<form");
+      expect(page).toContain("abc123");
+    })
+  );
+
+  it.effect("offers no way in and no address for a refused link", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(signedOutSession, LinkPreview.Refused());
+
+      expect(page).not.toContain("<form");
+      expect(page).not.toContain("abc123");
+      expect(page).toContain("expired or has already been used");
+      expect(page).toContain('href="/account"');
+    })
+  );
+
+  it.effect("offers no way in when the link could not be checked", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(signedOutSession, LinkPreview.Unknown());
+
+      expect(page).not.toContain("<form");
+      expect(page).toContain("open the link from your email again");
+    })
+  );
+
+  it.effect(
+    "offers a retry and explains browser support after a failed check",
+    () =>
+      Effect.gen(function* confirmView() {
+        const page = yield* confirmPage(
+          signedOutSession,
+          LinkPreview.Unknown()
+        );
+
+        expect(page).toContain("Check this link again");
+        expect(page).toContain("Safari 16.4 or later");
+      })
+  );
+
+  it("checks the same link again on retry", () => {
+    const { commands = [], model } = update(
+      { ...init().model, link: LinkPreview.Unknown() },
+      Message.ClickedRetryLinkCheck({ token: "abc123" })
+    );
+
+    expect(commands.map(({ args, name }) => ({ args, name }))).toStrictEqual([
+      { args: { token: "abc123" }, name: "PreviewLink" },
+    ]);
+    expect(model.link).toStrictEqual(LinkPreview.Checking());
+  });
+
+  it.effect("warns a member before moving them into another account", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(
+        SessionState.SignedIn({ account: carol }),
+        adaLink
+      );
+
+      expect(page).toContain("carol@example.com");
+      expect(page).toContain("ada@example.com");
+      expect(page).toContain("Stay signed in");
+      expect(page).toContain("Switch to ada@example.com");
+      expect(page).toContain("<form");
+    })
+  );
+
+  it.effect("spends no link for a member already in that account", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(
+        SessionState.SignedIn({ account: adaUpperCase }),
+        adaLink
+      );
+
+      expect(page).toContain("already signed in");
+      expect(page).not.toContain("<form");
+    })
+  );
+
+  it.effect("waits for the session before offering the way in", () =>
+    Effect.gen(function* confirmView() {
+      const page = yield* confirmPage(SessionState.Checking(), adaLink);
+
+      expect(page).not.toContain("<form");
+    })
   );
 });

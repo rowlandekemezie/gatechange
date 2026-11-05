@@ -9,9 +9,16 @@ import { handleRoutes } from "../src/route.js";
 
 const ORIGIN = "https://gatechange.dev";
 
+const sessionLookups = { count: 0 };
+
 const accountStore: AccountStore["Service"] = {
   signInOptions: { socialProviders: [] },
-  viewerOf: () => Effect.succeed(Viewer.Anonymous()),
+  viewerOf: () =>
+    Effect.sync(() => {
+      sessionLookups.count += 1;
+
+      return Viewer.Anonymous();
+    }),
 };
 
 const handle = handleRoutes({
@@ -28,15 +35,14 @@ const handle = handleRoutes({
     Effect.succeed(HttpServerResponse.text(`unsubscribe:${request.method}`)),
 });
 
-const send = (
-  path: string,
-  init: RequestInit = {}
+const deliver = (
+  request: Request
 ): Effect.Effect<{ body: string; status: number }> =>
   Effect.gen(function* sent() {
     const response = yield* handle.pipe(
       Effect.provideService(
         HttpServerRequest.HttpServerRequest,
-        HttpServerRequest.fromWeb(new Request(`${ORIGIN}${path}`, init))
+        HttpServerRequest.fromWeb(request)
       )
     );
 
@@ -49,6 +55,16 @@ const send = (
       ),
       status: web.status,
     };
+  });
+
+const send = (path: string, init: RequestInit = {}) =>
+  deliver(new Request(`${ORIGIN}${path}`, init));
+
+const rpcPost = (body: string) =>
+  send("/rpc/", {
+    body,
+    headers: { "content-type": "application/json" },
+    method: "POST",
   });
 
 const crossSiteWithSession = {
@@ -155,8 +171,8 @@ describe("backend routing", () => {
           })
         ).toEqual({ body: "stripe:POST", status: 200 });
         expect(
-          yield* send("/webhooks/stripe/extra", { method: "POST" })
-        ).toEqual({ body: "rpc:Anonymous", status: 200 });
+          (yield* send("/webhooks/stripe/extra", { method: "POST" })).status
+        ).toBe(404);
       })
   );
 
@@ -164,17 +180,15 @@ describe("backend routing", () => {
     "keeps look-alike paths off the unsubscribe and auth handlers",
     () =>
       Effect.gen(function* lookalikes() {
-        expect(yield* send("/unsubscribed", { method: "POST" })).toEqual({
-          body: "rpc:Anonymous",
-          status: 200,
-        });
+        expect((yield* send("/unsubscribed", { method: "POST" })).status).toBe(
+          404
+        );
         expect(
           yield* send("/rpc?next=/unsubscribe", { method: "POST" })
         ).toEqual({ body: "rpc:Anonymous", status: 200 });
-        expect(yield* send("/api/authority", { method: "POST" })).toEqual({
-          body: "rpc:Anonymous",
-          status: 200,
-        });
+        expect((yield* send("/api/authority", { method: "POST" })).status).toBe(
+          404
+        );
       })
   );
 
@@ -189,10 +203,116 @@ describe("backend routing", () => {
           body: "discovery",
           status: 200,
         });
-        expect(yield* send("/mcpx", { method: "POST" })).toEqual({
+        expect((yield* send("/mcpx", { method: "POST" })).status).toBe(404);
+      })
+  );
+});
+
+const postOf = (path: string, body = '{"_tag":"Request"}') =>
+  new Request(`${ORIGIN}${path}`, {
+    body,
+    headers: { cookie: `${SESSION_COOKIE}=abc` },
+    method: "POST",
+  });
+
+describe("RPC lives only under /rpc", () => {
+  it.effect.each(["/rpc", "/rpc/", "/rpc/anything"])(
+    "serves %s as RPC, the control for the refusals below",
+    (path) =>
+      Effect.gen(function* served() {
+        const request = postOf(path);
+        const lookupsBefore = sessionLookups.count;
+
+        expect(yield* deliver(request)).toEqual({
           body: "rpc:Anonymous",
           status: 200,
         });
+        expect(request.bodyUsed).toBe(true);
+        expect(sessionLookups.count).toBe(lookupsBefore + 1);
       })
+  );
+
+  it.effect.each([
+    "/",
+    "/rpcx",
+    "/mcp/",
+    "/mcp/extra",
+    "/unsubscribe/",
+    "/unsubscribe/extra",
+    "/webhooks/stripe/",
+    "/webhooks/stripe/extra",
+    "/.well-known/mcp.json/",
+    "/.well-known/mcp.json/extra",
+  ])("answers 404 for %s before the body or the session is read", (path) =>
+    Effect.gen(function* refused() {
+      const request = postOf(path);
+      const lookupsBefore = sessionLookups.count;
+
+      const response = yield* deliver(request);
+
+      expect(response.status).toBe(404);
+      expect(response.body).not.toContain("rpc:");
+      expect(request.bodyUsed).toBe(false);
+      expect(sessionLookups.count).toBe(lookupsBefore);
+    })
+  );
+
+  it.effect("answers 404, not the batch 400, for an array off /rpc", () =>
+    Effect.gen(function* offPathBatch() {
+      const response = yield* deliver(postOf("/unsubscribe/", "[]"));
+
+      expect(response.status).toBe(404);
+    })
+  );
+});
+
+describe("one call per /rpc POST", () => {
+  it.effect.each(["[]", '[{"_tag":"Request"}]', ' \n\t[{"_tag":"Request"}]'])(
+    "refuses the batch %j before it reaches the RPC server",
+    (body) =>
+      Effect.gen(function* refusedBatch() {
+        const response = yield* rpcPost(body);
+
+        expect(response.status).toBe(400);
+        expect(response.body).not.toContain("rpc:");
+      })
+  );
+
+  it.effect("serves a single message and leaves its body readable", () =>
+    Effect.gen(function* singleMessage() {
+      const echo = handleRoutes({
+        accountStore,
+        auth: Effect.succeed(HttpServerResponse.text("auth")),
+        mcp: () => Effect.succeed(HttpServerResponse.text("mcp")),
+        mcpDiscovery: () => HttpServerResponse.text("discovery"),
+        rpc: () =>
+          HttpServerRequest.HttpServerRequest.pipe(
+            Effect.flatMap((request) => request.text),
+            Effect.orDie,
+            Effect.map((text) => HttpServerResponse.text(text))
+          ),
+        stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
+        unsubscribe: () => Effect.succeed(HttpServerResponse.text("unsub")),
+      });
+
+      const response = yield* echo.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          HttpServerRequest.fromWeb(
+            new Request(`${ORIGIN}/rpc/`, {
+              body: '{"_tag":"Request"}',
+              method: "POST",
+            })
+          )
+        )
+      );
+
+      expect(
+        yield* Effect.promise(
+          // @effect-diagnostics-next-line asyncFunction:off -- The Web Response body is Promise-based.
+          async () => await HttpServerResponse.toWeb(response).text()
+        )
+      ).toBe('{"_tag":"Request"}');
+    })
   );
 });

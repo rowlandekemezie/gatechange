@@ -38,6 +38,7 @@ export {
   ANONYMOUS_MCP_CALLS_PER_MINUTE,
   MCP_DISCOVERY_PATH,
   MCP_PATH,
+  PUBLIC_READS_PER_MINUTE,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "./agent-access.js";
 
@@ -297,11 +298,14 @@ export type { PlaceEvidence, Placement } from "./location.js";
 
 export {
   DAY_MILLIS,
-  normalizePosting,
+  MAX_DETAIL_LENGTH,
+  MAX_TITLE_LENGTH,
+  MAX_URL_LENGTH,
   Posting,
   RECENCY_PENALTY_PER_DAY,
   REMOTE_BONUS,
   SALARY_BONUS,
+  normalizePosting,
 } from "./posting.js";
 
 export type { PostingValue } from "./posting.js";

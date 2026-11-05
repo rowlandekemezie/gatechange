@@ -307,6 +307,114 @@ const rowsFor = (viewer: ViewerValue, query: JobQueryValue) =>
     )
   );
 
+const WEEK_SECONDS = 7 * 24 * 60 * 60;
+
+const FIRST_FAILURE = 1_792_424_047;
+
+const renewal = (status: string, periodStart: number, event: string) =>
+  (lifecycle[1] ?? "")
+    .replace('"status":"active"', `"status":"${status}"`)
+    .replaceAll("price_1USIFA0ZnafJYNlYo9bbbD97", "price_sandbox_weekly")
+    .replaceAll("1792424047", String(periodStart))
+    .replaceAll("1795102447", String(periodStart + WEEK_SECONDS))
+    .replace("1792424050", String(periodStart + 60))
+    .replace("evt_1USIZj0ZnafJYNlYFqQEBJXC", event);
+
+const weekly = {
+  ...sandbox,
+  prices: new Map([...sandbox.prices, ["price_sandbox_weekly", "Weekly"]]),
+};
+
+const deliverWeekly = (payload: string) =>
+  billingChangeOf(weekly, payload).pipe(Effect.flatMap(applyBillingChange));
+
+const atSeconds = (seconds: number) => entitlementAt(seconds * 1000);
+
+describe("past-due grace", () => {
+  it.effect(
+    "ends seven days after the first failed renewal, however many renewals fail after it",
+    () =>
+      withBilling(
+        Effect.gen(function* firstFailureAnchors() {
+          yield* addMember(ada);
+          yield* deliverWeekly(renewal("past_due", FIRST_FAILURE, "evt_a"));
+          yield* deliverWeekly(
+            renewal("past_due", FIRST_FAILURE + WEEK_SECONDS, "evt_b")
+          );
+          yield* deliverWeekly(
+            renewal("past_due", FIRST_FAILURE + 2 * WEEK_SECONDS, "evt_c")
+          );
+
+          expect(
+            yield* atSeconds(FIRST_FAILURE + WEEK_SECONDS - 60)
+          ).not.toEqual(FREE);
+          expect(yield* atSeconds(FIRST_FAILURE + WEEK_SECONDS + 1)).toEqual(
+            FREE
+          );
+        })
+      )
+  );
+
+  it.effect("restores the paid period when the member pays", () =>
+    withBilling(
+      Effect.gen(function* paysUp() {
+        yield* addMember(ada);
+        yield* deliverWeekly(renewal("past_due", FIRST_FAILURE, "evt_a"));
+        yield* deliverWeekly(
+          renewal("past_due", FIRST_FAILURE + WEEK_SECONDS, "evt_b")
+        );
+
+        const paidFrom = FIRST_FAILURE + 2 * WEEK_SECONDS;
+
+        yield* deliverWeekly(renewal("active", paidFrom, "evt_c"));
+
+        expect(yield* atSeconds(paidFrom + WEEK_SECONDS - 60)).not.toEqual(
+          FREE
+        );
+      })
+    )
+  );
+
+  it.effect("gives a fresh grace to a new failure after a paid renewal", () =>
+    withBilling(
+      Effect.gen(function* freshFailure() {
+        yield* addMember(ada);
+        yield* deliverWeekly(renewal("past_due", FIRST_FAILURE, "evt_a"));
+
+        const paidFrom = FIRST_FAILURE + WEEK_SECONDS;
+        const failedAt = paidFrom + WEEK_SECONDS;
+
+        yield* deliverWeekly(renewal("active", paidFrom, "evt_b"));
+        yield* deliverWeekly(renewal("past_due", failedAt, "evt_c"));
+
+        expect(yield* atSeconds(failedAt + WEEK_SECONDS - 60)).not.toEqual(
+          FREE
+        );
+        expect(yield* atSeconds(failedAt + WEEK_SECONDS + 1)).toEqual(FREE);
+      })
+    )
+  );
+
+  it.effect("lets a past-due event shorten the grant, never lengthen it", () =>
+    withBilling(
+      Effect.gen(function* shortened() {
+        const cancelAt = FIRST_FAILURE + 2 * 24 * 60 * 60;
+
+        yield* addMember(ada);
+        yield* deliverWeekly(renewal("past_due", FIRST_FAILURE, "evt_a"));
+        yield* deliverWeekly(
+          renewal("past_due", FIRST_FAILURE, "evt_b").replace(
+            '"cancel_at":null',
+            `"cancel_at":${cancelAt}`
+          )
+        );
+
+        expect(yield* atSeconds(cancelAt + 1)).toEqual(FREE);
+      })
+    )
+  );
+});
+
 describe("listJobs for Free and Pro viewers", () => {
   it.effect(
     "returns the same rows to anonymous, Free, and Pro viewers, and ignores a Free viewer's Pro filter",

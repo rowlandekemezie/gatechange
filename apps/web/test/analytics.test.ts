@@ -344,6 +344,12 @@ describe("worker ingest route", () => {
     MCP_TOKEN_LIMIT: {
       limit: async () => await Promise.resolve({ success: true }),
     },
+    PUBLIC_READ_LIMIT: {
+      limit: async () => await Promise.resolve({ success: true }),
+    },
+    SESSION_READ_LIMIT: {
+      limit: async () => await Promise.resolve({ success: true }),
+    },
   };
 
   const lifetime = {

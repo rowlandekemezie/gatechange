@@ -28,10 +28,6 @@ import { HttpClient } from "effect/http";
 import { CompanyAts } from "./boards.js";
 import { getJson } from "./http.js";
 import { linesOfHtml, nonEmpty, textOfHtml, workplaceOf } from "./parse.js";
-import {
-  SmartRecruitersLocation,
-  smartRecruitersWorkplaceOf,
-} from "./smartrecruiters.js";
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
 
@@ -73,30 +69,6 @@ export const AshbyDetail = Schema.Struct({
   id: Schema.String,
   location: OptionalString,
   workplaceType: OptionalString,
-});
-
-const SmartRecruitersSection = Schema.optional(
-  Schema.NullOr(Schema.Struct({ text: OptionalString, title: OptionalString }))
-);
-
-const SmartRecruitersCompensation = Schema.Struct({
-  currency: Schema.String,
-  max: Schema.Finite,
-  min: Schema.Finite,
-  period: OptionalString,
-});
-
-const SmartRecruitersDetail = Schema.Struct({
-  compensation: Schema.optional(Schema.Unknown),
-  jobAd: Schema.Struct({
-    sections: Schema.Struct({
-      additionalInformation: SmartRecruitersSection,
-      companyDescription: SmartRecruitersSection,
-      jobDescription: SmartRecruitersSection,
-      qualifications: SmartRecruitersSection,
-    }),
-  }),
-  location: Schema.optional(Schema.Unknown),
 });
 
 const WorkableDetail = Schema.Struct({
@@ -499,64 +471,6 @@ const ashbyText = ({ externalId, id, slug, title }: PostingKey) =>
     )
   );
 
-const smartRecruitersPeriodOf = (period: string | null | undefined) =>
-  Match.value(period).pipe(
-    Match.withReturnType<SalaryPeriodValue | null>(),
-    Match.when("HOURLY", () => "Hour"),
-    Match.when("MONTHLY", () => "Month"),
-    Match.when("YEARLY", () => "Year"),
-    Match.orElse(() => null)
-  );
-
-const decodeSmartRecruitersCompensation = Schema.decodeUnknownOption(
-  SmartRecruitersCompensation
-);
-
-const smartRecruitersSalary = (
-  range: typeof SmartRecruitersCompensation.Type
-) =>
-  pipe(
-    Option.fromNullishOr(smartRecruitersPeriodOf(range.period)),
-    Option.flatMap((period) =>
-      Option.fromNullishOr(annualSalaryBandOf(range, period))
-    )
-  );
-
-const smartRecruitersText = ({ externalId, slug }: PostingKey) =>
-  getJson(
-    `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(slug)}/postings/${encodeURIComponent(externalId)}`,
-    SmartRecruitersDetail
-  ).pipe(
-    Effect.map(
-      ({ compensation, jobAd: { sections }, location }): PostingTextValue => ({
-        salary: pipe(
-          decodeSmartRecruitersCompensation(compensation),
-          Option.flatMap(smartRecruitersSalary),
-          Option.getOrNull
-        ),
-        text: nonEmpty(
-          pipe(
-            [
-              sections.companyDescription,
-              sections.jobDescription,
-              sections.qualifications,
-              sections.additionalInformation,
-            ],
-            Array.flatMap((section) => [
-              section?.title,
-              linesOfHtml(section?.text ?? ""),
-            ])
-          )
-        ).join("\n\n"),
-        workplace: smartRecruitersWorkplaceOf(
-          Option.getOrNull(
-            Schema.decodeUnknownOption(SmartRecruitersLocation)(location)
-          )
-        ),
-      })
-    )
-  );
-
 const workableText = ({ externalId, slug }: PostingKey) =>
   getJson(
     `https://apply.workable.com/api/v2/accounts/${encodeURIComponent(slug)}/jobs/${encodeURIComponent(externalId)}`,
@@ -588,7 +502,6 @@ const textOfAts: Record<
   ashby: ashbyText,
   greenhouse: greenhouseText,
   lever: leverText,
-  smartrecruiters: smartRecruitersText,
   workable: workableText,
 };
 

@@ -3,7 +3,8 @@ export type EdgeRoute =
   | "analytics"
   | "backend"
   | "private"
-  | "public";
+  | "public"
+  | "rpc";
 
 export const INGEST_PREFIX = "/ingest";
 
@@ -23,7 +24,7 @@ const routePrefixes: readonly (readonly [
   Exclude<EdgeRoute, "public">,
 ])[] = [
   [INGEST_PREFIX, "analytics"],
-  ["/rpc", "backend"],
+  ["/rpc", "rpc"],
   ["/mcp", "agent"],
   ["/.well-known/mcp.json", "backend"],
   ["/api/auth", "backend"],

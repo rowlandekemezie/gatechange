@@ -14,15 +14,23 @@ import { collectListing, ListingRoute } from "../listing.js";
 import { Message } from "./message.js";
 import { Shortlist, TrackerChange } from "./model.js";
 import type { MarkedJobValue } from "./model.js";
-import { JobQueries } from "./queries.js";
+import { isRateLimited, JobQueries } from "./queries.js";
 import { importRequestsOf } from "./tracker.js";
 
 const SHORTLIST_KEY = "jobs.shortlist.v1";
 
-const failureText = (failure: { readonly _tag: string }) =>
-  Predicate.isTagged(failure, "JobStoreUnavailable")
+const RATE_LIMITED_TEXT =
+  "Too many requests from your network. Wait a minute, then try again.";
+
+const failureText = (failure: { readonly _tag: string }) => {
+  if (isRateLimited(failure)) {
+    return RATE_LIMITED_TEXT;
+  }
+
+  return Predicate.isTagged(failure, "JobStoreUnavailable")
     ? "The job list is unavailable right now. It usually comes back within a few minutes."
     : "Could not reach the job list. Check your connection, then try again.";
+};
 
 export const FetchJobs = Command.define("FetchJobs", {
   args: { generation: Schema.Finite, query: JobQuery },
@@ -204,6 +212,10 @@ export const WriteShortlist = Command.define("WriteShortlist", {
 });
 
 const trackerFailureText = (failure: { readonly _tag: string }) => {
+  if (isRateLimited(failure)) {
+    return RATE_LIMITED_TEXT;
+  }
+
   if (Predicate.isTagged(failure, "Unauthorized")) {
     return "Your session ended. Sign in again to keep tracking.";
   }

@@ -146,6 +146,7 @@ const renderAccount = (
 
 const unusedAuth = AuthClient.of({
   currentAccount: Effect.die("unused auth"),
+  previewLink: () => Effect.die("unused auth"),
   requestLink: () => Effect.die("unused auth"),
   signOut: Effect.die("unused auth"),
   socialRedirect: () => Effect.die("unused auth"),

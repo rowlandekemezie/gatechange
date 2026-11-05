@@ -6,7 +6,11 @@ import { defineView } from "foldkit/submodel";
 
 import { Message } from "../../client/account/message.js";
 import type { MessageValue } from "../../client/account/message.js";
-import { SessionState, SignInState } from "../../client/account/model.js";
+import {
+  LinkPreview,
+  SessionState,
+  SignInState,
+} from "../../client/account/model.js";
 import type {
   ModelValue,
   SessionStateValue,
@@ -173,43 +177,133 @@ const noticeNote = (
         : [],
   });
 
-export const confirmSignInPage = <M>(token: string, h: HtmlBuilder<M>): Html =>
+const confirmForm = <M>(
+  token: string,
+  label: string,
+  h: HtmlBuilder<M>
+): Html =>
+  h.form(
+    [h.Action("/api/auth/magic-link/verify"), h.Method("get")],
+    [
+      h.input([h.Type("hidden"), h.Name("token"), h.Value(token)]),
+      h.input([
+        h.Type("hidden"),
+        h.Name("callbackURL"),
+        h.Value(AUTH_RETURN_PATH),
+      ]),
+      h.input([
+        h.Type("hidden"),
+        h.Name("errorCallbackURL"),
+        h.Value(AUTH_RETURN_PATH),
+      ]),
+      h.button([h.Type("submit"), h.Class("search-button")], [label]),
+    ]
+  );
+
+const browserNote = <M>(h: HtmlBuilder<M>): Html =>
+  h.p(
+    [h.Class("account-lede")],
+    [
+      "Signing in needs an up-to-date browser: Safari 16.4 or later, Firefox 90 or later, or a current Chrome or Edge. On an older browser, open the link from your email in one of these.",
+    ]
+  );
+
+const namedLinkBody = <M>(
+  token: string,
+  email: string,
+  session: SessionStateValue,
+  h: HtmlBuilder<M>
+): readonly Html[] =>
+  SessionState.match<readonly Html[]>(session, {
+    Checking: () => [
+      h.p([h.Class("status"), h.Role("status")], ["Checking your session…"]),
+    ],
+    SignedIn: ({ account }) =>
+      account.email.toLowerCase() === email.toLowerCase()
+        ? [
+            h.p(
+              [h.Class("account-lede")],
+              [`You are already signed in as ${email}.`]
+            ),
+            h.p([], [h.a([h.Href(AUTH_RETURN_PATH)], ["Go to your account"])]),
+          ]
+        : [
+            h.p(
+              [h.Class("sign-in-problem"), h.Role("alert")],
+              [
+                `You are signed in as ${account.email}. This link opens a different account, ${email}. Anything you save after switching goes to ${email}.`,
+              ]
+            ),
+            h.p(
+              [],
+              [
+                h.a(
+                  [h.Href(AUTH_RETURN_PATH)],
+                  [`Stay signed in as ${account.email}`]
+                ),
+              ]
+            ),
+            confirmForm(token, `Switch to ${email}`, h),
+            browserNote(h),
+          ],
+    SignedOut: () => [
+      h.p(
+        [h.Class("account-lede")],
+        [
+          `This link signs you in as ${email}. If that is not your email address, close this page. The link works once.`,
+        ]
+      ),
+      confirmForm(token, "Finish signing in", h),
+      browserNote(h),
+    ],
+  });
+
+interface ConfirmViewInputs {
+  readonly token: string;
+}
+
+export const confirmSignInPage = defineView<
+  ModelValue,
+  MessageValue,
+  ConfirmViewInputs
+>(({ link, session }, { token }, h) =>
   h.div(
     [h.Class("detail account")],
     [
       h.h1([h.Class("detail-title")], ["Finish signing in"]),
-      h.p(
-        [h.Class("account-lede")],
-        ["Press the button to sign in on this device. The link works once."]
-      ),
-      h.form(
-        [h.Action("/api/auth/magic-link/verify"), h.Method("get")],
-        [
-          h.input([h.Type("hidden"), h.Name("token"), h.Value(token)]),
-          h.input([
-            h.Type("hidden"),
-            h.Name("callbackURL"),
-            h.Value(AUTH_RETURN_PATH),
-          ]),
-          h.input([
-            h.Type("hidden"),
-            h.Name("errorCallbackURL"),
-            h.Value(AUTH_RETURN_PATH),
-          ]),
-          h.button(
-            [h.Type("submit"), h.Class("search-button")],
-            ["Finish signing in"]
+      ...LinkPreview.match<readonly Html[]>(link, {
+        Checking: () => [
+          h.p([h.Class("status"), h.Role("status")], ["Checking this link…"]),
+        ],
+        Named: ({ email }) => namedLinkBody(token, email, session, h),
+        Refused: () => [
+          h.p(
+            [h.Class("sign-in-problem"), h.Role("alert")],
+            ["This sign-in link has expired or has already been used."]
           ),
-        ]
-      ),
-      h.p(
-        [h.Class("account-lede")],
-        [
-          "Signing in needs an up-to-date browser: Safari 16.4 or later, Firefox 90 or later, or a current Chrome or Edge. On an older browser, open the link from your email in one of these.",
-        ]
-      ),
+          h.p([], [h.a([h.Href(AUTH_RETURN_PATH)], ["Request a new link"])]),
+        ],
+        Unknown: () => [
+          h.p(
+            [h.Class("sign-in-problem"), h.Role("alert")],
+            [
+              "We could not check this link. Try again, or open the link from your email again.",
+            ]
+          ),
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("search-button"),
+              h.OnClick(Message.ClickedRetryLinkCheck({ token })),
+            ],
+            ["Check this link again"]
+          ),
+          browserNote(h),
+        ],
+      }),
     ]
-  );
+  )
+);
 
 export const accountView = defineView<
   ModelValue,
