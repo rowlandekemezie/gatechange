@@ -81,7 +81,7 @@ import {
 } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
-import { postHogCapture, ServerEvent } from "./analytics.js";
+import { postHogCapture, privacySignalled, ServerEvent } from "./analytics.js";
 import type { ServerEventValue } from "./analytics.js";
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { guardPreviewAccess } from "./preview-access.js";
@@ -591,6 +591,13 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
           store.unsubscribe(account.value, now)
         ).pipe(
           Effect.provide(alertLayer),
+          Effect.tap(() =>
+            privacySignalled(request.headers)
+              ? Effect.void
+              : captureInBackground(
+                  ServerEvent.EmailUnsubscribed({ account: account.value })
+                )
+          ),
           Effect.as(unsubscribePage("Done", token)),
           Effect.catchTag("JobStoreUnavailable", (failure) =>
             Effect.logWarning("unsubscribe failed", failure).pipe(
