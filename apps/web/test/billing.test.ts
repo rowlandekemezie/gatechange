@@ -484,7 +484,7 @@ describe("billing pages", () => {
           expect(text).toContain(proPrice);
           expect(text).toContain("Self-host MIT");
           expect(html).toContain(
-            `href="${SOURCE_REPOSITORY_URL}#run-your-own"`
+            `href="${SOURCE_REPOSITORY_URL}/blob/main/docs/self-host.md"`
           );
           expect(html.includes('href="/pricing">Get Pro</a>')).toBe(checkout);
           expect(html).toMatch(/<section [^>]*id="pricing"/u);

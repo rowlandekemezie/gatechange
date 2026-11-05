@@ -93,7 +93,7 @@ const proFeatures = [
   "Company intel",
 ];
 
-const RUN_YOUR_OWN_URL = `${SOURCE_REPOSITORY_URL}#run-your-own`;
+const RUN_YOUR_OWN_URL = `${SOURCE_REPOSITORY_URL}/blob/main/docs/self-host.md`;
 
 const featureList = <M>(h: HtmlBuilder<M>, items: readonly string[]) =>
   h.ul(
@@ -297,7 +297,7 @@ const planOffers = (
         h.p(
           [h.Class("tier-note")],
           [
-            "Stripe handles payment. Cancel any time from the billing portal, and Pro stays on until the end of the period you paid for. Prices in US dollars.",
+            "Stripe handles payment. Cancel any time from the billing portal, and Pro stays on until the end of the period you paid for. A week that has started is not refunded unless you ask and we agree. Prices in US dollars.",
           ]
         ),
       ];
