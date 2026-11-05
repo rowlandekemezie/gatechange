@@ -78,6 +78,7 @@ Scenarios:
 - `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest `/account/confirm` link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), requires the page to name the account, presses `Finish signing in`, and requires the header to show the email.
 - `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
 - `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with no address on the page and the viewer still signed out.
+- `link-budget` needs a stage booted with `MAGIC_LINK_DAILY_SEND_LIMIT=5`, so new addresses get 2 sends. It signs in as `--email`, signs out, spends the second new-address send, requires the next new address to be refused, and requires `--email` to sign in again.
 - `confirm-other-account` mails a link for `other-<--email>`, signs in as `--email`, opens the first link, and requires a warning naming both addresses with the header unchanged. It saves the warning as `<name>-warning.png`, then presses `Switch to <address>` and requires the header to show that address.
 - `confirm-retry` mails a link for `--email`, opens it with the preview request blocked, requires the failed-check notice, saves it as `<name>-failed.png`, unblocks, presses `Check this link again`, and requires the sign-in to finish.
 - `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.

@@ -15,7 +15,16 @@ const WINDOW_MILLIS = EMAIL_SEND_LIMIT.windowSeconds * 1000;
 
 export const DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT = 900;
 
-export const CLIENT_DAILY_SEND_LIMIT = 20;
+export const CLIENT_DAILY_SEND_LIMIT = 5;
+
+export const CLIENT_DAILY_REFUND_LIMIT = 3;
+
+export const INBOX_DAILY_SEND_LIMIT = 6;
+
+const NEW_ADDRESS_SHARE = 0.4;
+
+export const newAddressDailySendLimit = (dailySendLimit: number) =>
+  Math.ceil(dailySendLimit * NEW_ADDRESS_SHARE);
 
 const DAY_MILLIS = 24 * 60 * 60 * 1000;
 
@@ -159,6 +168,90 @@ const refund = async (adapter: DBAdapter, key: string) => {
   });
 };
 
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const refundClient = async (
+  adapter: DBAdapter,
+  clientKey: string,
+  clientRefundKey: string,
+  now: number
+) => {
+  const allowed = await consume(
+    adapter,
+    clientRefundKey,
+    CLIENT_DAILY_REFUND_LIMIT,
+    now,
+    DAY_MILLIS
+  );
+
+  if (allowed) {
+    await refund(adapter, clientKey);
+  }
+};
+
+interface Claim {
+  readonly key: string;
+}
+
+interface DailyBudget extends Claim {
+  readonly max: number;
+  readonly refusal: string | undefined;
+}
+
+const CAPACITY_REFUSAL =
+  "Sign-in email capacity is temporarily unavailable. Please try again later.";
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const refundBudgets = async (adapter: DBAdapter, claims: readonly Claim[]) => {
+  await Promise.allSettled(
+    claims.map(
+      // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+      async ({ key }) => {
+        await refund(adapter, key);
+      }
+    )
+  );
+};
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const fitsBudget = async (
+  adapter: DBAdapter,
+  { key, max }: DailyBudget,
+  now: number,
+  claimed: readonly Claim[]
+) => {
+  try {
+    return await consume(adapter, key, max, now, DAY_MILLIS);
+  } catch (error) {
+    await refundBudgets(adapter, claimed);
+
+    throw error;
+  }
+};
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const claimBudgets = async (
+  adapter: DBAdapter,
+  budgets: readonly DailyBudget[],
+  now: number,
+  claimed: readonly Claim[]
+): Promise<DailyBudget | undefined> => {
+  const [next, ...rest] = budgets;
+
+  if (next === undefined) {
+    return undefined;
+  }
+
+  if (await fitsBudget(adapter, next, now, claimed)) {
+    return await claimBudgets(adapter, rest, now, [...claimed, next]);
+  }
+
+  if (next.refusal !== undefined) {
+    await refundBudgets(adapter, claimed);
+  }
+
+  return next;
+};
+
 const keepSendRowsForTheWindow = {
   max: EMAIL_SEND_LIMIT.max,
   pathMatcher: () => false,
@@ -208,7 +301,11 @@ export const limitSends =
     const client = address ?? "unknown";
 
     const clientKey = `magic-link-client:${day}:${client}`;
-    const globalKey = `magic-link-global:${day}`;
+    const clientRefundKey = `magic-link-client-refund:${day}:${client}`;
+    const inboxDayKey = `magic-link-inbox:${day}:${inbox}`;
+
+    const owner = await ctx.context.internalAdapter.findUserByEmail(email);
+    const isMember = owner?.user.emailVerified === true;
 
     const allowed =
       (await consume(adapter, attemptKey, EMAIL_SEND_LIMIT.attempts, now)) &&
@@ -220,33 +317,59 @@ export const limitSends =
       });
     }
 
-    if (
-      !(await consume(
-        adapter,
-        clientKey,
-        CLIENT_DAILY_SEND_LIMIT,
-        now,
-        DAY_MILLIS
-      ))
-    ) {
-      await refund(adapter, sendKey);
-      await refund(adapter, attemptKey);
+    const siteBudgets: readonly DailyBudget[] = [
+      ...(isMember
+        ? []
+        : [
+            {
+              key: `magic-link-new:${day}`,
+              max: newAddressDailySendLimit(dailySendLimit),
+              refusal: CAPACITY_REFUSAL,
+            },
+          ]),
+      {
+        key: `magic-link-global:${day}`,
+        max: dailySendLimit,
+        refusal: CAPACITY_REFUSAL,
+      },
+    ];
 
-      throw new APIError("TOO_MANY_REQUESTS", {
-        message:
+    const budgets: readonly DailyBudget[] = [
+      {
+        key: clientKey,
+        max: CLIENT_DAILY_SEND_LIMIT,
+        refusal:
           "Too many sign-in links were requested from this network today.",
-      });
+      },
+      ...siteBudgets,
+      ...(isMember
+        ? []
+        : [
+            {
+              key: inboxDayKey,
+              max: INBOX_DAILY_SEND_LIMIT,
+              refusal: undefined,
+            },
+          ]),
+    ];
+
+    const refused = await claimBudgets(adapter, budgets, now, [
+      { key: sendKey },
+      { key: attemptKey },
+    ]);
+
+    if (refused?.refusal !== undefined) {
+      throw new APIError("TOO_MANY_REQUESTS", { message: refused.refusal });
     }
 
-    if (!(await consume(adapter, globalKey, dailySendLimit, now, DAY_MILLIS))) {
-      await refund(adapter, clientKey);
-      await refund(adapter, sendKey);
-      await refund(adapter, attemptKey);
+    if (refused !== undefined) {
+      await refundBudgets(adapter, siteBudgets);
 
-      throw new APIError("TOO_MANY_REQUESTS", {
-        message:
-          "Sign-in email capacity is temporarily unavailable. Please try again later.",
-      });
+      ctx.context.logger.warn(
+        "magic link dropped: inbox with no verified account reached its daily cap"
+      );
+
+      return;
     }
 
     try {
@@ -254,19 +377,19 @@ export const limitSends =
     } catch (error) {
       await refund(adapter, sendKey);
 
-      if (
-        Schema.is(CodedSendError)(error) &&
-        REJECTED_SEND_CODES.has(error.cause.code)
-      ) {
-        await refund(adapter, globalKey);
-        await refund(adapter, clientKey);
+      if (!isMember) {
+        await refund(adapter, inboxDayKey);
       }
 
-      if (
-        Schema.is(CodedSendError)(error) &&
-        PROVIDER_FAILURES.has(error.cause.code)
-      ) {
+      const code = Schema.is(CodedSendError)(error) ? error.cause.code : "";
+
+      if (REJECTED_SEND_CODES.has(code)) {
+        await refundBudgets(adapter, siteBudgets);
+      }
+
+      if (PROVIDER_FAILURES.has(code)) {
         await refund(adapter, attemptKey);
+        await refundClient(adapter, clientKey, clientRefundKey, now);
       }
 
       ctx.context.logger.error("magic link send failed", error);

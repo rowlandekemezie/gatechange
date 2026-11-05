@@ -49,6 +49,7 @@ const scenarios = [
   "bad-email",
   "signout",
   "link-reuse",
+  "link-budget",
   "confirm-other-account",
   "confirm-retry",
   "save-search",
@@ -1412,6 +1413,31 @@ const run = async () => {
           `a Free member lost listings: ${before.count} became ${after.count}`
         );
       }
+    },
+    "link-budget": async () => {
+      await signIn();
+      await signOut();
+
+      const stranger = `stranger-${values.email}`;
+
+      await submitEmail(stranger);
+      await waitForAccount("the first stranger's notice", (state) =>
+        state.sent.includes(stranger)
+      );
+
+      await goTo(url);
+
+      await submitEmail(`second-${stranger}`);
+
+      const refused = await waitForAccount(
+        "the new-address share to refuse",
+        (state) => state.problem.length > 0
+      );
+
+      steps.push({ step: "a second stranger was refused", ...refused });
+
+      await goTo(url);
+      await signIn();
     },
     "link-reuse": async () => {
       const link = await signIn();
