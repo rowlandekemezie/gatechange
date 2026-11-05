@@ -78,7 +78,7 @@ const pages = {
       {
         heading: "Payments and other services",
         paragraphs: [
-          "When billing is available, Stripe handles checkout and payment details. The board stores customer and subscription references, plan and entitlement information. Cloudflare provides hosting, database, security and delivery services. Service providers may process information outside Canada.",
+          "Stripe handles checkout and payment details. The board stores customer and subscription references, plan and entitlement information. Cloudflare provides hosting, database, security and delivery services. Service providers may process information outside Canada.",
           "Opening an original job posting takes you to another service with its own privacy practices. This board does not sell candidate data. For access, correction or deletion requests, use the contact page. Identity and any billing obligations must be checked before a request is completed.",
         ],
       },
@@ -100,7 +100,7 @@ const pages = {
         heading: "Accounts and Pro",
         paragraphs: [
           "Browsing listings is public. Keep account sign-in links and agent tokens private, and use account features only for data you are entitled to manage. Do not try to access another person's tracker or bypass service limits.",
-          "Pro features and prices are described on the pricing page. Checkout, when available, shows the price and billing interval before payment. Review subscription status and cancellation through the account's billing controls. Deleting a saved search is separate from cancelling a subscription.",
+          "Pro features and prices are described on the pricing page. Checkout shows the price and billing interval before payment. Review subscription status and cancellation through the account's billing controls. If you cancel, Pro stays on until the end of the period you paid for. A week that has started is not refunded unless you ask and we agree. Deleting a saved search is separate from cancelling a subscription.",
         ],
       },
       {
