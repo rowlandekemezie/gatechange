@@ -119,6 +119,7 @@ interface PrivacySignals {
 
 const isPageView = (call: AnalyticsCallValue) =>
   AnalyticsCall.match(call, {
+    Anonymous: () => false,
     Identify: () => false,
     Reset: () => false,
     Track: ({ event }) => Schema.is(AnalyticsEvent.PageViewed)(event),
@@ -154,6 +155,7 @@ const browserAnalytics = (campaign: Properties) =>
 
     const state = {
       anonymousId: yield* uuidV7,
+      checkingSession: true,
       ready: false,
       userId: Option.none<string>(),
     };
@@ -161,7 +163,7 @@ const browserAnalytics = (campaign: Properties) =>
     const queue: QueuedEvent[] = [];
 
     const flush = Effect.suspend(() =>
-      state.ready && queue.length > 0
+      state.ready && !state.checkingSession && queue.length > 0
         ? client
             .execute(
               HttpClientRequest.post(INGEST_BATCH_PATH).pipe(
@@ -199,10 +201,34 @@ const browserAnalytics = (campaign: Properties) =>
         });
       });
 
+    const claimHeld = (userId: string) => {
+      state.checkingSession = false;
+      state.userId = Option.some(userId);
+      queue.splice(
+        0,
+        queue.length,
+        ...queue.map((queued) => ({
+          ...queued,
+          distinct_id: userId,
+          properties: { ...queued.properties, $process_person_profile: true },
+        }))
+      );
+    };
+
     const handle = (call: AnalyticsCallValue) =>
       AnalyticsCall.match(call, {
-        Identify: ({ userId }) =>
-          Option.contains(state.userId, userId)
+        Anonymous: () =>
+          Effect.sync(() => {
+            state.checkingSession = false;
+          }),
+        Identify: ({ userId }) => {
+          if (state.checkingSession) {
+            return Effect.sync(() => {
+              claimHeld(userId);
+            });
+          }
+
+          return Option.contains(state.userId, userId)
             ? Effect.void
             : Effect.sync(() => {
                 state.userId = Option.some(userId);
@@ -210,7 +236,8 @@ const browserAnalytics = (campaign: Properties) =>
                 Effect.andThen(
                   record("$identify", { $anon_distinct_id: state.anonymousId })
                 )
-              ),
+              );
+        },
         Reset: () =>
           uuidV7.pipe(
             Effect.flatMap((anonymousId) =>
@@ -271,6 +298,7 @@ const browserAnalytics = (campaign: Properties) =>
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
+        state.checkingSession = false;
         start();
       }
     });
@@ -314,7 +342,7 @@ export class Analytics extends Context.Service<Analytics, typeof disabled>()(
         Effect.catchDefect(() => Effect.succeed(disabled))
       )
     ).pipe(
-      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.fresh(FetchHttpClient.layer)),
       Layer.provide(
         Layer.succeed(FetchHttpClient.RequestInit, {
           credentials: "omit",

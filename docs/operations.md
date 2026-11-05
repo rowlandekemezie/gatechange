@@ -110,6 +110,45 @@ To measure indexing, use an owner-verified [Google Search Console](https://searc
 
 Public `/about`, `/privacy`, `/terms` and `/contact` pages describe coverage, data handling and support. Account deletion is currently a manual support request, with a link from the account page. It is not an automated deletion flow or subscription cancellation. Google for Jobs markup remains subject to source permission and complete, accurate job data; public-page rendering does not relax those requirements.
 
+## Product analytics
+
+The board sends product events to PostHog through the `/ingest` proxy. Analytics stay off when the stage has no `POSTHOG_PROJECT_KEY`, and a browser that sends Do Not Track or Global Privacy Control sends nothing. Analytics set no cookie and store no id, so each page load gets a new random anonymous id.
+
+Browser events wait in memory until the session check answers, so a signed-in visitor's first page view carries the account id and an anonymous visitor's carries the random id. If the tab hides first, the events leave as anonymous, and `$identify` merges them if the session answer arrives while the page is still alive. A visitor who closes the tab before the session answer stays anonymous for that page load.
+
+Properties never carry an email, a token, a search string, or a job title. Use counts, lengths, booleans, and enums. Every browser event also has `$pathname`, `$current_url` without the query string, `$session_id`, `$process_person_profile`, the campaign parameters, and the referrer origin.
+
+| Event | Side | Fires when | Properties | Source |
+| --- | --- | --- | --- | --- |
+| `$pageview` | browser | A route changes, or a visit lands | `route` | `routeEvents`, `events.ts` |
+| `$identify` | browser | A visitor signs in after their events already left as anonymous. A reload of a signed-in page sends none | `$anon_distinct_id` | `handle`, `client.ts` |
+| `agents_section_viewed` | browser | The `#agents` section scrolls into view | none | `IntersectionObserver`, `client.ts` |
+| `apply_clicked` | browser | A click on an apply link | `source`: `board_row`, `job_page` | `applySourceOf`, `client.ts` |
+| `checkout_started` | browser | `ClickedChoosePlan` | `plan` | `billingEvents`, `events.ts` |
+| `filter_changed` | browser | A filter control changes | `filter`: enum | `FILTERS`, `events.ts` |
+| `job_applied` | browser | A job is marked or moved to Applied | none | `messageEvents`, `events.ts` |
+| `job_opened` | browser | A job page is entered | none | `routeEvents`, `events.ts` |
+| `job_saved` | browser | A job is marked Saved | none | `messageEvents`, `events.ts` |
+| `pricing_viewed` | browser | The pricing page is entered | none | `routeEvents`, `events.ts` |
+| `search_submitted` | browser | A search is submitted | `query_length` | `messageEvents`, `events.ts` |
+| `show_more` | browser | `ClickedLoadMore` | none | `messageEvents`, `events.ts` |
+| `signin_completed` | browser | A session appears after a signed-out state or on the confirm page | none | `sessionCalls`, `events.ts` |
+| `signup_started` | browser | A sign-in is submitted or a social provider is chosen | `method` | `accountEvents`, `events.ts` |
+| `saved_search_created` | browser | `CompletedSaveSearch` with outcome `Saved` | none | `savedSearchEvents`, `events.ts` |
+| `instant_alerts_changed` | browser | `CompletedSetInstantAlerts`, the server-confirmed value | `enabled`: boolean | `billingEvents`, `events.ts` |
+| `agent_token_created` | browser | `CompletedIssueToken` | none | `agentTokenEvents`, `events.ts` |
+| `agent_token_revoked` | browser | `CompletedRevokeToken` with `ok` true | none | `agentTokenEvents`, `events.ts` |
+| `search_no_results` | browser | The board settles on zero results, from a fetch, an empty selection, or a served landing page | `query_length`, `filter_count`, `empty_selection`: true when no role or no region is selected, with no fetch | `emptyBoardEvents`, `events.ts` |
+| `job_not_found` | browser | A job page settles as missing, from a served landing page or an in-app fetch | none | `missingJobEvents`, `events.ts` |
+| `listing_not_found` | browser | A company or role page settles with zero jobs, from a served landing page or an in-app fetch | `kind`: `company`, `role` | `emptyListingEvents`, `events.ts` |
+| `read_rate_limited` | browser | A `/rpc` request answers 429 in a real browser. One event per request | none | `checkedHttp`, `board/queries.ts` |
+| `mcp_tool_called` | server | An MCP `tools/call` completes | `tool` | `trackedMcpHttp`, `apps/api/src/worker.ts` |
+| `subscription_activated` | server | Stripe links a customer. Sent as the account, with a person profile | none | `stripeWebhook`, `apps/api/src/worker.ts` |
+| `digest_sent` | server | The digest cron sent at least one email. Sent as `jobs-api` | `count` | digest cron, `apps/api/src/worker.ts` |
+| `email_unsubscribed` | server | A `POST /unsubscribe` succeeds, unless the request carries `DNT: 1` or `Sec-GPC: 1`. Sent as the account, with no person profile. A repeat POST sends it again | none | `unsubscribe`, `apps/api/src/worker.ts` |
+
+Add a browser event to `AnalyticsEvent` and `eventNames` in `apps/web/src/client/analytics/events.ts`. Add a server event to `ServerEvent` in `apps/api/src/analytics.ts`, and honor `privacySignalled` when a browser made the request. To check events on a stage, use the `analytics-*` scenarios in the verify skill. They add a stub key in the browser and answer `/ingest` themselves, so no event reaches PostHog.
+
 ## Workers plan
 
 Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse the default 60 job boards a run. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.

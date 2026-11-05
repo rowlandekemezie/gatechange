@@ -17,9 +17,10 @@ const program = Runtime.makeApplication({
   container: served ?? document.querySelector<HTMLElement>("#root"),
   devTools: import.meta.env.DEV ? { Message } : false,
   resources: Layer.mergeAll(
-    JobQueries.layer,
-    AuthClient.layer,
-    Analytics.layer(campaignOf(window.location.search))
+    JobQueries.layer.pipe(
+      Layer.provideMerge(Analytics.layer(campaignOf(window.location.search)))
+    ),
+    AuthClient.layer
   ),
 });
 
