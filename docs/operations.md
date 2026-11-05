@@ -40,6 +40,8 @@ The board fills over the first few hours. Each cron run fetches up to 60 due fee
 
 ## Production billing
 
+Prod sells Pro by default, so the deploy also needs `PRO_PLANS`, a live Stripe key on the profile or in `STRIPE_API_KEY`, and an `rk_live_` key in `STRIPE_RESTRICTED_KEY`. Without `PRO_PLANS` it refuses to deploy rather than archive the live prices. Set `BILLING_ENABLED=false` to deploy prod without billing. In CI these come from the `production` environment's `PRO_PLANS` variable and `STRIPE_LIVE_API_KEY` and `STRIPE_LIVE_RESTRICTED_KEY` secrets.
+
 Pro is sold through Stripe. Production billing needs these settings:
 
 - `BILLING_ENABLED=true`.
@@ -56,8 +58,8 @@ The persistent `preview` stage uses these defaults; explicit environment configu
 
 | Setting | `preview` | Other stages |
 | --- | --- | --- |
-| `BILLING_ENABLED` | `true`, test mode required | `false` |
-| `PRO_PLANS` | The `preview` environment's `PRO_PLANS` variable in CI | Empty, so no Pro plans |
+| `BILLING_ENABLED` | `true`, test mode required | `true` on `prod`, live mode required, otherwise `false` |
+| `PRO_PLANS` | The `preview` environment's `PRO_PLANS` variable in CI | The `production` environment's `PRO_PLANS` variable on `prod`, required; otherwise empty, so no Pro plans |
 | `WORKERS_SUBDOMAIN` | `rowland-ekemezie` | Unset |
 | `DIGEST_SITE_ORIGIN` | `https://uat.gatechange.dev` | Production origin |
 | `ENRICHMENT_DAILY_NEURONS` | `0` | `29000` |
