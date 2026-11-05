@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { zoneResource } from "../stacks/github.js";
+
 const textAt = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf-8");
 
@@ -11,6 +13,8 @@ const ci = textAt("../../../.github/workflows/ci.yml");
 const cleanup = textAt("../../../.github/workflows/pr-preview-cleanup.yml");
 
 const stack = textAt("../stacks/github.ts");
+
+const rootManifest = textAt("../../../package.json");
 
 const JOB_HEADING = /^ {2}(?<job>[a-z][a-z-]*):$/gmu;
 
@@ -84,6 +88,50 @@ describe("CI Cloudflare tokens", () => {
 
     expect(policy).toContain('"Workers Scripts Write"');
     expect(policy).not.toMatch(/D1|DNS|Routes|Queues|R2|KV|Tail|\.zone\./u);
+  });
+});
+
+describe("the preview token's zone access", () => {
+  const previewToken = stack.slice(
+    stack.indexOf('"JobBoardPreviewToken"'),
+    stack.indexOf('"PrPreviewEnvironment"')
+  );
+
+  it("nests the zone under the account, as account-owned tokens require", () => {
+    expect(zoneResource("account-id", "zone-id")).toStrictEqual({
+      "com.cloudflare.api.account.account-id": {
+        "com.cloudflare.api.account.zone.zone-id": "*",
+      },
+    });
+  });
+
+  it("allows routes and zone reads on the one zone it looked up", () => {
+    expect(previewToken).toMatch(
+      /permissionGroups: \["Workers Routes Write", "Zone Read"\],\s+resources: zoneResource\(accountId, zoneId\)/u
+    );
+  });
+
+  it("holds no DNS write and no all-zones resource", () => {
+    expect(previewToken).not.toContain("DNS");
+    expect(previewToken).not.toContain("zone.*");
+  });
+
+  it("builds @rat-stack/core before the stack loads its compiled output", () => {
+    expect(stack).toContain('from "@rat-stack/core"');
+    expect(rootManifest).toMatch(
+      /"infra:ci-credentials": "turbo run build --filter=@rat-stack\/core && [^"]*--config stacks\/github\.ts"/u
+    );
+  });
+});
+
+describe("the preview OAuth secrets", () => {
+  const OAUTH_SECRET = /secrets\.PREVIEW_(?:GH_OAUTH|GOOGLE)_CLIENT/u;
+
+  it("reach only the job on the preview environment", () => {
+    expect(ciJobs.get("preview")).toMatch(OAUTH_SECRET);
+    expect(ciJobs.get("deploy")).not.toMatch(OAUTH_SECRET);
+    expect(ciJobs.get("pr-preview")).not.toMatch(OAUTH_SECRET);
+    expect(cleanup).not.toMatch(OAUTH_SECRET);
   });
 });
 

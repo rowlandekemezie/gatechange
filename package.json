@@ -28,7 +28,7 @@
     "vendor:agent-sources": "./scripts/vendor-agent-sources.sh",
     "self-host": "turbo run build --filter=@rat-stack/core && varlock run -- node apps/infra/src/self-host.ts",
     "ingest:logs": "pnpm --filter @rat-stack/infra run logs",
-    "infra:ci-credentials": "pnpm --filter @rat-stack/infra exec alchemy deploy --config stacks/github.ts"
+    "infra:ci-credentials": "turbo run build --filter=@rat-stack/core && pnpm --filter @rat-stack/infra exec alchemy deploy --config stacks/github.ts"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.86.1",

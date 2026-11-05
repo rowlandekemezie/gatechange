@@ -1,3 +1,4 @@
+import { UAT_HOSTNAME } from "@rat-stack/core";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as GitHub from "alchemy/GitHub";
@@ -13,6 +14,13 @@ export const REPOSITORY = {
 const accountResource = (accountId: string) =>
   ({ [`com.cloudflare.api.account.${accountId}`]: "*" }) as const;
 
+export const zoneResource = (accountId: string, zoneId: string) =>
+  ({
+    [`com.cloudflare.api.account.${accountId}`]: {
+      [`com.cloudflare.api.account.zone.${zoneId}`]: "*",
+    },
+  }) as const;
+
 export default Alchemy.Stack(
   "JobBoardCi",
   {
@@ -21,6 +29,12 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* ciCredentials() {
     const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment;
+
+    const zoneId = yield* Cloudflare.Zone.resolveZoneId({
+      accountId,
+      hostname: UAT_HOSTNAME,
+      zone: undefined,
+    }).pipe(Effect.orDie);
 
     const deployToken = yield* Cloudflare.ApiToken.AccountApiToken(
       "JobBoardDeployToken",
@@ -89,6 +103,11 @@ export default Alchemy.Stack(
               "Secrets Store Write",
             ],
             resources: accountResource(accountId),
+          },
+          {
+            effect: "allow",
+            permissionGroups: ["Workers Routes Write", "Zone Read"],
+            resources: zoneResource(accountId, zoneId),
           },
         ],
       }
