@@ -19,7 +19,7 @@ export const SITE_REDIRECT_HOSTNAMES: readonly string[] = [
   `www.${SITE_HOSTNAME}`,
 ];
 
-export const MAIL_HOSTNAME = LEGACY_SITE_HOSTNAME;
+export const MAIL_HOSTNAME = SITE_HOSTNAME;
 
 const OWNER_ZONE = "rowlandekemezie.com";
 
