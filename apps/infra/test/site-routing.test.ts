@@ -17,7 +17,15 @@ describe("siteRouting", () => {
     });
   });
 
-  it.each(["preview", "verify-j4-perf", "dev", "production", "Prod"])(
+  it("attaches only uat.gatechange.dev to the preview stage and keeps its Worker name and workers.dev", () => {
+    expect(siteRouting("preview")).toStrictEqual({
+      domain: { name: "uat.gatechange.dev" },
+      name: "jobs-preview",
+      workersDev: true,
+    });
+  });
+
+  it.each(["verify-j4-perf", "dev", "production", "Prod", "Preview"])(
     "leaves %s off the custom domain and serves it on its own workers.dev name",
     (stage) => {
       expect(siteRouting(stage)).toStrictEqual({

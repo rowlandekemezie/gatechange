@@ -47,6 +47,18 @@ describe("siteHostsOf", () => {
     }
   );
 
+  it.each([Option.none(), Option.some("acct")])(
+    "trusts uat.gatechange.dev and local hosts on the persistent preview, never workers.dev or prod (%o)",
+    (workersSubdomain) => {
+      expect(
+        siteHostsOf("preview", { localHosts: LOCAL, workersSubdomain })
+      ).toStrictEqual({
+        allowedHosts: ["uat.gatechange.dev", ...LOCAL],
+        fallbackOrigin: Option.none(),
+      });
+    }
+  );
+
   it("trusts no workers.dev host on a preview stage when the account subdomain is unknown", () => {
     expect(
       siteHostsOf("verify-x", {
@@ -67,6 +79,23 @@ describe("WorkersSubdomain", () => {
 
   it("accepts an account subdomain", () => {
     expect(Schema.is(WorkersSubdomain)("rowland-ekemezie")).toBe(true);
+  });
+});
+
+describe("persistent preview origin", () => {
+  it.each([Option.none(), Option.some("acct")])(
+    "is https://uat.gatechange.dev whatever the workers subdomain (%o)",
+    (workersSubdomain) => {
+      expect(publicOriginOf("preview", workersSubdomain)).toStrictEqual(
+        Option.some("https://uat.gatechange.dev")
+      );
+    }
+  );
+
+  it("leaves prod on gatechange.dev", () => {
+    expect(publicOriginOf("prod", Option.none())).toStrictEqual(
+      Option.some("https://gatechange.dev")
+    );
   });
 });
 
@@ -128,8 +157,43 @@ describe("canonicalSiteUrlOf", () => {
     expect(new URL(moved.href).origin).toBe(SITE_ORIGIN);
   });
 
+  const OLD_PREVIEW = `https://jobs-preview.${OWNER_WORKERS_SUBDOMAIN}.workers.dev`;
+
+  it.each([
+    [
+      `${OLD_PREVIEW}/jobs/greenhouse%3Aacme%2F1?q=staff&age=30`,
+      "https://uat.gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff&age=30",
+    ],
+    [
+      `${OLD_PREVIEW}/api/auth/magic-link/verify?token=a%2Bb`,
+      "https://uat.gatechange.dev/api/auth/magic-link/verify?token=a%2Bb",
+    ],
+    [OLD_PREVIEW, "https://uat.gatechange.dev/"],
+    [`${OLD_PREVIEW}./about`, "https://uat.gatechange.dev/about"],
+  ])("moves the old preview URL %s to %s", (from, to) => {
+    expect(
+      Option.map(canonicalSiteUrlOf(new URL(from)), (url) => url.href)
+    ).toStrictEqual(Option.some(to));
+  });
+
+  it.each([
+    `${OLD_PREVIEW}//evil.com/x?a=1`,
+    `${OLD_PREVIEW}/\\evil.com`,
+    `${OLD_PREVIEW}/%2F%2Fevil.com`,
+    `${OLD_PREVIEW}///evil.com`,
+  ])("keeps %s on uat.gatechange.dev", (from) => {
+    const moved = Option.getOrThrow(canonicalSiteUrlOf(new URL(from)));
+
+    expect(new URL(moved.href).origin).toBe("https://uat.gatechange.dev");
+  });
+
   it.each([
     "https://gatechange.dev/jobs/1?q=x",
+    "https://uat.gatechange.dev/jobs/1?q=x",
+    "https://pr-12-jobs-preview.rowland-ekemezie.workers.dev/",
+    "https://jobs-verify-x.rowland-ekemezie.workers.dev/",
+    "https://jobs-preview.attacker.workers.dev/",
+    "https://evil.jobs-preview.rowland-ekemezie.workers.dev/",
     "https://jobs-pr-12.rowland-ekemezie.workers.dev/",
     "https://evil.jobs.rowlandekemezie.com/",
     "https://rowlandekemezie.com/",
@@ -149,6 +213,11 @@ describe("own-host links", () => {
     expect(offSiteHref("https://gatechange.dev/jobs/1")).toStrictEqual(
       Option.none()
     );
+    expect(
+      offSiteHref(
+        "https://uat.gatechange.dev/api/auth/magic-link/verify?token=synthetic"
+      )
+    ).toStrictEqual(Option.none());
   });
 
   it("drops a listing link to a self-host's own Worker on its configured subdomain", () => {

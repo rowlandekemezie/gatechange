@@ -7,7 +7,7 @@ import { stageConfig } from "../src/stage-config.js";
 const configured = (stage: string, values: Record<string, string> = {}) =>
   stageConfig(stage).parse(ConfigProvider.fromUnknown(values));
 
-const previewOrigin = "https://jobs-preview.rowland-ekemezie.workers.dev";
+const previewOrigin = "https://uat.gatechange.dev";
 
 describe("persistent preview defaults", () => {
   it.effect(

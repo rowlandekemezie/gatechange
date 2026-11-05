@@ -446,6 +446,84 @@ describe("moved hosts", () => {
     }
   );
 
+  const OLD_PREVIEW = "https://jobs-preview.rowland-ekemezie.workers.dev";
+
+  it.each([
+    [`${OLD_PREVIEW}/`, "https://uat.gatechange.dev/"],
+    [
+      `${OLD_PREVIEW}/jobs/greenhouse%3Aacme%2F1?q=staff`,
+      "https://uat.gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff",
+    ],
+    [
+      `${OLD_PREVIEW}/api/auth/magic-link/verify?token=abc`,
+      "https://uat.gatechange.dev/api/auth/magic-link/verify?token=abc",
+    ],
+    [`${OLD_PREVIEW}/robots.txt`, "https://uat.gatechange.dev/robots.txt"],
+  ])(
+    "answers the old preview URL %s with a 301 to %s before touching the site",
+    async (from, to) => {
+      const site = edge(indexHtml, { indexing: "noindex" });
+
+      const response = await site.send(new Request(from));
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(to);
+      expect(site.calls).toStrictEqual({ assets: 0, backend: 0 });
+    }
+  );
+
+  it("keeps the method and body of an old preview POST with a 308", async () => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+
+    const response = await site.send(
+      new Request(`${OLD_PREVIEW}/api/auth/sign-in/magic-link`, {
+        body: "{}",
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://uat.gatechange.dev/api/auth/sign-in/magic-link"
+    );
+    expect(site.calls.backend).toBe(0);
+  });
+
+  it.each([
+    new Request(`${OLD_PREVIEW}/unsubscribe?token=t`),
+    new Request(`${OLD_PREVIEW}/unsubscribe?token=t`, {
+      body: "List-Unsubscribe=One-Click",
+      method: "POST",
+    }),
+    new Request(`${OLD_PREVIEW}/webhooks/stripe`, {
+      body: "{}",
+      method: "POST",
+    }),
+  ])(
+    "answers $method $url on the old preview URL without a redirect",
+    async (request) => {
+      const site = edge(indexHtml, { indexing: "noindex" });
+
+      const response = await site.send(request);
+
+      expect(response.headers.has("location")).toBe(false);
+      expect(site.forwarded).toStrictEqual([
+        `${request.method} ${request.url}`,
+      ]);
+    }
+  );
+
+  it("serves a native PR preview on its own workers.dev host", async () => {
+    const page = await edge(indexHtml, { indexing: "noindex" }).get(
+      "https://pr-17-jobs-preview.rowland-ekemezie.workers.dev/pricing"
+    );
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain(
+      '<link rel="canonical" href="https://pr-17-jobs-preview.rowland-ekemezie.workers.dev/pricing"'
+    );
+  });
+
   it("serves gatechange.dev itself", async () => {
     const page = await edge(indexHtml).get("https://gatechange.dev/pricing");
 
@@ -843,6 +921,39 @@ describe("robots", () => {
     const page = await edge(indexHtml, { indexing: "noindex" }).get(url);
 
     expect(page.headers.get("x-robots-tag")).toBe("noindex");
+  });
+
+  const UAT = "https://uat.gatechange.dev";
+
+  it.each([
+    `${UAT}/`,
+    `${UAT}/pricing`,
+    `${UAT}/roles/director/remote-canada`,
+    `${UAT}/robots.txt`,
+    `${UAT}/sitemap.xml`,
+    `${UAT}/assets/application.js`,
+    `${UAT}/favicon.svg`,
+  ])("keeps crawlers off %s, on a cache miss and a hit", async (url) => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+
+    const first = await site.get(url);
+    const second = await site.get(url);
+
+    expect(first.headers.has("location")).toBe(false);
+    expect(first.headers.get("x-robots-tag")).toBe("noindex");
+    expect(second.headers.get("x-robots-tag")).toBe("noindex");
+  });
+
+  it("closes robots.txt and empties the sitemap on the UAT host", async () => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+
+    const robots = await site.get(`${UAT}/robots.txt`);
+    const sitemap = await site.get(`${UAT}/sitemap.xml`);
+
+    expect(robots.html).toBe("User-agent: *\nDisallow: /\n");
+    expect(sitemap.html).toContain("<urlset");
+    expect(sitemap.html).not.toContain("<loc>");
+    expect(site.calls.backend).toBe(0);
   });
 
   it("disallows everything on a non-prod stage", async () => {

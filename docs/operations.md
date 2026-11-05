@@ -1,6 +1,6 @@
 # Operations
 
-Maintainer notes for the production deployment of Gate Change, its persistent preview, and pull request previews. To run your own copy, follow [Run your own](../README.md#run-your-own) instead.
+Maintainer notes for the production deployment of Gate Change, its persistent preview (UAT), and pull request previews. To run your own copy, follow [Run your own](../README.md#run-your-own) instead.
 
 ## CI and production deploys
 
@@ -50,7 +50,7 @@ Never drop or reprice a plan that has subscribers. To change a price, add a plan
 
 ## Persistent preview
 
-`preview` deploys the same application code as production with separate Website and JobsBackend Workers, D1, queue, authentication sessions, and Stripe test resources. Its stable URL is <https://jobs-preview.rowland-ekemezie.workers.dev>. Production keeps its custom domain and existing defaults. Native Worker version preview URLs do not isolate this application's service bindings, queue consumers, and scheduled tasks.
+`preview` deploys the same application code as production with separate Website and JobsBackend Workers, D1, queue, authentication sessions, and Stripe test resources. Its stable URL is <https://uat.gatechange.dev>, attached as a Worker custom domain to the existing `jobs-preview` Worker (`UAT_HOSTNAME` in `packages/core/src/site.ts`, `siteRouting` in `apps/infra/src/site-routing.ts`). Production keeps its own custom domains and defaults. Native Worker version preview URLs do not isolate this application's service bindings, queue consumers, and scheduled tasks.
 
 The persistent `preview` stage uses these defaults; explicit environment configuration can override them. PR stages use the stricter rules below:
 
@@ -59,7 +59,7 @@ The persistent `preview` stage uses these defaults; explicit environment configu
 | `BILLING_ENABLED` | `true`, test mode required | `false` |
 | `PRO_PLANS` | The `preview` environment's `PRO_PLANS` variable in CI | Empty, so no Pro plans |
 | `WORKERS_SUBDOMAIN` | `rowland-ekemezie` | Unset |
-| `DIGEST_SITE_ORIGIN` | Preview URL above | Production origin |
+| `DIGEST_SITE_ORIGIN` | `https://uat.gatechange.dev` | Production origin |
 | `ENRICHMENT_DAILY_NEURONS` | `0` | `29000` |
 | `ENRICHMENT_SWEEP_LIMIT` | `0` | `8` on `prod`, otherwise `0` |
 | `MAGIC_LINK_DAILY_SEND_LIMIT` | `10` | `900` |
@@ -68,9 +68,9 @@ The persistent `preview` stage uses these defaults; explicit environment configu
 
 Preview retains ingestion and scheduled mail delivery. Its zero AI budgets prevent automatic model calls, including queued deliveries. Preview mail remains real email, so use test accounts you control. Production's default 950 sends plus preview's 15 leave 35 of the observed 1000-per-day account allowance. These separate D1 budgets are not an atomic cross-database account quota; other stages, callers, overrides, or a changed provider allowance can consume that room. Recheck the account allowance before increasing them. Preview sends use the existing verified sender domain, while login, job, billing, and unsubscribe links use the preview origin.
 
-The `preview` GitHub environment must contain a unique `PREVIEW_BETTER_AUTH_SECRET` (at least 32 characters) and `PREVIEW_STRIPE_TEST_API_KEY` (`sk_test_` or `rk_test_`). Use a different auth secret from production. The preview job explicitly uses the existing repository Cloudflare credentials; it never substitutes production auth or Stripe secrets. OAuth remains disabled until separate preview apps and callback URLs are configured. With no `STRIPE_RESTRICTED_KEY` override, the Worker uses this test profile key for billing; choose a suitably scoped test key.
+The `preview` GitHub environment must contain a unique `PREVIEW_BETTER_AUTH_SECRET` (at least 32 characters) and `PREVIEW_STRIPE_TEST_API_KEY` (`sk_test_` or `rk_test_`). Use a different auth secret from production. The preview job explicitly uses the existing repository Cloudflare credentials; it never substitutes production auth or Stripe secrets. OAuth stays off until the `preview` environment has `PREVIEW_GH_OAUTH_CLIENT_ID` and `PREVIEW_GH_OAUTH_CLIENT_SECRET`, or `PREVIEW_GOOGLE_CLIENT_ID` and `PREVIEW_GOOGLE_CLIENT_SECRET`, and the provider lists the UAT callback (`https://uat.gatechange.dev/api/auth/callback/github` or `/google`). The preview job never reads the production OAuth secrets. With no `STRIPE_RESTRICTED_KEY` override, the Worker uses this test profile key for billing; choose a suitably scoped test key.
 
-CI deploys both stages after a successful check on a push to `main`. A manual CI run deploys its selected branch to persistent preview only; select `preview_plan_only` to inspect the plan without deploying. Select `preview_parent_only` to bootstrap only the shared PR backend parent. Preview gets its own deployment concurrency group. It validates both preview secrets before profile creation, stores the Stripe test key through `alchemy profile edit --add Stripe --method stored --set apiKey=- --no-input` using stdin, plans, deploys, and checks the homepage, auth health, and crawler exclusions. The profile lives in a private ephemeral `ALCHEMY_HOME` removed on success or failure. Only Alchemy profile/plan/deploy subprocesses use `CI=false`, because the pinned CLI otherwise ignores profiles; checks, tests, and builds retain CI behavior. No `STRIPE_API_KEY` environment fallback is used.
+CI deploys both stages after a successful check on a push to `main`. A manual CI run deploys its selected branch to persistent preview only; select `preview_plan_only` to inspect the plan without deploying. Select `preview_parent_only` to bootstrap only the shared PR backend parent. Preview gets its own deployment concurrency group. It validates both preview secrets before profile creation, stores the Stripe test key through `alchemy profile edit --add Stripe --method stored --set apiKey=- --no-input` using stdin, plans, deploys, and checks the homepage, auth health, the old URL's redirect, and crawler exclusions. The checks retry for 5 minutes, because the first attach waits for a certificate. The profile lives in a private ephemeral `ALCHEMY_HOME` removed on success or failure. Only Alchemy profile/plan/deploy subprocesses use `CI=false`, because the pinned CLI otherwise ignores profiles; checks, tests, and builds retain CI behavior. No `STRIPE_API_KEY` environment fallback is used.
 
 For a local deployment, configure a separate profile with the existing Cloudflare account and a Stripe **test** key. Set a unique `BETTER_AUTH_SECRET` through the declared local configuration before planning:
 
@@ -82,9 +82,13 @@ ALCHEMY_PROFILE=preview pnpm infra:plan --stage preview --no-input
 ALCHEMY_PROFILE=preview pnpm infra:deploy --stage preview --yes --no-input
 ```
 
-Review the plan before deploying: preview should create or update only its stage-owned resources, with its own D1 and queue, Stripe test objects and webhook, and no production-domain or production-database change. Keep credentials out of command arguments and logs. If running these Alchemy commands inside a CI environment, scope `CI=false` to those subprocesses so the stored Stripe profile can resolve.
+Review the plan before deploying: preview should create or update only its stage-owned resources, with its own D1 and queue, Stripe test objects and webhook, and no production-domain or production-database change. The `Website` must show an update, not a replacement, because PR previews use it as their parent. Keep credentials out of command arguments and logs. If running these Alchemy commands inside a CI environment, scope `CI=false` to those subprocesses so the stored Stripe profile can resolve.
 
-Every non-production stage routes pages and static assets through the Worker so they receive `X-Robots-Tag: noindex`; production retains its selected Worker paths and direct asset serving. Preview disallows crawling in `robots.txt`, and has no sitemap entries. These crawler signals do not restrict access: the preview is public, and private account data still requires its own preview session.
+Every non-production stage routes pages and static assets through the Worker so they receive `X-Robots-Tag: noindex`; production retains its selected Worker paths and direct asset serving. Preview disallows crawling in `robots.txt`, and has no sitemap entries. These crawler signals do not restrict access: the preview is public, and private account data still requires its own preview session. Indexing follows the stage (`SITE_INDEXING`), never the hostname, so `uat.gatechange.dev` stays closed.
+
+The old URL, `https://jobs-preview.rowland-ekemezie.workers.dev`, answers with a redirect to the same path and query on `https://uat.gatechange.dev`: 301 for GET and HEAD, 308 for other methods. `/unsubscribe` and `/webhooks/stripe` are not redirected, so unsubscribe links in sent mail keep working. The `jobs-preview` Worker must keep its `workers.dev` subdomain, because PR previews are served from it. The rule matches that one hostname, so `pr-<number>-jobs-preview` hosts are untouched.
+
+`uat.gatechange.dev` is same-site with `gatechange.dev`, unlike the old URL, so browsers send a `gatechange.dev` session cookie on requests that a UAT page makes to production. `isCrossSite` refuses those on `/rpc`, and better-auth refuses the UAT origin. Session cookies stay host-only: never set a cookie `Domain` or better-auth's `crossSubDomainCookies`, which would share them across both hosts. UAT runs real auth, so the auth secret must differ from production's.
 
 ## Pull request previews
 

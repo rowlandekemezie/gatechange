@@ -44,6 +44,7 @@ describe("posting apply links", () => {
     "https://rowlandekemezie.com/jobs/1",
     "https://gatechange.dev/api/auth/magic-link/verify?token=x",
     "https://WWW.gatechange.dev./account/confirm?token=x",
+    "https://uat.gatechange.dev/api/auth/magic-link/verify?token=x",
     "https://jobs-pr-12.rowland-ekemezie.workers.dev/api/auth/magic-link/verify?token=x",
     "https://rowland-ekemezie.workers.dev/account/confirm?token=x",
     "http://localhost:1337/api/auth/magic-link/verify?token=x",

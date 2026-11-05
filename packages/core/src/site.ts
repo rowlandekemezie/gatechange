@@ -2,9 +2,15 @@ import { Option, Schema } from "effect";
 
 export const PROD_STAGE = "prod";
 
+export const PREVIEW_STAGE = "preview";
+
 export const SITE_HOSTNAME = "gatechange.dev";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
+
+export const UAT_HOSTNAME = `uat.${SITE_HOSTNAME}`;
+
+const UAT_ORIGIN = `https://${UAT_HOSTNAME}`;
 
 export const LEGACY_SITE_HOSTNAME = "jobs.rowlandekemezie.com";
 
@@ -16,19 +22,6 @@ export const SITE_REDIRECT_HOSTNAMES: readonly string[] = [
 export const MAIL_HOSTNAME = LEGACY_SITE_HOSTNAME;
 
 const OWNER_ZONE = "rowlandekemezie.com";
-
-const onSiteOrigin = ({ pathname, search }: URL) => {
-  const target = new URL(SITE_ORIGIN);
-  target.pathname = pathname;
-  target.search = search;
-
-  return target;
-};
-
-export const canonicalSiteUrlOf = (url: URL): Option.Option<URL> =>
-  SITE_REDIRECT_HOSTNAMES.includes(url.hostname.replace(/\.+$/u, ""))
-    ? Option.some(onSiteOrigin(url))
-    : Option.none();
 
 export const SITE_NAME = "Gate Change";
 
@@ -102,18 +95,54 @@ export const previewWorkerName = (stage: string) =>
     ? `${stage}-jobs-preview`
     : `jobs-${stage.toLowerCase()}`;
 
+const workersHostOf = (stage: string, subdomain: string) =>
+  `${previewWorkerName(stage)}.${subdomain}.workers.dev`;
+
+const onOrigin = (origin: string, { pathname, search }: URL) => {
+  const target = new URL(origin);
+  target.pathname = pathname;
+  target.search = search;
+
+  return target;
+};
+
+const canonicalOriginOf = (hostname: string): Option.Option<string> => {
+  if (SITE_REDIRECT_HOSTNAMES.includes(hostname)) {
+    return Option.some(SITE_ORIGIN);
+  }
+
+  return hostname === workersHostOf(PREVIEW_STAGE, SITE_WORKERS_SUBDOMAIN)
+    ? Option.some(UAT_ORIGIN)
+    : Option.none();
+};
+
+export const canonicalSiteUrlOf = (url: URL): Option.Option<URL> =>
+  canonicalOriginOf(url.hostname.replace(/\.+$/u, "")).pipe(
+    Option.map((origin) => onOrigin(origin, url))
+  );
+
+const publicHostOf = (
+  stage: string,
+  workersSubdomain: Option.Option<string>
+): Option.Option<string> => {
+  if (stage === PROD_STAGE) {
+    return Option.some(SITE_HOSTNAME);
+  }
+
+  return stage === PREVIEW_STAGE
+    ? Option.some(UAT_HOSTNAME)
+    : workersSubdomain.pipe(
+        Option.map((subdomain) => workersHostOf(stage, subdomain))
+      );
+};
+
 export const publicOriginOf = (
   stage: string,
   workersSubdomain: Option.Option<string>
 ): Option.Option<string> =>
-  stage === PROD_STAGE
-    ? Option.some(SITE_ORIGIN)
-    : workersSubdomain.pipe(
-        Option.map(
-          (subdomain) =>
-            `https://${previewWorkerName(stage)}.${subdomain}.workers.dev`
-        )
-      );
+  publicHostOf(stage, workersSubdomain).pipe(
+    Option.map((host) => `https://${host}`)
+  );
 
 export interface SiteHosts {
   readonly allowedHosts: readonly string[];
@@ -136,13 +165,7 @@ export const siteHostsOf = (
       }
     : {
         allowedHosts: [
-          ...workersSubdomain.pipe(
-            Option.map(
-              (subdomain) =>
-                `${previewWorkerName(stage)}.${subdomain}.workers.dev`
-            ),
-            Option.toArray
-          ),
+          ...Option.toArray(publicHostOf(stage, workersSubdomain)),
           ...localHosts,
         ],
         fallbackOrigin: Option.none(),
