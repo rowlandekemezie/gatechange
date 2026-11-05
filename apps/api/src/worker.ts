@@ -23,6 +23,7 @@ import {
   EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
   isPullRequestStage,
+  MAIL_HOSTNAME,
   postHogSetting,
   publicOriginOf,
   runDigests,
@@ -31,7 +32,6 @@ import {
   skipHandling,
   sweepLimitOf,
   siteHostsOf,
-  SITE_HOSTNAME,
   SITE_ORIGIN,
   SITE_WORKERS_SUBDOMAIN,
   SocialProvider,
@@ -81,7 +81,7 @@ import {
 } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
-import { postHogCapture, ServerEvent } from "./analytics.js";
+import { postHogCapture, privacySignalled, ServerEvent } from "./analytics.js";
 import type { ServerEventValue } from "./analytics.js";
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
 import { guardPreviewAccess } from "./preview-access.js";
@@ -134,9 +134,9 @@ const enrichMessage =
         ),
     });
 
-export const MAGIC_LINK_SENDER = `sign-in@${SITE_HOSTNAME}`;
+export const MAGIC_LINK_SENDER = `sign-in@${MAIL_HOSTNAME}`;
 
-export const DIGEST_SENDER = `digest@${SITE_HOSTNAME}`;
+export const DIGEST_SENDER = `digest@${MAIL_HOSTNAME}`;
 
 export const DIGEST_SCHEDULE = "7 * * * *";
 
@@ -591,6 +591,13 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
           store.unsubscribe(account.value, now)
         ).pipe(
           Effect.provide(alertLayer),
+          Effect.tap(() =>
+            privacySignalled(request.headers)
+              ? Effect.void
+              : captureInBackground(
+                  ServerEvent.EmailUnsubscribed({ account: account.value })
+                )
+          ),
           Effect.as(unsubscribePage("Done", token)),
           Effect.catchTag("JobStoreUnavailable", (failure) =>
             Effect.logWarning("unsubscribe failed", failure).pipe(

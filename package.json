@@ -2,7 +2,7 @@
   "name": "job-board",
   "version": "0.1.0",
   "private": true,
-  "description": "Engineering leadership job board on rat-stack: Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.",
+  "description": "Gate Change, a job board for engineering leaders: Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -18,6 +18,7 @@
     "lockfile:check": "pnpm --config.optimistic-repeat-install=false install --frozen-lockfile --offline --lockfile-only --ignore-scripts",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
+    "posthog:dashboards": "node scripts/posthog-dashboards.ts",
     "infra:deploy": "turbo run build --filter=@rat-stack/infra... && pnpm --filter @rat-stack/infra run deploy",
     "infra:destroy": "pnpm --filter @rat-stack/infra run destroy",
     "infra:plan": "turbo run build --filter=@rat-stack/infra... && pnpm --filter @rat-stack/infra run plan",

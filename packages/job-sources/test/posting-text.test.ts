@@ -14,7 +14,6 @@ import { linesOfHtml, MAX_HTML_CHARS, textOfHtml } from "../src/parse.js";
 import ashbyFixture from "./fixtures/ashby-board.json" with { type: "json" };
 import greenhouseFixture from "./fixtures/greenhouse-job.json" with { type: "json" };
 import leverFixture from "./fixtures/lever-posting.json" with { type: "json" };
-import smartRecruitersFixture from "./fixtures/smartrecruiters-posting.json" with { type: "json" };
 import workableFixture from "./fixtures/workable-job.json" with { type: "json" };
 
 const greenhouseJob = JSON.stringify(greenhouseFixture);
@@ -22,8 +21,6 @@ const greenhouseJob = JSON.stringify(greenhouseFixture);
 const leverPosting = JSON.stringify(leverFixture);
 
 const ashbyBoard = JSON.stringify(ashbyFixture);
-
-const smartRecruitersPosting = JSON.stringify(smartRecruitersFixture);
 
 const workableJob = JSON.stringify(workableFixture);
 
@@ -858,126 +855,19 @@ describe("posting texts", () => {
   );
 
   it.effect(
-    "a SmartRecruiters posting joins its job ad sections as plain text",
+    "a SmartRecruiters listing left in the store is gone without a request",
     () => {
-      const server = serving(smartRecruitersPosting);
+      const server = serving("{}");
 
-      return Effect.gen(function* readSmartRecruiters() {
-        const text = yield* fetchText(
-          "smartrecruiters:ServiceNow:744000156092859"
+      return Effect.gen(function* readRetiredBoard() {
+        const failure = yield* Effect.flip(
+          fetchText("smartrecruiters:Experian:744000156092859")
         );
 
-        expect(server.requested).toStrictEqual([
-          "https://api.smartrecruiters.com/v1/companies/ServiceNow/postings/744000156092859",
-        ]);
-        expect(text.startsWith("Company Description")).toBe(true);
-        expect(text).toContain("Sr Software Engineering Manager");
-        expect(text).toContain("Qualifications");
-        expect(text).not.toMatch(/[<>]|&[a-z#0-9]+;/u);
-        expect(moneyRangesIn(text)).toContainEqual({
-          amounts: [190_900, 334_100],
-          currency: "USD",
-          period: "Year",
-        });
+        expect(failure._tag).toBe("PostingGone");
+        expect(server.requested).toStrictEqual([]);
       }).pipe(Effect.provide(server.layer));
     }
-  );
-
-  it.effect.each([
-    [
-      "a yearly range",
-      { currency: "USD", max: 236_500, min: 177_400, period: "YEARLY" },
-      { currency: "USD", max: 236_500, min: 177_400 },
-    ],
-    [
-      "an hourly range",
-      { currency: "USD", max: 60, min: 50, period: "HOURLY" },
-      { currency: "USD", max: 124_800, min: 104_000 },
-    ],
-    [
-      "a fractional hourly range",
-      { currency: "USD", max: 30.46, min: 22.84, period: "HOURLY" },
-      { currency: "USD", max: 63_357, min: 47_507 },
-    ],
-    [
-      "a monthly range",
-      { currency: "USD", max: 15_000, min: 12_000, period: "MONTHLY" },
-      { currency: "USD", max: 180_000, min: 144_000 },
-    ],
-    [
-      "a null max",
-      { currency: "USD", max: null, min: 177_400, period: "YEARLY" },
-      null,
-    ],
-    ["no max", { currency: "USD", min: 177_400, period: "YEARLY" }, null],
-    [
-      "a null currency",
-      { currency: null, max: 236_500, min: 177_400, period: "YEARLY" },
-      null,
-    ],
-    [
-      "a range in a currency the board does not show",
-      { currency: "JPY", max: 9_000_000, min: 7_000_000, period: "YEARLY" },
-      null,
-    ],
-    ["no compensation", null, null],
-  ] as const)(
-    "a SmartRecruiters posting with %s carries %j as its salary field",
-    ([, compensation, salary]) =>
-      Effect.gen(function* readSmartRecruitersSalary() {
-        const posting = yield* fetchPosting(
-          "smartrecruiters:WesternDigital:744000153582331"
-        );
-
-        expect(posting.salary).toStrictEqual(salary);
-        expect(posting.text).toBe("Lead the wafer fab equipment team.");
-      }).pipe(
-        Effect.provide(
-          serving(
-            JSON.stringify({
-              compensation,
-              jobAd: {
-                sections: {
-                  jobDescription: {
-                    text: "<p>Lead the wafer fab equipment team.</p>",
-                  },
-                },
-              },
-            })
-          ).layer
-        )
-      )
-  );
-
-  it.effect.each([
-    ["hybrid", { hybrid: true, remote: false }, "Hybrid"],
-    ["remote", { hybrid: false, remote: true }, "Remote"],
-    ["neither", { hybrid: false, remote: false }, "Unspecified"],
-    ["a malformed location", "Fujisawa", "Unspecified"],
-  ] as const)(
-    "a SmartRecruiters posting whose location is %s carries that workplace",
-    ([, location, workplace]) =>
-      Effect.gen(function* readSmartRecruitersWorkplace() {
-        const posting = yield* fetchPosting(
-          "smartrecruiters:WesternDigital:744000156223569"
-        );
-
-        expect(posting.workplace).toBe(workplace);
-        expect(posting.text).toBe("Mon/Wed/Thu On Site.");
-      }).pipe(
-        Effect.provide(
-          serving(
-            JSON.stringify({
-              jobAd: {
-                sections: {
-                  jobDescription: { text: "<p>Mon/Wed/Thu On Site.</p>" },
-                },
-              },
-              location,
-            })
-          ).layer
-        )
-      )
   );
 
   it.effect(

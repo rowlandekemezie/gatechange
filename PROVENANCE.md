@@ -1,6 +1,6 @@
 # Provenance
 
-rat-stack bans comments in code (see AGENTS.md). Credit for borrowed code lives here instead.
+Gate Change bans comments in code (see AGENTS.md). Credit for borrowed code lives here instead.
 
 | Code | Origin | Notes |
 | --- | --- | --- |

@@ -66,7 +66,7 @@ describe("preview account configuration", () => {
         expect(
           siteHostsOf("prod", { localHosts: [], workersSubdomain: subdomain })
             .allowedHosts
-        ).toStrictEqual(["jobs.rowlandekemezie.com"]);
+        ).toStrictEqual(["gatechange.dev"]);
       })
   );
 });

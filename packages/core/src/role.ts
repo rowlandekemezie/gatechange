@@ -3,10 +3,18 @@ import { Array, Match, Option, pipe } from "effect";
 import type { RoleLevelValue, SeniorityValue } from "./job.js";
 
 const engineeringScope =
-  "(?:engineering|software|platform|infrastructure|(?:software|application|systems?) development|technology|technical|data (?:engineering|platform|infrastructure)|machine learning|ml|ai|security|devops|sre|site reliability|backend|frontend|mobile|cloud)";
+  "(?:engineering|software|platform|infrastructure|(?:software|application|systems?) development|technology|data (?:engineering|platform|infrastructure)|machine learning|ml|ai|security|devops|sre|site reliability|backend|frontend|mobile|cloud)";
 
 const excludedFunction =
-  /\b(?:sales|solutions?|customers?|support|accounts?|field|recruit\w*|talent|marketing|partners?|program|project|product manager|products? marketing|intern(?:ship)?|success|pre-?sales|professional services|implementation|enablement|operations manager|facilities|finance|legal|people)\b/iu;
+  /\b(?:sales|solutions?|customers?|support|accounts?|field|recruit\w*|talent|marketing|partners?|partnerships?|program|project|product manager|products? marketing|intern(?:ship)?|success|pre-?sales|professional services|managed services|implementation|enablement|operations manager|facilities|finance|legal|people|(?:executive|administrative|personal) assistants?|investment banking|business (?:development|director)|consulting|engagement managers?|general managers?|sourcing|vendor management|asset management|subject matter|tpm|counsel|workforce development)\b/iu;
+
+const physicalFunction =
+  /\b(?:civil|substation|welding|scada|hv cable|(?:structural|electrical|mechanical|power|pipeline|nuclear|transportation|process(?:\s+sustaining)?|industrial|manufacturing(?:\s+(?:equipment|controls))?)\s+engineering|(?:data\s?center|site|corporate|global)\s+security\s+(?:managers?|operations))\b/iu;
+
+const namesEngineeringWork = /\b(?:engineering|software)\b/iu;
+
+const businessFunction =
+  /\b(?:accounting|actuarial|audit|communications|compliance|delivery|design|events?|hr|policy managers?|research managers?|risk|sox|strategy)\b/iu;
 
 const nonEngineeringLeadership =
   /^\s*(?:(?:senior|sr\.?|global|group|executive)\s+)*(?:directors?|managers?|s?vp|evp|vice[\s-]+president|head)\s*(?:of\s+|,\s*)?(?:(?:(?:technology|technical|ai|software|platform)\s+)?products?\s+management\b|(?:products?|physical\s+security(?:\s*(?:&|and)\s+safety)?)(?=\s*(?:[,(|:/–—-]|$)|\s+(?:ai\s+)?growth\s*(?:[,(|:/–—-]|$)))/iu;
@@ -48,6 +56,8 @@ const rolePatterns: readonly (readonly [RoleLevelValue, RegExp])[] = [
 export const classifyRole = (title: string): Option.Option<RoleLevelValue> => {
   if (
     excludedFunction.test(title) ||
+    physicalFunction.test(title) ||
+    (businessFunction.test(title) && !namesEngineeringWork.test(title)) ||
     nonEngineeringLeadership.test(title) ||
     productManagementLeadership.test(title)
   ) {

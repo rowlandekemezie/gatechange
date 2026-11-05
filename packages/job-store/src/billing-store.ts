@@ -74,7 +74,11 @@ ON CONFLICT (subscription_id) DO UPDATE SET
   account_id = excluded.account_id,
   plan = excluded.plan,
   status = excluded.status,
-  period_end = excluded.period_end,
+  period_end = CASE
+    WHEN subscriptions.status = 'past_due' AND excluded.status = 'past_due'
+      THEN MIN(subscriptions.period_end, excluded.period_end)
+    ELSE excluded.period_end
+  END,
   cancel_at_period_end = excluded.cancel_at_period_end,
   event_created = excluded.event_created,
   event_rank = excluded.event_rank,

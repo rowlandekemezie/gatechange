@@ -1,11 +1,17 @@
 // @effect-diagnostics asyncFunction:off -- The module Worker fetch handler and its bindings are Promise-based.
 import { describe, expect, it } from "@effect/vitest";
-import { Account } from "@rat-stack/core/contracts";
+import {
+  Account,
+  AgentTokenId,
+  FREE,
+  IssuedAgentToken,
+} from "@rat-stack/core/contracts";
 import { Effect, Option, Schema } from "effect";
 import { fromString } from "foldkit/url";
 import { afterEach, vi } from "vitest";
 
 import { Message as AccountMessage } from "../src/client/account/message.js";
+import { Message as AgentTokensMessage } from "../src/client/agent-tokens/message.js";
 import {
   analyticsKeyOf,
   campaignOf,
@@ -20,10 +26,13 @@ import {
   propertiesOf,
 } from "../src/client/analytics/events.js";
 import { application } from "../src/client/application.js";
+import { Message as BillingMessage } from "../src/client/billing/message.js";
+import { defaultFilters } from "../src/client/board/filters.js";
 import { Message } from "../src/client/board/message.js";
 import { Preload } from "../src/client/board/model.js";
 import type { ModelValue } from "../src/client/board/model.js";
-import { jobRouter } from "../src/client/route.js";
+import { companyRouter, jobRouter, Route } from "../src/client/route.js";
+import { Message as SavedSearchesMessage } from "../src/client/saved-searches/message.js";
 import {
   analyticsOf,
   proxyIngest,
@@ -62,6 +71,14 @@ const tracked = (calls: readonly (typeof AnalyticsCall.Type)[]) =>
   calls.flatMap((call) =>
     Schema.is(AnalyticsCall.Track)(call) ? [call.event] : []
   );
+
+const saveCompleted = (outcome: "AtLimit" | "Saved") =>
+  step(
+    modelAt("/"),
+    Message.GotSavedSearchesMessage({
+      message: SavedSearchesMessage.CompletedSaveSearch({ outcome }),
+    })
+  ).calls;
 
 describe("analytics events", () => {
   it("names every event on the wire in snake case", () => {
@@ -137,6 +154,238 @@ describe("analytics events", () => {
     );
 
     expect(signOut.calls).toContainEqual(AnalyticsCall.Reset());
+  });
+
+  it("tells the client a visitor is anonymous once the session answer is out", () => {
+    const { calls } = step(
+      modelAt("/"),
+      Message.GotAccountMessage({
+        message: AccountMessage.CompletedFetchSession({
+          account: Option.none(),
+        }),
+      })
+    );
+
+    expect(calls).toStrictEqual([AnalyticsCall.Anonymous()]);
+  });
+
+  it("counts a saved search only once the server keeps it", () => {
+    expect(tracked(saveCompleted("Saved"))).toStrictEqual([
+      AnalyticsEvent.SavedSearchCreated(),
+    ]);
+    expect(tracked(saveCompleted("AtLimit"))).toStrictEqual([]);
+  });
+
+  it("reports the instant alert setting the server confirmed", () => {
+    const { calls } = step(
+      modelAt("/pricing"),
+      Message.GotBillingMessage({
+        message: BillingMessage.CompletedSetInstantAlerts({
+          membership: { entitlement: FREE, instantAlerts: true },
+        }),
+      })
+    );
+
+    expect(tracked(calls)).toStrictEqual([
+      AnalyticsEvent.InstantAlertsChanged({ enabled: true }),
+    ]);
+    expect(eventNames.InstantAlertsChanged).toBe("instant_alerts_changed");
+    expect(
+      tracked(
+        step(
+          modelAt("/pricing"),
+          Message.GotBillingMessage({
+            message: BillingMessage.ToggledInstantAlerts({ enabled: true }),
+          })
+        ).calls
+      )
+    ).toStrictEqual([]);
+  });
+
+  it("counts agent tokens without their label or secret", () => {
+    const token = {
+      createdAt: 1,
+      id: "token_1",
+      label: "laptop-private-label",
+      lastUsedAt: null,
+      prefix: "gc_abc",
+    };
+
+    const created = step(
+      modelAt("/account"),
+      Message.GotAgentTokensMessage({
+        message: AgentTokensMessage.CompletedIssueToken({
+          generation: 0,
+          issued: Schema.decodeUnknownSync(IssuedAgentToken)({
+            secret: "gc_abc_the_secret",
+            token,
+          }),
+        }),
+      })
+    ).calls;
+
+    const revoked = (ok: boolean) =>
+      step(
+        modelAt("/account"),
+        Message.GotAgentTokensMessage({
+          message: AgentTokensMessage.CompletedRevokeToken({
+            generation: 0,
+            id: Schema.decodeUnknownSync(AgentTokenId)(token.id),
+            ok,
+          }),
+        })
+      ).calls;
+
+    expect(tracked(created)).toStrictEqual([
+      AnalyticsEvent.AgentTokenCreated(),
+    ]);
+    expect(JSON.stringify(created)).not.toContain("gc_abc");
+    expect(JSON.stringify(created)).not.toContain("laptop-private-label");
+    expect(tracked(revoked(true))).toStrictEqual([
+      AnalyticsEvent.AgentTokenRevoked(),
+    ]);
+    expect(tracked(revoked(false))).toStrictEqual([]);
+  });
+
+  it("reports a search that finds nothing by length and filter count only", () => {
+    const searched = modelAt("/?q=nothing-matches&age=1");
+
+    const { calls } = step(
+      searched,
+      Message.SucceededFetchJobs({
+        generation: searched.generation,
+        page: { generatedAt: 1, jobs: [], total: 0 },
+      })
+    );
+
+    expect(tracked(calls)).toStrictEqual([
+      AnalyticsEvent.SearchNoResults({
+        emptySelection: false,
+        filterCount: 1,
+        queryLength: 15,
+      }),
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("nothing-matches");
+  });
+
+  it("ignores a stale empty answer and a page with results", () => {
+    const board = modelAt("/");
+
+    expect(
+      tracked(
+        step(
+          board,
+          Message.SucceededFetchJobs({
+            generation: board.generation - 1,
+            page: { generatedAt: 1, jobs: [], total: 0 },
+          })
+        ).calls
+      )
+    ).toStrictEqual([]);
+    expect(
+      tracked(
+        step(
+          board,
+          Message.SucceededFetchJobs({
+            generation: board.generation,
+            page: { generatedAt: 1, jobs: [], total: 3 },
+          })
+        ).calls
+      )
+    ).toStrictEqual([]);
+  });
+
+  it("reports a board with no selection as finding nothing", () => {
+    const { calls } = step(
+      { ...modelAt("/"), filters: { ...defaultFilters, roles: ["Director"] } },
+      Message.ToggledRole({ role: "Director" })
+    );
+
+    expect(tracked(calls)).toContainEqual(
+      AnalyticsEvent.SearchNoResults({
+        emptySelection: true,
+        filterCount: 1,
+        queryLength: 0,
+      })
+    );
+  });
+
+  it("reports an empty board served to a landing visitor", () => {
+    const landed = application.init(
+      {
+        origin: ORIGIN,
+        preload: Preload.Board({
+          filters: defaultFilters,
+          generatedAt: 1,
+          jobs: [],
+          stats: null,
+          total: 0,
+        }),
+      },
+      Option.getOrThrow(fromString(`${ORIGIN}/`))
+    ).model;
+
+    expect(tracked(landingCallsOf(landed))).toContainEqual(
+      AnalyticsEvent.SearchNoResults({
+        emptySelection: false,
+        filterCount: 0,
+        queryLength: 0,
+      })
+    );
+  });
+
+  it("reports a missing job on landing and after an in-app fetch", () => {
+    const path = jobRouter({ id: "gone" });
+
+    const served = application.init(
+      { origin: ORIGIN, preload: Preload.JobMissing() },
+      Option.getOrThrow(fromString(`${ORIGIN}${path}`))
+    ).model;
+
+    expect(tracked(landingCallsOf(served))).toContainEqual(
+      AnalyticsEvent.JobNotFound()
+    );
+
+    const { calls } = step(
+      modelAt(path),
+      Message.SucceededFetchJob({ id: "gone", job: Option.none() })
+    );
+
+    expect(tracked(calls)).toStrictEqual([AnalyticsEvent.JobNotFound()]);
+  });
+
+  it("names which listing page was empty, never its slug", () => {
+    const route = Route.Company({ slug: "no-such-company" });
+
+    const { calls } = step(
+      modelAt(companyRouter({ slug: "no-such-company" })),
+      Message.SucceededFetchListing({
+        listing: { generatedAt: 1, jobs: [], summary: null, total: 0 },
+        route,
+      })
+    );
+
+    expect(tracked(calls)).toStrictEqual([
+      AnalyticsEvent.ListingNotFound({ kind: "company" }),
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("no-such-company");
+
+    const served = application.init(
+      {
+        origin: ORIGIN,
+        preload: Preload.Listing({
+          generatedAt: 1,
+          jobs: [],
+          summary: null,
+          total: 0,
+        }),
+      },
+      Option.getOrThrow(fromString(`${ORIGIN}/roles/director/remote-canada`))
+    ).model;
+
+    expect(tracked(landingCallsOf(served))).toContainEqual(
+      AnalyticsEvent.ListingNotFound({ kind: "role" })
+    );
   });
 
   it("keeps only campaign parameters from the landing URL", () => {
@@ -342,6 +591,12 @@ describe("worker ingest route", () => {
       limit: async () => await Promise.resolve({ success: true }),
     },
     MCP_TOKEN_LIMIT: {
+      limit: async () => await Promise.resolve({ success: true }),
+    },
+    PUBLIC_READ_LIMIT: {
+      limit: async () => await Promise.resolve({ success: true }),
+    },
+    SESSION_READ_LIMIT: {
       limit: async () => await Promise.resolve({ success: true }),
     },
   };

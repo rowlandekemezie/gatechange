@@ -8,7 +8,7 @@ Site: <https://gatechange.dev>
 
 ## What it does
 
-- Reads 412 public company job boards on Greenhouse, Ashby, Lever, SmartRecruiters and Workable, plus Remote OK, Remotive, Himalayas, Jobicy and the monthly Hacker News "Who is hiring?" thread.
+- Reads 804 public company job boards on Greenhouse, Ashby, Lever and Workable, plus Remote OK, Remotive, Himalayas, Jobicy and the monthly Hacker News "Who is hiring?" thread.
 - Keeps only leadership titles, and tags each role with where it can be worked from, such as remote Canada, remote US, or Vancouver and BC.
 - Lists every role a company board still lists, however old the posting, and ranks older roles lower. Takes aggregator roles posted in the last 30 days.
 - Removes a role when its company board stops listing it, so the board does not show ghost jobs. Aggregators return only their newest postings, so a role they stop listing stays until 30 days after it was posted.
@@ -111,9 +111,9 @@ Each feature is off while its variables are empty. `.env.example` describes ever
 
 - **AI enrichment.** Workers AI reads each company-board listing for salary, seniority and other details. Your stage makes no Workers AI calls until you set `ENRICHMENT_SWEEP_LIMIT`, for example to 8. `ENRICHMENT_DAILY_NEURONS` caps daily spend. The default cap of 29000 keeps a month under about $10.
 - **GitHub or Google sign-in.** Set both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, or both Google variables. If a pair is empty, the site hides that button.
-- **Email sign-in links and digests.** These need Cloudflare Email Sending on the zone in `SITE_HOSTNAME` (`packages/core/src/site.ts`). Mail comes from `sign-in@` and `digest@` that hostname. Without it, the board works, but sign-in links and digests fail to send.
+- **Email sign-in links and digests.** These need Cloudflare Email Sending on the zone of `MAIL_HOSTNAME` (`packages/core/src/site.ts`). Mail comes from `sign-in@` and `digest@` that hostname. Without it, the board works, but sign-in links and digests fail to send.
 - **Paid plans.** Set `BILLING_ENABLED=true` and `PRO_PLANS`, then add a Stripe test key to your Alchemy profile with `pnpm alchemy profile edit --profile mine --add Stripe`.
-- **Search engines.** Every stage except `prod` sends `noindex`. To be indexed, point `SITE_HOSTNAME` and `SITE_ZONE` in `packages/core/src/site.ts` at a zone on your account and deploy the `prod` stage, as [docs/operations.md](docs/operations.md#deploy-production-from-your-machine) describes.
+- **Search engines.** Every stage except `prod` sends `noindex`. To be indexed, point `SITE_HOSTNAME` in `packages/core/src/site.ts` at a hostname in a zone on your account. List only hostnames in your zones in `SITE_REDIRECT_HOSTNAMES`, or leave it empty. Then deploy the `prod` stage, as [docs/operations.md](docs/operations.md#deploy-production-from-your-machine) describes.
 
 The footer, the about, contact, privacy and terms pages, and the crawler's user agent name this deployment. To rebrand your copy, edit `packages/core/src/site.ts`, `apps/web/src/features/information/view.ts`, `apps/web/src/client/board/view.ts` and `packages/job-sources/src/http.ts`.
 

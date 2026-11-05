@@ -49,6 +49,9 @@ const scenarios = [
   "bad-email",
   "signout",
   "link-reuse",
+  "link-budget",
+  "confirm-other-account",
+  "confirm-retry",
   "save-search",
   "delete-search",
   "digest",
@@ -66,6 +69,9 @@ const scenarios = [
   "tracker-isolation",
   "pricing",
   "free-gate",
+  "analytics-anonymous",
+  "analytics-identity",
+  "analytics-events",
 ] as const;
 
 type Scenario = (typeof scenarios)[number];
@@ -205,6 +211,8 @@ const PausedRequest = Schema.Struct({
   params: Schema.Struct({
     request: Schema.Struct({
       headers: Schema.Record(Schema.String, Schema.String),
+      postData: Schema.optional(Schema.String),
+      url: Schema.String,
     }),
     requestId: Schema.String,
   }),
@@ -290,11 +298,105 @@ const continueWithClientIp = async ({ params }: typeof PausedRequest.Type) => {
   }
 };
 
+const stubAnalytics = scenario.startsWith("analytics-");
+
+const STUB_KEY_SCRIPT = `document.addEventListener("readystatechange", () => {
+  if (document.readyState === "interactive") {
+    const meta = document.createElement("meta");
+    meta.name = "posthog-key";
+    meta.content = "phc_verifyStubKey00";
+    document.head.append(meta);
+  }
+});`;
+
+const WireEvent = Schema.Struct({
+  distinct_id: Schema.String,
+  event: Schema.String,
+  properties: Schema.Record(
+    Schema.String,
+    Schema.Union([Schema.Boolean, Schema.Finite, Schema.String])
+  ),
+});
+
+type WireEventValue = typeof WireEvent.Type;
+
+const decodeWireBatch = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ batch: Schema.Array(WireEvent) }))
+);
+
+interface Wire {
+  bodies: string[];
+  events: WireEventValue[];
+  firstBatchAt: number;
+  navigatedAt: number;
+  rpcStatus: number;
+  sessionLagMs: number;
+}
+
+const wire: Wire = {
+  bodies: [],
+  events: [],
+  firstBatchAt: 0,
+  navigatedAt: 0,
+  rpcStatus: 0,
+  sessionLagMs: 0,
+};
+
+const answerIngest = async ({ params }: typeof PausedRequest.Type) => {
+  const body = params.request.postData ?? "";
+
+  wire.bodies.push(body);
+  wire.events.push(...decodeWireBatch(body).batch);
+  wire.firstBatchAt ||= Date.now();
+
+  await send(Ignored, "Fetch.fulfillRequest", {
+    body: btoa('{"status":1}'),
+    requestId: params.requestId,
+    responseCode: 200,
+  });
+};
+
+const answerRateLimited = async ({ params }: typeof PausedRequest.Type) => {
+  await send(Ignored, "Fetch.fulfillRequest", {
+    body: btoa('{"error":"Too many requests from this address."}'),
+    requestId: params.requestId,
+    responseCode: wire.rpcStatus,
+  });
+};
+
+const stubbed = async (paused: typeof PausedRequest.Type) => {
+  const { pathname } = new URL(paused.params.request.url);
+
+  if (pathname.startsWith("/ingest/")) {
+    await answerIngest(paused);
+
+    return true;
+  }
+
+  if (pathname.startsWith("/rpc") && wire.rpcStatus !== 0) {
+    await answerRateLimited(paused);
+
+    return true;
+  }
+
+  if (pathname === "/api/auth/get-session" && wire.sessionLagMs > 0) {
+    await sleep(wire.sessionLagMs);
+  }
+
+  return false;
+};
+
+const answerPaused = async (paused: typeof PausedRequest.Type) => {
+  if (!(stubAnalytics && (await stubbed(paused)))) {
+    await continueWithClientIp(paused);
+  }
+};
+
 socket.addEventListener("message", (event) => {
   const message: unknown = JSON.parse(String(event.data));
 
   if (isPausedRequest(message)) {
-    void continueWithClientIp(message);
+    void answerPaused(message);
   }
 });
 
@@ -414,8 +516,17 @@ const screenshot = async (slug: string) => {
 };
 
 interface Step extends Partial<BoardStateValue> {
+  readonly account?: string;
   readonly background?: string;
+  readonly cookies?: readonly string[];
   readonly detail?: string;
+  readonly distinctId?: string;
+  readonly events?: readonly string[];
+  readonly firstBatchMs?: number;
+  readonly firstEvent?: string;
+  readonly firstEventDistinctId?: string;
+  readonly personProfile?: boolean;
+  readonly properties?: Readonly<Record<string, boolean | number | string>>;
   readonly tracker?: TrackerStateValue;
   readonly companies?: readonly string[];
   readonly email?: string;
@@ -591,15 +702,19 @@ const markRows = async (
   await markRows(rest, index + 1);
 };
 
-const finishSignIn = async (link: string) => {
-  await goTo(link);
+const confirmPageText = async () =>
+  await evaluate(
+    Schema.String,
+    'document.querySelector(".detail.account")?.textContent ?? ""'
+  );
 
-  await waitFor("the finish-signing-in button", async () =>
+const pressConfirmButton = async (label: string) =>
+  await waitFor(`the ${label} button`, async () =>
     (await evaluate(
       Schema.Boolean,
       `(() => {
       const button = [...document.querySelectorAll("form button")]
-        .find((node) => node.textContent.trim() === "Finish signing in");
+        .find((node) => node.textContent.trim() === ${JSON.stringify(label)});
       if (button !== undefined) setTimeout(() => button.click(), 0);
       return button !== undefined;
     })()`
@@ -607,6 +722,17 @@ const finishSignIn = async (link: string) => {
       ? true
       : undefined
   );
+
+const finishSignIn = async (link: string, email: string) => {
+  await goTo(link);
+
+  await waitFor(`the confirm page to name ${email}`, async () => {
+    const text = await confirmPageText();
+
+    return text.includes(`signs you in as ${email}`) ? true : undefined;
+  });
+
+  await pressConfirmButton("Finish signing in");
 };
 
 const submitEmail = async (email: string) => {
@@ -764,6 +890,33 @@ const Shortlist = Schema.Struct({
   titles: Schema.Array(Schema.String),
 });
 
+const wireEvent = async (wanted: string) =>
+  await waitFor(`${wanted} on the wire`, async () => {
+    await sleep(0);
+
+    return wire.events.find(({ event }) => event === wanted);
+  });
+
+const expectNoStoredId = async (ids: readonly string[]) => {
+  const { cookies } = await send(Cookies, "Network.getCookies");
+
+  const stored = await evaluate(
+    Schema.String,
+    "JSON.stringify([{ ...localStorage }, { ...sessionStorage }, document.cookie])"
+  );
+
+  const persisted = ids.filter(
+    (id) =>
+      stored.includes(id) || cookies.some(({ value }) => value.includes(id))
+  );
+
+  if (persisted.length > 0) {
+    throw new Error(`analytics ids were persisted: ${persisted.join(", ")}`);
+  }
+
+  return cookies.map((cookie) => cookie.name);
+};
+
 const run = async () => {
   await send(Ignored, "Page.enable");
   await send(Ignored, "Runtime.enable");
@@ -773,12 +926,21 @@ const run = async () => {
       { requestStage: "Request", urlPattern: `${new URL(url).origin}/*` },
     ],
   });
+
+  if (stubAnalytics) {
+    await send(Ignored, "Page.addScriptToEvaluateOnNewDocument", {
+      source: STUB_KEY_SCRIPT,
+    });
+  }
+
   await send(Ignored, "Emulation.setDeviceMetricsOverride", viewport);
   await send(Ignored, "Emulation.setEmulatedMedia", {
     features: [
       { name: "prefers-color-scheme", value: values.dark ? "dark" : "light" },
     ],
   });
+
+  wire.navigatedAt = Date.now();
 
   const navigation = await send(
     Schema.Struct({ errorText: Schema.optional(Schema.String) }),
@@ -821,7 +983,7 @@ const run = async () => {
 
     const link = latestLink();
 
-    await finishSignIn(link);
+    await finishSignIn(link, values.email);
 
     const signedIn = await waitForAccount(
       "the header to show the account",
@@ -1183,7 +1345,158 @@ const run = async () => {
     return asked;
   };
 
+  const boardRows = async () =>
+    await waitForRows("the board", (state) => state.rows >= minRows);
+
+  const analyticsActions: Partial<Record<Scenario, () => Promise<void>>> = {
+    "analytics-anonymous": async () => {
+      const view = await wireEvent("$pageview");
+
+      if (view.properties.$process_person_profile !== false) {
+        throw new Error("an anonymous page view asked for a person profile");
+      }
+
+      if (wire.events.some(({ event }) => event === "$identify")) {
+        throw new Error("an anonymous visitor sent $identify");
+      }
+
+      steps.push({
+        cookies: await expectNoStoredId([
+          view.distinct_id,
+          String(view.properties.$session_id),
+        ]),
+        distinctId: view.distinct_id,
+        firstBatchMs: wire.firstBatchAt - wire.navigatedAt,
+        step: "anonymous first page view",
+      });
+    },
+    "analytics-events": async () => {
+      const secretSearch = "zzzverifysecretsearch";
+
+      await signIn();
+      await goTo(url);
+      await boardRows();
+      await sleep(500);
+      await evaluate(
+        Ignored,
+        `(() => {
+          const input = document.querySelector("form.search input");
+          input.value = ${JSON.stringify(secretSearch)};
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          document.querySelector("form.search").requestSubmit();
+        })()`
+      );
+
+      const empty = await wireEvent("search_no_results");
+
+      if (!(await clickButton("button.save-search", "Email me"))) {
+        throw new Error("no save-search button");
+      }
+
+      const saved = await wireEvent("saved_search_created");
+
+      await goTo(new URL("/jobs/Z29uZQ", url).href);
+
+      const job = await wireEvent("job_not_found");
+
+      await goTo(new URL("/companies/no-such-company-zz", url).href);
+
+      const company = await wireEvent("listing_not_found");
+
+      await goTo(url);
+      await boardRows();
+      await sleep(500);
+      wire.rpcStatus = 429;
+
+      if (!(await clickButton("button.phrase", "day"))) {
+        throw new Error("no day chip");
+      }
+
+      const limited = await wireEvent("read_rate_limited");
+
+      wire.rpcStatus = 0;
+
+      const leaked = [values.email, secretSearch].filter((text) =>
+        wire.bodies.some((body) => body.includes(text))
+      );
+
+      if (leaked.length > 0) {
+        throw new Error(`the wire carried ${leaked.join(", ")}`);
+      }
+
+      steps.push(
+        ...[empty, saved, job, company, limited].map((event) => ({
+          distinctId: event.distinct_id,
+          properties: Object.fromEntries(
+            Object.entries(event.properties).filter(
+              ([key]) => !key.startsWith("$")
+            )
+          ),
+          step: event.event,
+        }))
+      );
+    },
+    "analytics-identity": async () => {
+      await signIn();
+
+      const { user } = await evaluate(
+        Schema.Struct({ user: Schema.Struct({ id: Schema.String }) }),
+        '(async () => await (await fetch("/api/auth/get-session")).json())()'
+      );
+
+      await goTo(url);
+      await boardRows();
+      await sleep(1500);
+
+      wire.bodies.length = 0;
+      wire.events.length = 0;
+      wire.firstBatchAt = 0;
+      wire.sessionLagMs = 2000;
+      wire.navigatedAt = Date.now();
+
+      await goTo(url);
+
+      const [first] = await waitFor("the first batch", async () => {
+        await sleep(0);
+
+        return wire.events.length > 0 ? wire.events : undefined;
+      });
+
+      await boardRows();
+      await wireEvent("$pageview");
+
+      const stray = wire.events.filter(
+        ({ distinct_id, properties }) =>
+          distinct_id !== user.id || properties.$process_person_profile !== true
+      );
+
+      if (first?.event !== "$pageview" || first.distinct_id !== user.id) {
+        throw new Error(
+          `first event was ${first?.event} for ${first?.distinct_id}, not $pageview for ${user.id}`
+        );
+      }
+
+      if (stray.length > 0) {
+        throw new Error(
+          `events left the account: ${JSON.stringify(stray.map(({ distinct_id, event }) => ({ distinct_id, event })))}`
+        );
+      }
+
+      steps.push({
+        account: user.id,
+        cookies: await expectNoStoredId([String(first.properties.$session_id)]),
+        events: wire.events.map(({ event }) => event),
+        firstBatchMs: wire.firstBatchAt - wire.navigatedAt,
+        firstEvent: first.event,
+        firstEventDistinctId: first.distinct_id,
+        personProfile: first.properties.$process_person_profile === true,
+        step: "signed-in reload with the session answer held back 2000ms",
+      });
+    },
+  };
+
   const actions: Partial<Record<Scenario, () => Promise<void>>> = {
+    ...analyticsActions,
     ...digestActions,
     "bad-email": async () => {
       const before = mailCount();
@@ -1205,6 +1518,93 @@ const run = async () => {
       if (mailCount() !== before) {
         throw new Error("an email was sent for an invalid address");
       }
+    },
+    "confirm-other-account": async () => {
+      const other = `other-${values.email}`;
+      const before = mailCount();
+
+      await submitEmail(other);
+      await waitForAccount("the check-your-email notice", (state) =>
+        state.sent.includes(other)
+      );
+      await waitFor("the other account's email", async () => {
+        await sleep(0);
+
+        return mailCount() > before ? true : undefined;
+      });
+
+      const otherLink = latestLink();
+
+      await goTo(url);
+      await signIn();
+      await goTo(otherLink);
+
+      const warned = await waitForAccount(
+        "the different-account warning",
+        (state) =>
+          state.problem.includes(values.email) && state.problem.includes(other)
+      );
+
+      steps.push({
+        detail: await screenshot(`${name}-warning`),
+        step: `opened ${other}'s link while signed in`,
+        ...warned,
+      });
+
+      if (warned.header !== values.email) {
+        throw new Error("opening the link changed the account");
+      }
+
+      await pressConfirmButton(`Switch to ${other}`);
+
+      const switched = await waitForAccount(
+        "the header to show the other account",
+        (state) => state.header === other
+      );
+
+      steps.push({ step: "pressed the switch button", ...switched });
+    },
+    "confirm-retry": async () => {
+      const before = mailCount();
+
+      await submitEmail(values.email);
+      await waitFor("the sign-in email", async () => {
+        await sleep(0);
+
+        return mailCount() > before ? true : undefined;
+      });
+
+      await send(Ignored, "Network.setBlockedURLs", {
+        urlPatterns: [
+          { block: true, urlPattern: "*://*:*/api/auth/magic-link/preview*" },
+        ],
+      });
+      await goTo(latestLink());
+
+      const failed = await waitForAccount("the failed-check notice", (state) =>
+        state.problem.includes("could not check this link")
+      );
+
+      steps.push({
+        detail: await screenshot(`${name}-failed`),
+        step: "opened the link with the check blocked",
+        ...failed,
+      });
+
+      await send(Ignored, "Network.setBlockedURLs", { urlPatterns: [] });
+
+      if (!(await clickButton("button", "Check this link again"))) {
+        throw new Error("no retry button after a failed check");
+      }
+
+      await pressConfirmButton("Finish signing in");
+
+      const signedIn = await waitForAccount(
+        "the header to show the account",
+        (state) => state.header === values.email
+      );
+
+      steps.push({ step: "retried and signed in", ...signedIn });
     },
     filter: async () => {
       if (!(await clickButton("button.phrase", "day"))) {
@@ -1309,18 +1709,49 @@ const run = async () => {
         );
       }
     },
+    "link-budget": async () => {
+      await signIn();
+      await signOut();
+
+      const stranger = `stranger-${values.email}`;
+
+      await submitEmail(stranger);
+      await waitForAccount("the first stranger's notice", (state) =>
+        state.sent.includes(stranger)
+      );
+
+      await goTo(url);
+
+      await submitEmail(`second-${stranger}`);
+
+      const refused = await waitForAccount(
+        "the new-address share to refuse",
+        (state) => state.problem.length > 0
+      );
+
+      steps.push({ step: "a second stranger was refused", ...refused });
+
+      await goTo(url);
+      await signIn();
+    },
     "link-reuse": async () => {
       const link = await signIn();
 
       await signOut();
-      await finishSignIn(link);
+      await goTo(link);
 
       const refused = await waitForAccount(
         "the used link to be refused",
-        (state) => state.problem.includes("already used")
+        (state) => state.problem.includes("already been used")
       );
 
       steps.push({ step: "reopened the used link", ...refused });
+
+      const refusedPage = await confirmPageText();
+
+      if (refusedPage.includes("@")) {
+        throw new Error("a used link named an account");
+      }
 
       if (refused.header !== "Sign in") {
         throw new Error("a used link signed the viewer in again");

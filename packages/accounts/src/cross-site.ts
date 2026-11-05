@@ -2,7 +2,29 @@ import type { RequestHeaders } from "@rat-stack/core";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 
+import { MAGIC_LINK_PREVIEW_PATH } from "./link-preview.js";
+
 const SAME_SITE_FETCHES: ReadonlySet<string> = new Set(["same-origin", "none"]);
+
+const SAME_ORIGIN_ONLY_PATHS: ReadonlySet<string> = new Set([
+  "/magic-link/verify",
+  MAGIC_LINK_PREVIEW_PATH,
+]);
+
+const isSameOrigin = (headers: Headers | undefined) =>
+  headers?.get("sec-fetch-site") === "same-origin";
+
+interface RateRule {
+  readonly max: number;
+  readonly window: number;
+}
+
+const unlessCrossSite = (request: Request, rule: RateRule) =>
+  isSameOrigin(request.headers) ? rule : false;
+
+export const sameOriginRateRules = Object.fromEntries(
+  [...SAME_ORIGIN_ONLY_PATHS].map((path) => [path, unlessCrossSite])
+);
 
 const hostOfOrigin = (origin: string) =>
   URL.canParse(origin) ? new URL(origin).host : undefined;
@@ -27,7 +49,7 @@ export const sameSiteVerify = (): BetterAuthPlugin => ({
       {
         // @effect-diagnostics-next-line asyncFunction:off -- better-auth hooks are Promise-returning middleware.
         handler: createAuthMiddleware(async (ctx) => {
-          await (ctx.headers?.get("sec-fetch-site") === "same-origin"
+          await (isSameOrigin(ctx.headers)
             ? Promise.resolve()
             : Promise.reject(
                 new APIError("FORBIDDEN", {
@@ -36,7 +58,7 @@ export const sameSiteVerify = (): BetterAuthPlugin => ({
                 })
               ));
         }),
-        matcher: (context) => context.path === "/magic-link/verify",
+        matcher: (context) => SAME_ORIGIN_ONLY_PATHS.has(context.path ?? ""),
       },
     ],
   },

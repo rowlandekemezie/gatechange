@@ -26,16 +26,16 @@ Sam Goodwin describes an Effect as a promise with more information: its return v
 
 ## The vocabulary
 
-- **Alchemy Stack** groups one infrastructure program and its outputs. Rat-stack exports `Alchemy.Stack("RatStack", ...)` in `apps/infra/alchemy.run.ts`.
+- **Alchemy Stack** groups one infrastructure program and its outputs. Gate Change exports `Alchemy.Stack("JobBoard", ...)` in `apps/infra/alchemy.run.ts`.
 - **Provider** supplies the cloud API implementation. `Cloudflare.providers()` appears in the Stack options in `apps/infra/alchemy.run.ts`.
-- **State** records the resources that a Stack already owns. Rat-stack uses `Cloudflare.state()` in `apps/infra/alchemy.run.ts`.
+- **State** records the resources that a Stack already owns. Gate Change uses `Cloudflare.state()` in `apps/infra/alchemy.run.ts`.
 - **Resource** is a declared cloud object such as a Zone, DNS record, DNSSEC setting, or Worker. Each gets a stable logical name in `apps/infra/alchemy.run.ts`.
-- **Binding** is a typed runtime value attached to a Worker. Rat-stack declares the `CODE_SANDBOX` WorkerLoader and four RateLimit bindings in `apps/site/src/worker.ts`.
+- **Binding** is a typed runtime value attached to a Worker. Gate Change binds the `JobsDatabase` D1 database to `JobsBackend` in `apps/api/src/worker.ts`.
 - **Plan** shows differences between declared resources and stored deployment state before a provider changes anything. Read it with the `plan` script in `apps/infra/package.json`.
-- **Stage** names an isolated deployment state. Rat-stack's production stage is `prod`; the unflagged default is `live_$USER`.
+- **Stage** names an isolated deployment state. Gate Change's production stage is `prod`; the unflagged default is `live_$USER`.
 - **Profile** holds provider credentials for the Alchemy CLI. This repo uses an Alchemy profile, not environment variables, for Cloudflare authentication.
 - **Adopt** means take ownership of an existing resource explicitly. The existing `ratstack.sh` Zone and its DNSSEC setting use `adopt(true)` in `apps/infra/alchemy.run.ts`.
-- **Dev** is local workerd execution with `ALCHEMY_DEV=true`. Rat-stack uses it to skip the production Zone and DNS resources in `apps/infra/alchemy.run.ts`.
+- **Dev** is local workerd execution with `ALCHEMY_DEV=true`. Gate Change runs it through `pnpm dev`.
 
 ## Trace one deploy
 

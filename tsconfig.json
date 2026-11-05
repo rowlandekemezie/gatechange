@@ -6,7 +6,11 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "allowedUnstableApis": ["effect/http/FetchHttpClient"]
+        "allowedUnstableApis": [
+          "effect/http/FetchHttpClient",
+          "effect/http/HttpClient",
+          "effect/http/HttpClientRequest"
+        ]
       }
     ]
   },

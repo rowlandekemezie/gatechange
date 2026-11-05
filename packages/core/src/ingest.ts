@@ -124,18 +124,25 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
   const store = yield* JobStore;
   const feeds = yield* PostingFeeds;
 
+  const failedFeed = (message: string) =>
+    store.recordFeedFailure(feed.key, seenAt, message).pipe(
+      Effect.catchTag("JobStoreUnavailable", ({ operation }) =>
+        Effect.logWarning("could not record a feed failure").pipe(
+          Effect.annotateLogs({ feed: feed.key, operation })
+        )
+      ),
+      Effect.as<FeedOutcomeValue>({
+        departed: 0,
+        error: message,
+        key: feed.key,
+        source: feed.source,
+        upserted: 0,
+      })
+    );
+
   return yield* feeds.fetch(feed).pipe(
     Effect.matchEffect({
-      onFailure: (failure) =>
-        store.recordFeedFailure(feed.key, seenAt, failure.message).pipe(
-          Effect.as<FeedOutcomeValue>({
-            departed: 0,
-            error: failure.message,
-            key: feed.key,
-            source: feed.source,
-            upserted: 0,
-          })
-        ),
+      onFailure: ({ message }) => failedFeed(message),
       onSuccess: (postings) =>
         Effect.gen(function* recordListings() {
           const listings = listingsFromPostings(feed, postings, seenAt);
@@ -177,7 +184,11 @@ const ingestFeed = Effect.fn("ingestFeed")(function* ingestFeed(
             source: feed.source,
             upserted: replacement.upserted,
           } satisfies FeedOutcomeValue;
-        }),
+        }).pipe(
+          Effect.catchTag("JobStoreUnavailable", ({ message }) =>
+            failedFeed(message)
+          )
+        ),
     })
   );
 });

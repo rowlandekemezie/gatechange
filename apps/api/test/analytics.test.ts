@@ -4,7 +4,12 @@ import { AccountId, postHogSetting } from "@rat-stack/core";
 import { ConfigProvider, Effect, Option, Schema } from "effect";
 import { vi } from "vitest";
 
-import { postHogCapture, ServerEvent } from "../src/analytics.js";
+import {
+  captureBodyOf,
+  postHogCapture,
+  privacySignalled,
+  ServerEvent,
+} from "../src/analytics.js";
 import type { CaptureUpstream } from "../src/analytics.js";
 
 const KEY = "phc_testProjectKey123";
@@ -81,6 +86,24 @@ describe("server analytics", () => {
       });
     })
   );
+
+  it("names an unsubscribe by account id with no other property", () => {
+    expect(
+      captureBodyOf(KEY, ServerEvent.EmailUnsubscribed({ account: ada }))
+    ).toStrictEqual({
+      api_key: KEY,
+      distinct_id: "user_ada",
+      event: "email_unsubscribed",
+      properties: {},
+    });
+  });
+
+  it("sees Do Not Track and Global Privacy Control on a request", () => {
+    expect(privacySignalled({})).toBe(false);
+    expect(privacySignalled({ dnt: "0", "sec-gpc": "0" })).toBe(false);
+    expect(privacySignalled({ "sec-gpc": "1" })).toBe(true);
+    expect(privacySignalled({ dnt: "1" })).toBe(true);
+  });
 
   it.effect("never fails the caller when PostHog is unreachable", () =>
     Effect.gen(function* unreachable() {

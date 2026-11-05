@@ -300,6 +300,168 @@ describe("job departures over SQL", () => {
       })
   );
 
+  it.effect(
+    "a feed dropped from the catalog is never fetched, leaves feed health at once, and its rows age out after 30 days unseen",
+    () =>
+      Effect.gen(function* retiredFeed() {
+        const layer = yield* sqlJsJobStore;
+
+        const retired = "smartrecruiters:Experian";
+
+        const kept: FeedRef = {
+          company: Option.some("Acme"),
+          coverage: "Complete",
+          key: FEED,
+          minIntervalMinutes: 1,
+          source: "Greenhouse",
+        };
+
+        const fetched: string[] = [];
+
+        const ingest = runIngest({ feedConcurrency: 1, feedsPerRun: 30 }).pipe(
+          Effect.provideService(
+            PostingFeeds,
+            PostingFeeds.of({
+              catalog: [kept],
+              fetch: (feed) =>
+                Effect.sync(() => {
+                  fetched.push(feed.key);
+
+                  return [];
+                }),
+            })
+          )
+        );
+
+        yield* Effect.gen(function* withStore() {
+          const store = yield* JobStore;
+
+          yield* store.replaceFeed(
+            retired,
+            [
+              job(`${retired}:1`, {
+                company: "Experian",
+                feed: retired,
+                source: "SmartRecruiters",
+              }),
+            ],
+            NOW
+          );
+
+          yield* TestClock.setTime(NOW + 29 * DAY_MILLIS);
+
+          const early = yield* ingest;
+
+          const stats = yield* store.stats(
+            NOW + 29 * DAY_MILLIS,
+            SourceName.literals,
+            [FEED]
+          );
+
+          expect(early.receipt).toMatchObject({
+            feedsFailed: 0,
+            jobsPruned: 0,
+            outcome: "Succeeded",
+          });
+          expect(yield* listedIds(NOW + 29 * DAY_MILLIS)).toStrictEqual([
+            `${retired}:1`,
+          ]);
+          expect([stats.feedsTotal, stats.feedsFailing]).toStrictEqual([1, 0]);
+
+          yield* TestClock.setTime(NOW + 30 * DAY_MILLIS + 1);
+
+          const late = yield* ingest;
+
+          expect(fetched).toStrictEqual([FEED, FEED]);
+          expect(late.receipt).toMatchObject({
+            feedsFailed: 0,
+            jobsPruned: 1,
+            outcome: "Succeeded",
+          });
+          expect(yield* jobRows).toStrictEqual([]);
+          expect(
+            Option.isSome(
+              yield* store.historyOf({
+                company: "Experian",
+                title: `Engineering Manager ${retired}:1`,
+              })
+            )
+          ).toBe(true);
+        }).pipe(Effect.provide(layer));
+      })
+  );
+
+  it.effect(
+    "a listed role whose title no longer classifies departs on its feed's next fetch and is pruned a day later",
+    () =>
+      Effect.gen(function* reclassifiedRole() {
+        const layer = yield* sqlJsJobStore;
+
+        const feed: FeedRef = {
+          company: Option.some("Acme"),
+          coverage: "Complete",
+          key: FEED,
+          minIntervalMinutes: 1,
+          source: "Greenhouse",
+        };
+
+        const ingest = runIngest({ feedConcurrency: 1, feedsPerRun: 1 }).pipe(
+          Effect.provideService(
+            PostingFeeds,
+            PostingFeeds.of({
+              catalog: [feed],
+              fetch: () =>
+                Effect.succeed([
+                  {
+                    company: "",
+                    externalId: "1",
+                    location: "Remote - Canada",
+                    postedAt: NOW,
+                    salary: null,
+                    title: "Manager, Technical Accounting",
+                    url: "https://jobs.example/1",
+                    workplace: "Remote",
+                  },
+                ]),
+            })
+          )
+        );
+
+        yield* Effect.gen(function* withStore() {
+          const store = yield* JobStore;
+
+          const title = "Manager, Technical Accounting";
+
+          yield* store.replaceFeed(
+            FEED,
+            [job("greenhouse:acme:1", { title })],
+            NOW
+          );
+
+          const fetchedAt = NOW + DAY_MILLIS;
+
+          yield* TestClock.setTime(fetchedAt);
+
+          const fetched = yield* ingest;
+
+          expect(fetched.outcomes).toMatchObject([
+            { departed: 1, upserted: 0 },
+          ]);
+          expect(yield* jobRows).toMatchObject([{ departed_at: fetchedAt }]);
+          expect(yield* listedIds(fetchedAt)).toStrictEqual([]);
+
+          yield* TestClock.setTime(fetchedAt + DAY_MILLIS + 1);
+
+          yield* ingest;
+
+          expect(yield* jobRows).toStrictEqual([]);
+          expect(
+            Option.isSome(yield* store.historyOf({ company: "Acme", title }))
+          ).toBe(true);
+        }).pipe(Effect.provide(layer));
+      })
+  );
+
   it.effect("migration 0012 leaves rows written before it on the board", () =>
     Effect.gen(function* migrationKeepsRowsLive() {
       const layer = yield* seededSqlJsJobStore({

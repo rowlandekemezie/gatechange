@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off -- This test runs the self-host command as the plain Node process that pnpm self-host starts.
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+
 import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -24,6 +28,20 @@ const mine = profiles({ mine: "mine-account" });
 
 const problemsOf = (stage: string, env: Record<string, string | undefined>) =>
   selfHostProblems(stage, env, credentialSourceOf(env, mine));
+
+describe("self-host command line", () => {
+  it.each(["--help", "-h"])("prints usage for %s and exits 0", (flag) => {
+    const { status, stderr, stdout } = spawnSync(
+      process.execPath,
+      [path.join(import.meta.dirname, "../src/self-host.ts"), flag],
+      { encoding: "utf-8" }
+    );
+
+    expect(stderr).toBe("");
+    expect(stdout).toContain("Usage: pnpm self-host [plan|deploy|destroy]");
+    expect(status).toBe(0);
+  });
+});
 
 describe("selfHostProblems", () => {
   it("accepts a fresh stage with credentials, a secret and a workers.dev subdomain", () => {

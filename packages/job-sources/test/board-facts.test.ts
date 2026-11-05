@@ -7,18 +7,15 @@ import {
   ashbyPostings,
   greenhousePostings,
   leverPostings,
-  smartRecruitersPostings,
   workablePostings,
 } from "../src/index.js";
 import ashbyBoard from "./fixtures/ashby-board.json" with { type: "json" };
 import greenhouseJob from "./fixtures/greenhouse-job.json" with { type: "json" };
 import leverPosting from "./fixtures/lever-posting.json" with { type: "json" };
-import smartRecruitersServiceNow from "./fixtures/smartrecruiters-servicenow.json" with { type: "json" };
 import workableHuggingface from "./fixtures/workable-huggingface.json" with { type: "json" };
 
 type RecordedBody =
   | typeof ashbyBoard
-  | typeof smartRecruitersServiceNow
   | typeof workableHuggingface
   | readonly (typeof leverPosting)[]
   | { readonly jobs: readonly (typeof greenhouseJob)[] };
@@ -66,11 +63,6 @@ describe("structured facts in recorded boards", () => {
           ]),
           recorded("Ashby", ashbyPostings("ashby:acme", "acme"), ashbyBoard),
           recorded(
-            "SmartRecruiters",
-            smartRecruitersPostings("smartrecruiters:acme", "acme"),
-            smartRecruitersServiceNow
-          ),
-          recorded(
             "Workable",
             workablePostings("workable:acme", "acme"),
             workableHuggingface
@@ -81,7 +73,6 @@ describe("structured facts in recorded boards", () => {
           { board: "Greenhouse", postings: 1, remote: 0, salary: 0 },
           { board: "Lever", postings: 1, remote: 1, salary: 1 },
           { board: "Ashby", postings: 2, remote: 2, salary: 1 },
-          { board: "SmartRecruiters", postings: 2, remote: 1, salary: 0 },
           { board: "Workable", postings: 2, remote: 2, salary: 0 },
         ]);
       })
