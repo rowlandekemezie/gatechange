@@ -2325,6 +2325,105 @@ describe("stage hosts", () => {
   );
 });
 
+describe("UAT host", () => {
+  const UAT = "https://uat.gatechange.dev";
+
+  const PROD = "https://gatechange.dev";
+
+  const OLD_PREVIEW = "https://jobs-preview.rowland-ekemezie.workers.dev";
+
+  const uatHosts = siteHostsOf("preview", {
+    localHosts: [],
+    workersSubdomain: Option.some("rowland-ekemezie"),
+  });
+
+  const prodHosts = siteHostsOf("prod", {
+    localHosts: [],
+    workersSubdomain: Option.none(),
+  });
+
+  it.effect("emails a link on the UAT host", () =>
+    Effect.gen(function* uatLink() {
+      const { auth, sent } = makeAuth(uatHosts);
+
+      const response = yield* requestLink(auth, "ada@example.com", undefined, {
+        at: UAT,
+      });
+
+      expect(response.status).toBe(200);
+      expect(new URL(sent[0]?.url ?? "").origin).toBe(UAT);
+    })
+  );
+
+  it.effect("sets a host-only session cookie that prod never receives", () =>
+    Effect.gen(function* uatCookie() {
+      const { auth, sent } = makeAuth(uatHosts);
+
+      yield* requestLink(auth, "ada@example.com", undefined, { at: UAT });
+
+      const verified = yield* call(auth, pathOf(sent[0]?.url ?? ""), {
+        ...CONFIRM_FORM,
+        at: UAT,
+      });
+
+      const cookies = verified.headers.getSetCookie();
+
+      expect(cookies.length).toBeGreaterThan(0);
+
+      for (const cookie of cookies) {
+        expect(cookie).toMatch(/^__Secure-/u);
+        expect(cookie).toMatch(/; Secure/iu);
+        expect(cookie).toMatch(/; HttpOnly/iu);
+        expect(cookie).not.toMatch(/; Domain=/iu);
+      }
+    })
+  );
+
+  it.effect("no longer trusts the old workers.dev preview host", () =>
+    Effect.gen(function* oldHost() {
+      const { auth, sent } = makeAuth(uatHosts);
+
+      const status = yield* statusOf(
+        requestLink(auth, "ada@example.com", undefined, { at: OLD_PREVIEW })
+      );
+
+      expect(status).not.toBe(200);
+      expect(sent).toHaveLength(0);
+    })
+  );
+
+  it.effect("refuses prod's host and origin on UAT, and UAT's on prod", () =>
+    Effect.gen(function* isolated() {
+      const uat = makeAuth(uatHosts);
+
+      const prod = makeAuth(prodHosts);
+
+      const atProd = yield* statusOf(
+        requestLink(uat.auth, "ada@example.com", undefined, { at: PROD })
+      );
+
+      const fromProd = yield* requestLink(
+        uat.auth,
+        "ada@example.com",
+        undefined,
+        { at: UAT, from: PROD }
+      );
+
+      const fromUat = yield* requestLink(
+        prod.auth,
+        "ada@example.com",
+        undefined,
+        { at: PROD, from: UAT }
+      );
+
+      expect(atProd).not.toBe(200);
+      expect(fromProd.status).toBe(403);
+      expect(fromUat.status).toBe(403);
+      expect([...uat.sent, ...prod.sent]).toHaveLength(0);
+    })
+  );
+});
+
 const trackerOn = (database: DatabaseSync) =>
   trackerStoreLayer.pipe(
     Layer.provide(
