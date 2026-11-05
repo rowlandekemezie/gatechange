@@ -25,7 +25,8 @@ const OWNER_ZONE = "rowlandekemezie.com";
 
 export const SITE_NAME = "Gate Change";
 
-export const SOURCE_REPOSITORY_URL = "https://github.com/rowlandekemezie/jobs";
+export const SOURCE_REPOSITORY_URL =
+  "https://github.com/rowlandekemezie/gatechange";
 
 export const OWNER_WORKERS_SUBDOMAIN = "rowland-ekemezie";
 

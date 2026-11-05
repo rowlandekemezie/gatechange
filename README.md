@@ -31,8 +31,8 @@ Gate Change is MIT licensed and built to be forked. Change the companies, the ro
 It runs on your own Cloudflare account, and you do not need a domain. Payments, email and AI enrichment are optional and stay off until you set them up.
 
 ```sh
-git clone https://github.com/rowlandekemezie/jobs.git
-cd jobs
+git clone https://github.com/rowlandekemezie/gatechange.git
+cd gatechange
 pnpm install
 pnpm self-host plan --stage self
 ```

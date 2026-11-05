@@ -15,8 +15,8 @@ You can run your own copy of the board on your own Cloudflare account. It runs o
 1. Clone the repository and install dependencies:
 
    ```sh
-   git clone https://github.com/rowlandekemezie/jobs.git
-   cd jobs
+   git clone https://github.com/rowlandekemezie/gatechange.git
+   cd gatechange
    pnpm install
    ```
 

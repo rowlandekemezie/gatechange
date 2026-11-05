@@ -7,7 +7,7 @@ import * as Redacted from "effect/Redacted";
 
 export const REPOSITORY = {
   owner: "rowlandekemezie",
-  repository: "jobs",
+  repository: "gatechange",
 } as const;
 
 export default Alchemy.Stack(

@@ -1144,7 +1144,7 @@ describe("home page render", () => {
           `claude mcp add --transport http gate-change ${ORIGIN}/mcp`
         );
         expect(html).toContain(
-          'href="https://github.com/rowlandekemezie/jobs"'
+          'href="https://github.com/rowlandekemezie/gatechange"'
         );
       })
   );
