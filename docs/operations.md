@@ -8,7 +8,7 @@ Deploys run from GitHub Actions. Every pull request and push runs the full check
 
 ## One-time setup
 
-1. Make sure the zone in `SITE_ZONE` (`packages/core/src/site.ts`) is on your Cloudflare account.
+1. Make sure the zones of `SITE_HOSTNAME` and every `SITE_REDIRECT_HOSTNAMES` entry (`packages/core/src/site.ts`) are on your Cloudflare account.
 2. Create an `admin` Alchemy profile with your Cloudflare **Global API Key** (it must be allowed to create API tokens), and sign in to GitHub with `gh auth login`:
 
    ```sh

@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Boot the jobs.rowlandekemezie.com board locally with alchemy dev, seed its local D1 from recorded fixtures, drive the Foldkit board in headless Chrome, and save screenshots. Use to prove any change a person can see on the board, such as filters, search, the shortlist, layout, or dark mode, before calling it done.
+description: Boot the gatechange.dev board locally with alchemy dev, seed its local D1 from recorded fixtures, drive the Foldkit board in headless Chrome, and save screenshots. Use to prove any change a person can see on the board, such as filters, search, the shortlist, layout, or dark mode, before calling it done.
 ---
 
 # Verify the job board

@@ -2210,7 +2210,7 @@ describe("stage hosts", () => {
     workersSubdomain: Option.some("acct"),
   });
 
-  const PROD = "https://jobs.rowlandekemezie.com";
+  const PROD = "https://gatechange.dev";
 
   it.effect("emails a preview stage's own workers.dev link", () =>
     Effect.gen(function* previewLink() {

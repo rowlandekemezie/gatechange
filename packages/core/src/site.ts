@@ -2,11 +2,33 @@ import { Option, Schema } from "effect";
 
 export const PROD_STAGE = "prod";
 
-export const SITE_HOSTNAME = "jobs.rowlandekemezie.com";
-
-export const SITE_ZONE = "rowlandekemezie.com";
+export const SITE_HOSTNAME = "gatechange.dev";
 
 export const SITE_ORIGIN = `https://${SITE_HOSTNAME}`;
+
+export const LEGACY_SITE_HOSTNAME = "jobs.rowlandekemezie.com";
+
+export const SITE_REDIRECT_HOSTNAMES: readonly string[] = [
+  LEGACY_SITE_HOSTNAME,
+  `www.${SITE_HOSTNAME}`,
+];
+
+export const MAIL_HOSTNAME = LEGACY_SITE_HOSTNAME;
+
+const OWNER_ZONE = "rowlandekemezie.com";
+
+const onSiteOrigin = ({ pathname, search }: URL) => {
+  const target = new URL(SITE_ORIGIN);
+  target.pathname = pathname;
+  target.search = search;
+
+  return target;
+};
+
+export const canonicalSiteUrlOf = (url: URL): Option.Option<URL> =>
+  SITE_REDIRECT_HOSTNAMES.includes(url.hostname.replace(/\.+$/u, ""))
+    ? Option.some(onSiteOrigin(url))
+    : Option.none();
 
 export const SITE_NAME = "Gate Change";
 
@@ -40,9 +62,12 @@ const isOffSiteName = (hostname: string, workersSubdomain: string) => {
   return (
     DNS_NAME.test(host) &&
     !IPV4_LITERAL.test(host) &&
-    ![SITE_ZONE, `${workersSubdomain}.workers.dev`, "localhost"].some(
-      (domain) => host === domain || host.endsWith(`.${domain}`)
-    )
+    ![
+      SITE_HOSTNAME,
+      OWNER_ZONE,
+      `${workersSubdomain}.workers.dev`,
+      "localhost",
+    ].some((domain) => host === domain || host.endsWith(`.${domain}`))
   );
 };
 

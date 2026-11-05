@@ -73,7 +73,7 @@ describe("persistent preview defaults", () => {
           dailyNeurons: 29_000,
           digestDailySendLimit: 50,
           digestSendsPerRun: 25,
-          digestSiteOrigin: "https://jobs.rowlandekemezie.com",
+          digestSiteOrigin: "https://gatechange.dev",
           magicLinkDailySendLimit: 900,
           proPlans: [],
           subdomain: Option.none(),
@@ -83,7 +83,7 @@ describe("persistent preview defaults", () => {
             localHosts: [],
             workersSubdomain: config.subdomain,
           }).allowedHosts
-        ).toStrictEqual(stage === "prod" ? ["jobs.rowlandekemezie.com"] : []);
+        ).toStrictEqual(stage === "prod" ? ["gatechange.dev"] : []);
       })
   );
 

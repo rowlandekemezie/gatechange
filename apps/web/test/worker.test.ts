@@ -139,6 +139,7 @@ interface EdgeOptions {
 const edge = (shell: string, options: EdgeOptions = {}) => {
   const calls = { assets: 0, backend: 0 };
   const backendCredentials: boolean[] = [];
+  const forwarded: string[] = [];
   const pending: Promise<unknown>[] = [];
   const backendStatus = options.backendStatus ?? 200;
 
@@ -166,6 +167,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
         calls.backend += 1;
         const request = new Request(input, init);
 
+        forwarded.push(`${request.method} ${request.url}`);
         backendCredentials.push(
           request.headers.has("cookie") || request.headers.has("authorization")
         );
@@ -188,12 +190,11 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     },
   };
 
+  const send = async (request: Request) =>
+    await worker.fetch(request, bindings, lifetime);
+
   const get = async (url: string, headers: Record<string, string> = {}) => {
-    const response = await worker.fetch(
-      new Request(url, { headers }),
-      bindings,
-      lifetime
-    );
+    const response = await send(new Request(url, { headers }));
 
     const html = await response.text();
 
@@ -202,7 +203,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     return { headers: response.headers, html, status: response.status };
   };
 
-  return { backendCredentials, calls, get };
+  return { backendCredentials, calls, forwarded, get, send };
 };
 
 const stored = new Map<string, Response>();
@@ -351,6 +352,108 @@ afterEach(() => {
 
 afterAll(async () => {
   await backend.dispose();
+});
+
+describe("moved hosts", () => {
+  it.each([
+    [
+      "https://jobs.rowlandekemezie.com/jobs/greenhouse%3Aacme%2F1?q=staff&utm_source=x",
+      "https://gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff&utm_source=x",
+    ],
+    [
+      "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=abc",
+      "https://gatechange.dev/api/auth/magic-link/verify?token=abc",
+    ],
+    ["https://www.gatechange.dev/", "https://gatechange.dev/"],
+  ])(
+    "answers %s with a permanent 301 to %s before touching the site",
+    async (from, to) => {
+      const site = edge(indexHtml);
+
+      const responses = await Promise.all(
+        ["GET", "HEAD"].map(
+          async (method) => await site.send(new Request(from, { method }))
+        )
+      );
+
+      for (const response of responses) {
+        expect(response.status).toBe(301);
+        expect(response.headers.get("location")).toBe(to);
+        expect(response.headers.get("cache-control")).toBe(
+          "public, max-age=86400"
+        );
+        expect(response.headers.has("set-cookie")).toBe(false);
+      }
+
+      expect(site.calls).toStrictEqual({ assets: 0, backend: 0 });
+      expect(stored.size).toBe(0);
+    }
+  );
+
+  it("keeps the method and body of a moved MCP call with a 308", async () => {
+    const site = edge(indexHtml);
+
+    const response = await site.send(
+      new Request("https://jobs.rowlandekemezie.com/mcp?x=1", {
+        body: "{}",
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://gatechange.dev/mcp?x=1"
+    );
+    expect(site.calls.backend).toBe(0);
+  });
+
+  it.each([
+    "https://jobs.rowlandekemezie.com//evil.com/x?a=1",
+    "https://jobs.rowlandekemezie.com/\\evil.com",
+    "https://jobs.rowlandekemezie.com/%2F%2Fevil.com",
+    "https://jobs.rowlandekemezie.com///evil.com",
+    "https://jobs.rowlandekemezie.com/\\\\evil.com",
+  ])("keeps the redirect for %s on gatechange.dev", async (from) => {
+    const response = await edge(indexHtml).send(new Request(from));
+
+    expect(response.status).toBe(301);
+    expect(new URL(response.headers.get("location") ?? "", from).origin).toBe(
+      "https://gatechange.dev"
+    );
+  });
+
+  it.each([
+    new Request("https://jobs.rowlandekemezie.com/unsubscribe?token=t"),
+    new Request("https://jobs.rowlandekemezie.com/unsubscribe?token=t", {
+      body: "List-Unsubscribe=One-Click",
+      method: "POST",
+    }),
+    new Request("https://jobs.rowlandekemezie.com/webhooks/stripe", {
+      body: "{}",
+      method: "POST",
+    }),
+  ])(
+    "answers $method $url on the old host without a redirect",
+    async (request) => {
+      const site = edge(indexHtml);
+
+      const response = await site.send(request);
+
+      expect(response.headers.has("location")).toBe(false);
+      expect(site.forwarded).toStrictEqual([
+        `${request.method} ${request.url}`,
+      ]);
+    }
+  );
+
+  it("serves gatechange.dev itself", async () => {
+    const page = await edge(indexHtml).get("https://gatechange.dev/pricing");
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain(
+      '<link rel="canonical" href="https://gatechange.dev/pricing"'
+    );
+  });
 });
 
 describe("tracking parameters", () => {

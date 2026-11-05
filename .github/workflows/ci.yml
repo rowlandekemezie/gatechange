@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://jobs.rowlandekemezie.com
+      url: https://gatechange.dev
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -133,18 +133,30 @@ jobs:
 
       - name: Smoke test
         run: |
-          for attempt in 1 2 3 4 5 6; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/) && [ "$status" = "200" ] && exit 0
+          for attempt in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://gatechange.dev/) && [ "$status" = "200" ] && exit 0
             echo "Site answered $status on attempt $attempt, retrying in 10 seconds"
             sleep 10
           done
-          echo "jobs.rowlandekemezie.com did not answer 200 after deploy"
+          echo "gatechange.dev did not answer 200 after deploy"
           exit 1
+
+      - name: Smoke test moved hosts
+        run: |
+          for host in jobs.rowlandekemezie.com www.gatechange.dev; do
+            for attempt in $(seq 1 30); do
+              answer=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" "https://$host/jobs/smoke?q=staff") && [ "$answer" = "301 https://gatechange.dev/jobs/smoke?q=staff" ] && continue 2
+              echo "$host answered '$answer' on attempt $attempt, retrying in 10 seconds"
+              sleep 10
+            done
+            echo "$host did not redirect to gatechange.dev after deploy"
+            exit 1
+          done
 
       - name: Smoke test auth
         run: |
           for attempt in 1 2 3 4 5 6; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" https://jobs.rowlandekemezie.com/api/auth/ok) && [ "$status" = "200" ] && exit 0
+            status=$(curl -s -o /dev/null -w "%{http_code}" https://gatechange.dev/api/auth/ok) && [ "$status" = "200" ] && exit 0
             echo "/api/auth/ok answered $status on attempt $attempt, retrying in 10 seconds"
             sleep 10
           done
@@ -154,11 +166,11 @@ jobs:
       - name: Verify public HTML and filter exclusions
         run: |
           for path in / /pricing /about /privacy /terms /contact; do
-            curl --connect-timeout 10 --max-time 30 -fsS "https://jobs.rowlandekemezie.com$path" > "$RUNNER_TEMP/public-page.html"
+            curl --connect-timeout 10 --max-time 30 -fsS "https://gatechange.dev$path" > "$RUNNER_TEMP/public-page.html"
             grep -q 'data-foldkit-app' "$RUNNER_TEMP/public-page.html"
             grep -q 'rel="canonical"' "$RUNNER_TEMP/public-page.html"
           done
-          curl --connect-timeout 10 --max-time 30 -fsS -D "$RUNNER_TEMP/filter-headers" -o /dev/null 'https://jobs.rowlandekemezie.com/?age=30'
+          curl --connect-timeout 10 --max-time 30 -fsS -D "$RUNNER_TEMP/filter-headers" -o /dev/null 'https://gatechange.dev/?age=30'
           grep -iq '^x-robots-tag:.*noindex' "$RUNNER_TEMP/filter-headers"
           grep -iq '^cache-control:.*no-store' "$RUNNER_TEMP/filter-headers"
 

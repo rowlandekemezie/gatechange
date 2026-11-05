@@ -18,7 +18,7 @@ const adaAccount = Schema.decodeSync(Account)(ada);
 
 const LIVE = `__Secure-${SESSION_COOKIE}=live`;
 
-const SITE = "jobs.rowlandekemezie.com";
+const SITE = "gatechange.dev";
 
 const storeWith = (lookup: (cookie: string) => Effect.Effect<unknown>) =>
   makeAccountStore(

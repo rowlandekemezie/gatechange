@@ -23,6 +23,7 @@ import {
   EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
   isPullRequestStage,
+  MAIL_HOSTNAME,
   postHogSetting,
   publicOriginOf,
   runDigests,
@@ -31,7 +32,6 @@ import {
   skipHandling,
   sweepLimitOf,
   siteHostsOf,
-  SITE_HOSTNAME,
   SITE_ORIGIN,
   SITE_WORKERS_SUBDOMAIN,
   SocialProvider,
@@ -134,9 +134,9 @@ const enrichMessage =
         ),
     });
 
-export const MAGIC_LINK_SENDER = `sign-in@${SITE_HOSTNAME}`;
+export const MAGIC_LINK_SENDER = `sign-in@${MAIL_HOSTNAME}`;
 
-export const DIGEST_SENDER = `digest@${SITE_HOSTNAME}`;
+export const DIGEST_SENDER = `digest@${MAIL_HOSTNAME}`;
 
 export const DIGEST_SCHEDULE = "7 * * * *";
 

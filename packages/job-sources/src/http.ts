@@ -3,7 +3,7 @@ import { Effect, Schedule, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 
 export const USER_AGENT =
-  "jobs.rowlandekemezie.com/1.0 (engineering leadership job board; +https://jobs.rowlandekemezie.com)";
+  "gatechange.dev/1.0 (engineering leadership job board; +https://gatechange.dev)";
 
 export const REQUEST_TIMEOUT = "20 seconds";
 

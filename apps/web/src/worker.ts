@@ -1,3 +1,4 @@
+import { canonicalSiteUrlOf } from "@rat-stack/core";
 import { BoardStats } from "@rat-stack/core/contracts";
 import type { BoardStatsValue } from "@rat-stack/core/contracts";
 import { Clock, Effect, Option, Schema } from "effect";
@@ -9,10 +10,12 @@ import { collectListing, isListingRoute } from "./client/listing.js";
 import { canonicalPathOf, Route, routeOfUrl } from "./client/route.js";
 import type { RouteValue } from "./client/route.js";
 import {
+  CANONICAL_REDIRECT_CACHE_CONTROL,
   edgeRouteOf,
   HASHED_ASSET_CACHE_CONTROL,
   PRIVATE_CACHE_CONTROL,
   PRIVATE_REFERRER_POLICY,
+  UNREDIRECTED_PATHS,
 } from "./edge-routes.js";
 import type { EdgeRoute } from "./edge-routes.js";
 import {
@@ -69,6 +72,17 @@ const withoutSharedCache = (route: EdgeRoute, response: Response) => {
 
   return guarded;
 };
+
+const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD"]);
+
+const redirectTo = (request: Request, location: URL) =>
+  new Response(null, {
+    headers: {
+      "cache-control": CANONICAL_REDIRECT_CACHE_CONTROL,
+      location: location.href,
+    },
+    status: SAFE_METHODS.has(request.method) ? 301 : 308,
+  });
 
 const respond = (body: string, contentType: string, status = 200) =>
   new Response(body, {
@@ -430,6 +444,16 @@ export default {
     environment: WorkerBindings,
     lifetime: Lifetime
   ): Promise<Response> => {
+    const requested = new URL(request.url);
+
+    const canonical = UNREDIRECTED_PATHS.has(requested.pathname)
+      ? Option.none<URL>()
+      : canonicalSiteUrlOf(requested);
+
+    if (Option.isSome(canonical)) {
+      return redirectTo(request, canonical.value);
+    }
+
     const backend = backendOf(environment, globalThis.fetch);
 
     if (backend === undefined) {
