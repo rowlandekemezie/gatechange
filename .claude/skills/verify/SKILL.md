@@ -95,6 +95,12 @@ Scenarios:
 - `pricing` opens `/pricing` and requires three plan cards with their prices and no sideways scroll. Add `--mobile` for the phone check.
 - `free-gate` signs in as a Free member, turns on `Only roles that state a salary`, and requires the upgrade prompt with the same row count and count line as before, so a Free member never loses listings.
 
+The `analytics-*` scenarios need no PostHog key. They add a stub `posthog-key` meta tag in the browser, answer every `/ingest/` request over the DevTools protocol, and decode the batch, so no event leaves the machine.
+
+- `analytics-anonymous` requires the first `$pageview` with `$process_person_profile: false`, no `$identify`, and no analytics id in a cookie or browser storage. It reports `firstBatchMs`.
+- `analytics-identity` signs in, reloads with the `get-session` answer held back 2000 ms, and requires the first event on the wire to be a `$pageview` carrying the account id, with no event under any other id.
+- `analytics-events` signs in and requires `search_no_results`, `saved_search_created`, `job_not_found`, `listing_not_found`, and `read_rate_limited` (from a stubbed 429 on `/rpc`) on the wire, with neither the email nor the search text in any batch.
+
 Saved-search digest scenarios take `--backend "$(cat /tmp/verify-jobs/<stage>/backend-url)"` and `--log /tmp/verify-jobs/<stage>/dev.log`. They sign in as `--email` first, so give each run its own address: a member gets at most one digest a week, and a second run with the same address sends nothing. The digest cron is fired through the backend's `/cdn-cgi/handler/scheduled?cron=7+*+*+*+*&time=<ms>` route, and a digest counts when `dev.log` shows `alchemy dev` handing one to `--email`.
 
 - `save-search` presses `Email me new matches weekly` under the board search (after typing `--search` when given), waits for the saved notice, and requires the search on `/account`.

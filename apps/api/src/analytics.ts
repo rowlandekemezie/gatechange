@@ -4,6 +4,7 @@ import { Data, Effect, Option } from "effect";
 
 export type ServerEventValue = Data.TaggedEnum<{
   DigestSent: { readonly count: number };
+  EmailUnsubscribed: { readonly account: AccountIdValue };
   McpToolCalled: { readonly tool: string };
   SubscriptionActivated: { readonly account: AccountIdValue };
 }>;
@@ -20,6 +21,11 @@ export const captureBodyOf = (key: string, event: ServerEventValue) => ({
       event: "digest_sent",
       properties: { count },
     }),
+    EmailUnsubscribed: ({ account }) => ({
+      distinct_id: account,
+      event: "email_unsubscribed",
+      properties: {},
+    }),
     McpToolCalled: ({ tool }) => ({
       distinct_id: SERVER_DISTINCT_ID,
       event: "mcp_tool_called",
@@ -32,6 +38,10 @@ export const captureBodyOf = (key: string, event: ServerEventValue) => ({
     }),
   }),
 });
+
+export const privacySignalled = (
+  headers: Readonly<Record<string, string | undefined>>
+) => headers.dnt === "1" || headers["sec-gpc"] === "1";
 
 export type Capture = (event: ServerEventValue) => Effect.Effect<void>;
 

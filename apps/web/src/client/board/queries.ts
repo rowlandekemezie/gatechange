@@ -13,12 +13,30 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { FetchHttpClient, HttpClient } from "effect/http";
 import { RpcClient, RpcSerialization } from "effect/rpc";
 
+import { Analytics } from "../analytics/client.js";
+import { AnalyticsCall, AnalyticsEvent } from "../analytics/events.js";
+
 const { group } = toRpcGroup(jobBoardContracts);
+
+const RATE_LIMITED = 429;
+
+const rateLimitedRead = AnalyticsCall.Track({
+  event: AnalyticsEvent.ReadRateLimited(),
+});
 
 const checkedHttp = Layer.effect(
   HttpClient.HttpClient,
   Effect.gen(function* checkStatus() {
-    return HttpClient.filterStatusOk(yield* HttpClient.HttpClient);
+    const analytics = yield* Analytics;
+
+    return (yield* HttpClient.HttpClient).pipe(
+      HttpClient.tap(({ status }) =>
+        status === RATE_LIMITED
+          ? analytics.send([rateLimitedRead])
+          : Effect.void
+      ),
+      HttpClient.filterStatusOk
+    );
   })
 ).pipe(Layer.provide(FetchHttpClient.layer));
 

@@ -51,6 +51,7 @@ The base Effect plugin owns diagnostic severity. Child configs may add exact `al
 | `pnpm build` | Compile package outputs |
 | `pnpm typecheck` | `turbo run typecheck` |
 | `pnpm vendor:agent-sources` | Shallow-clone Effect, effect-solutions, xstate, alchemy, better-auth, and Foldkit mirrors |
+| `pnpm posthog:dashboards` | Print the PostHog dashboard plan; add `--apply` to write it. Reads `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, and optional `POSTHOG_HOST` |
 | `pnpm infra:plan` | Preview the Alchemy Stack diff without applying |
 | `pnpm self-host plan\|deploy\|destroy --stage <name> [--yes]` | Load `.env.local` through `varlock run`, check self-host inputs, print the target account, confirm, build, then run Alchemy for a stage on the caller's own Cloudflare account |
 | `pnpm env:example` | Regenerate `.env.example` from the `.env.schema` files; `check` fails when it is stale |
