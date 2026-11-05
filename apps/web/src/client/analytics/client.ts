@@ -22,7 +22,7 @@ import type { AnalyticsCallValue, Properties } from "./events.js";
 
 export const INGEST_BATCH_PATH = `${INGEST_PREFIX}/batch/`;
 
-const CAMPAIGN_PARAMS = [
+export const CAMPAIGN_PARAMS = [
   "ref",
   "utm_campaign",
   "utm_content",
