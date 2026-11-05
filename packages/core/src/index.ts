@@ -298,11 +298,14 @@ export type { PlaceEvidence, Placement } from "./location.js";
 
 export {
   DAY_MILLIS,
-  normalizePosting,
+  MAX_DETAIL_LENGTH,
+  MAX_TITLE_LENGTH,
+  MAX_URL_LENGTH,
   Posting,
   RECENCY_PENALTY_PER_DAY,
   REMOTE_BONUS,
   SALARY_BONUS,
+  normalizePosting,
 } from "./posting.js";
 
 export type { PostingValue } from "./posting.js";
