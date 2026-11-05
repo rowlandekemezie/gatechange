@@ -1,6 +1,6 @@
 ---
 name: uncomplect
-description: Find responsibilities that a rat-stack design combines, separate them into capabilities, cartridges, machines, features, and clients, and enforce that separation through types and checks. Use when asked to simplify, review, or replace a design, "what would Rich Hickey do", "optimize for deletion", or "define this error out of existence".
+description: Find responsibilities that a Gate Change design combines, separate them into capabilities, cartridges, machines, features, and clients, and enforce that separation through types and checks. Use when asked to simplify, review, or replace a design, "what would Rich Hickey do", "optimize for deletion", or "define this error out of existence".
 plain: "Find what a design braids together, separate the concerns, and add a fence so the next change cannot braid them again."
 diagram: |-
   read source + receipts
@@ -16,7 +16,7 @@ basis:
   - https://github.com/joelhooks/skills/tree/main/skills/uncomplect
 ---
 
-# Uncomplect rat-stack
+# Uncomplect Gate Change
 
 Uncomplect means separate responsibilities that currently change together. Preserve behavior proved by tests or runtime observations. Replace structure that combines unrelated responsibilities. Make the separation hold under the next change.
 

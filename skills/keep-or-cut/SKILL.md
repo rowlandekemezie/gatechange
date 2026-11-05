@@ -14,7 +14,7 @@ diagram: |-
   compiler finds
 ---
 
-# Keep or cut rat-stack
+# Keep or cut Gate Change
 
 Delete interfaces your product will not use. Do not keep code because you might need it one day.
 

@@ -51,7 +51,9 @@ describe("public information", () => {
           expect(rendered.html).toContain(
             `rel="canonical" href="${ORIGIN}${path}"`
           );
-          expect(rendered.html).toContain("mailto:hello@rowlandekemezie.com");
+          expect(rendered.html).toContain(
+            "mailto:hello@rowlandekemezie.com?subject=Gate%20Change"
+          );
           expect(rendered.html).toContain('href="/privacy"');
           expect(rendered.html).toContain('href="/contact"');
 
