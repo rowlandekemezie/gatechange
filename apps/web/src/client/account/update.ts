@@ -7,13 +7,14 @@ import type { AuthClient } from "./auth-client.js";
 import {
   FetchSession,
   FetchSignInOptions,
+  PreviewLink,
   RequestLink,
   SignOut,
   StartSocialSignIn,
 } from "./command.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { editing, SessionState, SignInState } from "./model.js";
+import { editing, LinkPreview, SessionState, SignInState } from "./model.js";
 import type { LinkOutcomeValue, ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<
@@ -30,7 +31,7 @@ const linkProblems: Record<Exclude<LinkOutcomeValue, "Sent">, string> = {
   Failed: "We could not send the link. Try again in a minute.",
   Invalid: "That email address does not look right. Check it and try again.",
   Limited:
-    "Too many sign-in links went to this address. Use the newest one, or wait 15 minutes and ask again.",
+    "We cannot send another sign-in link right now. Use the newest one, or try again later.",
 };
 
 const typedEmail = (model: ModelValue) =>
@@ -43,6 +44,7 @@ const typedEmail = (model: ModelValue) =>
 export const init = (): UpdateReturn => ({
   commands: [FetchSession()],
   model: {
+    link: LinkPreview.Checking(),
     session: SessionState.Checking(),
     signIn: editing(""),
     socialProviders: [],
@@ -53,6 +55,13 @@ export const entered = (model: ModelValue): UpdateReturn =>
   Schema.is(SessionState.SignedIn)(model.session)
     ? { model }
     : { commands: [FetchSignInOptions()], model };
+
+export const enteredConfirm =
+  (token: string) =>
+  (model: ModelValue): UpdateReturn => ({
+    commands: [PreviewLink({ token })],
+    model: modifyFields(model, { link: () => LinkPreview.Checking() }),
+  });
 
 const submitted = (model: ModelValue): UpdateReturn => {
   if (!Schema.is(SignInState.Editing)(model.signIn)) {
@@ -83,6 +92,7 @@ export const update = (
   message: MessageValue
 ): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
+    ClickedRetryLinkCheck: ({ token }) => enteredConfirm(token)(model),
     ClickedSignOut: () => ({ commands: [SignOut()], model }),
     ClickedSocialSignIn: ({ provider }) => ({
       commands: [StartSocialSignIn({ provider })],
@@ -102,6 +112,9 @@ export const update = (
     }),
     CompletedFetchSignInOptions: ({ socialProviders }) => ({
       model: modifyFields(model, { socialProviders: () => socialProviders }),
+    }),
+    CompletedPreviewLink: ({ preview }) => ({
+      model: modifyFields(model, { link: () => preview }),
     }),
     CompletedRequestLink: ({ email, outcome }) => ({
       model: modifyFields(model, {

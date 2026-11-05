@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Boot the jobs.rowlandekemezie.com board locally with alchemy dev, seed its local D1 from recorded fixtures, drive the Foldkit board in headless Chrome, and save screenshots. Use to prove any change a person can see on the board, such as filters, search, the shortlist, layout, or dark mode, before calling it done.
+description: Boot the gatechange.dev board locally with alchemy dev, seed its local D1 from recorded fixtures, drive the Foldkit board in headless Chrome, and save screenshots. Use to prove any change a person can see on the board, such as filters, search, the shortlist, layout, or dark mode, before calling it done.
 ---
 
 # Verify the job board
@@ -75,9 +75,12 @@ Scenarios:
 - `filter-steady` clicks the `day` age chip and fails if the board leaves the page at any point before the new rows arrive.
 - `search` types the first row's company into the search box, submits, and requires every row to show that company.
 - `shortlist` saves the first row (the `Save` icon button on desktop; on `--mobile` the row's `Save` text button on its job page, because the row's buttons are hidden on a phone), opens the `Shortlist (n)` header link, and requires `Saved (1)` with that job's title, plus one `localStorage` key.
-- `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest `/account/confirm` link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), presses `Finish signing in`, and requires the header to show the email.
+- `signin` clicks the header's `Sign in` link, submits `--email` (default `verify@example.com`), waits for the check-your-email notice, opens the newest `/account/confirm` link in `apps/infra/.alchemy/local/email/text/` (where `alchemy dev` writes outgoing mail), requires the page to name the account, presses `Finish signing in`, and requires the header to show the email.
 - `signout` runs `signin`, presses `Sign out`, reloads, and requires the header to say `Sign in`.
-- `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with the viewer still signed out.
+- `link-reuse` runs `signout`, opens the same link again, and requires the refused-link notice with no address on the page and the viewer still signed out.
+- `link-budget` needs a stage booted with `MAGIC_LINK_DAILY_SEND_LIMIT=5`, so new addresses get 2 sends. It signs in as `--email`, signs out, spends the second new-address send, requires the next new address to be refused, and requires `--email` to sign in again.
+- `confirm-other-account` mails a link for `other-<--email>`, signs in as `--email`, opens the first link, and requires a warning naming both addresses with the header unchanged. It saves the warning as `<name>-warning.png`, then presses `Switch to <address>` and requires the header to show that address.
+- `confirm-retry` mails a link for `--email`, opens it with the preview request blocked, requires the failed-check notice, saves it as `<name>-failed.png`, unblocks, presses `Check this link again`, and requires the sign-in to finish.
 - `bad-email` submits `not-an-email` and requires an inline `role=alert` error with no new file in the mail outbox.
 - `tracker-import` presses `Save` on the first two rows and `Applied` on the third while signed out, then signs in. It requires a `.import-offer` prompt that names `--email` and `3 jobs` while the tracker is still empty and the `jobs.shortlist.v1` key is still set. It saves the prompt as `<name>-prompt.png`, then presses `Move them` and requires all three in the tracker exactly once with the key gone. Run it twice with the same `--email` to prove a second import adds nothing.
 - `tracker-import-decline` saves the same three rows, signs in, presses `Keep them in this browser`, and requires the prompt gone, the tracker empty, and all three titles still in the `jobs.shortlist.v1` key.

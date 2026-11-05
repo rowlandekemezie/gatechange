@@ -7,7 +7,7 @@ import { stageConfig } from "../src/stage-config.js";
 const configured = (stage: string, values: Record<string, string> = {}) =>
   stageConfig(stage).parse(ConfigProvider.fromUnknown(values));
 
-const previewOrigin = "https://jobs-preview.rowland-ekemezie.workers.dev";
+const previewOrigin = "https://uat.gatechange.dev";
 
 describe("persistent preview defaults", () => {
   it.effect(
@@ -73,7 +73,7 @@ describe("persistent preview defaults", () => {
           dailyNeurons: 29_000,
           digestDailySendLimit: 50,
           digestSendsPerRun: 25,
-          digestSiteOrigin: "https://jobs.rowlandekemezie.com",
+          digestSiteOrigin: "https://gatechange.dev",
           magicLinkDailySendLimit: 900,
           proPlans: [],
           subdomain: Option.none(),
@@ -83,7 +83,7 @@ describe("persistent preview defaults", () => {
             localHosts: [],
             workersSubdomain: config.subdomain,
           }).allowedHosts
-        ).toStrictEqual(stage === "prod" ? ["jobs.rowlandekemezie.com"] : []);
+        ).toStrictEqual(stage === "prod" ? ["gatechange.dev"] : []);
       })
   );
 

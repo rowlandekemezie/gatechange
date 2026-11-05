@@ -49,6 +49,9 @@ const scenarios = [
   "bad-email",
   "signout",
   "link-reuse",
+  "link-budget",
+  "confirm-other-account",
+  "confirm-retry",
   "save-search",
   "delete-search",
   "digest",
@@ -591,15 +594,19 @@ const markRows = async (
   await markRows(rest, index + 1);
 };
 
-const finishSignIn = async (link: string) => {
-  await goTo(link);
+const confirmPageText = async () =>
+  await evaluate(
+    Schema.String,
+    'document.querySelector(".detail.account")?.textContent ?? ""'
+  );
 
-  await waitFor("the finish-signing-in button", async () =>
+const pressConfirmButton = async (label: string) =>
+  await waitFor(`the ${label} button`, async () =>
     (await evaluate(
       Schema.Boolean,
       `(() => {
       const button = [...document.querySelectorAll("form button")]
-        .find((node) => node.textContent.trim() === "Finish signing in");
+        .find((node) => node.textContent.trim() === ${JSON.stringify(label)});
       if (button !== undefined) setTimeout(() => button.click(), 0);
       return button !== undefined;
     })()`
@@ -607,6 +614,17 @@ const finishSignIn = async (link: string) => {
       ? true
       : undefined
   );
+
+const finishSignIn = async (link: string, email: string) => {
+  await goTo(link);
+
+  await waitFor(`the confirm page to name ${email}`, async () => {
+    const text = await confirmPageText();
+
+    return text.includes(`signs you in as ${email}`) ? true : undefined;
+  });
+
+  await pressConfirmButton("Finish signing in");
 };
 
 const submitEmail = async (email: string) => {
@@ -821,7 +839,7 @@ const run = async () => {
 
     const link = latestLink();
 
-    await finishSignIn(link);
+    await finishSignIn(link, values.email);
 
     const signedIn = await waitForAccount(
       "the header to show the account",
@@ -1206,6 +1224,93 @@ const run = async () => {
         throw new Error("an email was sent for an invalid address");
       }
     },
+    "confirm-other-account": async () => {
+      const other = `other-${values.email}`;
+      const before = mailCount();
+
+      await submitEmail(other);
+      await waitForAccount("the check-your-email notice", (state) =>
+        state.sent.includes(other)
+      );
+      await waitFor("the other account's email", async () => {
+        await sleep(0);
+
+        return mailCount() > before ? true : undefined;
+      });
+
+      const otherLink = latestLink();
+
+      await goTo(url);
+      await signIn();
+      await goTo(otherLink);
+
+      const warned = await waitForAccount(
+        "the different-account warning",
+        (state) =>
+          state.problem.includes(values.email) && state.problem.includes(other)
+      );
+
+      steps.push({
+        detail: await screenshot(`${name}-warning`),
+        step: `opened ${other}'s link while signed in`,
+        ...warned,
+      });
+
+      if (warned.header !== values.email) {
+        throw new Error("opening the link changed the account");
+      }
+
+      await pressConfirmButton(`Switch to ${other}`);
+
+      const switched = await waitForAccount(
+        "the header to show the other account",
+        (state) => state.header === other
+      );
+
+      steps.push({ step: "pressed the switch button", ...switched });
+    },
+    "confirm-retry": async () => {
+      const before = mailCount();
+
+      await submitEmail(values.email);
+      await waitFor("the sign-in email", async () => {
+        await sleep(0);
+
+        return mailCount() > before ? true : undefined;
+      });
+
+      await send(Ignored, "Network.setBlockedURLs", {
+        urlPatterns: [
+          { block: true, urlPattern: "*://*:*/api/auth/magic-link/preview*" },
+        ],
+      });
+      await goTo(latestLink());
+
+      const failed = await waitForAccount("the failed-check notice", (state) =>
+        state.problem.includes("could not check this link")
+      );
+
+      steps.push({
+        detail: await screenshot(`${name}-failed`),
+        step: "opened the link with the check blocked",
+        ...failed,
+      });
+
+      await send(Ignored, "Network.setBlockedURLs", { urlPatterns: [] });
+
+      if (!(await clickButton("button", "Check this link again"))) {
+        throw new Error("no retry button after a failed check");
+      }
+
+      await pressConfirmButton("Finish signing in");
+
+      const signedIn = await waitForAccount(
+        "the header to show the account",
+        (state) => state.header === values.email
+      );
+
+      steps.push({ step: "retried and signed in", ...signedIn });
+    },
     filter: async () => {
       if (!(await clickButton("button.phrase", "day"))) {
         throw new Error('no "day" age chip to click');
@@ -1309,18 +1414,49 @@ const run = async () => {
         );
       }
     },
+    "link-budget": async () => {
+      await signIn();
+      await signOut();
+
+      const stranger = `stranger-${values.email}`;
+
+      await submitEmail(stranger);
+      await waitForAccount("the first stranger's notice", (state) =>
+        state.sent.includes(stranger)
+      );
+
+      await goTo(url);
+
+      await submitEmail(`second-${stranger}`);
+
+      const refused = await waitForAccount(
+        "the new-address share to refuse",
+        (state) => state.problem.length > 0
+      );
+
+      steps.push({ step: "a second stranger was refused", ...refused });
+
+      await goTo(url);
+      await signIn();
+    },
     "link-reuse": async () => {
       const link = await signIn();
 
       await signOut();
-      await finishSignIn(link);
+      await goTo(link);
 
       const refused = await waitForAccount(
         "the used link to be refused",
-        (state) => state.problem.includes("already used")
+        (state) => state.problem.includes("already been used")
       );
 
       steps.push({ step: "reopened the used link", ...refused });
+
+      const refusedPage = await confirmPageText();
+
+      if (refusedPage.includes("@")) {
+        throw new Error("a used link named an account");
+      }
 
       if (refused.header !== "Sign in") {
         throw new Error("a used link signed the viewer in again");

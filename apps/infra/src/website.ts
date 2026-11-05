@@ -3,6 +3,7 @@ import {
   ANONYMOUS_MCP_CALLS_PER_MINUTE,
   isPullRequestStage,
   postHogSetting,
+  PUBLIC_READS_PER_MINUTE,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "@rat-stack/core";
 import {
@@ -75,6 +76,14 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
         MCP_TOKEN_LIMIT: Cloudflare.Workers.RateLimit("MCP_TOKEN_LIMIT", {
           namespaceId: 1202,
           simple: { limit: TOKEN_MCP_CALLS_PER_MINUTE, period: 60 },
+        }),
+        PUBLIC_READ_LIMIT: Cloudflare.Workers.RateLimit("PUBLIC_READ_LIMIT", {
+          namespaceId: 1203,
+          simple: { limit: PUBLIC_READS_PER_MINUTE, period: 60 },
+        }),
+        SESSION_READ_LIMIT: Cloudflare.Workers.RateLimit("SESSION_READ_LIMIT", {
+          namespaceId: 1204,
+          simple: { limit: PUBLIC_READS_PER_MINUTE, period: 60 },
         }),
         SITE_INDEXING: siteIndexing(stage),
       },

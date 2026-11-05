@@ -2,9 +2,10 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type { JobQueryValue, ListedJobValue } from "@rat-stack/core/contracts";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
+import { fromString } from "foldkit/url";
 import {
   afterAll,
   afterEach,
@@ -16,7 +17,10 @@ import {
 } from "vitest";
 
 import indexHtml from "../index.html?raw";
+import { Flags } from "../src/client/board/model.js";
+import { init as startBoard } from "../src/client/board/update.js";
 import { jobRouter } from "../src/client/route.js";
+import { addServerCommandOf } from "../src/features/agent-tokens/view.js";
 import worker from "../src/worker.js";
 
 const ORIGIN = "https://jobs.example";
@@ -135,6 +139,7 @@ interface EdgeOptions {
 const edge = (shell: string, options: EdgeOptions = {}) => {
   const calls = { assets: 0, backend: 0 };
   const backendCredentials: boolean[] = [];
+  const forwarded: string[] = [];
   const pending: Promise<unknown>[] = [];
   const backendStatus = options.backendStatus ?? 200;
 
@@ -162,6 +167,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
         calls.backend += 1;
         const request = new Request(input, init);
 
+        forwarded.push(`${request.method} ${request.url}`);
         backendCredentials.push(
           request.headers.has("cookie") || request.headers.has("authorization")
         );
@@ -173,6 +179,8 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     },
     MCP_ANONYMOUS_LIMIT: unlimited,
     MCP_TOKEN_LIMIT: unlimited,
+    PUBLIC_READ_LIMIT: unlimited,
+    SESSION_READ_LIMIT: unlimited,
     SITE_INDEXING: options.indexing ?? "index",
   };
 
@@ -182,12 +190,11 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     },
   };
 
+  const send = async (request: Request) =>
+    await worker.fetch(request, bindings, lifetime);
+
   const get = async (url: string, headers: Record<string, string> = {}) => {
-    const response = await worker.fetch(
-      new Request(url, { headers }),
-      bindings,
-      lifetime
-    );
+    const response = await send(new Request(url, { headers }));
 
     const html = await response.text();
 
@@ -196,7 +203,7 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     return { headers: response.headers, html, status: response.status };
   };
 
-  return { backendCredentials, calls, get };
+  return { backendCredentials, calls, forwarded, get, send };
 };
 
 const stored = new Map<string, Response>();
@@ -347,6 +354,186 @@ afterAll(async () => {
   await backend.dispose();
 });
 
+describe("moved hosts", () => {
+  it.each([
+    [
+      "https://jobs.rowlandekemezie.com/jobs/greenhouse%3Aacme%2F1?q=staff&utm_source=x",
+      "https://gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff&utm_source=x",
+    ],
+    [
+      "https://jobs.rowlandekemezie.com/api/auth/magic-link/verify?token=abc",
+      "https://gatechange.dev/api/auth/magic-link/verify?token=abc",
+    ],
+    ["https://www.gatechange.dev/", "https://gatechange.dev/"],
+  ])(
+    "answers %s with a permanent 301 to %s before touching the site",
+    async (from, to) => {
+      const site = edge(indexHtml);
+
+      const responses = await Promise.all(
+        ["GET", "HEAD"].map(
+          async (method) => await site.send(new Request(from, { method }))
+        )
+      );
+
+      for (const response of responses) {
+        expect(response.status).toBe(301);
+        expect(response.headers.get("location")).toBe(to);
+        expect(response.headers.get("cache-control")).toBe(
+          "public, max-age=86400"
+        );
+        expect(response.headers.has("set-cookie")).toBe(false);
+      }
+
+      expect(site.calls).toStrictEqual({ assets: 0, backend: 0 });
+      expect(stored.size).toBe(0);
+    }
+  );
+
+  it("keeps the method and body of a moved MCP call with a 308", async () => {
+    const site = edge(indexHtml);
+
+    const response = await site.send(
+      new Request("https://jobs.rowlandekemezie.com/mcp?x=1", {
+        body: "{}",
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://gatechange.dev/mcp?x=1"
+    );
+    expect(site.calls.backend).toBe(0);
+  });
+
+  it.each([
+    "https://jobs.rowlandekemezie.com//evil.com/x?a=1",
+    "https://jobs.rowlandekemezie.com/\\evil.com",
+    "https://jobs.rowlandekemezie.com/%2F%2Fevil.com",
+    "https://jobs.rowlandekemezie.com///evil.com",
+    "https://jobs.rowlandekemezie.com/\\\\evil.com",
+  ])("keeps the redirect for %s on gatechange.dev", async (from) => {
+    const response = await edge(indexHtml).send(new Request(from));
+
+    expect(response.status).toBe(301);
+    expect(new URL(response.headers.get("location") ?? "", from).origin).toBe(
+      "https://gatechange.dev"
+    );
+  });
+
+  it.each([
+    new Request("https://jobs.rowlandekemezie.com/unsubscribe?token=t"),
+    new Request("https://jobs.rowlandekemezie.com/unsubscribe?token=t", {
+      body: "List-Unsubscribe=One-Click",
+      method: "POST",
+    }),
+    new Request("https://jobs.rowlandekemezie.com/webhooks/stripe", {
+      body: "{}",
+      method: "POST",
+    }),
+  ])(
+    "answers $method $url on the old host without a redirect",
+    async (request) => {
+      const site = edge(indexHtml);
+
+      const response = await site.send(request);
+
+      expect(response.headers.has("location")).toBe(false);
+      expect(site.forwarded).toStrictEqual([
+        `${request.method} ${request.url}`,
+      ]);
+    }
+  );
+
+  const OLD_PREVIEW = "https://jobs-preview.rowland-ekemezie.workers.dev";
+
+  it.each([
+    [`${OLD_PREVIEW}/`, "https://uat.gatechange.dev/"],
+    [
+      `${OLD_PREVIEW}/jobs/greenhouse%3Aacme%2F1?q=staff`,
+      "https://uat.gatechange.dev/jobs/greenhouse%3Aacme%2F1?q=staff",
+    ],
+    [
+      `${OLD_PREVIEW}/api/auth/magic-link/verify?token=abc`,
+      "https://uat.gatechange.dev/api/auth/magic-link/verify?token=abc",
+    ],
+    [`${OLD_PREVIEW}/robots.txt`, "https://uat.gatechange.dev/robots.txt"],
+  ])(
+    "answers the old preview URL %s with a 301 to %s before touching the site",
+    async (from, to) => {
+      const site = edge(indexHtml, { indexing: "noindex" });
+
+      const response = await site.send(new Request(from));
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(to);
+      expect(site.calls).toStrictEqual({ assets: 0, backend: 0 });
+    }
+  );
+
+  it("keeps the method and body of an old preview POST with a 308", async () => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+
+    const response = await site.send(
+      new Request(`${OLD_PREVIEW}/api/auth/sign-in/magic-link`, {
+        body: "{}",
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://uat.gatechange.dev/api/auth/sign-in/magic-link"
+    );
+    expect(site.calls.backend).toBe(0);
+  });
+
+  it.each([
+    new Request(`${OLD_PREVIEW}/unsubscribe?token=t`),
+    new Request(`${OLD_PREVIEW}/unsubscribe?token=t`, {
+      body: "List-Unsubscribe=One-Click",
+      method: "POST",
+    }),
+    new Request(`${OLD_PREVIEW}/webhooks/stripe`, {
+      body: "{}",
+      method: "POST",
+    }),
+  ])(
+    "answers $method $url on the old preview URL without a redirect",
+    async (request) => {
+      const site = edge(indexHtml, { indexing: "noindex" });
+
+      const response = await site.send(request);
+
+      expect(response.headers.has("location")).toBe(false);
+      expect(site.forwarded).toStrictEqual([
+        `${request.method} ${request.url}`,
+      ]);
+    }
+  );
+
+  it("serves a native PR preview on its own workers.dev host", async () => {
+    const page = await edge(indexHtml, { indexing: "noindex" }).get(
+      "https://pr-17-jobs-preview.rowland-ekemezie.workers.dev/pricing"
+    );
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain(
+      '<link rel="canonical" href="https://pr-17-jobs-preview.rowland-ekemezie.workers.dev/pricing"'
+    );
+  });
+
+  it("serves gatechange.dev itself", async () => {
+    const page = await edge(indexHtml).get("https://gatechange.dev/pricing");
+
+    expect(page.status).toBe(200);
+    expect(page.html).toContain(
+      '<link rel="canonical" href="https://gatechange.dev/pricing"'
+    );
+  });
+});
+
 describe("tracking parameters", () => {
   it.each([
     "?ref=producthunt",
@@ -375,6 +562,45 @@ describe("tracking parameters", () => {
     expect(page.html).toContain('value="absent"');
     expect(page.headers.get("cache-control")).toBe("private, no-store");
     expect(page.headers.get("x-robots-tag")).toBe("noindex");
+    expect(storedPages()).toHaveLength(0);
+  });
+});
+
+const FLAGS_PAYLOAD =
+  /<script type="application\/json" data-foldkit-flags="[^"]*">(?<flags>.*?)<\/script>/su;
+
+const flagsOf = (html: string) =>
+  Schema.decodeUnknownSync(Schema.fromJsonString(Flags))(
+    FLAGS_PAYLOAD.exec(html)?.groups?.flags
+  );
+
+describe("double-slash paths", () => {
+  it.each([
+    "//evil.example/x",
+    "//evil.example/about",
+    String.raw`/\evil.example/x`,
+  ])("keeps %s on the site origin", async (path) => {
+    const address = `${ORIGIN}${path}`;
+    const page = await edge(indexHtml).get(address);
+
+    const started = startBoard(
+      flagsOf(page.html),
+      Option.getOrThrow(fromString(address))
+    );
+
+    expect(page.status).toBe(404);
+    expect(page.headers.get("cache-control")).toBe("private, no-store");
+    expect(flagsOf(page.html).origin).toBe(ORIGIN);
+    expect(page.html).toContain(
+      `<meta property="og:image" content="${ORIGIN}/og.png" />`
+    );
+    expect(page.html).toContain(
+      `<meta name="twitter:image" content="${ORIGIN}/og.png" />`
+    );
+    expect(page.html).not.toContain('rel="canonical"');
+    expect(page.html).not.toContain("og:url");
+    expect(page.html).not.toContain("https://evil.example");
+    expect(addServerCommandOf(started.model.origin)).toContain(`${ORIGIN}/mcp`);
     expect(storedPages()).toHaveLength(0);
   });
 });
@@ -601,6 +827,20 @@ describe("sitemap", () => {
     expect(site.calls.backend).toBe(1);
   });
 
+  it("fills the cache from a request that carries a cookie", async () => {
+    const site = edge(indexHtml);
+    const cookie = { cookie: "a=1" };
+
+    const first = await site.get(`${ORIGIN}/sitemap.xml`, cookie);
+    const second = await site.get(`${ORIGIN}/sitemap.xml`, cookie);
+
+    expect(first.status).toBe(200);
+    expect(second.html).toBe(first.html);
+    expect(site.calls.backend).toBe(1);
+    expect(site.backendCredentials).toStrictEqual([false]);
+    expect(storedPages()).toHaveLength(1);
+  });
+
   it("caches nothing when the backend is down", async () => {
     const page = await edge(indexHtml, { backendStatus: 503 }).get(
       `${ORIGIN}/sitemap.xml`
@@ -681,6 +921,39 @@ describe("robots", () => {
     const page = await edge(indexHtml, { indexing: "noindex" }).get(url);
 
     expect(page.headers.get("x-robots-tag")).toBe("noindex");
+  });
+
+  const UAT = "https://uat.gatechange.dev";
+
+  it.each([
+    `${UAT}/`,
+    `${UAT}/pricing`,
+    `${UAT}/roles/director/remote-canada`,
+    `${UAT}/robots.txt`,
+    `${UAT}/sitemap.xml`,
+    `${UAT}/assets/application.js`,
+    `${UAT}/favicon.svg`,
+  ])("keeps crawlers off %s, on a cache miss and a hit", async (url) => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+
+    const first = await site.get(url);
+    const second = await site.get(url);
+
+    expect(first.headers.has("location")).toBe(false);
+    expect(first.headers.get("x-robots-tag")).toBe("noindex");
+    expect(second.headers.get("x-robots-tag")).toBe("noindex");
+  });
+
+  it("closes robots.txt and empties the sitemap on the UAT host", async () => {
+    const site = edge(indexHtml, { indexing: "noindex" });
+
+    const robots = await site.get(`${UAT}/robots.txt`);
+    const sitemap = await site.get(`${UAT}/sitemap.xml`);
+
+    expect(robots.html).toBe("User-agent: *\nDisallow: /\n");
+    expect(sitemap.html).toContain("<urlset");
+    expect(sitemap.html).not.toContain("<loc>");
+    expect(site.calls.backend).toBe(0);
   });
 
   it("disallows everything on a non-prod stage", async () => {

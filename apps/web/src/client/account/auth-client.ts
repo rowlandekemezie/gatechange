@@ -8,11 +8,16 @@ import {
   HttpClientResponse,
 } from "effect/http";
 
-import type { LinkOutcomeValue } from "./model.js";
+import { LinkPreview } from "./model.js";
+import type { LinkOutcomeValue, LinkPreviewValue } from "./model.js";
 
 const AUTH_PATH = "/api/auth";
 
 const RETURN_PATH = "/account";
+
+const NamedLink = Schema.Struct({ email: Schema.String });
+
+const REFUSED_STATUS = 404;
 
 const SocialRedirect = Schema.Struct({ url: Schema.String });
 
@@ -50,6 +55,23 @@ const make = Effect.gen(function* makeAuthClient() {
         Option.map(Option.fromNullishOr(session), ({ user }) => user)
       )
     ),
+    previewLink: (token: string) =>
+      http
+        .get(`${AUTH_PATH}/magic-link/preview`, { urlParams: { token } })
+        .pipe(
+          Effect.flatMap(
+            (response): Effect.Effect<LinkPreviewValue, unknown> =>
+              response.status === REFUSED_STATUS
+                ? Effect.succeed(LinkPreview.Refused())
+                : HttpClientResponse.filterStatusOk(response).pipe(
+                    Effect.flatMap(
+                      HttpClientResponse.schemaBodyJson(NamedLink)
+                    ),
+                    Effect.map(LinkPreview.Named)
+                  )
+          ),
+          Effect.orElseSucceed(() => LinkPreview.Unknown())
+        ),
     requestLink: (email: string) =>
       post("/sign-in/magic-link", {
         callbackURL: RETURN_PATH,

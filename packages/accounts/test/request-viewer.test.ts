@@ -18,7 +18,9 @@ const adaAccount = Schema.decodeSync(Account)(ada);
 
 const LIVE = `__Secure-${SESSION_COOKIE}=live`;
 
-const SITE = "jobs.rowlandekemezie.com";
+const SITE = "gatechange.dev";
+
+const UAT = "https://uat.gatechange.dev";
 
 const storeWith = (lookup: (cookie: string) => Effect.Effect<unknown>) =>
   makeAccountStore(
@@ -79,6 +81,14 @@ const refusedRequests: readonly (readonly [string, RequestHeaders])[] = [
     { host: SITE, origin: "https://evil.example" },
   ],
   ["an opaque origin", { host: SITE, origin: "null" }],
+  [
+    "a UAT page calling prod",
+    { host: SITE, origin: UAT, "sec-fetch-site": "same-site" },
+  ],
+  [
+    "a UAT page calling prod, from a browser without fetch metadata",
+    { host: SITE, origin: UAT },
+  ],
 ];
 
 const allowedRequests: readonly (readonly [string, RequestHeaders])[] = [
