@@ -24,6 +24,7 @@ import { HttpServerResponse } from "effect/http";
 import { vi } from "vitest";
 
 import {
+  CLIENT_DAILY_REFUND_LIMIT,
   CLIENT_DAILY_SEND_LIMIT,
   INBOX_DAILY_SEND_LIMIT,
   newAddressDailySendLimit,
@@ -1697,7 +1698,7 @@ describe("per-inbox daily send limit", () => {
 
 describe("a provider fault", () => {
   it.effect(
-    "gives the client its count back, so retries never end in a daily refusal with nothing sent",
+    "gives the client its count back up to the refund limit, then keeps it charged",
     () =>
       Effect.gen(function* faultRefundsClient() {
         travelTo(T0);
@@ -1728,10 +1729,166 @@ describe("a provider fault", () => {
         expect(after.status).toBe(200);
         expect(sent).toHaveLength(1);
         expect(dayCounts(database)).toMatchObject({
-          "magic-link-client:2026-10-17:198.51.100.60": 1,
+          "magic-link-client:2026-10-17:198.51.100.60":
+            CLIENT_DAILY_SEND_LIMIT - CLIENT_DAILY_REFUND_LIMIT + 1,
           "magic-link-global:2026-10-17": CLIENT_DAILY_SEND_LIMIT + 1,
         });
       })
+  );
+
+  it.effect.each([
+    ["E_INTERNAL_SERVER_ERROR", { "magic-link-global:2026-10-17": 8 }],
+    ["E_RATE_LIMIT_EXCEEDED", { "magic-link-global:2026-10-17": 0 }],
+    ["E_DAILY_LIMIT_EXCEEDED", { "magic-link-global:2026-10-17": 0 }],
+  ] as const)("stops one client at 8 tries a day on %s", ([code, overall]) =>
+    Effect.gen(function* faultsStopAtTheLimit() {
+      travelTo(T0);
+
+      let tries = 0;
+
+      const { auth, database } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => {
+          tries += 1;
+
+          return cloudflareSendError(code);
+        }
+      );
+
+      const statuses: number[] = [];
+
+      for (const index of Array.from(
+        { length: CLIENT_DAILY_SEND_LIMIT + CLIENT_DAILY_REFUND_LIMIT + 1 },
+        (_, at) => at
+      )) {
+        travelTo(T0 + index * 2 * MINUTE);
+        statuses.push(
+          yield* statusOf(
+            requestLink(auth, `drain${index}@example.com`, "198.51.100.64")
+          )
+        );
+      }
+
+      expect(statuses).toStrictEqual([
+        ...Array.from({ length: 8 }, () => 500),
+        429,
+      ]);
+      expect(tries).toBe(8);
+      expect(dayCounts(database)).toMatchObject({
+        ...overall,
+        "magic-link-client:2026-10-17:198.51.100.64": CLIENT_DAILY_SEND_LIMIT,
+      });
+    })
+  );
+
+  it.effect.each([0, 1, 2, 3, 4])(
+    "lets a person retry once a minute through a fault after %i earlier sends from that client",
+    (earlier) =>
+      Effect.gen(function* retriesThroughAFault() {
+        travelTo(T0);
+
+        let failing = false;
+
+        const { auth, sent } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+          failing ? cloudflareSendError("E_INTERNAL_SERVER_ERROR") : true
+        );
+
+        for (const index of Array.from({ length: earlier }, (_, at) => at)) {
+          yield* requestLink(
+            auth,
+            `earlier${index}@example.com`,
+            "198.51.100.65"
+          );
+        }
+
+        failing = true;
+
+        const retries = CLIENT_DAILY_REFUND_LIMIT + 4 - earlier;
+        const statuses: number[] = [];
+
+        for (const minute of Array.from({ length: retries }, (_, at) => at)) {
+          travelTo(T0 + (minute + 1) * MINUTE);
+          statuses.push(
+            yield* statusOf(
+              requestLink(auth, "retry@example.com", "198.51.100.65")
+            )
+          );
+        }
+
+        failing = false;
+        travelTo(T0 + (retries + 1) * MINUTE);
+
+        const recovered = yield* requestLink(
+          auth,
+          "retry@example.com",
+          "198.51.100.65"
+        );
+
+        expect(statuses).toStrictEqual(
+          Array.from({ length: retries }, () => 500)
+        );
+        expect(recovered.status).toBe(200);
+        expect(sent.map(({ email }) => email)).toContain("retry@example.com");
+      })
+  );
+
+  it.effect(
+    "gives each client its own refunds, and fresh ones each UTC day",
+    () =>
+      Effect.gen(function* refundsPerClientPerDay() {
+        travelTo(T0);
+
+        const { auth, database } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => cloudflareSendError("E_INTERNAL_SERVER_ERROR")
+        );
+
+        yield* fillClientBudget(auth, "198.51.100.66", "spent");
+        yield* statusOf(
+          requestLink(auth, "other@example.com", "198.51.100.67")
+        );
+
+        travelTo(T0 + 24 * 60 * MINUTE);
+        yield* statusOf(
+          requestLink(auth, "tomorrow@example.com", "198.51.100.66")
+        );
+
+        expect(dayCounts(database)).toMatchObject({
+          "magic-link-client:2026-10-17:198.51.100.66":
+            CLIENT_DAILY_SEND_LIMIT - CLIENT_DAILY_REFUND_LIMIT,
+          "magic-link-client:2026-10-17:198.51.100.67": 0,
+          "magic-link-client:2026-10-18:198.51.100.66": 0,
+        });
+      })
+  );
+
+  it.effect("keeps the client count when the refund cannot be recorded", () =>
+    Effect.gen(function* refundStoreFailure() {
+      travelTo(T0);
+
+      const { auth, database } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+        cloudflareSendError("E_INTERNAL_SERVER_ERROR")
+      );
+
+      database.exec(`
+        CREATE TRIGGER refuse_refund_count BEFORE INSERT ON "rateLimit"
+        WHEN NEW.key LIKE 'magic-link-client-refund:%'
+        BEGIN SELECT RAISE(ABORT, 'D1 refused the write'); END;
+      `);
+
+      const status = yield* statusOf(
+        requestLink(auth, "ada@example.com", "198.51.100.68")
+      );
+
+      expect(status).toBe(500);
+      expect(dayCounts(database)).toMatchObject({
+        "magic-link-attempt:ada@example.com": 0,
+        "magic-link-client:2026-10-17:198.51.100.68": 1,
+        "magic-link-email:ada@example.com": 0,
+      });
+    })
   );
 
   it.effect("keeps the client count when the recipient is rejected", () =>

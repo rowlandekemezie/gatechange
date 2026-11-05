@@ -17,6 +17,8 @@ export const DEFAULT_MAGIC_LINK_DAILY_SEND_LIMIT = 900;
 
 export const CLIENT_DAILY_SEND_LIMIT = 5;
 
+export const CLIENT_DAILY_REFUND_LIMIT = 3;
+
 export const INBOX_DAILY_SEND_LIMIT = 6;
 
 const NEW_ADDRESS_SHARE = 0.4;
@@ -166,6 +168,26 @@ const refund = async (adapter: DBAdapter, key: string) => {
   });
 };
 
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const refundClient = async (
+  adapter: DBAdapter,
+  clientKey: string,
+  clientRefundKey: string,
+  now: number
+) => {
+  const allowed = await consume(
+    adapter,
+    clientRefundKey,
+    CLIENT_DAILY_REFUND_LIMIT,
+    now,
+    DAY_MILLIS
+  );
+
+  if (allowed) {
+    await refund(adapter, clientKey);
+  }
+};
+
 interface Claim {
   readonly key: string;
 }
@@ -279,6 +301,7 @@ export const limitSends =
     const client = address ?? "unknown";
 
     const clientKey = `magic-link-client:${day}:${client}`;
+    const clientRefundKey = `magic-link-client-refund:${day}:${client}`;
     const inboxDayKey = `magic-link-inbox:${day}:${inbox}`;
 
     const owner = await ctx.context.internalAdapter.findUserByEmail(email);
@@ -365,8 +388,8 @@ export const limitSends =
       }
 
       if (PROVIDER_FAILURES.has(code)) {
-        await refund(adapter, clientKey);
         await refund(adapter, attemptKey);
+        await refundClient(adapter, clientKey, clientRefundKey, now);
       }
 
       ctx.context.logger.error("magic link send failed", error);
