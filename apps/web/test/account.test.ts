@@ -307,9 +307,35 @@ describe("confirming a sign-in link", () => {
       const page = yield* confirmPage(signedOutSession, LinkPreview.Unknown());
 
       expect(page).not.toContain("<form");
-      expect(page).toContain("Open the link from your email again");
+      expect(page).toContain("open the link from your email again");
     })
   );
+
+  it.effect(
+    "offers a retry and explains browser support after a failed check",
+    () =>
+      Effect.gen(function* confirmView() {
+        const page = yield* confirmPage(
+          signedOutSession,
+          LinkPreview.Unknown()
+        );
+
+        expect(page).toContain("Check this link again");
+        expect(page).toContain("Safari 16.4 or later");
+      })
+  );
+
+  it("checks the same link again on retry", () => {
+    const { commands = [], model } = update(
+      { ...init().model, link: LinkPreview.Unknown() },
+      Message.ClickedRetryLinkCheck({ token: "abc123" })
+    );
+
+    expect(commands.map(({ args, name }) => ({ args, name }))).toStrictEqual([
+      { args: { token: "abc123" }, name: "PreviewLink" },
+    ]);
+    expect(model.link).toStrictEqual(LinkPreview.Checking());
+  });
 
   it.effect("warns a member before moving them into another account", () =>
     Effect.gen(function* confirmView() {

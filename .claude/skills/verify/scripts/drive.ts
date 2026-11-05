@@ -51,6 +51,7 @@ const scenarios = [
   "link-reuse",
   "link-budget",
   "confirm-other-account",
+  "confirm-retry",
   "save-search",
   "delete-search",
   "digest",
@@ -1267,6 +1268,48 @@ const run = async () => {
       );
 
       steps.push({ step: "pressed the switch button", ...switched });
+    },
+    "confirm-retry": async () => {
+      const before = mailCount();
+
+      await submitEmail(values.email);
+      await waitFor("the sign-in email", async () => {
+        await sleep(0);
+
+        return mailCount() > before ? true : undefined;
+      });
+
+      await send(Ignored, "Network.setBlockedURLs", {
+        urlPatterns: [
+          { block: true, urlPattern: "*://*:*/api/auth/magic-link/preview*" },
+        ],
+      });
+      await goTo(latestLink());
+
+      const failed = await waitForAccount("the failed-check notice", (state) =>
+        state.problem.includes("could not check this link")
+      );
+
+      steps.push({
+        detail: await screenshot(`${name}-failed`),
+        step: "opened the link with the check blocked",
+        ...failed,
+      });
+
+      await send(Ignored, "Network.setBlockedURLs", { urlPatterns: [] });
+
+      if (!(await clickButton("button", "Check this link again"))) {
+        throw new Error("no retry button after a failed check");
+      }
+
+      await pressConfirmButton("Finish signing in");
+
+      const signedIn = await waitForAccount(
+        "the header to show the account",
+        (state) => state.header === values.email
+      );
+
+      steps.push({ step: "retried and signed in", ...signedIn });
     },
     filter: async () => {
       if (!(await clickButton("button.phrase", "day"))) {

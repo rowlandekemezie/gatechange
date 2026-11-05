@@ -2,9 +2,10 @@
 import { toRpcGroup } from "@rat-stack/capability/rpc-group";
 import { jobBoardContracts } from "@rat-stack/core/contracts";
 import type { JobQueryValue, ListedJobValue } from "@rat-stack/core/contracts";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
+import { fromString } from "foldkit/url";
 import {
   afterAll,
   afterEach,
@@ -16,7 +17,10 @@ import {
 } from "vitest";
 
 import indexHtml from "../index.html?raw";
+import { Flags } from "../src/client/board/model.js";
+import { init as startBoard } from "../src/client/board/update.js";
 import { jobRouter } from "../src/client/route.js";
+import { addServerCommandOf } from "../src/features/agent-tokens/view.js";
 import worker from "../src/worker.js";
 
 const ORIGIN = "https://jobs.example";
@@ -173,6 +177,8 @@ const edge = (shell: string, options: EdgeOptions = {}) => {
     },
     MCP_ANONYMOUS_LIMIT: unlimited,
     MCP_TOKEN_LIMIT: unlimited,
+    PUBLIC_READ_LIMIT: unlimited,
+    SESSION_READ_LIMIT: unlimited,
     SITE_INDEXING: options.indexing ?? "index",
   };
 
@@ -375,6 +381,45 @@ describe("tracking parameters", () => {
     expect(page.html).toContain('value="absent"');
     expect(page.headers.get("cache-control")).toBe("private, no-store");
     expect(page.headers.get("x-robots-tag")).toBe("noindex");
+    expect(storedPages()).toHaveLength(0);
+  });
+});
+
+const FLAGS_PAYLOAD =
+  /<script type="application\/json" data-foldkit-flags="[^"]*">(?<flags>.*?)<\/script>/su;
+
+const flagsOf = (html: string) =>
+  Schema.decodeUnknownSync(Schema.fromJsonString(Flags))(
+    FLAGS_PAYLOAD.exec(html)?.groups?.flags
+  );
+
+describe("double-slash paths", () => {
+  it.each([
+    "//evil.example/x",
+    "//evil.example/about",
+    String.raw`/\evil.example/x`,
+  ])("keeps %s on the site origin", async (path) => {
+    const address = `${ORIGIN}${path}`;
+    const page = await edge(indexHtml).get(address);
+
+    const started = startBoard(
+      flagsOf(page.html),
+      Option.getOrThrow(fromString(address))
+    );
+
+    expect(page.status).toBe(404);
+    expect(page.headers.get("cache-control")).toBe("private, no-store");
+    expect(flagsOf(page.html).origin).toBe(ORIGIN);
+    expect(page.html).toContain(
+      `<meta property="og:image" content="${ORIGIN}/og.png" />`
+    );
+    expect(page.html).toContain(
+      `<meta name="twitter:image" content="${ORIGIN}/og.png" />`
+    );
+    expect(page.html).not.toContain('rel="canonical"');
+    expect(page.html).not.toContain("og:url");
+    expect(page.html).not.toContain("https://evil.example");
+    expect(addServerCommandOf(started.model.origin)).toContain(`${ORIGIN}/mcp`);
     expect(storedPages()).toHaveLength(0);
   });
 });
@@ -599,6 +644,20 @@ describe("sitemap", () => {
     expect(first.html).toContain("<urlset");
     expect(second.html).toBe(first.html);
     expect(site.calls.backend).toBe(1);
+  });
+
+  it("fills the cache from a request that carries a cookie", async () => {
+    const site = edge(indexHtml);
+    const cookie = { cookie: "a=1" };
+
+    const first = await site.get(`${ORIGIN}/sitemap.xml`, cookie);
+    const second = await site.get(`${ORIGIN}/sitemap.xml`, cookie);
+
+    expect(first.status).toBe(200);
+    expect(second.html).toBe(first.html);
+    expect(site.calls.backend).toBe(1);
+    expect(site.backendCredentials).toStrictEqual([false]);
+    expect(storedPages()).toHaveLength(1);
   });
 
   it("caches nothing when the backend is down", async () => {

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Option } from "effect";
 
-import { normalizePosting } from "../src/index.js";
+import {
+  MAX_DETAIL_LENGTH,
+  MAX_TITLE_LENGTH,
+  MAX_URL_LENGTH,
+  normalizePosting,
+} from "../src/index.js";
 import type { FeedRef, PostingValue } from "../src/index.js";
 
 const himalayas: FeedRef = {
@@ -86,5 +91,102 @@ describe("posting apply links", () => {
     expect(linkOf(" HTTPS://Boards.Greenhouse.io/acme/jobs/42")).toStrictEqual(
       Option.some("https://boards.greenhouse.io/acme/jobs/42")
     );
+  });
+});
+
+const padded = (length: number) =>
+  `Director of Engineering ${"x".repeat(length - 24)}`;
+
+describe("oversized and unstorable text", () => {
+  const posting: PostingValue = {
+    company: "Acme",
+    externalId: "1",
+    location: "Remote",
+    postedAt: null,
+    salary: null,
+    title: "Director of Engineering",
+    url: "https://jobs.example/1",
+    workplace: "Remote",
+  };
+
+  const normalized = (changes: Partial<PostingValue>) =>
+    normalizePosting(himalayas, { ...posting, ...changes }, 1000);
+
+  it("keeps a title at the limit whole", () => {
+    expect(
+      Option.map(
+        normalized({ title: padded(MAX_TITLE_LENGTH) }),
+        ({ title }) => title.length
+      )
+    ).toStrictEqual(Option.some(MAX_TITLE_LENGTH));
+  });
+
+  it("skips a listing whose title is past the limit, never cutting it", () => {
+    expect(
+      Option.isNone(normalized({ title: padded(MAX_TITLE_LENGTH + 1) }))
+    ).toBe(true);
+  });
+
+  it.each([
+    ["company", { company: "c".repeat(MAX_TITLE_LENGTH + 1) }],
+    ["id", { externalId: "1".repeat(MAX_TITLE_LENGTH + 1) }],
+    ["link", { url: `https://jobs.example/${"u".repeat(MAX_URL_LENGTH)}` }],
+  ])("skips a listing with an oversized %s", (_, changes) => {
+    expect(Option.isNone(normalized(changes))).toBe(true);
+  });
+
+  it("stores a bounded location and salary", () => {
+    const listing = Option.getOrThrow(
+      normalized({
+        location: "Remote, ".repeat(MAX_DETAIL_LENGTH),
+        salary: "1".repeat(MAX_DETAIL_LENGTH + 1),
+      })
+    );
+
+    expect(listing.location.length).toBeLessThanOrEqual(MAX_DETAIL_LENGTH);
+    expect(listing.salary?.length).toBe(MAX_DETAIL_LENGTH);
+    expect(listing.arrangement).toBe("Remote");
+  });
+
+  it("classifies the whole location, even past the stored cut", () => {
+    const listing = Option.getOrThrow(
+      normalized({
+        location: `Germany, ${"Remote, ".repeat(200)}Canada`,
+      })
+    );
+
+    expect(listing.region).toBe("RemoteCanada");
+    expect(listing.location.length).toBeLessThanOrEqual(MAX_DETAIL_LENGTH);
+    expect(listing.location).not.toContain("Canada");
+  });
+
+  it("cleans the external id and link the way it cleans other feed text", () => {
+    const listing = Option.getOrThrow(
+      normalized({
+        externalId: "12\u0000  3\uD800",
+        url: "https://jobs.example/1\u0000\uD800",
+      })
+    );
+
+    expect(listing.id).toBe("himalayas:12  3\uFFFD");
+    expect(Option.getOrThrow(listing.url)).toBe(
+      "https://jobs.example/1%EF%BF%BD"
+    );
+  });
+
+  it("skips a listing whose external id is empty once cleaned", () => {
+    expect(Option.isNone(normalized({ externalId: "\u0000" }))).toBe(true);
+  });
+
+  it("drops NUL characters and repairs lone surrogates", () => {
+    const listing = Option.getOrThrow(
+      normalized({
+        location: "Remote\u0000 Canada\uD800",
+        title: "Director\u0000 of Engineering",
+      })
+    );
+
+    expect(listing.title).toBe("Director of Engineering");
+    expect(listing.location).toBe("Remote Canada\uFFFD");
   });
 });

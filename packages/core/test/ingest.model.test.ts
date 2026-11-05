@@ -3,6 +3,7 @@ import {
   Array,
   Clock,
   Effect,
+  Exit,
   Layer,
   Logger,
   Option,
@@ -20,11 +21,13 @@ import {
   FeedUnavailable,
   fingerprintOf,
   JobStore,
+  JobStoreUnavailable,
   ADMISSION_DAYS,
   arrivedLongOpen,
   PostingFeeds,
   REPOST_GAP,
   runIngest,
+  selectDueFeeds,
   SourceName,
   UNSEEN_RETENTION_MILLIS,
   WINDOW_HOLD_MILLIS,
@@ -414,6 +417,77 @@ const replayLifecycle = (
     }
   });
 
+const FEED_STORE_STEPS = [
+  "heldListings",
+  "recordSightings",
+  "markListed",
+  "replaceFeed",
+  "saveBoardFacts",
+] as const;
+
+type StoreStep =
+  | (typeof FEED_STORE_STEPS)[number]
+  | "prune"
+  | "recordFeedFailure";
+
+const refused = (operation: string) =>
+  new JobStoreUnavailable({ message: "store refused", operation });
+
+const feedsListing = () =>
+  PostingFeeds.of({
+    catalog: catalogIn(feedKeys),
+    fetch: (feed) =>
+      Effect.succeed([postingFor(feed.key.replaceAll(":", "-"))]),
+  });
+
+const failingOnce = (
+  memory: MemoryJobStore,
+  step: StoreStep,
+  always: readonly StoreStep[] = []
+) =>
+  Layer.effect(
+    JobStore,
+    Effect.gen(function* failing() {
+      const store = yield* JobStore;
+      const spent = new Set<StoreStep>();
+
+      const guarded = <A>(
+        name: StoreStep,
+        run: Effect.Effect<A, JobStoreUnavailable>
+      ): Effect.Effect<A, JobStoreUnavailable> =>
+        Effect.suspend(() => {
+          if (always.includes(name)) {
+            return Effect.fail(refused(name));
+          }
+
+          if (name === step && !spent.has(name)) {
+            spent.add(name);
+
+            return Effect.fail(refused(name));
+          }
+
+          return run;
+        });
+
+      return JobStore.of({
+        ...store,
+        heldListings: (...args) =>
+          guarded("heldListings", store.heldListings(...args)),
+        markListed: (...args) =>
+          guarded("markListed", store.markListed(...args)),
+        prune: (...args) => guarded("prune", store.prune(...args)),
+        recordFeedFailure: (...args) =>
+          guarded("recordFeedFailure", store.recordFeedFailure(...args)),
+        recordSightings: (...args) =>
+          guarded("recordSightings", store.recordSightings(...args)),
+        replaceFeed: (...args) =>
+          guarded("replaceFeed", store.replaceFeed(...args)),
+        saveBoardFacts: (...args) =>
+          guarded("saveBoardFacts", store.saveBoardFacts(...args)),
+      });
+    })
+  ).pipe(Layer.provide(memory.layer));
+
 describe("ingest", () => {
   it.effect.prop(
     "a company board's live rows are exactly its last successful listing, an aggregator's are everything it listed within the hold, and a feed that goes down keeps what it had",
@@ -700,6 +774,137 @@ describe("ingest", () => {
           },
         ]);
       })
+  );
+
+  it.effect.each(FEED_STORE_STEPS)(
+    "a store failure in %s stays on its feed and the run still finishes",
+    (step) =>
+      Effect.gen(function* isolated() {
+        const memory = yield* makeMemoryJobStore;
+
+        const { outcomes, receipt } = yield* runIngest({
+          feedConcurrency: 1,
+          feedsPerRun: feedKeys.length,
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              failingOnce(memory, step),
+              Layer.succeed(PostingFeeds, feedsListing())
+            )
+          )
+        );
+
+        const failed = outcomes.filter(({ error }) => error !== null);
+
+        const state = memory
+          .feedStates()
+          .find(({ consecutiveFailures }) => consecutiveFailures > 0);
+
+        expect(failed).toHaveLength(1);
+        expect(failed[0]?.error).toBe("store refused");
+        expect(state?.key).toBe(failed[0]?.key);
+        expect(state?.lastError).toBe("store refused");
+        expect(receipt.outcome).toBe("Partial");
+        expect(receipt.feedsFailed).toBe(1);
+        expect(memory.runs()).toHaveLength(1);
+      })
+  );
+
+  it.effect(
+    "a feed that failed in the store backs off, and the next successful run clears it",
+    () =>
+      Effect.gen(function* backsOff() {
+        const memory = yield* makeMemoryJobStore;
+
+        yield* runIngest({
+          feedConcurrency: 1,
+          feedsPerRun: 1,
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              failingOnce(memory, "replaceFeed"),
+              Layer.succeed(
+                PostingFeeds,
+                PostingFeeds.of({ ...feedsListing(), catalog: [onlyFeed] })
+              )
+            )
+          )
+        );
+
+        const [backedOff] = memory.feedStates();
+
+        expect(backedOff?.consecutiveFailures).toBe(1);
+        expect(
+          selectDueFeeds(
+            [onlyFeed],
+            memory.feedStates(),
+            yield* Clock.currentTimeMillis,
+            1
+          )
+        ).toStrictEqual([]);
+
+        yield* TestClock.adjust("2 days");
+
+        yield* runIngest({ feedConcurrency: 1, feedsPerRun: 1 }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              memory.layer,
+              Layer.succeed(
+                PostingFeeds,
+                PostingFeeds.of({ ...feedsListing(), catalog: [onlyFeed] })
+              )
+            )
+          )
+        );
+
+        expect(memory.feedStates()[0]?.consecutiveFailures).toBe(0);
+        expect(memory.jobs().map(({ feed }) => feed)).toContain(onlyFeed.key);
+      })
+  );
+
+  it.effect(
+    "keeps going when the failure cannot be recorded either, and leaves the receipt to say so",
+    () =>
+      Effect.gen(function* unrecorded() {
+        const memory = yield* makeMemoryJobStore;
+
+        const { receipt } = yield* runIngest({
+          feedConcurrency: 1,
+          feedsPerRun: feedKeys.length,
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              failingOnce(memory, "replaceFeed", ["recordFeedFailure"]),
+              Layer.succeed(PostingFeeds, feedsListing())
+            )
+          )
+        );
+
+        expect(receipt.feedsFailed).toBe(1);
+        expect(memory.runs()).toHaveLength(1);
+      })
+  );
+
+  it.effect("a store that cannot prune still fails the run", () =>
+    Effect.gen(function* storeDown() {
+      const memory = yield* makeMemoryJobStore;
+
+      const exit = yield* runIngest({
+        feedConcurrency: 1,
+        feedsPerRun: feedKeys.length,
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            failingOnce(memory, "prune"),
+            Layer.succeed(PostingFeeds, feedsListing())
+          )
+        ),
+        Effect.exit
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(memory.runs()).toHaveLength(0);
+    })
   );
 
   it.effect("titles outside engineering leadership never reach the store", () =>

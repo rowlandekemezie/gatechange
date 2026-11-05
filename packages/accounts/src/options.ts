@@ -5,7 +5,7 @@ import { magicLink } from "better-auth/plugins";
 import { Option } from "effect";
 
 import { authLogger } from "./auth-logger.js";
-import { sameSiteVerify } from "./cross-site.js";
+import { sameOriginRateRules, sameSiteVerify } from "./cross-site.js";
 import { emailSendLimit, limitSends } from "./email-send-limit.js";
 import { hashLinkToken, magicLinkPreview } from "./link-preview.js";
 
@@ -67,7 +67,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
     sameSiteVerify(),
   ],
   rateLimit: {
-    customRules: { "/get-session": false },
+    customRules: { "/get-session": false, ...sameOriginRateRules },
     enabled: true,
     storage: "database",
   },

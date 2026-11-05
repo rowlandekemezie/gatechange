@@ -26,6 +26,12 @@ import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
 import { backendOf } from "./server/preview-backend.js";
+import {
+  readAllowed,
+  RETRY_AFTER_SECONDS,
+  tooManyReads,
+} from "./server/read-limit.js";
+import type { RateLimiter, ReadLimits } from "./server/read-limit.js";
 import { renderPage } from "./server/render.js";
 import {
   closedRobotsTxt,
@@ -34,13 +40,7 @@ import {
   sitemapXml,
 } from "./server/sitemap.js";
 
-interface RateLimiter {
-  readonly limit: (options: {
-    readonly key: string;
-  }) => Promise<{ readonly success: boolean }>;
-}
-
-interface EdgeBindings extends AnalyticsBindings {
+interface EdgeBindings extends AnalyticsBindings, ReadLimits {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
   readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
@@ -201,6 +201,21 @@ const isPage = (pathname: string) =>
     pathname
   ) || PAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
+const pageUrlOf = (url: URL, route: RouteValue) => {
+  if (Schema.is(Route.Board)(route)) {
+    return url;
+  }
+
+  const pageUrl = new URL(url.origin);
+
+  pageUrl.pathname = Option.getOrElse(
+    canonicalPathOf(route),
+    () => url.pathname
+  );
+
+  return pageUrl;
+};
+
 const servePage = (
   bindings: EdgeBindings,
   request: Request,
@@ -210,12 +225,7 @@ const servePage = (
   Effect.gen(function* serveRenderedPage() {
     const route = routeOfUrl(yield* Effect.fromOption(fromString(url.href)));
 
-    const pageUrl = Schema.is(Route.Board)(route)
-      ? url
-      : new URL(
-          Option.getOrElse(canonicalPathOf(route), () => url.pathname),
-          url.origin
-        );
+    const pageUrl = pageUrlOf(url, route);
 
     const shell = yield* shellOf(bindings.ASSETS, url.origin);
 
@@ -253,15 +263,12 @@ const servePage = (
     )
   );
 
-const serveSitemap = (
-  bindings: EdgeBindings,
-  request: Request,
-  url: URL,
-  lifetime: Lifetime
-) =>
-  throughEdgeCache(
-    request,
-    new Request(new URL("/sitemap.xml", url.origin)),
+const serveSitemap = (bindings: EdgeBindings, url: URL, lifetime: Lifetime) => {
+  const key = new Request(new URL("/sitemap.xml", url.origin));
+
+  return throughEdgeCache(
+    key,
+    key,
     lifetime,
     sitemapJobs(bindings.BACKEND).pipe(
       Effect.match({
@@ -271,6 +278,7 @@ const serveSitemap = (
       })
     )
   );
+};
 
 const noindex = (response: Response) => {
   const copy = new Response(response.body, response);
@@ -362,15 +370,13 @@ const serveSite = (
       return Effect.succeedSome(respond(emptySitemapXml, "application/xml"));
     }
 
-    return Effect.asSome(serveSitemap(bindings, request, url, lifetime));
+    return Effect.asSome(serveSitemap(bindings, url, lifetime));
   }
 
   return isPage(url.pathname)
     ? servePage(bindings, request, url, lifetime)
     : Effect.succeedNone;
 };
-
-const RETRY_AFTER_SECONDS = 60;
 
 // @effect-diagnostics-next-line asyncFunction:off -- The Rate Limiting binding is Promise-based.
 const agentCallAllowed = async (request: Request, bindings: EdgeBindings) => {
@@ -401,6 +407,21 @@ const tooManyAgentCalls = (request: Request) =>
     },
     { headers: { "retry-after": String(RETRY_AFTER_SECONDS) }, status: 429 }
   );
+
+// @effect-diagnostics-next-line asyncFunction:off -- The ASSETS binding is Promise-based.
+const busyBoard = async (bindings: EdgeBindings, url: URL) => {
+  const shell = await bindings.ASSETS.fetch(new URL("/", url.origin));
+
+  const busy = new Response(shell.body, {
+    headers: shell.headers,
+    status: 429,
+  });
+
+  busy.headers.set("cache-control", PRIVATE_CACHE_CONTROL);
+  busy.headers.set("retry-after", String(RETRY_AFTER_SECONDS));
+
+  return busy;
+};
 
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
@@ -434,14 +455,31 @@ export default {
       );
     }
 
+    if (route === "rpc") {
+      return withoutSharedCache(
+        route,
+        (await readAllowed(request, bindings))
+          ? await bindings.BACKEND.fetch(request)
+          : tooManyReads()
+      );
+    }
+
     if (route === "backend") {
       return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
     }
 
-    const served =
+    const filteredBoard = url.pathname === "/" && url.search !== "";
+
+    const busy = filteredBoard && !(await readAllowed(request, bindings));
+
+    const site =
       route === "public"
-        ? await Effect.runPromise(serveSite(request, url, bindings, lifetime))
-        : Option.none<Response>();
+        ? serveSite(request, url, bindings, lifetime)
+        : Effect.succeedNone;
+
+    const served = busy
+      ? Option.some(await busyBoard(bindings, url))
+      : await Effect.runPromise(site);
 
     const response = await Effect.runPromise(
       withAnalyticsKey(
@@ -456,8 +494,6 @@ export default {
         analyticsOf(bindings)
       )
     );
-
-    const filteredBoard = url.pathname === "/" && url.search !== "";
 
     return bindings.SITE_INDEXING === "index" &&
       !filteredBoard &&

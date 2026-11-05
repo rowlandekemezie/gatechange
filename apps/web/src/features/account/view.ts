@@ -258,11 +258,15 @@ const namedLinkBody = <M>(
     ],
   });
 
-export const confirmSignInPage = <M>(
-  token: string,
-  { link, session }: ModelValue,
-  h: HtmlBuilder<M>
-): Html =>
+interface ConfirmViewInputs {
+  readonly token: string;
+}
+
+export const confirmSignInPage = defineView<
+  ModelValue,
+  MessageValue,
+  ConfirmViewInputs
+>(({ link, session }, { token }, h) =>
   h.div(
     [h.Class("detail account")],
     [
@@ -283,13 +287,23 @@ export const confirmSignInPage = <M>(
           h.p(
             [h.Class("sign-in-problem"), h.Role("alert")],
             [
-              "We could not check this link. Open the link from your email again.",
+              "We could not check this link. Try again, or open the link from your email again.",
             ]
           ),
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("search-button"),
+              h.OnClick(Message.ClickedRetryLinkCheck({ token })),
+            ],
+            ["Check this link again"]
+          ),
+          browserNote(h),
         ],
       }),
     ]
-  );
+  )
+);
 
 export const accountView = defineView<
   ModelValue,

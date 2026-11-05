@@ -92,6 +92,7 @@ export const update = (
   message: MessageValue
 ): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
+    ClickedRetryLinkCheck: ({ token }) => enteredConfirm(token)(model),
     ClickedSignOut: () => ({ commands: [SignOut()], model }),
     ClickedSocialSignIn: ({ provider }) => ({
       commands: [StartSocialSignIn({ provider })],
