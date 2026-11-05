@@ -222,21 +222,29 @@ const confirmed = (action: SelfHostAction, stage: string) => {
 const run = (args: readonly string[]) =>
   spawnSync("pnpm", args, { stdio: "inherit" }).status ?? 1;
 
+const USAGE =
+  "Usage: pnpm self-host [plan|deploy|destroy] --stage <name> [--yes]\n";
+
 const selfHost = () => {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
     options: {
+      help: { default: false, short: "h", type: "boolean" },
       stage: { default: "self", type: "string" },
       yes: { default: false, type: "boolean" },
     },
   });
 
+  if (values.help) {
+    process.stdout.write(USAGE);
+
+    return 0;
+  }
+
   const [action = "plan"] = positionals;
 
   if (!isAction(action)) {
-    process.stderr.write(
-      "Usage: pnpm self-host [plan|deploy|destroy] --stage <name> [--yes]\n"
-    );
+    process.stderr.write(USAGE);
 
     return 1;
   }

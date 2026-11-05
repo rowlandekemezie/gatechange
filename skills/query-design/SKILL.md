@@ -175,4 +175,4 @@ Report:
 - Manifest coverage, plan fence result, and planted missing-template failure when that stronger check exists.
 - Progress behavior, typed timeout handling, and untested provider paths.
 
-Run the consumer's native checks and provider checks. In rat-stack, finish with `pnpm turbo run check test build`.
+Run the consumer's native checks and provider checks. In this repo, finish with `pnpm turbo run check test build --concurrency=1`.

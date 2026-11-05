@@ -142,7 +142,7 @@ export const informationPage = (
         [],
         [
           h.a(
-            [h.Href("mailto:hello@rowlandekemezie.com?subject=Jobs%20board")],
+            [h.Href("mailto:hello@rowlandekemezie.com?subject=Gate%20Change")],
             ["Email Rowland"]
           ),
           " · ",

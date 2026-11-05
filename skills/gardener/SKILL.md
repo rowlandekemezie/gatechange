@@ -1,6 +1,6 @@
 ---
 name: gardener
-description: Keep rat-stack current and clean. Update exact dependency versions, learn from repos on the same versions, and add lint rules before cleanup.
+description: Keep Gate Change current and clean. Update exact dependency versions, learn from repos on the same versions, and add lint rules before cleanup.
 plain: "Bump one pin line at a time, learn from peers, and write a failing lint rule before cleaning up a bad pattern."
 diagram: |-
   check the pins
@@ -15,9 +15,9 @@ diagram: |-
     then fix every case
 ---
 
-# Maintain rat-stack
+# Maintain Gate Change
 
-Rat-stack runs on Effect 4 stable, Alchemy 2 betas, and XState 6 alphas. Effect describes work with typed failures and required dependencies. Alchemy declares and deploys cloud resources through Effect programs. Keep copied code compatible with the current dependency versions. Simplify it as these dependencies change.
+Gate Change runs on Effect 4 stable, Alchemy 2 betas, and XState 6 alphas. Effect describes work with typed failures and required dependencies. Alchemy declares and deploys cloud resources through Effect programs. Keep copied code compatible with the current dependency versions. Simplify it as these dependencies change.
 
 Follow Lauren Tan's gardener loop from her Dune talk: remove technical debt, keep one supported implementation pattern, and reject prohibited patterns with lint. In her words: "whenever you see tech debt or bad patterns, your instinct should be, I need to write a lint rule against it." She ranks where to put corrections by enforcement strength: codebase, static analysis, rules, skills, style guide. Use the strongest applicable option for each finding.
 

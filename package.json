@@ -2,7 +2,7 @@
   "name": "job-board",
   "version": "0.1.0",
   "private": true,
-  "description": "Engineering leadership job board on rat-stack: Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.",
+  "description": "Gate Change, a job board for engineering leaders: Effect 4, Alchemy on Cloudflare Workers and D1, and a Foldkit UI.",
   "license": "MIT",
   "type": "module",
   "scripts": {
