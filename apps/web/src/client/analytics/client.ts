@@ -83,18 +83,22 @@ const uuidV7 = Effect.zipWith(
 
 const SEEDED_RENDERER_ID_TAIL = "-772e-84d9-91a3b005d5fc";
 
+const LOCAL_STAGE_HOSTNAME = "localhost";
+
 export const analyticsKeyOf = (
   content: string | null | undefined,
   signals: {
     readonly anonymousId: string;
     readonly doNotTrack: string | null;
     readonly gpc: boolean;
+    readonly hostname: string;
     readonly protocol: string;
   }
 ) =>
   signals.doNotTrack === "1" ||
   signals.gpc ||
-  signals.protocol !== "https:" ||
+  (signals.protocol !== "https:" &&
+    signals.hostname !== LOCAL_STAGE_HOSTNAME) ||
   signals.anonymousId.endsWith(SEEDED_RENDERER_ID_TAIL)
     ? Option.none()
     : Schema.decodeUnknownOption(PostHogKey)(content);
@@ -154,6 +158,7 @@ const browserAnalytics = (campaign: Properties) =>
         anonymousId,
         doNotTrack: signals.doNotTrack,
         gpc: signals.globalPrivacyControl === true,
+        hostname: location.hostname,
         protocol: location.protocol,
       }
     );

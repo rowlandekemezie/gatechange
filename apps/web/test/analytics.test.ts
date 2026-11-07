@@ -411,6 +411,7 @@ describe("analytics events", () => {
       anonymousId: "01a1b6e0-c62b-7b4b-a9dd-ebde4bc35a99",
       doNotTrack: null,
       gpc: false,
+      hostname: "gatechange.dev",
       protocol: "https:",
     };
 

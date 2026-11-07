@@ -35,7 +35,7 @@ const decodeBatch = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ batch: Schema.Array(SentEvent) }))
 );
 
-const stubBrowser = (protocol = "https:") => {
+const stubBrowser = (address = "https://jobs.example") => {
   const idle: (() => void)[] = [];
   const pageListeners = new Map<string, () => void>();
 
@@ -51,9 +51,12 @@ const stubBrowser = (protocol = "https:") => {
 
   vi.stubGlobal("document", page);
   vi.stubGlobal("navigator", { doNotTrack: null });
+  const { host, hostname, origin, protocol } = new URL(address);
+
   vi.stubGlobal("location", {
-    host: "jobs.example",
-    origin: `${protocol}//jobs.example`,
+    host,
+    hostname,
+    origin,
     pathname: "/",
     protocol,
   });
@@ -334,7 +337,28 @@ describe("analytics for automated renderers", () => {
 
   it.effect("sends nothing from a page loaded over http", () =>
     Effect.gen(function* insecure() {
-      expect(yield* anonymousVisit(stubBrowser("http:"))).toStrictEqual([]);
+      expect(
+        yield* anonymousVisit(stubBrowser("http://jobs.example"))
+      ).toStrictEqual([]);
+    })
+  );
+
+  it.effect("sends nothing from an http host that only looks local", () =>
+    Effect.gen(function* lookalike() {
+      expect(
+        yield* anonymousVisit(stubBrowser("http://localhost.jobs.example"))
+      ).toStrictEqual([]);
+    })
+  );
+
+  it.effect("sends from a local stage over http", () =>
+    Effect.gen(function* local() {
+      const [view] = yield* anonymousVisit(
+        stubBrowser("http://localhost:1337")
+      );
+
+      expect(view?.event).toBe("$pageview");
+      expect(view?.properties.$current_url).toBe("http://localhost:1337/");
     })
   );
 

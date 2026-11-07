@@ -421,6 +421,30 @@ describe("posthog dashboard definitions", () => {
   });
 });
 
+const insightRow = (
+  id: number,
+  name: string | null,
+  tags: readonly string[]
+) => ({
+  dashboardIds: [],
+  description: INSIGHT.description,
+  id,
+  name,
+  query: INSIGHT.query,
+  tags,
+});
+
+const planRename = (insights: Snapshot["insights"]) =>
+  planOf(
+    [
+      {
+        ...BOARD,
+        insights: [{ ...INSIGHT, formerName: "Old name", name: "New name" }],
+      },
+    ],
+    { dashboards: [], insights }
+  );
+
 describe("posthog dashboard plan", () => {
   it("creates everything on an empty project and attaches each insight", () => {
     const { boards, conflicts } = planOf(ONE_BOARD, EMPTY);
@@ -502,6 +526,41 @@ describe("posthog dashboard plan", () => {
 
     expect(boards[0]?.insights[0]?.step).toStrictEqual(Step.Update({ id: 9 }));
     expect(boards[0]?.insights[0]?.attach).toBe(false);
+  });
+
+  it("refuses an unmanaged insight under the former name and names it", () => {
+    const { boards, conflicts } = planRename([
+      insightRow(9, "Old name", ["starter"]),
+    ]);
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain('"Old name"');
+    expect(conflicts[0]).not.toContain('"New name"');
+    expect(boards[0]?.insights[0]?.attach).toBe(false);
+  });
+
+  it("refuses when both names are managed and names both", () => {
+    const { boards, conflicts } = planRename([
+      insightRow(9, "Old name", [MANAGED_TAG]),
+      insightRow(10, "New name", [MANAGED_TAG]),
+    ]);
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain('"Old name"');
+    expect(conflicts[0]).toContain('"New name"');
+    expect(boards[0]?.insights[0]?.attach).toBe(false);
+  });
+
+  it("does not take a null-named row for a spec with no former name", () => {
+    const { description, events, name, query } = INSIGHT;
+
+    const { boards, conflicts } = planOf(
+      [{ ...BOARD, insights: [{ description, events, name, query }] }],
+      { dashboards: [], insights: [insightRow(9, null, [MANAGED_TAG])] }
+    );
+
+    expect(conflicts).toStrictEqual([]);
+    expect(boards[0]?.insights[0]?.step).toStrictEqual(Step.Create({ name }));
   });
 
   it("ignores the version PostHog stamps on stored queries", () => {
