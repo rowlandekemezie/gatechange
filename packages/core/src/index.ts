@@ -4,6 +4,7 @@ export {
   CurrentViewer,
   currentMember,
   MAGIC_LINK_TTL_MINUTES,
+  SIGN_IN_EMAIL_CAPACITY_CODE,
   SignInOptions,
   SocialProvider,
   UNAUTHORIZED_MESSAGE,

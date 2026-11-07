@@ -98,6 +98,7 @@ export {
   Account,
   AccountId,
   MAGIC_LINK_TTL_MINUTES,
+  SIGN_IN_EMAIL_CAPACITY_CODE,
   SignInOptions,
   SocialProvider,
 } from "./account.js";

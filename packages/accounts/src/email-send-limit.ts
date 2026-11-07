@@ -1,3 +1,4 @@
+import { SIGN_IN_EMAIL_CAPACITY_CODE } from "@rat-stack/core";
 import type { BetterAuthPlugin, DBAdapter, Where } from "better-auth";
 import { APIError, getIP } from "better-auth/api";
 import type { MagicLinkOptions } from "better-auth/plugins";
@@ -200,6 +201,12 @@ interface DailyBudget extends Claim {
 const CAPACITY_REFUSAL =
   "Sign-in email capacity is temporarily unavailable. Please try again later.";
 
+const capacityRefusal = () =>
+  new APIError("TOO_MANY_REQUESTS", {
+    code: SIGN_IN_EMAIL_CAPACITY_CODE,
+    message: CAPACITY_REFUSAL,
+  });
+
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
 const refundBudgets = async (adapter: DBAdapter, claims: readonly Claim[]) => {
   await Promise.allSettled(
@@ -250,6 +257,44 @@ const claimBudgets = async (
   }
 
   return next;
+};
+
+interface SendClaims {
+  readonly attemptKey: string;
+  readonly clientKey: string;
+  readonly clientRefundKey: string;
+  readonly inboxDayKey: string;
+  readonly isMember: boolean;
+  readonly now: number;
+  readonly sendKey: string;
+  readonly siteBudgets: readonly Claim[];
+}
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const giveBackFailedSend = async (
+  adapter: DBAdapter,
+  code: string,
+  claims: SendClaims
+) => {
+  await refund(adapter, claims.sendKey);
+
+  if (!claims.isMember) {
+    await refund(adapter, claims.inboxDayKey);
+  }
+
+  if (REJECTED_SEND_CODES.has(code)) {
+    await refundBudgets(adapter, claims.siteBudgets);
+  }
+
+  if (PROVIDER_FAILURES.has(code)) {
+    await refund(adapter, claims.attemptKey);
+    await refundClient(
+      adapter,
+      claims.clientKey,
+      claims.clientRefundKey,
+      claims.now
+    );
+  }
 };
 
 const keepSendRowsForTheWindow = {
@@ -358,6 +403,12 @@ export const limitSends =
       { key: attemptKey },
     ]);
 
+    if (refused?.refusal === CAPACITY_REFUSAL) {
+      ctx.context.logger.error("magic link site budget reached", refused.key);
+
+      throw capacityRefusal();
+    }
+
     if (refused?.refusal !== undefined) {
       throw new APIError("TOO_MANY_REQUESTS", { message: refused.refusal });
     }
@@ -375,24 +426,24 @@ export const limitSends =
     try {
       await send({ email, url });
     } catch (error) {
-      await refund(adapter, sendKey);
-
-      if (!isMember) {
-        await refund(adapter, inboxDayKey);
-      }
-
       const code = Schema.is(CodedSendError)(error) ? error.cause.code : "";
 
-      if (REJECTED_SEND_CODES.has(code)) {
-        await refundBudgets(adapter, siteBudgets);
-      }
-
-      if (PROVIDER_FAILURES.has(code)) {
-        await refund(adapter, attemptKey);
-        await refundClient(adapter, clientKey, clientRefundKey, now);
-      }
+      await giveBackFailedSend(adapter, code, {
+        attemptKey,
+        clientKey,
+        clientRefundKey,
+        inboxDayKey,
+        isMember,
+        now,
+        sendKey,
+        siteBudgets,
+      });
 
       ctx.context.logger.error("magic link send failed", error);
+
+      if (code === "E_DAILY_LIMIT_EXCEEDED") {
+        throw capacityRefusal();
+      }
 
       throw new APIError("INTERNAL_SERVER_ERROR", {
         message: "Unable to send the sign-in link.",

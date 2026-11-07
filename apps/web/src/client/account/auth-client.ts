@@ -1,4 +1,7 @@
-import { Account } from "@rat-stack/core/contracts";
+import {
+  Account,
+  SIGN_IN_EMAIL_CAPACITY_CODE,
+} from "@rat-stack/core/contracts";
 import type { SocialProviderValue } from "@rat-stack/core/contracts";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import {
@@ -23,6 +26,12 @@ const SocialRedirect = Schema.Struct({ url: Schema.String });
 
 const CurrentSession = Schema.NullOr(Schema.Struct({ user: Account }));
 
+const CapacityRefusal = Schema.Struct({
+  code: Schema.Literal(SIGN_IN_EMAIL_CAPACITY_CODE),
+});
+
+const LIMITED_STATUS = 429;
+
 type AuthRequestBody = Readonly<Record<string, string>>;
 
 const linkOutcomeOf = (status: number): LinkOutcomeValue => {
@@ -34,8 +43,14 @@ const linkOutcomeOf = (status: number): LinkOutcomeValue => {
     return "Invalid";
   }
 
-  return status === 429 ? "Limited" : "Failed";
+  return status === LIMITED_STATUS ? "Limited" : "Failed";
 };
+
+const limitOutcomeOf = (response: HttpClientResponse.HttpClientResponse) =>
+  HttpClientResponse.schemaBodyJson(CapacityRefusal)(response).pipe(
+    Effect.as<LinkOutcomeValue>("AtCapacity"),
+    Effect.orElseSucceed(() => linkOutcomeOf(response.status))
+  );
 
 const make = Effect.gen(function* makeAuthClient() {
   const http = yield* HttpClient.HttpClient;
@@ -78,7 +93,11 @@ const make = Effect.gen(function* makeAuthClient() {
         email,
         errorCallbackURL: RETURN_PATH,
       }).pipe(
-        Effect.map(({ status }) => linkOutcomeOf(status)),
+        Effect.flatMap((response) =>
+          response.status === LIMITED_STATUS
+            ? limitOutcomeOf(response)
+            : Effect.succeed(linkOutcomeOf(response.status))
+        ),
         Effect.orElseSucceed((): LinkOutcomeValue => "Failed")
       ),
     signOut: post("/sign-out", {}).pipe(Effect.asVoid),

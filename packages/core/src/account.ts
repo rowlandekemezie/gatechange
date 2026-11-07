@@ -4,6 +4,8 @@ import { Unauthorized } from "./unauthorized.js";
 
 export const MAGIC_LINK_TTL_MINUTES = 15;
 
+export const SIGN_IN_EMAIL_CAPACITY_CODE = "SIGN_IN_EMAIL_CAPACITY";
+
 export const UNAUTHORIZED_MESSAGE =
   "Unauthorized: this needs a signed-in member. Sign in on the site, or send a Pro member's agent token from the account page as Authorization: Bearer <token>.";
 

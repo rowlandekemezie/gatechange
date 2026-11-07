@@ -28,6 +28,8 @@ const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const providerName = { github: "GitHub", google: "Google" } as const;
 
 const linkProblems: Record<Exclude<LinkOutcomeValue, "Sent">, string> = {
+  AtCapacity:
+    "We have reached today's limit on sign-in emails. Try again tomorrow.",
   Failed: "We could not send the link. Try again in a minute.",
   Invalid: "That email address does not look right. Check it and try again.",
   Limited:
