@@ -114,7 +114,9 @@ Public `/about`, `/privacy`, `/terms` and `/contact` pages describe coverage, da
 
 ## Product analytics
 
-The board sends product events to PostHog through the `/ingest` proxy. Analytics stay off when the stage has no `POSTHOG_PROJECT_KEY`, and a browser that sends Do Not Track or Global Privacy Control sends nothing. Analytics set no cookie and store no id, so each page load gets a new random anonymous id.
+The board sends product events to PostHog through the `/ingest` proxy. Analytics stay off when the stage has no `POSTHOG_PROJECT_KEY`, and a browser that sends Do Not Track or Global Privacy Control sends nothing. Analytics set no cookie and store no id, so each page load gets a new random anonymous id. Anonymous ids therefore count visits, not people, and dashboard labels say visits.
+
+The client also stays off on any page that is not https, except on `localhost`, where local stages run over http, and for an automated renderer that seeds its random numbers, so every id it makes ends in `-772e-84d9-91a3b005d5fc`. Dashboards apply the same two exclusions in `SITE_SCOPE`, because events from before the client change stay in PostHog. To rename a managed insight, set `formerName` so `pnpm posthog:dashboards` renames it in place instead of adding a second tile.
 
 Browser events wait in memory until the session check answers, so a signed-in visitor's first page view carries the account id and an anonymous visitor's carries the random id. If the tab hides first, the events leave as anonymous, and `$identify` merges them if the session answer arrives while the page is still alive. A visitor who closes the tab before the session answer stays anonymous for that page load.
 
@@ -150,6 +152,21 @@ Properties never carry an email, a token, a search string, or a job title. Use c
 | `email_unsubscribed` | server | A `POST /unsubscribe` succeeds, unless the request carries `DNT: 1` or `Sec-GPC: 1`. Sent as the account, with no person profile. A repeat POST sends it again | none | `unsubscribe`, `apps/api/src/worker.ts` |
 
 Add a browser event to `AnalyticsEvent` and `eventNames` in `apps/web/src/client/analytics/events.ts`. Add a server event to `ServerEvent` in `apps/api/src/analytics.ts`, and honor `privacySignalled` when a browser made the request. To check events on a stage, use the `analytics-*` scenarios in the verify skill. They add a stub key in the browser and answer `/ingest` themselves, so no event reaches PostHog.
+
+## Sign-in email budget
+
+Sign-in links and digests share one Email Sending quota for the Cloudflare account. Cloudflare publishes no number for it. Its limits page says new accounts start on a conservative daily quota that changes with sending reputation, and it does not say when the quota resets. The 1,000 a day in this repo is an observed figure, so recheck it in the Cloudflare dashboard before you raise a budget.
+
+Production admits 900 sign-in links and 50 digests, and preview admits 10 and 5. These counters are separate and reset on different schedules: sign-in at midnight UTC, digests over a rolling 24 hours.
+
+To see when the budget runs out, search Workers Logs for these two messages:
+
+| Message | Meaning | Action |
+| --- | --- | --- |
+| `magic link site budget reached` | The app refused a send. The logged key names the budget: `magic-link-new:<date>` or `magic-link-global:<date>`. | Check for abuse in the `magic-link-global` row of `rateLimit`. Sign-in by email returns at midnight UTC. |
+| `magic link send failed` with `causeCode` `E_DAILY_LIMIT_EXCEEDED` | Cloudflare refused the send, so the real quota is below the budget. | Lower `MAGIC_LINK_DAILY_SEND_LIMIT`, or request a higher limit from Cloudflare. |
+
+Neither message pages anyone until you add a Workers Logs alert for it.
 
 ## Workers plan
 

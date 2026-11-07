@@ -35,7 +35,7 @@ const decodeBatch = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ batch: Schema.Array(SentEvent) }))
 );
 
-const stubBrowser = () => {
+const stubBrowser = (address = "https://jobs.example") => {
   const idle: (() => void)[] = [];
   const pageListeners = new Map<string, () => void>();
 
@@ -51,10 +51,14 @@ const stubBrowser = () => {
 
   vi.stubGlobal("document", page);
   vi.stubGlobal("navigator", { doNotTrack: null });
+  const { host, hostname, origin, protocol } = new URL(address);
+
   vi.stubGlobal("location", {
-    host: "jobs.example",
-    origin: "https://jobs.example",
+    host,
+    hostname,
+    origin,
     pathname: "/",
+    protocol,
   });
   vi.stubGlobal(
     "IntersectionObserver",
@@ -292,6 +296,92 @@ describe("analytics identity", () => {
       expect(view?.properties.$process_person_profile).toBe(false);
       expect(identify?.event).toBe("$identify");
       expect(identify?.properties.$anon_distinct_id).toBe(view?.distinct_id);
+    })
+  );
+});
+
+const anonymousVisit = (browser: ReturnType<typeof stubBrowser>) =>
+  Effect.gen(function* visit() {
+    const wire = postings();
+
+    yield* withAnalytics(wire.fetch, (send) =>
+      Effect.gen(function* landing() {
+        yield* send([AnalyticsCall.Anonymous(), pageView]);
+        browser.becomeIdle();
+        yield* settled;
+      })
+    );
+
+    return wire.events();
+  });
+
+const drawsFor = (bytes: readonly number[]) => {
+  const draws = bytes.map((byte) => (byte + 0.5) / 256);
+
+  vi.spyOn(Math, "random").mockImplementation(() => draws.shift() ?? 0.5);
+};
+
+const SESSION_DRAWS = Array.from({ length: 16 }, () => 0);
+
+const CLOCK_BYTES = [0, 0, 0, 0, 0, 0];
+
+const SEEDED_ID_BYTES = [
+  0x07, 0x2e, 0x04, 0xd9, 0x91, 0xa3, 0xb0, 0x05, 0xd5, 0xfc,
+];
+
+describe("analytics for automated renderers", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.effect("sends nothing from a page loaded over http", () =>
+    Effect.gen(function* insecure() {
+      expect(
+        yield* anonymousVisit(stubBrowser("http://jobs.example"))
+      ).toStrictEqual([]);
+    })
+  );
+
+  it.effect("sends nothing from an http host that only looks local", () =>
+    Effect.gen(function* lookalike() {
+      expect(
+        yield* anonymousVisit(stubBrowser("http://localhost.jobs.example"))
+      ).toStrictEqual([]);
+    })
+  );
+
+  it.effect("sends from a local stage over http", () =>
+    Effect.gen(function* local() {
+      const [view] = yield* anonymousVisit(
+        stubBrowser("http://localhost:1337")
+      );
+
+      expect(view?.event).toBe("$pageview");
+      expect(view?.properties.$current_url).toBe("http://localhost:1337/");
+    })
+  );
+
+  it.effect("sends nothing from the seeded renderer", () =>
+    Effect.gen(function* seeded() {
+      drawsFor([...SESSION_DRAWS, ...CLOCK_BYTES, ...SEEDED_ID_BYTES]);
+
+      expect(yield* anonymousVisit(stubBrowser())).toStrictEqual([]);
+    })
+  );
+
+  it.effect("still sends from a browser one byte away from that id", () =>
+    Effect.gen(function* nearby() {
+      drawsFor([
+        ...SESSION_DRAWS,
+        ...CLOCK_BYTES,
+        ...SEEDED_ID_BYTES.slice(0, -1),
+        0xfd,
+      ]);
+
+      const [view] = yield* anonymousVisit(stubBrowser());
+
+      expect(view?.distinct_id.endsWith("-772e-84d9-91a3b005d5fd")).toBe(true);
     })
   );
 });

@@ -280,13 +280,17 @@ RETURNING ${searchColumns}`,
               SearchRow
             );
 
-        yield* sql.batch("resubscribe", [
-          statement("DELETE FROM alert_unsubscribes WHERE account_id = ?", [
-            owner,
-          ]),
-        ]);
+        const search = Option.map(Array.head(found), searchOfRow);
 
-        return Option.map(Array.head(found), searchOfRow);
+        if (Option.isSome(search)) {
+          yield* sql.batch("resubscribe", [
+            statement("DELETE FROM alert_unsubscribes WHERE account_id = ?", [
+              owner,
+            ]),
+          ]);
+        }
+
+        return search;
       }),
 
     searchesOf,

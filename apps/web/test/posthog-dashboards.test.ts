@@ -287,12 +287,13 @@ describe("posthog dashboard definitions", () => {
     ).toStrictEqual([]);
   });
 
-  it("scopes to the live host, keeps server events, drops test traffic", () => {
+  it("scopes to the https site, keeps server events, drops test and automated traffic", () => {
     expect(SITE_SCOPE).toBe(
       "NOT startsWith(distinct_id, 'audit-')" +
         " AND distinct_id NOT IN ('audit-probe', 'audit-probe-user', 'probe_posthog_503')" +
         " AND event != 'gc_proxy_probe'" +
-        " AND (properties.$host = 'gatechange.dev' OR properties.$lib = 'jobs-api')"
+        " AND NOT endsWith(distinct_id, '-772e-84d9-91a3b005d5fc')" +
+        " AND (startsWith(properties.$current_url, 'https://gatechange.dev/') OR properties.$lib = 'jobs-api')"
     );
   });
 
@@ -420,6 +421,30 @@ describe("posthog dashboard definitions", () => {
   });
 });
 
+const insightRow = (
+  id: number,
+  name: string | null,
+  tags: readonly string[]
+) => ({
+  dashboardIds: [],
+  description: INSIGHT.description,
+  id,
+  name,
+  query: INSIGHT.query,
+  tags,
+});
+
+const planRename = (insights: Snapshot["insights"]) =>
+  planOf(
+    [
+      {
+        ...BOARD,
+        insights: [{ ...INSIGHT, formerName: "Old name", name: "New name" }],
+      },
+    ],
+    { dashboards: [], insights }
+  );
+
 describe("posthog dashboard plan", () => {
   it("creates everything on an empty project and attaches each insight", () => {
     const { boards, conflicts } = planOf(ONE_BOARD, EMPTY);
@@ -473,6 +498,69 @@ describe("posthog dashboard plan", () => {
 
     expect(conflicts).toStrictEqual([]);
     expect(boards[0]?.step).toStrictEqual(Step.Keep({ id: 8 }));
+  });
+
+  it("renames an insight in place instead of adding a second tile", () => {
+    const renamed = { ...INSIGHT, formerName: "Old name", name: "New name" };
+
+    const { boards } = planOf([{ ...BOARD, insights: [renamed] }], {
+      dashboards: [
+        {
+          description: BOARD.description,
+          id: 7,
+          name: BOARD.name,
+          tags: [MANAGED_TAG],
+        },
+      ],
+      insights: [
+        {
+          dashboardIds: [7],
+          description: INSIGHT.description,
+          id: 9,
+          name: "Old name",
+          query: INSIGHT.query,
+          tags: [MANAGED_TAG],
+        },
+      ],
+    });
+
+    expect(boards[0]?.insights[0]?.step).toStrictEqual(Step.Update({ id: 9 }));
+    expect(boards[0]?.insights[0]?.attach).toBe(false);
+  });
+
+  it("refuses an unmanaged insight under the former name and names it", () => {
+    const { boards, conflicts } = planRename([
+      insightRow(9, "Old name", ["starter"]),
+    ]);
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain('"Old name"');
+    expect(conflicts[0]).not.toContain('"New name"');
+    expect(boards[0]?.insights[0]?.attach).toBe(false);
+  });
+
+  it("refuses when both names are managed and names both", () => {
+    const { boards, conflicts } = planRename([
+      insightRow(9, "Old name", [MANAGED_TAG]),
+      insightRow(10, "New name", [MANAGED_TAG]),
+    ]);
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain('"Old name"');
+    expect(conflicts[0]).toContain('"New name"');
+    expect(boards[0]?.insights[0]?.attach).toBe(false);
+  });
+
+  it("does not take a null-named row for a spec with no former name", () => {
+    const { description, events, name, query } = INSIGHT;
+
+    const { boards, conflicts } = planOf(
+      [{ ...BOARD, insights: [{ description, events, name, query }] }],
+      { dashboards: [], insights: [insightRow(9, null, [MANAGED_TAG])] }
+    );
+
+    expect(conflicts).toStrictEqual([]);
+    expect(boards[0]?.insights[0]?.step).toStrictEqual(Step.Create({ name }));
   });
 
   it("ignores the version PostHog stamps on stored queries", () => {
@@ -699,6 +787,7 @@ describe("posthog dashboard runner", () => {
       expect(patch?.url).toContain("/insights/9/");
       expect(Object.keys(patch?.body ?? {}).toSorted()).toStrictEqual([
         "description",
+        "name",
         "query",
       ]);
       expect(posthog.insights.get(9)?.tiles).toStrictEqual([7, 99]);

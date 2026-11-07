@@ -81,11 +81,25 @@ const uuidV7 = Effect.zipWith(
   uuidV7Of
 );
 
+const SEEDED_RENDERER_ID_TAIL = "-772e-84d9-91a3b005d5fc";
+
+const LOCAL_STAGE_HOSTNAME = "localhost";
+
 export const analyticsKeyOf = (
   content: string | null | undefined,
-  signals: { readonly doNotTrack: string | null; readonly gpc: boolean }
+  signals: {
+    readonly anonymousId: string;
+    readonly doNotTrack: string | null;
+    readonly gpc: boolean;
+    readonly hostname: string;
+    readonly protocol: string;
+  }
 ) =>
-  signals.doNotTrack === "1" || signals.gpc
+  signals.doNotTrack === "1" ||
+  signals.gpc ||
+  (signals.protocol !== "https:" &&
+    signals.hostname !== LOCAL_STAGE_HOSTNAME) ||
+  signals.anonymousId.endsWith(SEEDED_RENDERER_ID_TAIL)
     ? Option.none()
     : Schema.decodeUnknownOption(PostHogKey)(content);
 
@@ -133,14 +147,19 @@ const browserAnalytics = (campaign: Properties) =>
   Effect.gen(function* makeAnalytics() {
     // SAFETY: Global Privacy Control is a Navigator field TypeScript's DOM types do not declare yet.
     const signals = navigator as Navigator & PrivacySignals;
+    const sessionId = yield* uuidV7;
+    const anonymousId = yield* uuidV7;
 
     const key = analyticsKeyOf(
       document
         .querySelector(`meta[name="${ANALYTICS_KEY_META}"]`)
         ?.getAttribute("content"),
       {
+        anonymousId,
         doNotTrack: signals.doNotTrack,
         gpc: signals.globalPrivacyControl === true,
+        hostname: location.hostname,
+        protocol: location.protocol,
       }
     );
 
@@ -150,11 +169,10 @@ const browserAnalytics = (campaign: Properties) =>
 
     const client = yield* HttpClient.HttpClient;
     const run = Effect.runForkWith(yield* Effect.context());
-    const sessionId = yield* uuidV7;
     const referrer = referrerOf(document.referrer);
 
     const state = {
-      anonymousId: yield* uuidV7,
+      anonymousId,
       checkingSession: true,
       ready: false,
       userId: Option.none<string>(),
@@ -240,10 +258,10 @@ const browserAnalytics = (campaign: Properties) =>
         },
         Reset: () =>
           uuidV7.pipe(
-            Effect.flatMap((anonymousId) =>
+            Effect.flatMap((freshId) =>
               Effect.sync(() => {
                 state.userId = Option.none();
-                state.anonymousId = anonymousId;
+                state.anonymousId = freshId;
               })
             )
           ),

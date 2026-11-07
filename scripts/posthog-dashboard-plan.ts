@@ -67,9 +67,12 @@ const withoutVersions = (query: InsightQuery): InsightQuery => {
     : query;
 };
 
+const namesOf = (rows: readonly RemoteDashboard[]) =>
+  [...new Set(rows.map(({ name }) => `"${name}"`))].join(" or ");
+
 const resolve = <Row extends RemoteDashboard>(
   name: string,
-  label: string,
+  kind: string,
   rows: readonly Row[],
   isCurrent: (row: Row) => boolean
 ) => {
@@ -80,7 +83,7 @@ const resolve = <Row extends RemoteDashboard>(
     return {
       row: undefined,
       step: Step.Conflict({
-        reason: `${managed.length} ${label} rows carry ${MANAGED_TAG}. Delete the extras in PostHog.`,
+        reason: `${managed.length} ${kind} rows named ${namesOf(managed)} carry ${MANAGED_TAG}. Delete the extras in PostHog.`,
       }),
     };
   }
@@ -91,7 +94,7 @@ const resolve = <Row extends RemoteDashboard>(
       step:
         rows.length > 0
           ? Step.Conflict({
-              reason: `${label} already exists without ${MANAGED_TAG}, so it was left alone. Rename it or add the tag in PostHog.`,
+              reason: `${kind} named ${namesOf(rows)} already exists without ${MANAGED_TAG}, so it was left alone. Rename it or add the tag in PostHog.`,
             })
           : Step.Create({ name }),
     };
@@ -112,9 +115,12 @@ const planInsight = (
 ): InsightPlan => {
   const { row, step } = resolve(
     spec.name,
-    `Insight "${spec.name}"`,
-    insights.filter(({ name }) => name === spec.name),
-    ({ description, query }) =>
+    "Insight",
+    insights.filter(
+      ({ name }) => name === spec.name || name === spec.formerName
+    ),
+    ({ description, name, query }) =>
+      name === spec.name &&
       description === spec.description &&
       isDeepStrictEqual(withoutVersions(query), spec.query)
   );
@@ -131,7 +137,7 @@ const planInsight = (
 const planBoard = (spec: DashboardSpec, snapshot: Snapshot): BoardPlan => {
   const { row, step } = resolve(
     spec.name,
-    `Dashboard "${spec.name}"`,
+    "Dashboard",
     snapshot.dashboards.filter(({ name }) => name === spec.name),
     ({ description }) => description === spec.description
   );
