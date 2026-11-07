@@ -263,18 +263,20 @@ describe("public read limit", () => {
   it.effect.each([
     ["POST", "/rpc"],
     ["GET", "/?q=a"],
-  ] as const)("still serves %s %s when the limiter rejects", ([method, path]) =>
-    Effect.gen(function* failOpen() {
-      const logged = vi.spyOn(console, "log").mockImplementation(() => {});
+  ] as const)(
+    "counts %s %s locally when the limiter rejects",
+    ([method, path]) =>
+      Effect.gen(function* localFallback() {
+        const logged = vi.spyOn(console, "log").mockImplementation(() => {});
 
-      const { response, seen } = yield* servedByBrokenLimiter(path, method);
+        const { response, seen } = yield* servedByBrokenLimiter(path, method);
 
-      expect(response.status).toBe(200);
-      expect(seen.some(({ binding }) => binding === "BACKEND")).toBe(true);
-      expect(inspect(logged.mock.calls, { depth: 4 })).toContain(
-        "binding down"
-      );
-    })
+        expect(response.status).toBe(200);
+        expect(seen.some(({ binding }) => binding === "BACKEND")).toBe(true);
+        expect(inspect(logged.mock.calls, { depth: 4 })).toContain(
+          "binding down"
+        );
+      })
   );
 
   it.effect("counts one IPv6 subnet as one address", () =>
