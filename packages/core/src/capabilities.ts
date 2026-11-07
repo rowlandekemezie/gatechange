@@ -47,6 +47,7 @@ import {
 import { isPro, proFiltersCleared, usesProFilters } from "./entitlement.js";
 import type { JobStoreUnavailable } from "./job-store-unavailable.js";
 import { JobStore } from "./job-store.js";
+import { regionsOfSelection } from "./job.js";
 import type { JobQueryValue } from "./job.js";
 import { NoBillingAccount } from "./no-billing-account.js";
 import { PostingFeeds } from "./posting-feeds.js";
@@ -78,7 +79,12 @@ const servedQuery = (query: JobQueryValue) =>
 export const listJobs = implement(listJobsContract, (query) =>
   Effect.gen(function* listJobsHandler() {
     const store = yield* JobStore;
-    const served = yield* servedQuery(query);
+
+    const served = yield* servedQuery({
+      ...query,
+      regions: regionsOfSelection(query.regions),
+    });
+
     const generatedAt = yield* Clock.currentTimeMillis;
 
     const listing = yield* store.list(
@@ -149,7 +155,7 @@ export const saveSearch = implement(saveSearchContract, ({ filters }) =>
 
     const saved = yield* store.saveSearch(
       member.id,
-      filters,
+      { ...filters, regions: regionsOfSelection(filters.regions) },
       yield* Clock.currentTimeMillis,
       MAX_SAVED_SEARCHES
     );

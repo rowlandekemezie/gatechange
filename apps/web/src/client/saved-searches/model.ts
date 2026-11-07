@@ -1,8 +1,8 @@
-import { SavedSearch } from "@rat-stack/core/contracts";
+import { regionGroups, SavedSearch } from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
-import { defaultFilters, queryOf, regionGroups } from "../board/filters.js";
+import { defaultFilters, queryOf } from "../board/filters.js";
 import type { FiltersValue } from "../board/filters.js";
 
 export const SearchesState = defineTaggedUnion({

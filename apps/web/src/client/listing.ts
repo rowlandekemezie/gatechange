@@ -6,6 +6,8 @@ import {
   MAX_AGE_DAYS,
   MAX_PAGE_SIZE,
   roleLevels,
+  regionGroups,
+  regionsOfGroup,
 } from "@rat-stack/core/contracts";
 import type {
   CompanyJobsValue,
@@ -13,11 +15,10 @@ import type {
   JobQueryValue,
   RegionValue,
   RoleLevelValue,
+  RegionGroupValue,
 } from "@rat-stack/core/contracts";
 import { Array, Effect, pipe, Schema } from "effect";
 
-import { regionGroups, regionsOfGroup } from "./board/filters.js";
-import type { RegionGroupValue } from "./board/filters.js";
 import { Route } from "./route.js";
 
 export const ListingRoute = Schema.Union([Route.Company, Route.Role]);

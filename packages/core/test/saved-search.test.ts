@@ -27,7 +27,7 @@ const member = Schema.decodeSync(Account)({
 });
 
 const filters: SearchFiltersValue = {
-  regions: ["RemoteCanada"],
+  regions: ["BritishColumbia"],
   roles: ["Director"],
   search: "platform",
 };

@@ -1,46 +1,16 @@
-import { Currency, RoleLevel, Seniority } from "@rat-stack/core/contracts";
-import type {
-  CurrencyValue,
-  JobQueryValue,
-  RegionValue,
+import {
+  Currency,
+  RegionGroup,
+  regionsOfSelection,
+  RoleLevel,
+  Seniority,
 } from "@rat-stack/core/contracts";
-import { Array, Match, pipe, Schema } from "effect";
+import type { CurrencyValue, JobQueryValue } from "@rat-stack/core/contracts";
+import { Array, pipe, Schema } from "effect";
 
 export const FIRST_PAGE_SIZE = 15;
 
 export const MORE_PAGE_SIZE = 25;
-
-export const RegionGroup = Schema.Literals([
-  "RemoteCanada",
-  "RemoteUnitedStates",
-  "BritishColumbia",
-  "CanadaOnsite",
-  "UnitedStatesOnsite",
-  "Elsewhere",
-]);
-
-export type RegionGroupValue = typeof RegionGroup.Type;
-
-export const regionGroups: readonly RegionGroupValue[] = RegionGroup.literals;
-
-export const regionsOfGroup = Match.type<RegionGroupValue>().pipe(
-  Match.withReturnType<readonly RegionValue[]>(),
-  Match.when("RemoteCanada", () => [
-    "RemoteCanada",
-    "RemoteNorthAmerica",
-    "RemoteGlobal",
-  ]),
-  Match.when("RemoteUnitedStates", () => [
-    "RemoteUnitedStates",
-    "RemoteNorthAmerica",
-    "RemoteGlobal",
-  ]),
-  Match.when("BritishColumbia", () => ["BritishColumbia"]),
-  Match.when("CanadaOnsite", () => ["CanadaOnsite"]),
-  Match.when("UnitedStatesOnsite", () => ["UnitedStatesOnsite"]),
-  Match.when("Elsewhere", () => ["Elsewhere"]),
-  Match.exhaustive
-);
 
 export const AgeWindow = Schema.Literals([1, 3, 7, 14, 30, 3650]);
 
@@ -124,11 +94,7 @@ export const queryOf = (
   limit: offset === 0 ? FIRST_PAGE_SIZE : MORE_PAGE_SIZE,
   maxAgeDays: filters.maxAgeDays,
   offset,
-  regions: pipe(
-    filters.regionGroups,
-    Array.flatMap(regionsOfGroup),
-    Array.dedupe
-  ),
+  regions: regionsOfSelection(filters.regionGroups),
   roles: filters.roles,
   salaryFloor: filters.salaryFloor,
   salaryListed: filters.salaryListed,

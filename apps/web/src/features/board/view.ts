@@ -5,12 +5,14 @@ import {
   offSiteHref,
   roleLevels,
   seniorities,
+  regionGroups,
 } from "@rat-stack/core/contracts";
 import type {
   JobDetailValue,
   ListedJobValue,
   RoleLevelValue,
   CurrencyValue,
+  RegionGroupValue,
 } from "@rat-stack/core/contracts";
 import { Array, DateTime, Match, Option, pipe } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -37,14 +39,12 @@ import {
   ageWindows,
   hasProSelection,
   MORE_PAGE_SIZE,
-  regionGroups,
   salarySteps,
 } from "../../client/board/filters.js";
 import type {
   AgeWindowValue,
   FiltersValue,
   PayFloorValue,
-  RegionGroupValue,
 } from "../../client/board/filters.js";
 import { lineIcon, markButtons, stageOf } from "../../client/board/marks.js";
 import { Message } from "../../client/board/message.js";

@@ -9,6 +9,7 @@ import {
   Seniority,
   Stage,
   TrackedJobs,
+  RegionGroup,
 } from "@rat-stack/core/contracts";
 import { Schema } from "effect";
 import { defineMessageUnion } from "foldkit/message";
@@ -20,7 +21,7 @@ import { Message as AgentTokensMessage } from "../agent-tokens/message.js";
 import { Message as BillingMessage } from "../billing/message.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { Message as SavedSearchesMessage } from "../saved-searches/message.js";
-import { AgeWindow, RegionGroup, SalaryStep, Sort } from "./filters.js";
+import { AgeWindow, SalaryStep, Sort } from "./filters.js";
 import { MarkKind, Shortlist } from "./model.js";
 
 export const Message = defineMessageUnion({

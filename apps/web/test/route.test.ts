@@ -6,6 +6,9 @@ import {
   RoleLevel,
   roleLevels,
   seniorities,
+  RegionGroup,
+  regionGroups,
+  regionsOfSelection,
 } from "@rat-stack/core/contracts";
 import type { RoleLevelValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
@@ -17,8 +20,6 @@ import {
   Filters,
   inOrderOf,
   queryOf,
-  RegionGroup,
-  regionGroups,
   toggled,
 } from "../src/client/board/filters.js";
 import type { FiltersValue } from "../src/client/board/filters.js";
@@ -225,6 +226,16 @@ describe("board query", () => {
       expect(Schema.is(JobQuery)(query)).toBe(true);
       expect(query.salaryFloor).toStrictEqual(filters.salaryFloor);
       expect(query.seniorities).toStrictEqual(filters.seniorities);
+    }
+  );
+
+  it.prop(
+    "the server expanding a board query's regions again leaves them unchanged",
+    { filters: Filters },
+    ({ filters }) => {
+      const { regions } = queryOf(filters, 0);
+
+      expect(regionsOfSelection(regions)).toStrictEqual(regions);
     }
   );
 });
