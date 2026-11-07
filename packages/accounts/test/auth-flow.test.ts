@@ -1,3 +1,4 @@
+import { once } from "node:events";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- The test applies the checked-in migration SQL to a throwaway database before any Effect runs.
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -10,6 +11,7 @@ import {
   MAGIC_LINK_TTL_MINUTES,
   siteHostsOf,
   trackJob,
+  SIGN_IN_EMAIL_CAPACITY_CODE,
 } from "@rat-stack/core";
 import type { SiteHosts } from "@rat-stack/core";
 import {
@@ -18,6 +20,7 @@ import {
   trackerStoreLayer,
 } from "@rat-stack/job-store";
 import { betterAuth } from "better-auth";
+import type { BetterAuthPlugin, DBAdapter } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { DateTime, Effect, Layer, Option, Schema } from "effect";
 import { HttpServerResponse } from "effect/http";
@@ -131,20 +134,27 @@ const cloudflareSendError = (code: string) =>
     cause: Object.assign(new Error(code), { code }),
   });
 
+const failedSendStatus = (code: string) =>
+  code === "E_DAILY_LIMIT_EXCEEDED" ? 429 : 500;
+
 const makeAuth = (
   hosts: SiteHosts = LOCAL_HOSTS,
   database: DatabaseSync = migratedDatabase(),
   mailer: Mailer = () => true,
-  magicLinkDailySendLimit = 900
+  magicLinkDailySendLimit = 900,
+  extraPlugins: readonly BetterAuthPlugin[] = []
 ) => {
   const sent: MagicLinkRequest[] = [];
 
+  const options = authOptions({
+    ...settings(sent, hosts, mailer),
+    magicLinkDailySendLimit,
+  });
+
   const auth = betterAuth({
-    ...authOptions({
-      ...settings(sent, hosts, mailer),
-      magicLinkDailySendLimit,
-    }),
+    ...options,
     database,
+    plugins: [...(options.plugins ?? []), ...extraPlugins],
     secret: "test-secret-test-secret-test-secret-0",
   });
 
@@ -714,7 +724,7 @@ describe("per-email send limit", () => {
         expect(
           (yield* requestLink(auth, "first@example.com", "2001:db8:1::1"))
             .status
-        ).toBe(500);
+        ).toBe(failedSendStatus(code));
         unavailable = false;
 
         const recovered = yield* requestLink(
@@ -979,7 +989,9 @@ describe("per-email send limit", () => {
         "2001:db8:9::1"
       );
 
-      expect(outage).toStrictEqual([500, 500, 500, 500, 500, 500, 500, 500]);
+      expect(outage).toStrictEqual(
+        Array.from({ length: 8 }, () => failedSendStatus(code))
+      );
       expect(recovered.status).toBe(200);
       expect(sent).toHaveLength(1);
     })
@@ -1282,7 +1294,9 @@ describe("per-client daily send limit", () => {
         );
 
         expect(failed).toStrictEqual(
-          Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () => 500)
+          Array.from({ length: CLIENT_DAILY_SEND_LIMIT }, () =>
+            failedSendStatus("E_DAILY_LIMIT_EXCEEDED")
+          )
         );
         expect(after.status).toBe(200);
         expect(sent.map(({ email }) => email)).toStrictEqual([
@@ -1545,6 +1559,255 @@ const dayCounts = (database: DatabaseSync) =>
       .map(({ count, key }) => [String(key), Number(count)])
   );
 
+const members = (database: DatabaseSync, length: number) =>
+  Array.from({ length }, (_, index) => {
+    const email = `member${index}@example.com`;
+
+    verifiedMember(database, email);
+
+    return { email, ip: `198.51.100.${index + 1}` };
+  });
+
+const statusCounts = (responses: readonly Response[]) =>
+  Object.fromEntries(
+    [200, 429].map((status) => [
+      status,
+      responses.filter((response) => response.status === status).length,
+    ])
+  );
+
+describe("the overall budget at its limit", () => {
+  const LIMIT = 5;
+  const GLOBAL_KEY = "magic-link-global:2026-10-17";
+  const RACERS = 16;
+
+  const everyoneReadsFirst = (parties: number): BetterAuthPlugin => {
+    const gate = new EventTarget();
+    let reads = 0;
+
+    return {
+      id: "everyone-reads-first",
+      init: ({ adapter }) => ({
+        context: {
+          adapter: {
+            ...adapter,
+            // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+            findOne: async <T>(query: Parameters<DBAdapter["findOne"]>[0]) => {
+              const row = await adapter.findOne<T>(query);
+
+              if (query.where[0]?.value === GLOBAL_KEY) {
+                reads += 1;
+
+                if (reads < parties) {
+                  await once(gate, "open");
+                } else {
+                  gate.dispatchEvent(new Event("open"));
+                }
+              }
+
+              return row;
+            },
+          },
+        },
+      }),
+    };
+  };
+
+  it.effect.each([
+    { alreadySent: 0, label: "the first row of the day" },
+    { alreadySent: LIMIT - 1, label: "the last send of the day" },
+  ])(
+    "sends exactly the limit when clients race for $label",
+    ({ alreadySent }) =>
+      Effect.gen(function* race() {
+        travelTo(T0);
+
+        const database = migratedDatabase();
+        const racers = members(database, RACERS);
+
+        if (alreadySent > 0) {
+          database
+            .prepare(
+              `INSERT INTO "rateLimit" (id, key, count, "lastRequest") VALUES ('seen', ?, ?, ?)`
+            )
+            .run(GLOBAL_KEY, alreadySent, T0);
+        }
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          database,
+          () => true,
+          LIMIT,
+          [everyoneReadsFirst(RACERS)]
+        );
+
+        const responses = yield* Effect.forEach(
+          racers,
+          ({ email, ip }) => requestLink(auth, email, ip),
+          { concurrency: "unbounded" }
+        );
+
+        expect(statusCounts(responses)).toStrictEqual({
+          200: LIMIT - alreadySent,
+          429: RACERS - (LIMIT - alreadySent),
+        });
+        expect(sent).toHaveLength(LIMIT - alreadySent);
+        expect(dayCounts(database)[GLOBAL_KEY]).toBe(LIMIT);
+      })
+  );
+
+  it.effect(
+    "sends the last one, refuses the next, and reopens at midnight",
+    () =>
+      Effect.gen(function* boundary() {
+        travelTo(T0);
+
+        const { auth, database, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          LIMIT
+        );
+
+        const [spare, ...everyone] = members(database, LIMIT + 1);
+
+        const within = yield* Effect.forEach(
+          everyone,
+          ({ email, ip }) => requestLink(auth, email, ip),
+          { concurrency: 1 }
+        );
+
+        const over = yield* requestLink(
+          auth,
+          spare?.email ?? "",
+          spare?.ip ?? ""
+        );
+
+        const body = yield* textOf(over);
+
+        expect(within.map(({ status }) => status)).toStrictEqual(
+          Array.from({ length: LIMIT }, () => 200)
+        );
+        expect(over.status).toBe(429);
+        expect(JSON.parse(body)).toMatchObject({
+          code: SIGN_IN_EMAIL_CAPACITY_CODE,
+        });
+        expect(sent).toHaveLength(LIMIT);
+
+        travelTo(Date.parse("2026-10-18T00:00:00Z"));
+
+        const nextDay = yield* requestLink(
+          auth,
+          spare?.email ?? "",
+          spare?.ip ?? ""
+        );
+
+        expect(nextDay.status).toBe(200);
+        expect(sent).toHaveLength(LIMIT + 1);
+      })
+  );
+
+  it.effect("answers a new address the same way once its share is spent", () =>
+    Effect.gen(function* newShare() {
+      travelTo(T0);
+
+      const { auth } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () => true, 1);
+
+      yield* requestLink(auth, "first@example.com", "198.51.100.1");
+
+      const over = yield* requestLink(
+        auth,
+        "second@example.com",
+        "198.51.100.2"
+      );
+
+      expect(JSON.parse(yield* textOf(over))).toMatchObject({
+        code: SIGN_IN_EMAIL_CAPACITY_CODE,
+      });
+    })
+  );
+
+  it.effect("keeps a spent client's refusal apart from a spent site", () =>
+    Effect.gen(function* clientRefusal() {
+      travelTo(T0);
+
+      const { auth } = makeAuth();
+
+      yield* fillClientBudget(auth, "198.51.100.3", "spent");
+      travelTo(T0 + CLIENT_DAILY_SEND_LIMIT * 2 * MINUTE);
+
+      const over = yield* requestLink(
+        auth,
+        "one-more@example.com",
+        "198.51.100.3"
+      );
+
+      expect(over.status).toBe(429);
+      expect(yield* textOf(over)).not.toContain(SIGN_IN_EMAIL_CAPACITY_CODE);
+    })
+  );
+
+  it.effect("records the spent budget where an operator can alert on it", () =>
+    Effect.gen(function* budgetLog() {
+      travelTo(T0);
+
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { auth } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () => true, 1);
+
+      yield* requestLink(auth, "first@example.com", "198.51.100.1");
+      expect(errorLog).not.toHaveBeenCalled();
+
+      yield* requestLink(auth, "second@example.com", "198.51.100.2");
+
+      expect(format(...(errorLog.mock.calls[0] ?? []))).toContain(
+        "magic link site budget reached"
+      );
+    })
+  );
+
+  it.effect("tells the visitor when Email Sending's own quota runs out", () =>
+    Effect.gen(function* quotaSpent() {
+      travelTo(T0);
+
+      const { auth, database, sent } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => cloudflareSendError("E_DAILY_LIMIT_EXCEEDED")
+      );
+
+      const refused = yield* requestLink(
+        auth,
+        "ada@example.com",
+        "198.51.100.4"
+      );
+
+      expect(refused.status).toBe(429);
+      expect(JSON.parse(yield* textOf(refused))).toMatchObject({
+        code: SIGN_IN_EMAIL_CAPACITY_CODE,
+      });
+      expect(sent).toHaveLength(0);
+      expect(dayCounts(database)[GLOBAL_KEY]).toBe(0);
+    })
+  );
+
+  it.effect("still answers 500 for a fault a retry can clear", () =>
+    Effect.gen(function* otherFault() {
+      travelTo(T0);
+
+      const { auth } = makeAuth(LOCAL_HOSTS, migratedDatabase(), () =>
+        cloudflareSendError("E_RATE_LIMIT_EXCEEDED")
+      );
+
+      const failed = yield* statusOf(
+        requestLink(auth, "ada@example.com", "198.51.100.5")
+      );
+
+      expect(failed).toBe(500);
+    })
+  );
+});
+
 describe("per-inbox daily send limit", () => {
   it.effect(
     "stops a verified member's inbox only at the 15-minute limit, so strangers cannot lock a member out",
@@ -1771,7 +2034,7 @@ describe("a provider fault", () => {
       }
 
       expect(statuses).toStrictEqual([
-        ...Array.from({ length: 8 }, () => 500),
+        ...Array.from({ length: 8 }, () => failedSendStatus(code)),
         429,
       ]);
       expect(tries).toBe(8);

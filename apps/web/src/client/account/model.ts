@@ -22,6 +22,7 @@ export const LinkOutcome = Schema.Literals([
   "Sent",
   "Invalid",
   "Limited",
+  "AtCapacity",
   "Failed",
 ]);
 

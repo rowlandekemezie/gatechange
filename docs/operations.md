@@ -153,6 +153,21 @@ Properties never carry an email, a token, a search string, or a job title. Use c
 
 Add a browser event to `AnalyticsEvent` and `eventNames` in `apps/web/src/client/analytics/events.ts`. Add a server event to `ServerEvent` in `apps/api/src/analytics.ts`, and honor `privacySignalled` when a browser made the request. To check events on a stage, use the `analytics-*` scenarios in the verify skill. They add a stub key in the browser and answer `/ingest` themselves, so no event reaches PostHog.
 
+## Sign-in email budget
+
+Sign-in links and digests share one Email Sending quota for the Cloudflare account. Cloudflare publishes no number for it. Its limits page says new accounts start on a conservative daily quota that changes with sending reputation, and it does not say when the quota resets. The 1,000 a day in this repo is an observed figure, so recheck it in the Cloudflare dashboard before you raise a budget.
+
+Production admits 900 sign-in links and 50 digests, and preview admits 10 and 5. These counters are separate and reset on different schedules: sign-in at midnight UTC, digests over a rolling 24 hours.
+
+To see when the budget runs out, search Workers Logs for these two messages:
+
+| Message | Meaning | Action |
+| --- | --- | --- |
+| `magic link site budget reached` | The app refused a send. The logged key names the budget: `magic-link-new:<date>` or `magic-link-global:<date>`. | Check for abuse in the `magic-link-global` row of `rateLimit`. Sign-in by email returns at midnight UTC. |
+| `magic link send failed` with `causeCode` `E_DAILY_LIMIT_EXCEEDED` | Cloudflare refused the send, so the real quota is below the budget. | Lower `MAGIC_LINK_DAILY_SEND_LIMIT`, or request a higher limit from Cloudflare. |
+
+Neither message pages anyone until you add a Workers Logs alert for it.
+
 ## Workers plan
 
 Workers Paid ($5 a month) is recommended. Workers Free limits each cron run to 50 subrequests and 10 ms of CPU, which is not enough to parse the default 60 job boards a run. On Free, deploy with `INGEST_FEEDS_PER_RUN=8` in `.env.local` (or the shell) so each run stays inside those limits.
