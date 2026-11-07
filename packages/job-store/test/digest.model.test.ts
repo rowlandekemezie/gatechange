@@ -751,6 +751,52 @@ describe("saved searches", () => {
     )
   );
 
+  it.effect("a save refused at the limit keeps an unsubscribe", () =>
+    withStores(
+      Effect.gen(function* refusedSave() {
+        const outbox = makeOutbox();
+
+        yield* addMember(ada);
+        yield* saveSearch(ada);
+        yield* Effect.forEach(
+          Array.range(1, MAX_SAVED_SEARCHES - 1),
+          (index) =>
+            saveSearch(ada, { ...everywhere, search: `term ${index}` }),
+          { discard: true }
+        );
+        yield* AlertStore.use((store) => store.unsubscribe(ada, NOW));
+
+        const refused = yield* saveSearch(ada, {
+          ...everywhere,
+          search: "over",
+        });
+
+        yield* listJobs([job({ feed: "greenhouse:acme", id: "gh:1" })]);
+        yield* runAt(NOW, outbox.layer);
+
+        expect(Option.isNone(refused)).toBe(true);
+        expect(recipients(outbox.sent)).toEqual([]);
+      })
+    )
+  );
+
+  it.effect("saving a search it already holds still resubscribes", () =>
+    withStores(
+      Effect.gen(function* repeatedSave() {
+        const outbox = makeOutbox();
+
+        yield* addMember(ada);
+        yield* saveSearch(ada);
+        yield* AlertStore.use((store) => store.unsubscribe(ada, NOW));
+        yield* saveSearch(ada);
+        yield* listJobs([job({ feed: "greenhouse:acme", id: "gh:1" })]);
+        yield* runAt(NOW, outbox.layer);
+
+        expect(recipients(outbox.sent)).toEqual([ada]);
+      })
+    )
+  );
+
   it.effect("one member cannot delete another member's search", () =>
     withStores(
       Effect.gen(function* foreign() {

@@ -51,4 +51,15 @@ export const HASHED_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 export const PRIVATE_REFERRER_POLICY = "no-referrer";
 
+const FRAME_POLICY = "frame-ancestors 'none'";
+
+const NO_SNIFF = "nosniff";
+
+export const SITE_HEADERS = {
+  "content-security-policy": FRAME_POLICY,
+  "x-content-type-options": NO_SNIFF,
+} as const;
+
+export const ASSET_HEADERS = `/*\n  Content-Security-Policy: ${FRAME_POLICY}\n  X-Content-Type-Options: ${NO_SNIFF}\n${HASHED_ASSET_PATHS}\n  Cache-Control: ${HASHED_ASSET_CACHE_CONTROL}\n`;
+
 export const CANONICAL_REDIRECT_CACHE_CONTROL = "public, max-age=86400";
