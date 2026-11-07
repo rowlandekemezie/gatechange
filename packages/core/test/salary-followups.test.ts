@@ -34,6 +34,32 @@ Zone 2: Austin - $120,000 - $160,000`;
 
 describe("salary evidence", () => {
   it.each([
+    ["dash range", "Compensation: $1 50,000 - $200,000", 50_000, 200_000],
+    ["k range", "Compensation: $1 50k - $200k", 50_000, 200_000],
+    ["currency code", "Compensation: USD 1 50,000 - $200,000", 50_000, 200_000],
+  ])("rejects an amount split by a space in a %s", (_, text, min, max) => {
+    expect(salaryOf(text, min, max)).toBeNull();
+  });
+
+  it.each([
+    ["space after the symbol", "Compensation: $ 150,000 - $200,000"],
+    [
+      "unrelated dollar figure before the range",
+      "Compensation: from $5, then 150,000 - $200,000",
+    ],
+    [
+      "second amount with its own symbol",
+      "Compensation: $1 $150,000 - $200,000",
+    ],
+  ])("keeps a band with %s", (_, text) => {
+    expect(salaryOf(text)).toStrictEqual({
+      currency: "USD",
+      max: 200_000,
+      min: 150_000,
+    });
+  });
+
+  it.each([
     [
       "OTE statement before a base component explanation",
       `Our current hiring range: $120,000 - $160,000 OTE annually. OTE is the sum of a fixed base salary plus incentives.\nWe share our broader geographic salary bands.\nWe have two geographic pay zones:\nZone 1: Seattle - ${band}`,

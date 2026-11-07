@@ -314,6 +314,14 @@ interface MoneyMatch extends Span {
   readonly unroundedAmounts: readonly number[];
 }
 
+const splitAmountStart = new RegExp(
+  String.raw`${currencyMarker}\s*\d{1,3}\s$`,
+  "u"
+);
+
+const continuesSplitAmount = (text: string, span: Span, match: string) =>
+  /^\d/u.test(match) && splitAmountStart.test(lineAround(text, span).before);
+
 const moneyMatchesIn = (text: string): readonly MoneyMatch[] => {
   const dollar = otherDollarCountry.test(text) ? null : "USD";
 
@@ -332,6 +340,10 @@ const moneyMatchesIn = (text: string): readonly MoneyMatch[] => {
     }
 
     const span = { end: match.index + match[0].length, start: match.index };
+
+    if (continuesSplitAmount(text, span, match[0])) {
+      return Result.failVoid;
+    }
 
     const unroundedAmounts = [
       amountOf(groups.low, groups.lowK),
