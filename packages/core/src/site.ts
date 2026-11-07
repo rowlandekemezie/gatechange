@@ -148,6 +148,7 @@ export const publicOriginOf = (
 export interface SiteHosts {
   readonly allowedHosts: readonly string[];
   readonly fallbackOrigin: Option.Option<string>;
+  readonly protocol?: "https";
 }
 
 export interface StageHosts {
@@ -163,6 +164,7 @@ export const siteHostsOf = (
     ? {
         allowedHosts: [SITE_HOSTNAME],
         fallbackOrigin: Option.some(SITE_ORIGIN),
+        protocol: "https",
       }
     : {
         allowedHosts: [

@@ -25,6 +25,7 @@ describe("siteHostsOf", () => {
       ).toStrictEqual({
         allowedHosts: ["gatechange.dev"],
         fallbackOrigin: Option.some("https://gatechange.dev"),
+        protocol: "https",
       });
     }
   );

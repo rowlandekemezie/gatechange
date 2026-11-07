@@ -15,6 +15,7 @@ import {
   HASHED_ASSET_CACHE_CONTROL,
   PRIVATE_CACHE_CONTROL,
   PRIVATE_REFERRER_POLICY,
+  SITE_HEADERS,
   UNREDIRECTED_PATHS,
 } from "./edge-routes.js";
 import type { EdgeRoute } from "./edge-routes.js";
@@ -28,13 +29,14 @@ import { clientOf, shellOf, sitemapJobs } from "./server/backend.js";
 import type { ServiceBinding } from "./server/backend.js";
 import { throughEdgeCache } from "./server/edge-cache.js";
 import type { Lifetime } from "./server/edge-cache.js";
-import { backendOf } from "./server/preview-backend.js";
 import {
+  agentCallAllowed,
   readAllowed,
   RETRY_AFTER_SECONDS,
   tooManyReads,
-} from "./server/read-limit.js";
-import type { RateLimiter, ReadLimits } from "./server/read-limit.js";
+} from "./server/edge-limit.js";
+import type { EdgeLimits } from "./server/edge-limit.js";
+import { backendOf } from "./server/preview-backend.js";
 import { renderPage } from "./server/render.js";
 import {
   closedRobotsTxt,
@@ -43,11 +45,9 @@ import {
   sitemapXml,
 } from "./server/sitemap.js";
 
-interface EdgeBindings extends AnalyticsBindings, ReadLimits {
+interface EdgeBindings extends AnalyticsBindings, EdgeLimits {
   readonly ASSETS: ServiceBinding;
   readonly BACKEND: ServiceBinding;
-  readonly MCP_ANONYMOUS_LIMIT: RateLimiter;
-  readonly MCP_TOKEN_LIMIT: RateLimiter;
   readonly SITE_INDEXING?: string;
 }
 
@@ -68,6 +68,18 @@ const withoutSharedCache = (route: EdgeRoute, response: Response) => {
 
   if (route === "private") {
     guarded.headers.set("referrer-policy", PRIVATE_REFERRER_POLICY);
+  }
+
+  return guarded;
+};
+
+const withSiteHeaders = (response: Response) => {
+  const guarded = new Response(response.body, response);
+
+  for (const [name, value] of Object.entries(SITE_HEADERS)) {
+    if (!guarded.headers.has(name)) {
+      guarded.headers.set(name, value);
+    }
   }
 
   return guarded;
@@ -392,21 +404,6 @@ const serveSite = (
     : Effect.succeedNone;
 };
 
-// @effect-diagnostics-next-line asyncFunction:off -- The Rate Limiting binding is Promise-based.
-const agentCallAllowed = async (request: Request, bindings: EdgeBindings) => {
-  const limiter = request.headers.has("authorization")
-    ? bindings.MCP_TOKEN_LIMIT
-    : bindings.MCP_ANONYMOUS_LIMIT;
-
-  const caller = request.headers.get("cf-connecting-ip") ?? "unknown";
-
-  const { success } = await limiter.limit({
-    key: `${new URL(request.url).host}|${caller}`,
-  });
-
-  return success;
-};
-
 const tooManyAgentCalls = (request: Request) =>
   Response.json(
     {
@@ -437,92 +434,100 @@ const busyBoard = async (bindings: EdgeBindings, url: URL) => {
   return busy;
 };
 
+// @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
+const respondTo = async (
+  request: Request,
+  environment: WorkerBindings,
+  lifetime: Lifetime
+): Promise<Response> => {
+  const requested = new URL(request.url);
+
+  const canonical = UNREDIRECTED_PATHS.has(requested.pathname)
+    ? Option.none<URL>()
+    : canonicalSiteUrlOf(requested);
+
+  if (Option.isSome(canonical)) {
+    return redirectTo(request, canonical.value);
+  }
+
+  const backend = backendOf(environment, globalThis.fetch);
+
+  if (backend === undefined) {
+    return respond("Preview backend unavailable", "text/plain", 503);
+  }
+
+  const bindings: EdgeBindings = { ...environment, BACKEND: backend };
+  const url = siteUrlOf(request);
+  const route = edgeRouteOf(url.pathname);
+
+  if (route === "agent") {
+    return withoutSharedCache(
+      route,
+      (await agentCallAllowed(request, bindings))
+        ? await bindings.BACKEND.fetch(request)
+        : tooManyAgentCalls(request)
+    );
+  }
+
+  if (route === "analytics") {
+    return await Effect.runPromise(
+      proxyIngest(request, analyticsOf(bindings), globalThis.fetch)
+    );
+  }
+
+  if (route === "rpc") {
+    return withoutSharedCache(
+      route,
+      (await readAllowed(request, bindings))
+        ? await bindings.BACKEND.fetch(request)
+        : tooManyReads()
+    );
+  }
+
+  if (route === "backend") {
+    return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
+  }
+
+  const filteredBoard = url.pathname === "/" && url.search !== "";
+
+  const busy = filteredBoard && !(await readAllowed(request, bindings));
+
+  const site =
+    route === "public"
+      ? serveSite(request, url, bindings, lifetime)
+      : Effect.succeedNone;
+
+  const served = busy
+    ? Option.some(await busyBoard(bindings, url))
+    : await Effect.runPromise(site);
+
+  const response = await Effect.runPromise(
+    withAnalyticsKey(
+      withoutSharedCache(
+        route,
+        Option.isSome(served)
+          ? served.value
+          : await Effect.runPromise(
+              serveUnmatched(bindings, request, url, lifetime)
+            )
+      ),
+      analyticsOf(bindings)
+    )
+  );
+
+  return bindings.SITE_INDEXING === "index" &&
+    !filteredBoard &&
+    response.status !== 404
+    ? response
+    : noindex(response);
+};
+
 export default {
   // @effect-diagnostics-next-line asyncFunction:off -- Cloudflare's module Worker contract is a Promise-returning fetch handler.
   fetch: async (
     request: Request,
     environment: WorkerBindings,
     lifetime: Lifetime
-  ): Promise<Response> => {
-    const requested = new URL(request.url);
-
-    const canonical = UNREDIRECTED_PATHS.has(requested.pathname)
-      ? Option.none<URL>()
-      : canonicalSiteUrlOf(requested);
-
-    if (Option.isSome(canonical)) {
-      return redirectTo(request, canonical.value);
-    }
-
-    const backend = backendOf(environment, globalThis.fetch);
-
-    if (backend === undefined) {
-      return respond("Preview backend unavailable", "text/plain", 503);
-    }
-
-    const bindings: EdgeBindings = { ...environment, BACKEND: backend };
-    const url = siteUrlOf(request);
-    const route = edgeRouteOf(url.pathname);
-
-    if (route === "agent") {
-      return withoutSharedCache(
-        route,
-        (await agentCallAllowed(request, bindings))
-          ? await bindings.BACKEND.fetch(request)
-          : tooManyAgentCalls(request)
-      );
-    }
-
-    if (route === "analytics") {
-      return await Effect.runPromise(
-        proxyIngest(request, analyticsOf(bindings), globalThis.fetch)
-      );
-    }
-
-    if (route === "rpc") {
-      return withoutSharedCache(
-        route,
-        (await readAllowed(request, bindings))
-          ? await bindings.BACKEND.fetch(request)
-          : tooManyReads()
-      );
-    }
-
-    if (route === "backend") {
-      return withoutSharedCache(route, await bindings.BACKEND.fetch(request));
-    }
-
-    const filteredBoard = url.pathname === "/" && url.search !== "";
-
-    const busy = filteredBoard && !(await readAllowed(request, bindings));
-
-    const site =
-      route === "public"
-        ? serveSite(request, url, bindings, lifetime)
-        : Effect.succeedNone;
-
-    const served = busy
-      ? Option.some(await busyBoard(bindings, url))
-      : await Effect.runPromise(site);
-
-    const response = await Effect.runPromise(
-      withAnalyticsKey(
-        withoutSharedCache(
-          route,
-          Option.isSome(served)
-            ? served.value
-            : await Effect.runPromise(
-                serveUnmatched(bindings, request, url, lifetime)
-              )
-        ),
-        analyticsOf(bindings)
-      )
-    );
-
-    return bindings.SITE_INDEXING === "index" &&
-      !filteredBoard &&
-      response.status !== 404
-      ? response
-      : noindex(response);
-  },
+  ): Promise<Response> =>
+    withSiteHeaders(await respondTo(request, environment, lifetime)),
 };

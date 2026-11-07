@@ -2618,6 +2618,20 @@ describe("UAT host", () => {
     })
   );
 
+  it.effect("mails an https link on prod from a plain-http request", () =>
+    Effect.gen(function* httpsLink() {
+      const { auth, sent } = makeAuth(prodHosts);
+
+      const response = yield* requestLink(auth, "ada@example.com", undefined, {
+        at: "http://gatechange.dev",
+        from: PROD,
+      });
+
+      expect(response.status).toBe(200);
+      expect(new URL(sent[0]?.url ?? "").origin).toBe(PROD);
+    })
+  );
+
   it.effect("sets a host-only session cookie that prod never receives", () =>
     Effect.gen(function* uatCookie() {
       const { auth, sent } = makeAuth(uatHosts);

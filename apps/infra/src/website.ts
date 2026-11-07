@@ -6,10 +6,7 @@ import {
   PUBLIC_READS_PER_MINUTE,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "@rat-stack/core";
-import {
-  HASHED_ASSET_CACHE_CONTROL,
-  HASHED_ASSET_PATHS,
-} from "@rat-stack/web/edge-routes";
+import { ASSET_HEADERS } from "@rat-stack/web/edge-routes";
 import { Stage } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
@@ -58,7 +55,7 @@ export class Website extends Cloudflare.Website.Foldkit<Website>()(
 
     return {
       assets: {
-        headers: `${HASHED_ASSET_PATHS}\n  Cache-Control: ${HASHED_ASSET_CACHE_CONTROL}\n`,
+        headers: ASSET_HEADERS,
         notFoundHandling: "none" as const,
         runWorkerFirst: siteWorkerFirst(stage),
       },
