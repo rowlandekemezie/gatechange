@@ -2,7 +2,7 @@ import type { Schema } from "effect";
 
 export const MANAGED_TAG = "gate-change-managed";
 
-const SITE_HOST = "gatechange.dev";
+const SITE_ORIGIN = "https://gatechange.dev/";
 
 const SERVER_LIB = "jobs-api";
 
@@ -16,6 +16,8 @@ const TEST_DISTINCT_IDS = [
 
 const TEST_EVENT = "gc_proxy_probe";
 
+const SEEDED_RENDERER_ID_TAIL = "-772e-84d9-91a3b005d5fc";
+
 const quoted = (values: readonly string[]) =>
   values.map((value) => `'${value}'`).join(", ");
 
@@ -23,7 +25,8 @@ export const SITE_SCOPE = [
   `NOT startsWith(distinct_id, '${TEST_DISTINCT_ID_PREFIX}')`,
   `distinct_id NOT IN (${quoted(TEST_DISTINCT_IDS)})`,
   `event != '${TEST_EVENT}'`,
-  `(properties.$host = '${SITE_HOST}' OR properties.$lib = '${SERVER_LIB}')`,
+  `NOT endsWith(distinct_id, '${SEEDED_RENDERER_ID_TAIL}')`,
+  `(startsWith(properties.$current_url, '${SITE_ORIGIN}') OR properties.$lib = '${SERVER_LIB}')`,
 ].join(" AND ");
 
 const SCOPE_FILTERS = [{ key: SITE_SCOPE, type: "hogql" }];
@@ -42,6 +45,7 @@ export type InsightQuery = Schema.Json;
 export interface InsightSpec {
   readonly description: string;
   readonly events: readonly string[];
+  readonly formerName?: string;
   readonly name: string;
   readonly query: InsightQuery;
 }
@@ -122,7 +126,7 @@ const step = (event: string) => ({ event, kind: "EventsNode", name: event });
 
 const total = (event: string) => ({ ...step(event), math: "total" });
 
-const uniqueUsers = (event: string) => ({ ...step(event), math: "dau" });
+const visits = (event: string) => ({ ...step(event), math: "dau" });
 
 const summed = (event: string, property: string) => ({
   ...step(event),
@@ -256,10 +260,11 @@ export const dashboards: readonly DashboardSpec[] = [
     description: "Traffic, sources and accounts since launch.",
     insights: [
       {
-        ...trendOf(uniqueUsers("$pageview")),
+        ...trendOf(visits("$pageview")),
         description:
-          "Unique visitors per day. Anonymous ids last one page load, so a repeat visitor counts again.",
-        name: "Launch: Visitors per day",
+          "Visits per day, not people. Anonymous ids last one full page load, so a repeat visitor counts again.",
+        formerName: "Launch: Visitors per day",
+        name: "Launch: Visits per day",
       },
       {
         ...breakdownOf(total("$pageview"), "$pathname"),
@@ -267,9 +272,10 @@ export const dashboards: readonly DashboardSpec[] = [
         name: "Launch: Pageviews by path",
       },
       {
-        ...breakdownOf(uniqueUsers("$pageview"), "$referring_domain"),
-        description: "Unique visitors by referring domain.",
-        name: "Launch: Visitors by referring domain",
+        ...breakdownOf(visits("$pageview"), "$referring_domain"),
+        description: "Visits by referring domain, not people.",
+        formerName: "Launch: Visitors by referring domain",
+        name: "Launch: Visits by referring domain",
       },
       {
         ...campaignTraffic(),
@@ -354,8 +360,8 @@ export const dashboards: readonly DashboardSpec[] = [
     description: "Interest in the agent surface and what agents call.",
     insights: [
       {
-        ...trendOf(uniqueUsers("agents_section_viewed")),
-        description: "Unique visitors who saw the agents section.",
+        ...trendOf(visits("agents_section_viewed")),
+        description: "Visits that reached the agents section, not people.",
         name: "Agents: Section views",
       },
       {

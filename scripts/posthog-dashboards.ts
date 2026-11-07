@@ -331,7 +331,7 @@ const applyInsight = (
       }),
     Keep: ({ id }) => Effect.succeed(id),
     Update: ({ id }) =>
-      patched(connection, "/insights/", id, { description, query }),
+      patched(connection, "/insights/", id, { description, name, query }),
   });
 
 const attachInsight = (

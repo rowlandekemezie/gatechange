@@ -113,8 +113,11 @@ const planInsight = (
   const { row, step } = resolve(
     spec.name,
     `Insight "${spec.name}"`,
-    insights.filter(({ name }) => name === spec.name),
-    ({ description, query }) =>
+    insights.filter(
+      ({ name }) => name === spec.name || name === spec.formerName
+    ),
+    ({ description, name, query }) =>
+      name === spec.name &&
       description === spec.description &&
       isDeepStrictEqual(withoutVersions(query), spec.query)
   );
