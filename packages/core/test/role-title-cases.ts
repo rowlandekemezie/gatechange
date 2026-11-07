@@ -435,6 +435,10 @@ export const hardwareTitles: readonly (readonly [string, RoleLevelValue])[] = [
     "Systems Engineering Manager (Systems Engineering Management)",
     "EngineeringManager",
   ],
+  ["Civil Aviation Software Engineering Manager", "EngineeringManager"],
+  ["Director of Software Engineering, Civil Space", "Director"],
+  ["Head of Engineering, Civil Aerospace", "HeadOfEngineering"],
+  ["VP Engineering, Civil Aviation", "VicePresident"],
 ];
 
 export const otherFunctionTitles: readonly (readonly [string, string])[] = [
@@ -538,6 +542,14 @@ export const otherFunctionTitles: readonly (readonly [string, string])[] = [
   ],
   ["Model Policy Manager, National Security", "Legal and policy"],
   ["Branch Manager, Engineering (Civil)", "Physical engineering"],
+  ["Civil Infrastructure Director", "Physical engineering"],
+  ["Engineering Manager (Civil)", "Physical engineering"],
+  ["Civil Space Sales Manager", "Sales"],
+  ["Director, Civil Space Sales", "Sales"],
+  ["Technical Director", "Unclear function"],
+  ["Associate Technical Director", "Unclear function"],
+  ["Associate Technical Director - Design", "Unclear function"],
+  ["Technical Director, Safety Case", "Unclear function"],
   [
     "Director Nuclear Engineering Fleet Operations - Welch, MN",
     "Physical engineering",
