@@ -396,7 +396,6 @@ export const realTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["Engineering Manager, Accounts", "EngineeringManager"],
   ["Engineering Manager, Customer Trust - Canada", "EngineeringManager"],
   ["Engineering Manager, Partner Integrations", "EngineeringManager"],
-  ["Manager, Engineering - Sales Planning", "EngineeringManager"],
   [
     "Manager, Software Engineering, Finance (Application Software)",
     "EngineeringManager",
@@ -407,6 +406,10 @@ export const realTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ],
   ["Senior Engineering Manager - Customer Onboarding", "EngineeringManager"],
   ["Senior Engineering Manager, Enablement", "EngineeringManager"],
+  ["Engineering Manager, Customer Trust", "EngineeringManager"],
+  ["Engineering Manager - Bank Accounts", "EngineeringManager"],
+  ["Manager - Applied AI", "EngineeringManager"],
+  ["Sr. Manager - SRE", "EngineeringManager"],
 ];
 
 export const hardwareTitles: readonly (readonly [string, RoleLevelValue])[] = [
@@ -664,6 +667,64 @@ export const otherFunctionTitles: readonly (readonly [string, string])[] = [
   ["Engineering Manager - Solutions Engineering", "Business and go-to-market"],
   ["Engineering Manager, Talent Acquisition", "Support"],
   ["Director of Engineering, Legal Engineering", "Legal and policy"],
+  ["Senior Engineering Manager, Sales", "Sales"],
+  ["Manager, Engineering - Sales Planning", "Sales"],
+  ["Engineering Manager, Customer Success", "Support"],
+  ["Engineering Manager, Professional Services", "Consulting and delivery"],
+  [
+    "Engineering Manager, Implementation Engineering",
+    "Consulting and delivery",
+  ],
+  ["Engineering Manager, Pre-Sales", "Business and go-to-market"],
+  ["Engineering Manager (Sales Engineer)", "Business and go-to-market"],
+  ["Engineering Manager, Solutions Architecture", "Business and go-to-market"],
+  ["Engineering Manager, Consulting", "Consulting and delivery"],
+  ["Engineering Manager, Account Management", "Business and go-to-market"],
+  ["Engineering Manager (Intern)", "Research and individual contributor"],
+  ["Engineering Manager, Executive Assistant", "Support"],
+  ["Director of Engineering, Customer Support", "Support"],
+  ["Engineering Manager, Tier 2 Support", "Support"],
+  ["Manager - Fire Protection Engineering", "Physical engineering"],
+  ["Manager, Fire Protection Engineering", "Physical engineering"],
+  ["Manager - Transmission Engineering", "Physical engineering"],
+  ["Manager, Transmission Engineering", "Physical engineering"],
+  ["Manager, Plant Engineering", "Physical engineering"],
+  ["Senior Director, Power Plant Engineering", "Physical engineering"],
+  [
+    "Engineering Manager, Wastewater Treatment & Ultrapure Water (Starlink)",
+    "Physical engineering",
+  ],
+  ["Senior Manager - AI-enabled Operations", "Unclear function"],
+  ["Senior Manager - Retail Technology Operations", "Unclear function"],
+  ["Manager - Security Guard Services", "Physical security"],
+  ["Manager - Infrastructure Projects", "Consulting and delivery"],
+  ["Manager - Technology Procurement", "Business"],
+  [
+    "Manager - Maintenance & Engineering - FT - Days - Anne Arundel Med Ctr",
+    "Physical engineering",
+  ],
+  ["Tech Lead Manager, Construction", "Physical engineering"],
+  ["Technical Lead Manager, Clinical Operations", "Unclear function"],
+  ["Technical Lead Manager, Nursing Informatics", "Unclear function"],
+  ["Technical Lead Manager - Structural", "Physical engineering"],
+  ["Technical Lead Manager, Mechanical", "Physical engineering"],
+  [
+    "Technical Lead/Manager - Analytical Chemistry",
+    "Research and individual contributor",
+  ],
+  ["Technical Lead Manager, Tax", "Finance and audit"],
+  ["Senior Technical Lead Manager, Manufacturing", "Physical engineering"],
+  ["TLM - Trade Lane Manager", "Business"],
+  ["Total Loss Manager (TLM)", "Business"],
+  ["Staff Data Scientist (TLM)", "Research and individual contributor"],
+  [
+    "Data Science Tech Lead Manager, Model Experience",
+    "Research and individual contributor",
+  ],
+  [
+    "Tech Lead Manager, Core Apps Data Scientist",
+    "Research and individual contributor",
+  ],
 ];
 
 export const knownFalsePositives: readonly (readonly [
@@ -691,9 +752,6 @@ export const knownFalsePositives: readonly (readonly [
     "VicePresident",
   ],
   ["VP, Publisher Experience and Platform, Commerce Media", "VicePresident"],
-  ["Data Science Tech Lead Manager, Model Experience", "EngineeringManager"],
-  ["Tech Lead Manager, Core Apps Data Scientist", "EngineeringManager"],
-  ["Senior Manager - Retail Technology Operations", "EngineeringManager"],
   ["Sr Manager - Software Portfolio Channel", "EngineeringManager"],
 ];
 
