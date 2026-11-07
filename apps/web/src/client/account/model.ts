@@ -12,6 +12,7 @@ export type SessionStateValue = typeof SessionState.Type;
 
 export const SignInState = defineTaggedUnion({
   Editing: { email: Schema.String, problem: Schema.Option(Schema.String) },
+  Redirecting: { email: Schema.String, provider: SocialProvider },
   Sending: { email: Schema.String },
   Sent: { email: Schema.String },
 });
@@ -44,6 +45,8 @@ export const Model = Schema.Struct({
 });
 
 export type ModelValue = typeof Model.Type;
+
+export const providerName = { github: "GitHub", google: "Google" } as const;
 
 export const editing = (email: string, problem?: string) =>
   SignInState.Editing({ email, problem: Option.fromNullishOr(problem) });

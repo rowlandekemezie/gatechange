@@ -72,6 +72,29 @@ const tracked = (calls: readonly (typeof AnalyticsCall.Type)[]) =>
     Schema.is(AnalyticsCall.Track)(call) ? [call.event] : []
   );
 
+const account = (message: typeof AccountMessage.Type) =>
+  Message.GotAccountMessage({ message });
+
+const signedOutAtAccount = () =>
+  step(
+    modelAt("/account"),
+    account(AccountMessage.CompletedFetchSession({ account: Option.none() }))
+  ).after;
+
+const pressedFourTimes = (start: ModelValue, message: typeof Message.Type) => {
+  const events: (typeof AnalyticsEvent.Type)[] = [];
+  let model = start;
+
+  for (const _press of [1, 2, 3, 4]) {
+    const { after, calls } = step(model, message);
+
+    events.push(...tracked(calls));
+    model = after;
+  }
+
+  return events;
+};
+
 const saveCompleted = (outcome: "AtLimit" | "Saved") =>
   step(
     modelAt("/"),
@@ -154,6 +177,54 @@ describe("analytics events", () => {
     );
 
     expect(signOut.calls).toContainEqual(AnalyticsCall.Reset());
+  });
+
+  describe("signup_started", () => {
+    it("counts one per GitHub flow however many times the button is pressed", () => {
+      const events = pressedFourTimes(
+        signedOutAtAccount(),
+        account(AccountMessage.ClickedSocialSignIn({ provider: "github" }))
+      );
+
+      expect(events).toStrictEqual([
+        AnalyticsEvent.SignupStarted({ method: "github" }),
+      ]);
+    });
+
+    it("counts a fresh flow after the first one failed", () => {
+      const clicked = account(
+        AccountMessage.ClickedSocialSignIn({ provider: "github" })
+      );
+
+      const failed = step(
+        step(signedOutAtAccount(), clicked).after,
+        account(AccountMessage.FailedSocialSignIn({ provider: "github" }))
+      ).after;
+
+      expect(tracked(step(failed, clicked).calls)).toStrictEqual([
+        AnalyticsEvent.SignupStarted({ method: "github" }),
+      ]);
+    });
+
+    it("counts one per email sent while the link is on its way", () => {
+      const filled = step(
+        signedOutAtAccount(),
+        account(AccountMessage.UpdatedSignInEmail({ value: "ada@example.com" }))
+      ).after;
+
+      expect(
+        pressedFourTimes(filled, account(AccountMessage.SubmittedSignIn()))
+      ).toStrictEqual([AnalyticsEvent.SignupStarted({ method: "email" })]);
+    });
+
+    it("keeps counting each submit of an email that fails the format check", () => {
+      const events = pressedFourTimes(
+        signedOutAtAccount(),
+        account(AccountMessage.SubmittedSignIn())
+      );
+
+      expect(events).toHaveLength(4);
+    });
   });
 
   it("tells the client a visitor is anonymous once the session answer is out", () => {

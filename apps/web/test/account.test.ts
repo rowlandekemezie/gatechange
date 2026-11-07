@@ -1,10 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Account } from "@rat-stack/core/contracts";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Fiber, Option, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 
+import { AuthClient } from "../src/client/account/auth-client.js";
+import { StartSocialSignIn } from "../src/client/account/command.js";
 import { Message } from "../src/client/account/message.js";
 import type { MessageValue } from "../src/client/account/message.js";
 import {
@@ -12,7 +15,10 @@ import {
   SessionState,
   SignInState,
 } from "../src/client/account/model.js";
-import type { ModelValue } from "../src/client/account/model.js";
+import type {
+  ModelValue,
+  SignInStateValue,
+} from "../src/client/account/model.js";
 import { init, update } from "../src/client/account/update.js";
 import { application } from "../src/client/application.js";
 import { ForgetSignInToken } from "../src/client/board/command.js";
@@ -237,6 +243,201 @@ const confirmPage = (
       url: "https://jobs.example/account/confirm?token=abc123",
     }
   ).pipe(Effect.map(({ html }) => html));
+
+const signInPage = (signIn: SignInStateValue) =>
+  renderToString(
+    {
+      ...application,
+      init: (...args: Parameters<typeof application.init>) => {
+        const started = application.init(...args);
+
+        return {
+          ...started,
+          model: {
+            ...started.model,
+            account: {
+              ...started.model.account,
+              session: SessionState.SignedOut(),
+              signIn,
+              socialProviders: ["github", "google"] as const,
+            },
+          },
+        };
+      },
+    },
+    { flags, url: "https://jobs.example/account" }
+  ).pipe(Effect.map(({ html }) => html));
+
+describe("signing in with GitHub", () => {
+  const clicked = Message.ClickedSocialSignIn({ provider: "github" });
+  const stillHere = "We could not start GitHub sign-in. Try again.";
+
+  it("starts one flow however many times the button is pressed", () => {
+    const first = sent(typed("ada@example.com"), clicked);
+    const repeats = [1, 2, 3].map(() => sent(first, clicked));
+
+    expect(
+      first.commands.map(({ args, name }) => ({ args, name }))
+    ).toStrictEqual([
+      { args: { provider: "github" }, name: "StartSocialSignIn" },
+    ]);
+    expect(repeats.flatMap(({ commands }) => commands)).toStrictEqual([]);
+  });
+
+  it.effect("swaps the buttons for a pending line while the page leaves", () =>
+    Effect.gen(function* pendingLine() {
+      const html = yield* signInPage(
+        SignInState.Redirecting({ email: "", provider: "github" })
+      );
+
+      expect(html).toContain('role="status"');
+      expect(html).toContain("Taking you to GitHub…");
+      expect(html).not.toContain("Continue with GitHub");
+      expect(html).not.toContain("Continue with Google");
+    })
+  );
+
+  it("offers the buttons again with a problem when the redirect fails", () => {
+    const pending = sent(typed("ada@example.com"), clicked);
+
+    const failed = sent(
+      pending,
+      Message.FailedSocialSignIn({ provider: "github" })
+    );
+
+    expect(failed.model.signIn).toStrictEqual(
+      SignInState.Editing({
+        email: "ada@example.com",
+        problem: Option.some(stillHere),
+      })
+    );
+    expect(
+      sent(failed, clicked).commands.map(({ name }) => name)
+    ).toStrictEqual(["StartSocialSignIn"]);
+  });
+
+  it("offers the buttons again with no problem after Back from GitHub", () => {
+    const pending = sent(typed("ada@example.com"), clicked);
+    const returned = sent(pending, Message.ReturnedFromSocialRedirect());
+
+    expect(returned.model.signIn).toStrictEqual(
+      SignInState.Editing({ email: "ada@example.com", problem: Option.none() })
+    );
+    expect(
+      sent(returned, clicked).commands.map(({ name }) => name)
+    ).toStrictEqual(["StartSocialSignIn"]);
+  });
+});
+
+const authorizeUrl = "https://github.com/login/oauth/authorize?state=abc";
+
+const browserPage = () => {
+  const page = new EventTarget();
+  const assign = vi.fn<(href: string) => void>();
+
+  const pageshow = (persisted: boolean) =>
+    Effect.sync(() =>
+      page.dispatchEvent(Object.assign(new Event("pageshow"), { persisted }))
+    );
+
+  vi.stubGlobal("window", Object.assign(page, { location: { assign } }));
+
+  return { assign, pageshow };
+};
+
+const started = (socialRedirect: Effect.Effect<string, Schema.SchemaError>) =>
+  StartSocialSignIn({ provider: "github" }).effect.pipe(
+    Effect.provideService(AuthClient, {
+      currentAccount: Effect.succeedNone,
+      previewLink: () => Effect.succeed(LinkPreview.Unknown()),
+      requestLink: () => Effect.succeed("Failed" as const),
+      signOut: Effect.void,
+      socialRedirect: () => socialRedirect,
+    }),
+    Effect.forkChild
+  );
+
+describe("the social redirect", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.effect("reports a failed request at once", () =>
+    Effect.gen(function* requestFails() {
+      const { assign } = browserPage();
+
+      const running = yield* started(
+        Schema.decodeUnknownEffect(Schema.String)(0)
+      );
+
+      expect(yield* Fiber.join(running)).toStrictEqual(
+        Message.FailedSocialSignIn({ provider: "github" })
+      );
+      expect(assign).not.toHaveBeenCalled();
+    })
+  );
+
+  it.effect("gives up on a request that never answers", () =>
+    Effect.gen(function* requestHangs() {
+      const { assign } = browserPage();
+      const running = yield* started(Effect.never);
+
+      yield* TestClock.adjust("15 seconds");
+
+      expect(yield* Fiber.join(running)).toStrictEqual(
+        Message.FailedSocialSignIn({ provider: "github" })
+      );
+      expect(assign).not.toHaveBeenCalled();
+    })
+  );
+
+  it.effect("stays pending until the deadline when the page never leaves", () =>
+    Effect.gen(function* pageStays() {
+      const { assign } = browserPage();
+      const running = yield* started(Effect.succeed(authorizeUrl));
+
+      yield* TestClock.adjust("14 seconds");
+
+      expect(assign).toHaveBeenCalledExactlyOnceWith(authorizeUrl);
+      expect(running.pollUnsafe()).toBeUndefined();
+
+      yield* TestClock.adjust("1 second");
+
+      expect(yield* Fiber.join(running)).toStrictEqual(
+        Message.FailedSocialSignIn({ provider: "github" })
+      );
+    })
+  );
+
+  it.effect("recovers with no error on Back from the page cache", () =>
+    Effect.gen(function* backRestores() {
+      const { pageshow } = browserPage();
+      const running = yield* started(Effect.succeed(authorizeUrl));
+
+      yield* TestClock.adjust("1 second");
+      yield* pageshow(true);
+
+      expect(yield* Fiber.join(running)).toStrictEqual(
+        Message.ReturnedFromSocialRedirect()
+      );
+    })
+  );
+
+  it.effect("ignores a first paint that is not a restore", () =>
+    Effect.gen(function* firstPaint() {
+      const { pageshow } = browserPage();
+      const running = yield* started(Effect.succeed(authorizeUrl));
+
+      yield* TestClock.adjust("1 second");
+      yield* pageshow(false);
+      yield* TestClock.adjust("14 seconds");
+
+      expect(yield* Fiber.join(running)).toStrictEqual(
+        Message.FailedSocialSignIn({ provider: "github" })
+      );
+    })
+  );
+});
 
 describe("confirming a sign-in link", () => {
   const carol = Schema.decodeSync(Account)({
