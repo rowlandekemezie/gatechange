@@ -37,8 +37,15 @@ describe("salary evidence", () => {
     ["dash range", "Compensation: $1 50,000 - $200,000", 50_000, 200_000],
     ["k range", "Compensation: $1 50k - $200k", 50_000, 200_000],
     ["currency code", "Compensation: USD 1 50,000 - $200,000", 50_000, 200_000],
+    ["double space", "Compensation: $1  50,000 - $200,000", 50_000, 200_000],
   ])("rejects an amount split by a space in a %s", (_, text, min, max) => {
     expect(salaryOf(text, min, max)).toBeNull();
+  });
+
+  it("drops a real band after a short marked number, a tradeoff of the split guard", () => {
+    expect(
+      salaryOf("Compensation: $60 120,000 - 150,000 USD", 120_000, 150_000)
+    ).toBeNull();
   });
 
   it.each([

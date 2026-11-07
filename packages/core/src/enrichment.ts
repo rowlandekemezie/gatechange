@@ -315,7 +315,7 @@ interface MoneyMatch extends Span {
 }
 
 const splitAmountStart = new RegExp(
-  String.raw`${currencyMarker}\s*\d{1,3}\s$`,
+  String.raw`${currencyMarker}\s*\d{1,3}\s+$`,
   "u"
 );
 
