@@ -16,6 +16,12 @@ const namesEngineeringWork = /\b(?:engineering|software)\b/iu;
 const businessFunction =
   /\b(?:accounting|actuarial|audit|communications|compliance|delivery|design|events?|hr|managing directors?|policy managers?|research managers?|risk|sox|strategy)\b/iu;
 
+const leadingEngineeringTitle =
+  /^\s*(?:(?:senior|sr\.?|staff|principal|group)\s+)*(?:(?:software\s+)?engineering\s+manager(?:\s+i{1,3})?|manager,?\s+(?:software\s+)?engineering|directors?\s+of\s+(?:software\s+)?engineering|director,\s+(?:software\s+)?engineering)\s*[,(|:–—-]/iu;
+
+const goToMarketEngineering =
+  /\b(?:sales|solutions?|field|support|customer|pre-?sales|legal)\s+engineering\b|\b(?:recruit\w*|talent)\b/iu;
+
 const nonEngineeringLeadership =
   /^\s*(?:(?:senior|sr\.?|global|group|executive)\s+)*(?:directors?|managers?|s?vp|evp|vice[\s-]+president|head)\s*(?:of\s+|,\s*)?(?:(?:(?:technology|technical|ai|software|platform)\s+)?products?\s+management\b|(?:products?|physical\s+security(?:\s*(?:&|and)\s+safety)?)(?=\s*(?:[,(|:/–—-]|$)|\s+(?:ai\s+)?growth\s*(?:[,(|:/–—-]|$)))/iu;
 
@@ -42,6 +48,13 @@ const engineeringManager = new RegExp(
   "iu"
 );
 
+const techLeadManager = /\b(?:tech(?:nical)?\s+lead\s*\/?\s*managers?|tlm)\b/iu;
+
+const managerDashScope = new RegExp(
+  String.raw`^\s*(?:(?:senior|sr\.?|associate|principal)\s+)?managers?\s*[–—-]\s*(?:[a-z]+\s+){0,2}${engineeringScope}\b`,
+  "iu"
+);
+
 const engineeringManagerAbbreviation =
   /^(?:(?:[Ss]enior|[Ss]r\.?)\s+)?EM(?:\s*[-,(]|\s*$)/u;
 
@@ -51,11 +64,16 @@ const rolePatterns: readonly (readonly [RoleLevelValue, RegExp])[] = [
   ["Director", director],
   ["EngineeringManager", engineeringManager],
   ["EngineeringManager", engineeringManagerAbbreviation],
+  ["EngineeringManager", techLeadManager],
+  ["EngineeringManager", managerDashScope],
 ];
 
 export const classifyRole = (title: string): Option.Option<RoleLevelValue> => {
+  const teamQualified =
+    leadingEngineeringTitle.test(title) && !goToMarketEngineering.test(title);
+
   if (
-    excludedFunction.test(title) ||
+    (!teamQualified && excludedFunction.test(title)) ||
     physicalFunction.test(title) ||
     (businessFunction.test(title) && !namesEngineeringWork.test(title)) ||
     nonEngineeringLeadership.test(title) ||

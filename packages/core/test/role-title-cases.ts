@@ -373,6 +373,40 @@ export const realTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["VP, Cloud and Infrastructure Engineering", "VicePresident"],
   ["VP, Engineering", "VicePresident"],
   ["VP, Security & Platform Services", "VicePresident"],
+  ["Manager – Engineering", "EngineeringManager"],
+  [
+    "Manager – Software Engineering (D365 F&O Engineering)",
+    "EngineeringManager",
+  ],
+  ["Manager — Cloud Platform (Traffic)", "EngineeringManager"],
+  ["Manager - Infrastructure", "EngineeringManager"],
+  ["Manager-Cyber Security", "EngineeringManager"],
+  ["Senior Manager - Analytics Engineering", "EngineeringManager"],
+  ["Senior Manager- Software Engineering", "EngineeringManager"],
+  ["Senior Staff TLM, Security Systems", "EngineeringManager"],
+  ["Software Engineering TLM", "EngineeringManager"],
+  ["Tech Lead Manager", "EngineeringManager"],
+  ["Tech Lead Manager - Full Stack", "EngineeringManager"],
+  ["Tech Lead Manager, Cards", "EngineeringManager"],
+  ["Technical Lead Manager", "EngineeringManager"],
+  ["Technical Lead Manager - Platform", "EngineeringManager"],
+  ["Director of Engineering, Marketing Agent Platform", "Director"],
+  ["Director, Engineering - Partnerships", "Director"],
+  ["Engineering Manager - Support Experience", "EngineeringManager"],
+  ["Engineering Manager, Accounts", "EngineeringManager"],
+  ["Engineering Manager, Customer Trust - Canada", "EngineeringManager"],
+  ["Engineering Manager, Partner Integrations", "EngineeringManager"],
+  ["Manager, Engineering - Sales Planning", "EngineeringManager"],
+  [
+    "Manager, Software Engineering, Finance (Application Software)",
+    "EngineeringManager",
+  ],
+  [
+    "Manager, Software Engineering, People (Application Software)",
+    "EngineeringManager",
+  ],
+  ["Senior Engineering Manager - Customer Onboarding", "EngineeringManager"],
+  ["Senior Engineering Manager, Enablement", "EngineeringManager"],
 ];
 
 export const hardwareTitles: readonly (readonly [string, RoleLevelValue])[] = [
@@ -622,6 +656,14 @@ export const otherFunctionTitles: readonly (readonly [string, string])[] = [
     "Workforce Development & Education Manager, Infrastructure Sites",
     "Support",
   ],
+  ["Tech Lead Manager - Customer Success Platform", "Support"],
+  ["Technical Lead Manager, Sales Engineering", "Business and go-to-market"],
+  ["Project Manager - Engineering", "Consulting and delivery"],
+  ["Manager - Solutions Engineering", "Business and go-to-market"],
+  ["Engineering Manager, Customer Engineering", "Business and go-to-market"],
+  ["Engineering Manager - Solutions Engineering", "Business and go-to-market"],
+  ["Engineering Manager, Talent Acquisition", "Support"],
+  ["Director of Engineering, Legal Engineering", "Legal and policy"],
 ];
 
 export const knownFalsePositives: readonly (readonly [
@@ -649,9 +691,12 @@ export const knownFalsePositives: readonly (readonly [
     "VicePresident",
   ],
   ["VP, Publisher Experience and Platform, Commerce Media", "VicePresident"],
+  ["Data Science Tech Lead Manager, Model Experience", "EngineeringManager"],
+  ["Tech Lead Manager, Core Apps Data Scientist", "EngineeringManager"],
+  ["Senior Manager - Retail Technology Operations", "EngineeringManager"],
+  ["Sr Manager - Software Portfolio Channel", "EngineeringManager"],
 ];
 
 export const knownMisses: readonly string[] = [
-  "Senior Manager- Software Engineering",
   "Technical Manager (AI &amp; Data)",
 ];
