@@ -1,3 +1,4 @@
+import type { SocialProviderValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
@@ -14,7 +15,13 @@ import {
 } from "./command.js";
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
-import { editing, LinkPreview, SessionState, SignInState } from "./model.js";
+import {
+  editing,
+  LinkPreview,
+  providerName,
+  SessionState,
+  SignInState,
+} from "./model.js";
 import type { LinkOutcomeValue, ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<
@@ -24,8 +31,6 @@ type UpdateReturn = Update.Return<
 >;
 
 const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
-
-const providerName = { github: "GitHub", google: "Google" } as const;
 
 const linkProblems: Record<Exclude<LinkOutcomeValue, "Sent">, string> = {
   Failed: "We could not send the link. Try again in a minute.",
@@ -37,6 +42,7 @@ const linkProblems: Record<Exclude<LinkOutcomeValue, "Sent">, string> = {
 const typedEmail = (model: ModelValue) =>
   SignInState.match<string>(model.signIn, {
     Editing: ({ email }) => email,
+    Redirecting: ({ email }) => email,
     Sending: ({ email }) => email,
     Sent: ({ email }) => email,
   });
@@ -87,6 +93,20 @@ const submitted = (model: ModelValue): UpdateReturn => {
   };
 };
 
+const startedSocialSignIn = (
+  model: ModelValue,
+  provider: SocialProviderValue
+): UpdateReturn =>
+  Schema.is(SignInState.Editing)(model.signIn)
+    ? {
+        commands: [StartSocialSignIn({ provider })],
+        model: modifyFields(model, {
+          signIn: () =>
+            SignInState.Redirecting({ email: typedEmail(model), provider }),
+        }),
+      }
+    : { model };
+
 export const update = (
   model: ModelValue,
   message: MessageValue
@@ -94,10 +114,7 @@ export const update = (
   Message.match<UpdateReturn>(message, {
     ClickedRetryLinkCheck: ({ token }) => enteredConfirm(token)(model),
     ClickedSignOut: () => ({ commands: [SignOut()], model }),
-    ClickedSocialSignIn: ({ provider }) => ({
-      commands: [StartSocialSignIn({ provider })],
-      model,
-    }),
+    ClickedSocialSignIn: ({ provider }) => startedSocialSignIn(model, provider),
     ClickedUseAnotherEmail: () => ({
       model: modifyFields(model, { signIn: () => editing(typedEmail(model)) }),
     }),
@@ -134,7 +151,6 @@ export const update = (
         signIn: () => editing(""),
       }),
     }),
-    CompletedSocialRedirect: () => ({ model }),
     FailedSocialSignIn: ({ provider }) => ({
       model: modifyFields(model, {
         signIn: () =>
@@ -143,6 +159,9 @@ export const update = (
             `We could not start ${providerName[provider]} sign-in. Try again.`
           ),
       }),
+    }),
+    ReturnedFromSocialRedirect: () => ({
+      model: modifyFields(model, { signIn: () => editing(typedEmail(model)) }),
     }),
     SubmittedSignIn: () => submitted(model),
     UpdatedSignInEmail: ({ value }) => ({

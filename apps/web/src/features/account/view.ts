@@ -8,6 +8,7 @@ import { Message } from "../../client/account/message.js";
 import type { MessageValue } from "../../client/account/message.js";
 import {
   LinkPreview,
+  providerName,
   SessionState,
   SignInState,
 } from "../../client/account/model.js";
@@ -139,6 +140,12 @@ const signInPanel = (
     Editing: ({ email, problem }) => [
       emailForm(h, email, problem, false),
       ...socialButtons(model, h),
+    ],
+    Redirecting: ({ provider }) => [
+      h.p(
+        [h.Class("status"), h.Role("status")],
+        [`Taking you to ${providerName[provider]}…`]
+      ),
     ],
     Sending: ({ email }) => [emailForm(h, email, Option.none(), true)],
     Sent: ({ email }) => [

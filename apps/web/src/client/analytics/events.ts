@@ -3,7 +3,7 @@ import { Match, Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
 import type { MessageValue as AccountMessageValue } from "../account/message.js";
-import { SessionState } from "../account/model.js";
+import { SessionState, SignInState } from "../account/model.js";
 import type { SessionStateValue } from "../account/model.js";
 import type { MessageValue as AgentTokensMessageValue } from "../agent-tokens/message.js";
 import type { MessageValue as BillingMessageValue } from "../billing/message.js";
@@ -187,7 +187,10 @@ const messageEvents = (
           ? AnalyticsEvent.JobSaved()
           : AnalyticsEvent.JobApplied(),
       ],
-      GotAccountMessage: ({ message: inner }) => accountEvents(inner),
+      GotAccountMessage: ({ message: inner }) =>
+        Schema.is(SignInState.Editing)(before.account.signIn)
+          ? accountEvents(inner)
+          : [],
       GotAgentTokensMessage: ({ message: inner }) => agentTokenEvents(inner),
       GotBillingMessage: ({ message: inner }) => billingEvents(inner),
       GotSavedSearchesMessage: ({ message: inner }) => savedSearchEvents(inner),

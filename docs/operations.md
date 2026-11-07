@@ -135,7 +135,7 @@ Properties never carry an email, a token, a search string, or a job title. Use c
 | `search_submitted` | browser | A search is submitted | `query_length` | `messageEvents`, `events.ts` |
 | `show_more` | browser | `ClickedLoadMore` | none | `messageEvents`, `events.ts` |
 | `signin_completed` | browser | A session appears after a signed-out state or on the confirm page | none | `sessionCalls`, `events.ts` |
-| `signup_started` | browser | A sign-in is submitted or a social provider is chosen | `method` | `accountEvents`, `events.ts` |
+| `signup_started` | browser | The sign-in form is submitted or a social provider is chosen. Only counts while the form is on screen, so repeat presses during a sign-in in progress add nothing. A submit that fails the email format check still counts | `method` | `accountEvents`, `events.ts` |
 | `saved_search_created` | browser | `CompletedSaveSearch` with outcome `Saved` | none | `savedSearchEvents`, `events.ts` |
 | `instant_alerts_changed` | browser | `CompletedSetInstantAlerts`, the server-confirmed value | `enabled`: boolean | `billingEvents`, `events.ts` |
 | `agent_token_created` | browser | `CompletedIssueToken` | none | `agentTokenEvents`, `events.ts` |
