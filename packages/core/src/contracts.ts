@@ -56,6 +56,10 @@ export {
   MAX_PAGE_SIZE,
   Region,
   RegionCount,
+  RegionGroup,
+  regionGroups,
+  regionsOfGroup,
+  regionsOfSelection,
   HandsOn,
   RemotePolicy,
   RoleCount,
@@ -84,6 +88,7 @@ export type {
   ListedJobValue,
   ListingDetailsValue,
   ListingStatusValue,
+  RegionGroupValue,
   RegionValue,
   HandsOnValue,
   RemotePolicyValue,
@@ -257,7 +262,7 @@ export {
 export const listJobsContract = defineContract("listJobs", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "List open engineering leadership roles, filtered by how many days ago they were posted, role level, region, and a text search. Company boards list long-open roles, so pass a large maxAgeDays to include them",
+    "List open engineering leadership roles, from engineering managers to VPs, filtered by how many days ago they were posted, role level, region, and a text search. RemoteUnitedStates and RemoteCanada also return RemoteNorthAmerica and RemoteGlobal roles, because those are open to people in either country. Every other region matches exactly. Each job reports its own region. An empty regions list returns every region. Company boards list long-open roles, so pass a large maxAgeDays to include them. Over MCP, sources whose terms forbid agent access are left out, so the website can show more roles",
   failure: JobStoreUnavailable,
   input: JobQuery,
   output: JobPage,
@@ -279,7 +284,7 @@ export const companyJobsContract = defineContract("companyJobs", {
 export const boardStatsContract = defineContract("boardStats", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "Count active roles by region, level, region and level together, and the companies with the most open roles, and report the most recent ingest run and feed health",
+    "Count active roles by region, level, region and level together, and the companies with the most open roles, and report the most recent ingest run and feed health. Each count uses a role's exact region, so a listJobs search for RemoteUnitedStates or RemoteCanada can return more roles than that count. Over MCP, sources whose terms forbid agent access are left out",
   failure: JobStoreUnavailable,
   input: Schema.Struct({}),
   output: BoardStats,
@@ -297,7 +302,7 @@ export const sitemapJobsContract = defineContract("sitemapJobs", {
 export const getJobContract = defineContract("getJob", {
   annotations: { idempotent: true, readOnly: true },
   description:
-    "Fetch one listed role by its id, or nothing when its source removed it or it aged off the board",
+    "Fetch one listed role by its id, or nothing when its source removed it or it aged off the board. Over MCP, a role from a source whose terms forbid agent access also returns nothing",
   failure: JobStoreUnavailable,
   input: Schema.Struct({ id: Schema.NonEmptyString }),
   output: Schema.OptionFromNullOr(JobDetail),
@@ -324,7 +329,7 @@ const MemberStoreFailure = Schema.Union([Unauthorized, JobStoreUnavailable]);
 
 export const saveSearchContract = defineContract("saveSearch", {
   description:
-    "Save the signed-in member's board filters as a search that a weekly email digest reports new matches for",
+    "Save the signed-in member's board filters as a search that a weekly email digest reports new matches for. Regions widen the same way as in listJobs",
   failure: Schema.Union([Unauthorized, JobStoreUnavailable, SavedSearchLimit]),
   input: Schema.Struct({ filters: SearchFilters }),
   output: SavedSearch,

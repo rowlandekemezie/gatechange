@@ -40,7 +40,7 @@ export const MCP_SERVER_VERSION = "1.0.0";
 const MCP_PROTOCOLS = [McpProtocol.v2026_07_28] as const;
 
 const INSTRUCTIONS =
-  "Search open engineering leadership roles (managers to CTOs) with listJobs, and read board health with boardStats. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
+  "Search open engineering leadership roles, from engineering managers to VPs, with listJobs, and read board health with boardStats. The board has no level above VP. A RemoteUnitedStates or RemoteCanada search also returns roles open across North America and worldwide, the same as the website. Listings from sources whose terms forbid agent access are left out, so the website can show more roles. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
 
 export const agentToolkit = toToolkit(agentCapabilities);
 
@@ -164,7 +164,7 @@ export const mcpDiscovery = (origin: string) => ({
     tokens: `${origin}/account`,
   },
   description:
-    "Engineering leadership roles from company boards and job aggregators, refreshed every 20 minutes. Listings from sources whose terms forbid redistribution are left out.",
+    "Engineering leadership roles from company boards and job aggregators, refreshed every 20 minutes. Listings from sources whose terms forbid agent access are left out.",
   endpoint: `${origin}${MCP_PATH}`,
   name: MCP_SERVER_NAME,
   protocolVersions: MCP_WIRE_VERSIONS,

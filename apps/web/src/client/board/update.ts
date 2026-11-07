@@ -1,4 +1,8 @@
-import { roleLevels, seniorities } from "@rat-stack/core/contracts";
+import {
+  regionGroups,
+  roleLevels,
+  seniorities,
+} from "@rat-stack/core/contracts";
 import { Array, Option, Predicate, Schema, pipe } from "effect";
 import { Command, Update } from "foldkit";
 import { UrlRequest } from "foldkit/navigation";
@@ -49,7 +53,6 @@ import {
   hasNoSelection,
   hasProSelection,
   queryOf,
-  regionGroups,
   toggled,
 } from "./filters.js";
 import type { FiltersValue } from "./filters.js";

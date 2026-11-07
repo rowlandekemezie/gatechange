@@ -23,7 +23,7 @@ import type {
   SourceNameValue,
   SubscriptionRecordValue,
 } from "@rat-stack/core";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Array, Effect, Layer, Option, Schema } from "effect";
 import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
 import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "../src/mcp.js";
@@ -83,6 +83,12 @@ const job = (source: SourceNameValue, id: string): JobValue => ({
   title: "Director of Engineering",
   url: `https://jobs.example.org/${id}`,
 });
+
+const placed = (
+  source: SourceNameValue,
+  id: string,
+  region: JobValue["region"]
+): JobValue => ({ ...job(source, id), region, title: `Director ${id}` });
 
 const board = [job("Greenhouse", "g:1"), job("Remotive", "r:1")];
 
@@ -821,6 +827,111 @@ describe("board over MCP", () => {
         expect(JSON.stringify(listed.structuredContent)).toContain('"total":1');
       }).pipe(Effect.scoped)
   );
+
+  describe("region selection", () => {
+    const regionalBoard = [
+      placed("Greenhouse", "us", "RemoteUnitedStates"),
+      placed("Lever", "na", "RemoteNorthAmerica"),
+      placed("Ashby", "global", "RemoteGlobal"),
+      placed("Workable", "canada", "RemoteCanada"),
+      placed("Greenhouse", "onsite", "UnitedStatesOnsite"),
+      placed("Remotive", "forbidden", "RemoteGlobal"),
+    ];
+
+    const boardStore = () => {
+      const store = storeOn(migratedDatabase());
+
+      return JobStore.use((jobs) =>
+        Effect.forEach(
+          Object.entries(Array.groupBy(regionalBoard, ({ feed }) => feed)),
+          ([feed, rows]) => jobs.replaceFeed(feed, rows, NOW)
+        )
+      ).pipe(Effect.provide(store), Effect.as(store));
+    };
+
+    const Listed = Schema.Struct({
+      jobs: Schema.Array(Schema.Struct({ id: Schema.String })),
+      total: Schema.Int,
+    });
+
+    const listedIds = (send: Send, regions: readonly string[]) =>
+      client(send)
+        .tool("listJobs", { ...listQuery, regions: [...regions] })
+        .pipe(
+          Effect.flatMap(({ structuredContent }) =>
+            Schema.decodeUnknownEffect(Listed)(structuredContent)
+          ),
+          Effect.map(({ jobs, total }) => ({
+            ids: jobs.map(({ id }) => id).toSorted(),
+            total,
+          }))
+        );
+
+    it.effect(
+      "widens a remote country to the roles open across North America and worldwide, as the site does",
+      () =>
+        Effect.gen(function* remoteCountry() {
+          const store = yield* boardStore();
+          const { send } = yield* fixtureWith(store);
+
+          expect(yield* listedIds(send, ["RemoteUnitedStates"])).toStrictEqual({
+            ids: ["global", "na", "us"],
+            total: 3,
+          });
+          expect(yield* listedIds(send, ["RemoteCanada"])).toStrictEqual({
+            ids: ["canada", "global", "na"],
+            total: 3,
+          });
+        }).pipe(Effect.scoped)
+    );
+
+    it.effect("matches every region with no wider group exactly", () =>
+      Effect.gen(function* exactRegions() {
+        const store = yield* boardStore();
+        const { send } = yield* fixtureWith(store);
+
+        expect(yield* listedIds(send, ["RemoteNorthAmerica"])).toStrictEqual({
+          ids: ["na"],
+          total: 1,
+        });
+        expect(yield* listedIds(send, ["RemoteGlobal"])).toStrictEqual({
+          ids: ["global"],
+          total: 1,
+        });
+        expect(yield* listedIds(send, ["UnitedStatesOnsite"])).toStrictEqual({
+          ids: ["onsite"],
+          total: 1,
+        });
+      }).pipe(Effect.scoped)
+    );
+
+    it.effect("saves a remote country with the regions listJobs searched", () =>
+      Effect.gen(function* savedSelection() {
+        const { send } = yield* fixture;
+
+        const saved = yield* client(send, `Bearer ${PRO_SECRET}`).tool(
+          "saveSearch",
+          {
+            filters: {
+              regions: ["RemoteUnitedStates"],
+              roles: ["Director"],
+              search: "",
+            },
+          }
+        );
+
+        expect(saved.structuredContent).toMatchObject({
+          filters: {
+            regions: [
+              "RemoteUnitedStates",
+              "RemoteNorthAmerica",
+              "RemoteGlobal",
+            ],
+          },
+        });
+      }).pipe(Effect.scoped)
+    );
+  });
 
   it.effect("answers malformed tool input with the schema error", () =>
     Effect.gen(function* badInput() {

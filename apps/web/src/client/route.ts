@@ -3,6 +3,8 @@ import {
   RoleLevel,
   roleLevels,
   seniorities,
+  RegionGroup,
+  regionGroups,
 } from "@rat-stack/core/contracts";
 import {
   Array,
@@ -36,8 +38,6 @@ import {
   defaultFilters,
   Filters,
   inOrderOf,
-  RegionGroup,
-  regionGroups,
   salarySteps,
   Sort,
 } from "./board/filters.js";

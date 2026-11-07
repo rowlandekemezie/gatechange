@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Array, Effect, Match, pipe, Schema } from "effect";
 
 export const RoleLevel = Schema.Literals([
   "VicePresident",
@@ -25,6 +25,47 @@ export const Region = Schema.Literals([
 export type RegionValue = typeof Region.Type;
 
 export const regions: readonly RegionValue[] = Region.literals;
+
+export const RegionGroup = Region.pick([
+  "RemoteCanada",
+  "RemoteUnitedStates",
+  "BritishColumbia",
+  "CanadaOnsite",
+  "UnitedStatesOnsite",
+  "Elsewhere",
+]);
+
+export type RegionGroupValue = typeof RegionGroup.Type;
+
+export const regionGroups: readonly RegionGroupValue[] = RegionGroup.literals;
+
+export const regionsOfGroup = Match.type<RegionGroupValue>().pipe(
+  Match.withReturnType<Array.NonEmptyReadonlyArray<RegionValue>>(),
+  Match.when("RemoteCanada", () => [
+    "RemoteCanada",
+    "RemoteNorthAmerica",
+    "RemoteGlobal",
+  ]),
+  Match.when("RemoteUnitedStates", () => [
+    "RemoteUnitedStates",
+    "RemoteNorthAmerica",
+    "RemoteGlobal",
+  ]),
+  Match.when("BritishColumbia", () => ["BritishColumbia"]),
+  Match.when("CanadaOnsite", () => ["CanadaOnsite"]),
+  Match.when("UnitedStatesOnsite", () => ["UnitedStatesOnsite"]),
+  Match.when("Elsewhere", () => ["Elsewhere"]),
+  Match.exhaustive
+);
+
+const regionsOfSelected = (
+  region: RegionValue
+): Array.NonEmptyReadonlyArray<RegionValue> =>
+  Schema.is(RegionGroup)(region) ? regionsOfGroup(region) : [region];
+
+export const regionsOfSelection = <Selection extends readonly RegionValue[]>(
+  selection: Selection
+) => pipe(selection, Array.flatMap(regionsOfSelected), Array.dedupe);
 
 export const Arrangement = Schema.Literals([
   "Remote",

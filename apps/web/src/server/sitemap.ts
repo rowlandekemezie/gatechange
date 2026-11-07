@@ -1,8 +1,7 @@
-import { companySlugOf } from "@rat-stack/core/contracts";
+import { companySlugOf, regionsOfGroup } from "@rat-stack/core/contracts";
 import type { SitemapJobValue } from "@rat-stack/core/contracts";
 import { Array, DateTime, Option, pipe } from "effect";
 
-import { regionsOfGroup } from "../client/board/filters.js";
 import { roleHubsWhere } from "../client/listing.js";
 import {
   companyRouter,

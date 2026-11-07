@@ -7,10 +7,11 @@ import type {
   SalaryBandValue,
   SeniorityValue,
   SourceNameValue,
+  RegionGroupValue,
 } from "@rat-stack/core/contracts";
 import { Match } from "effect";
 
-import type { AgeWindowValue, RegionGroupValue } from "./filters.js";
+import type { AgeWindowValue } from "./filters.js";
 
 export const roleChip = Match.type<RoleLevelValue>().pipe(
   Match.when("EngineeringManager", () => "engineering manager"),

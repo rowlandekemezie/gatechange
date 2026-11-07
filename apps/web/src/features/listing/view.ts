@@ -1,4 +1,8 @@
-import { MAX_AGE_DAYS, roleLevels } from "@rat-stack/core/contracts";
+import {
+  MAX_AGE_DAYS,
+  regionGroups,
+  roleLevels,
+} from "@rat-stack/core/contracts";
 import type {
   CompanySummaryValue,
   JobDetailValue,
@@ -8,7 +12,7 @@ import { Array, Option, pipe, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
 
 import { roleCount, roleHubTitle } from "../../client/board/copy.js";
-import { defaultFilters, regionGroups } from "../../client/board/filters.js";
+import { defaultFilters } from "../../client/board/filters.js";
 import { Message } from "../../client/board/message.js";
 import type { MessageValue } from "../../client/board/message.js";
 import { ListingState } from "../../client/board/model.js";
