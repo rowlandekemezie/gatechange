@@ -1,10 +1,18 @@
 import { inspect } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
+import {
+  ANONYMOUS_MCP_CALLS_PER_MINUTE,
+  TOKEN_MCP_CALLS_PER_MINUTE,
+} from "@rat-stack/core";
 import { Effect } from "effect";
 import { vi } from "vitest";
 
-import { PRIVATE_CACHE_CONTROL, workerFirstPaths } from "../src/edge-routes.js";
+import {
+  ASSET_HEADERS,
+  PRIVATE_CACHE_CONTROL,
+  workerFirstPaths,
+} from "../src/edge-routes.js";
 import worker from "../src/worker.js";
 
 const PUBLIC_CACHE_CONTROL = "public, max-age=0, s-maxage=600";
@@ -95,7 +103,11 @@ const edge = (
   return { bindings, get, lifetime, limited, seen };
 };
 
-const servedByBrokenLimiter = (path: string, method: string) => {
+const servedByBrokenLimiter = (
+  path: string,
+  method: string,
+  headers: HeadersInit = {}
+) => {
   const site = edge();
 
   const broken = {
@@ -107,9 +119,11 @@ const servedByBrokenLimiter = (path: string, method: string) => {
     // @effect-diagnostics-next-line asyncFunction:off -- The edge Worker's fetch is Promise-based.
     async () =>
       await worker.fetch(
-        new Request(`https://jobs.example${path}`, { method }),
+        new Request(`https://jobs.example${path}`, { headers, method }),
         {
           ...site.bindings,
+          MCP_ANONYMOUS_LIMIT: broken,
+          MCP_TOKEN_LIMIT: broken,
           PUBLIC_READ_LIMIT: broken,
           SESSION_READ_LIMIT: broken,
         },
@@ -117,6 +131,15 @@ const servedByBrokenLimiter = (path: string, method: string) => {
       )
   ).pipe(Effect.map((response) => ({ response, seen: site.seen })));
 };
+
+const brokenMcpCall = (
+  credentials: Readonly<Record<string, string>>,
+  address: string
+) =>
+  servedByBrokenLimiter("/mcp", "POST", {
+    ...credentials,
+    "cf-connecting-ip": address,
+  }).pipe(Effect.map(({ response }) => response));
 
 const bodyOf = (response: Response) =>
   Effect.promise(
@@ -289,6 +312,119 @@ describe("public read limit", () => {
   );
 });
 
+describe("site headers", () => {
+  const FRAME_POLICY = "frame-ancestors 'none'";
+
+  it.effect.each([
+    ["the rendered board", "/", "GET"],
+    ["a page the asset binding serves", "/assets/app.js", "GET"],
+    ["the signed-in shell", "/account", "GET"],
+    ["an OAuth callback", "/api/auth/callback/github?code=x", "GET"],
+    ["an RPC call", "/rpc", "POST"],
+    ["an MCP call", "/mcp", "POST"],
+    ["the Stripe webhook", "/webhooks/stripe", "POST"],
+    ["the analytics proxy", "/ingest/batch/", "POST"],
+  ] as const)("refuses framing and sniffing on %s", ([, path, method]) =>
+    Effect.gen(function* guarded() {
+      const { get } = edge();
+
+      const response = yield* get(path, {}, method);
+
+      expect(response.headers.get("content-security-policy")).toBe(
+        FRAME_POLICY
+      );
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    })
+  );
+
+  it.effect("guards a canonical redirect", () =>
+    Effect.gen(function* redirected() {
+      const response = yield* Effect.promise(
+        // @effect-diagnostics-next-line asyncFunction:off -- The edge Worker's fetch is Promise-based.
+        async () =>
+          await worker.fetch(
+            new Request("https://www.gatechange.dev/pricing"),
+            edge().bindings,
+            edge().lifetime
+          )
+      );
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(
+        "https://gatechange.dev/pricing"
+      );
+      expect(response.headers.get("content-security-policy")).toBe(
+        FRAME_POLICY
+      );
+    })
+  );
+
+  it.effect("keeps a stricter policy a backend page set for itself", () =>
+    Effect.gen(function* strict() {
+      const policy = "default-src 'none'; frame-ancestors 'none'";
+
+      const { get } = edge({ "content-security-policy": policy });
+
+      const response = yield* get("/unsubscribe?token=x");
+
+      expect(response.headers.get("content-security-policy")).toBe(policy);
+    })
+  );
+
+  it.effect("keeps a backend redirect and its cookies intact", () =>
+    Effect.gen(function* oauth() {
+      const site = edge();
+
+      const redirecting = {
+        ...site.bindings,
+        BACKEND: {
+          // @effect-diagnostics-next-line asyncFunction:off -- Fakes the Promise-returning service binding.
+          fetch: async () => {
+            const headers = new Headers({
+              location: "https://github.com/login/oauth/authorize",
+            });
+
+            headers.append("set-cookie", "state=a; Secure");
+            headers.append("set-cookie", "nonce=b; Secure");
+
+            return await Promise.resolve(
+              new Response(null, { headers, status: 302 })
+            );
+          },
+        },
+      };
+
+      const response = yield* Effect.promise(
+        // @effect-diagnostics-next-line asyncFunction:off -- The edge Worker's fetch is Promise-based.
+        async () =>
+          await worker.fetch(
+            new Request("https://jobs.example/api/auth/sign-in/social", {
+              method: "POST",
+            }),
+            redirecting,
+            site.lifetime
+          )
+      );
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        "https://github.com/login/oauth/authorize"
+      );
+      expect(response.headers.getSetCookie()).toStrictEqual([
+        "state=a; Secure",
+        "nonce=b; Secure",
+      ]);
+    })
+  );
+
+  it("gives assets the Worker never touches the same headers", () => {
+    expect(ASSET_HEADERS).toContain(
+      `/*\n  Content-Security-Policy: ${FRAME_POLICY}\n  X-Content-Type-Options: nosniff\n`
+    );
+    expect(ASSET_HEADERS).toContain("/assets/*\n  Cache-Control:");
+  });
+});
+
 describe("edge routing", () => {
   it.effect.each([
     "/rpc",
@@ -445,6 +581,87 @@ describe("edge routing", () => {
         expect(other.status).toBe(200);
         expect(seen).toHaveLength(3);
       })
+  );
+
+  describe("when the limiter binding fails", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it.effect.each([
+      ["anonymous", {}, ANONYMOUS_MCP_CALLS_PER_MINUTE, "198.51.100.1"],
+      [
+        "token",
+        { authorization: "Bearer t" },
+        TOKEN_MCP_CALLS_PER_MINUTE,
+        "198.51.100.2",
+      ],
+    ] as const)(
+      "keeps serving %s calls and holds each address to its limit",
+      ([, credentials, perMinute, address]) =>
+        Effect.gen(function* degraded() {
+          vi.spyOn(console, "log").mockImplementation(() => {});
+          vi.useFakeTimers({ toFake: ["Date"] });
+
+          const statuses = yield* Effect.forEach(
+            Array.from({ length: perMinute + 1 }),
+            () =>
+              brokenMcpCall(credentials, address).pipe(
+                Effect.map(({ status }) => status)
+              )
+          );
+
+          const refused = yield* brokenMcpCall(credentials, address);
+          const neighbour = yield* brokenMcpCall(credentials, `${address}0`);
+
+          vi.advanceTimersByTime(60_000);
+
+          const nextMinute = yield* brokenMcpCall(credentials, address);
+
+          expect(statuses.filter((status) => status === 200)).toHaveLength(
+            perMinute
+          );
+          expect(statuses.at(-1)).toBe(429);
+          expect(refused.headers.get("retry-after")).toBe("60");
+          expect(neighbour.status).toBe(200);
+          expect(nextMinute.status).toBe(200);
+        })
+    );
+
+    it.effect("still counts anonymous and token calls apart", () =>
+      Effect.gen(function* separate() {
+        vi.spyOn(console, "log").mockImplementation(() => {});
+
+        const address = { "cf-connecting-ip": "198.51.100.3" };
+
+        yield* Effect.forEach(
+          Array.from({ length: ANONYMOUS_MCP_CALLS_PER_MINUTE + 1 }),
+          () => servedByBrokenLimiter("/mcp", "POST", address),
+          { discard: true }
+        );
+
+        const { response } = yield* servedByBrokenLimiter("/mcp", "POST", {
+          ...address,
+          authorization: "Bearer t",
+        });
+
+        expect(response.status).toBe(200);
+      })
+    );
+  });
+
+  it.effect("counts one IPv6 subnet as one MCP caller", () =>
+    Effect.gen(function* subnet() {
+      const { get, limited } = edge();
+
+      for (const address of ["2001:db8:1:2::1", "2001:db8:1:2:ffff::9"]) {
+        yield* get("/mcp", { "cf-connecting-ip": address }, "POST");
+      }
+
+      expect(new Set(limited.map(({ key }) => key))).toStrictEqual(
+        new Set(["jobs.example|2001:db8:1:2"])
+      );
+    })
   );
 
   it.effect("counts token-bearing MCP calls on their own limiter", () =>

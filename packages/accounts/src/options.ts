@@ -51,6 +51,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
       onNone: () => ({}),
       onSome: (fallback) => ({ fallback }),
     }),
+    protocol: settings.hosts.protocol,
   },
   logger: authLogger,
   plugins: [
