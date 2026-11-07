@@ -407,7 +407,13 @@ describe("analytics events", () => {
   });
 
   it("stays off without a key or when the browser asks not to be tracked", () => {
-    const signals = { doNotTrack: null, gpc: false };
+    const signals = {
+      anonymousId: "01a1b6e0-c62b-7b4b-a9dd-ebde4bc35a99",
+      doNotTrack: null,
+      gpc: false,
+      hostname: "gatechange.dev",
+      protocol: "https:",
+    };
 
     expect(analyticsKeyOf(null, signals)).toStrictEqual(Option.none());
     expect(analyticsKeyOf("not-a-key", signals)).toStrictEqual(Option.none());

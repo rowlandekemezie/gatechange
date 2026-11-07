@@ -95,7 +95,7 @@ Scenarios:
 - `pricing` opens `/pricing` and requires three plan cards with their prices and no sideways scroll. Add `--mobile` for the phone check.
 - `free-gate` signs in as a Free member, turns on `Only roles that state a salary`, and requires the upgrade prompt with the same row count and count line as before, so a Free member never loses listings.
 
-The `analytics-*` scenarios need no PostHog key. They add a stub `posthog-key` meta tag in the browser, answer every `/ingest/` request over the DevTools protocol, and decode the batch, so no event leaves the machine.
+The `analytics-*` scenarios need no PostHog key. They add a stub `posthog-key` meta tag in the browser, answer every `/ingest/` request over the DevTools protocol, and decode the batch, so no event leaves the machine. They depend on the client's https gate exempting the hostname `localhost`, so open the stage at the URL `up.sh` prints. The client sends nothing from `http://127.0.0.1`.
 
 - `analytics-anonymous` requires the first `$pageview` with `$process_person_profile: false`, no `$identify`, and no analytics id in a cookie or browser storage. It reports `firstBatchMs`.
 - `analytics-identity` signs in, reloads with the `get-session` answer held back 2000 ms, and requires the first event on the wire to be a `$pageview` carrying the account id, with no event under any other id.
