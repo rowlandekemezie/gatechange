@@ -435,10 +435,6 @@ export const hardwareTitles: readonly (readonly [string, RoleLevelValue])[] = [
     "Systems Engineering Manager (Systems Engineering Management)",
     "EngineeringManager",
   ],
-  ["Civil Aviation Software Engineering Manager", "EngineeringManager"],
-  ["Director of Software Engineering, Civil Space", "Director"],
-  ["Head of Engineering, Civil Aerospace", "HeadOfEngineering"],
-  ["VP Engineering, Civil Aviation", "VicePresident"],
 ];
 
 export const otherFunctionTitles: readonly (readonly [string, string])[] = [
