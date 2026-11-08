@@ -83,7 +83,12 @@ const probe = (board: CompanyBoardValue) =>
 
     return yield* feeds.fetch(feed).pipe(
       Effect.map((postings) => {
-        const { jobs } = listingsFromPostings(feed, postings, now);
+        const listings = listingsFromPostings(feed, postings, now);
+
+        const jobs = [
+          ...listings.jobs,
+          ...listings.longOpen.map(({ job }) => job),
+        ];
 
         return Probe.Live({
           board,
