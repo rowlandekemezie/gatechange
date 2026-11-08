@@ -410,6 +410,18 @@ export const realTitles: readonly (readonly [string, RoleLevelValue])[] = [
   ["Engineering Manager - Bank Accounts", "EngineeringManager"],
   ["Manager - Applied AI", "EngineeringManager"],
   ["Sr. Manager - SRE", "EngineeringManager"],
+  ["Senior TLM", "EngineeringManager"],
+  ["Staff Technical Lead Manager, Pullover Maneuvers", "EngineeringManager"],
+  ["Staff Technical Lead Manager, Scenes", "EngineeringManager"],
+  ["Technical Lead Manager, Multiverse", "EngineeringManager"],
+  ["Tech Lead Manager - Lakebase", "EngineeringManager"],
+  ["Tech Lead Manager, Lending", "EngineeringManager"],
+  [
+    "Engineering Manager, Client (Unity) - Unannounced Project",
+    "EngineeringManager",
+  ],
+  ["Engineering Manager, Video Transmission", "EngineeringManager"],
+  ["Director of Engineering, Video Transmission Software", "Director"],
 ];
 
 export const hardwareTitles: readonly (readonly [string, RoleLevelValue])[] = [
@@ -725,6 +737,42 @@ export const otherFunctionTitles: readonly (readonly [string, string])[] = [
     "Tech Lead Manager, Core Apps Data Scientist",
     "Research and individual contributor",
   ],
+  ["Technical Lead Manager, Pharmacy", "Unclear function"],
+  [
+    "Technical Lead Manager - Laboratory",
+    "Research and individual contributor",
+  ],
+  [
+    "Technical Lead Manager, Assay Development",
+    "Research and individual contributor",
+  ],
+  ["Technical Lead Manager, Regulatory Affairs", "Legal and policy"],
+  ["Technical Lead Manager, Insurance Claims", "Business"],
+  ["Technical Lead Manager, Toxicology", "Research and individual contributor"],
+  [
+    "Technical Lead Manager, Food Science",
+    "Research and individual contributor",
+  ],
+  ["Technical Lead Manager, Curriculum", "Unclear function"],
+  ["Technical Lead Manager, Clinic", "Unclear function"],
+  ["Territory Line Manager (TLM)", "Sales"],
+  ["Transportation Logistics Manager (TLM)", "Business"],
+  ["TLM Operator", "Unclear function"],
+  ["Engineering Manager, Facilities", "Physical engineering"],
+  [
+    "Director of Engineering - Facilities & Maintenance",
+    "Physical engineering",
+  ],
+  ["Engineering Manager - Field Service", "Physical engineering"],
+  ["Engineering Manager, Field Operations", "Physical engineering"],
+  ["Engineering Manager, Project Engineering", "Consulting and delivery"],
+  ["Director of Engineering, Asset Management", "Finance and audit"],
+  ["Engineering Manager, Program Management", "Consulting and delivery"],
+  ["Engineering Manager, TPM", "Consulting and delivery"],
+  ["Engineering Manager, Sourcing", "Business"],
+  ["Director of Engineering, Vendor Management", "Business"],
+  ["Engineering Manager, Account Executive", "Sales"],
+  ["Manager - Physical Security", "Physical security"],
 ];
 
 export const knownFalsePositives: readonly (readonly [
@@ -753,6 +801,8 @@ export const knownFalsePositives: readonly (readonly [
   ],
   ["VP, Publisher Experience and Platform, Commerce Media", "VicePresident"],
   ["Sr Manager - Software Portfolio Channel", "EngineeringManager"],
+  ["Tech Lead Manager, Pharmacy", "EngineeringManager"],
+  ["Staff Technical Lead Manager, Pharmacy", "EngineeringManager"],
 ];
 
 export const knownMisses: readonly string[] = [

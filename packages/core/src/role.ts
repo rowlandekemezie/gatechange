@@ -9,10 +9,13 @@ const excludedFunction =
   /\b(?:sales|solutions?|support(?!\s+(?:experience|platform|tool(?:ing|s)))|intern(?:ship)?|success|pre-?sales|professional services|managed services|implementation|consulting|account management|(?:executive|administrative|personal) assistants?)\b/iu;
 
 const nonTeamFunction =
-  /\b(?:support|customers?|accounts?|field|recruit\w*|talent|marketing|partners?|partnerships?|program|project|product manager|products? marketing|enablement|operations manager|facilities|finance|legal|people|investment banking|business (?:development|director)|engagement managers?|general managers?|sourcing|vendor management|asset management|subject matter|tpm|counsel|workforce development)\b/iu;
+  /\b(?:support|customers?|accounts?|recruit\w*|talent|marketing|partners?|partnerships?|program|project|product manager|products? marketing|enablement|finance|legal|people|investment banking|business (?:development|director)|engagement managers?|general managers?|subject matter|counsel|workforce development)\b/iu;
+
+const operationalFunction =
+  /\b(?:facilities|field|project (?:engineering|management|managers?)|asset management|sourcing|vendor management|program manag\w*|tpm|operations managers?|account executives?)\b/iu;
 
 const physicalFunction =
-  /\b(?:civil|substation|welding|scada|hv cable|(?:structural|electrical|mechanical|geotechnical|power|pipeline|nuclear|transportation|process(?:\s+sustaining)?|industrial|manufacturing(?:\s+(?:equipment|controls))?)\s+engineering|fire protection|transmission|power (?:plant|generation)|steam turbine|wastewater|maintenance\s*(?:&|and)\s*engineering|(?:fire|plant|construction|solar)\s+engineering|(?:data\s?center|site|corporate|global)\s+security\s+(?:managers?|operations))\b/iu;
+  /\b(?:civil|substation|welding|scada|hv cable|(?:structural|electrical|mechanical|geotechnical|power|pipeline|nuclear|transportation|process(?:\s+sustaining)?|industrial|manufacturing(?:\s+(?:equipment|controls))?)\s+engineering|fire protection|(?<!\b(?:video|data|network)\s+)transmission|power (?:plant|generation)|steam turbine|wastewater|maintenance\s*(?:&|and)\s*engineering|(?:fire|plant|construction|solar)\s+engineering|(?:data\s?center|site|corporate|global)\s+security\s+(?:managers?|operations))\b/iu;
 
 const namesEngineeringWork = /\b(?:engineering|software)\b/iu;
 
@@ -26,7 +29,7 @@ const goToMarketEngineering =
   /\b(?:sales|solutions?|field|support|customer|pre-?sales|legal)\s+engineer(?:ing)?\b|\b(?:recruit\w*|talent)\b/iu;
 
 const nonEngineeringLeadership =
-  /^\s*(?:(?:senior|sr\.?|global|group|executive)\s+)*(?:directors?|managers?|s?vp|evp|vice[\s-]+president|head)\s*(?:of\s+|,\s*)?(?:(?:(?:technology|technical|ai|software|platform)\s+)?products?\s+management\b|(?:products?|physical\s+security(?:\s*(?:&|and)\s+safety)?)(?=\s*(?:[,(|:/–—-]|$)|\s+(?:ai\s+)?growth\s*(?:[,(|:/–—-]|$)))/iu;
+  /^\s*(?:(?:senior|sr\.?|global|group|executive)\s+)*(?:directors?|managers?|s?vp|evp|vice[\s-]+president|head)\s*(?:of\s+|[,–—-]\s*)?(?:(?:(?:technology|technical|ai|software|platform)\s+)?products?\s+management\b|(?:products?|physical\s+security(?:\s*(?:&|and)\s+safety)?)(?=\s*(?:[,(|:/–—-]|$)|\s+(?:ai\s+)?growth\s*(?:[,(|:/–—-]|$)))/iu;
 
 const productManagementLeadership =
   /^\s*(?:(?:senior|sr\.?|global|group|executive)\s+)*(?:(?:technology|technical|ai|software|platform)\s+)?products?\s+management\s+(?:directors?|managers?|s?vp|evp|vice[\s-]+president|head)\b/iu;
@@ -51,8 +54,22 @@ const engineeringManager = new RegExp(
   "iu"
 );
 
-const techLeadManager =
-  /^(?!.*\b(?:construction|clinical|nursing|structur(?:al|es)|mechanical|chemi(?:stry|cal)|tax|manufacturing|process engineering|trade lane|total loss|data scien\w*)\b).*\b(?:tech(?:nical)?\s+lead\s*\/?\s*managers?|tlm)\b/iu;
+const techLeadManagerTitle = String.raw`(?:tech(?:nical)?\s+lead\s*\/?\s*managers?|tlm)`;
+
+const techLeadManagerDenied = String.raw`(?:construction|clinical|nursing|structur(?:al|es)|mechanical|chemi(?:stry|cal)|tax|manufacturing|process engineering|trade lane|total loss|data scien\w*)`;
+
+const techLeadManagerTeam = String.raw`(?:engineer\w*|software|swe|developers?|devops|sre|ml\w*|machine learning|ai|data|infrastructure|platforms?|cloud|security|backend|frontend|full[\s-]?stack|web|apps?|mobile|systems?|runtime|storage|gpu|tooling|connectors|technical staff|perception|autonomy|simulat\w*|motion planning|collision avoidance|multiverse|sensors?)`;
+
+const softwareJargonLead = String.raw`tech\s+lead`;
+
+const engineeringLadder = String.raw`(?:senior\s+)?(?:staff|principal)`;
+
+const bareTechLeadManager = String.raw`(?:(?:senior|sr\.?)\s+)*${techLeadManagerTitle}\s*$`;
+
+const techLeadManager = new RegExp(
+  String.raw`^(?!.*\b${techLeadManagerDenied}\b)(?=.*\b(?:${softwareJargonLead}|${techLeadManagerTeam})\b|\s*${engineeringLadder}\b|\s*${bareTechLeadManager}).*\b${techLeadManagerTitle}\b`,
+  "iu"
+);
 
 const managerDashScope =
   /^\s*(?:(?:senior|sr\.?|associate|principal)\s+)?managers?\s*[–—-]\s*(?:(?:[a-z&]+\s+){0,3}(?:engineering|software|sre|site reliability|devops|backend|frontend|platform)\b|(?:[a-z]+\s+){0,2}(?:infrastructure|security|ai|ml|machine learning|cloud)\s*(?:$|[(,|]))/iu;
@@ -77,6 +94,7 @@ export const classifyRole = (title: string): Option.Option<RoleLevelValue> => {
   if (
     excludedFunction.test(title) ||
     (!teamQualified && nonTeamFunction.test(title)) ||
+    operationalFunction.test(title) ||
     physicalFunction.test(title) ||
     (businessFunction.test(title) && !namesEngineeringWork.test(title)) ||
     nonEngineeringLeadership.test(title) ||
