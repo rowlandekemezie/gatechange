@@ -45,17 +45,38 @@ export const RequestLink = Command.define("RequestLink", {
   messages: [Message.CompletedRequestLink],
 });
 
+const REDIRECT_DEADLINE = "15 seconds";
+
+const waitForPageToLeave = Effect.never;
+
+const pageRestored = Effect.callback<PageTransitionEvent>((resume) => {
+  const restored = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      resume(Effect.succeed(event));
+    }
+  };
+
+  window.addEventListener("pageshow", restored);
+
+  return Effect.sync(() => {
+    window.removeEventListener("pageshow", restored);
+  });
+});
+
 export const StartSocialSignIn = Command.define("StartSocialSignIn", {
   args: { provider: SocialProvider },
   execute: ({ provider }) =>
     AuthClient.use((auth) => auth.socialRedirect(provider)).pipe(
       Effect.flatMap(load),
+      Effect.andThen(waitForPageToLeave),
+      Effect.timeout(REDIRECT_DEADLINE),
+      Effect.raceFirst(pageRestored),
       Effect.match({
         onFailure: () => Message.FailedSocialSignIn({ provider }),
-        onSuccess: () => Message.CompletedSocialRedirect(),
+        onSuccess: () => Message.ReturnedFromSocialRedirect(),
       })
     ),
-  messages: [Message.FailedSocialSignIn, Message.CompletedSocialRedirect],
+  messages: [Message.FailedSocialSignIn, Message.ReturnedFromSocialRedirect],
 });
 
 export const SignOut = Command.define("SignOut", {

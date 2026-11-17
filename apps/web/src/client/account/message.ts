@@ -16,8 +16,8 @@ export const Message = defineMessageUnion({
   CompletedPreviewLink: { preview: LinkPreview },
   CompletedRequestLink: { email: Schema.String, outcome: LinkOutcome },
   CompletedSignOut: {},
-  CompletedSocialRedirect: {},
   FailedSocialSignIn: { provider: SocialProvider },
+  ReturnedFromSocialRedirect: {},
   SubmittedSignIn: {},
   UpdatedSignInEmail: { value: Schema.String },
 });
