@@ -15,6 +15,8 @@ export type { MagicLinkEmail } from "./magic-link-email.js";
 
 export { authOptions, isAuthPath } from "./options.js";
 
+export { mcpResourceOf, OAUTH_CONNECT_PATH, OAUTH_SCOPES } from "./oauth.js";
+
 export {
   authSecret,
   CrossSiteRequest,

@@ -4,6 +4,8 @@ export {
   CurrentViewer,
   currentMember,
   MAGIC_LINK_TTL_MINUTES,
+  ACCOUNT_PATH,
+  returnPathOf,
   SIGN_IN_EMAIL_CAPACITY_CODE,
   SignInOptions,
   SocialProvider,
@@ -27,6 +29,12 @@ export {
   secretHashOf,
 } from "./agent-token.js";
 
+export {
+  OAUTH_ACCESS_TOKEN_PREFIX,
+  OAUTH_REFRESH_TOKEN_PREFIX,
+  OAuthAccessTokens,
+} from "./oauth-access-tokens.js";
+
 export type {
   AgentTokenIdValue,
   AgentTokenValue,
@@ -37,8 +45,10 @@ export { AgentTokenLimit } from "./agent-token-limit.js";
 
 export {
   ANONYMOUS_MCP_CALLS_PER_MINUTE,
+  AUTHORIZATION_SERVER_METADATA_PATH,
   MCP_DISCOVERY_PATH,
   MCP_PATH,
+  PROTECTED_RESOURCE_METADATA_PATH,
   PUBLIC_READS_PER_MINUTE,
   TOKEN_MCP_CALLS_PER_MINUTE,
 } from "./agent-access.js";

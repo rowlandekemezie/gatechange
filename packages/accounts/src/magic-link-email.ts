@@ -1,4 +1,8 @@
-import { MAGIC_LINK_TTL_MINUTES } from "@rat-stack/core";
+import {
+  ACCOUNT_PATH,
+  MAGIC_LINK_TTL_MINUTES,
+  returnPathOf,
+} from "@rat-stack/core";
 
 import type { MagicLinkRequest } from "./options.js";
 
@@ -24,6 +28,12 @@ const confirmLink = (verifyUrl: string) => {
   const confirm = new URL(CONFIRM_SIGN_IN_PATH, verify.origin);
 
   confirm.searchParams.set("token", verify.searchParams.get("token") ?? "");
+
+  const next = returnPathOf(verify.searchParams.get("callbackURL"));
+
+  if (next !== ACCOUNT_PATH) {
+    confirm.searchParams.set("next", next);
+  }
 
   return confirm.href;
 };

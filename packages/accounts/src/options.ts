@@ -1,6 +1,6 @@
 import { MAGIC_LINK_TTL_MINUTES } from "@rat-stack/core";
 import type { SiteHosts, SocialProviderValue } from "@rat-stack/core";
-import type { BetterAuthOptions } from "better-auth";
+import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 import { Option } from "effect";
 
@@ -8,6 +8,8 @@ import { authLogger } from "./auth-logger.js";
 import { sameOriginRateRules, sameSiteVerify } from "./cross-site.js";
 import { emailSendLimit, limitSends } from "./email-send-limit.js";
 import { hashLinkToken, magicLinkPreview } from "./link-preview.js";
+import { mcpOAuth } from "./oauth.js";
+import type { McpResourcePlugin } from "./oauth.js";
 
 const AUTH_BASE_PATH = "/api/auth";
 
@@ -36,7 +38,11 @@ export interface AuthSettings {
   readonly social: Partial<Record<SocialProviderValue, SocialCredentials>>;
 }
 
-export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
+export type AuthOptions = Omit<BetterAuthOptions, "plugins"> & {
+  readonly plugins: [...BetterAuthPlugin[], McpResourcePlugin];
+};
+
+export const authOptions = (settings: AuthSettings): AuthOptions => ({
   account: { encryptOAuthTokens: true },
   advanced: {
     database: { joins: true, validateSchema: false },
@@ -66,6 +72,7 @@ export const authOptions = (settings: AuthSettings): BetterAuthOptions => ({
     magicLinkPreview(),
     emailSendLimit(),
     sameSiteVerify(),
+    ...mcpOAuth(),
   ],
   rateLimit: {
     customRules: { "/get-session": false, ...sameOriginRateRules },
