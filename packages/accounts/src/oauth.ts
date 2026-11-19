@@ -145,38 +145,40 @@ const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
     return;
   }
 
-  const granted = await adapter.findMany<RefreshTokenRow>({
-    limit: NEWEST_GRANTS_REVOKED,
-    model: "oauthRefreshToken",
-    sortBy: { direction: "desc", field: "createdAt" },
-    where: [{ field: "sessionId", value: session.id }],
-  });
+  const ofSession = { field: "sessionId", value: session.id };
 
-  if (granted.length === 0) {
-    return;
-  }
+  const [live, recent] = await Promise.all([
+    adapter.findMany<RefreshTokenRow>({
+      limit: NEWEST_GRANTS_REVOKED,
+      model: "oauthRefreshToken",
+      where: [ofSession, { field: "revoked", value: null }],
+    }),
+    adapter.findMany<RefreshTokenRow>({
+      limit: NEWEST_GRANTS_REVOKED,
+      model: "oauthRefreshToken",
+      sortBy: { direction: "desc", field: "createdAt" },
+      where: [ofSession],
+    }),
+  ]);
 
-  const live = granted.filter((row) => !row.revoked).map((row) => row.id);
+  const liveIds = live.map((row) => row.id);
+  const recentIds = recent.map((row) => row.id);
+
+  // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+  const revokeWhereIn = async (model: string, field: string, ids: string[]) => {
+    if (ids.length > 0) {
+      await adapter.updateMany({
+        model,
+        update: { revoked: now },
+        where: [{ field, operator: "in", value: ids }],
+      });
+    }
+  };
 
   await Promise.all([
-    live.length === 0
-      ? Promise.resolve()
-      : adapter.updateMany({
-          model: "oauthRefreshToken",
-          update: { revoked: now },
-          where: [{ field: "id", operator: "in", value: live }],
-        }),
-    adapter.updateMany({
-      model: "oauthAccessToken",
-      update: { revoked: now },
-      where: [
-        {
-          field: "refreshId",
-          operator: "in",
-          value: granted.map((row) => row.id),
-        },
-      ],
-    }),
+    revokeWhereIn("oauthRefreshToken", "id", liveIds),
+    revokeWhereIn("oauthAccessToken", "refreshId", liveIds),
+    revokeWhereIn("oauthAccessToken", "refreshId", recentIds),
   ]);
 };
 

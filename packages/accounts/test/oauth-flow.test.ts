@@ -203,6 +203,33 @@ const tokenRequest = (auth: Auth, fields: Record<string, string>) =>
     fetchSite: "cross-site",
   });
 
+const grant = (auth: Auth, client_id: string, cookie: string) =>
+  Effect.gen(function* granted() {
+    const { challenge, verifier } = yield* pkce;
+
+    const consent = yield* call(auth, authorizePath(client_id, challenge), {
+      cookie,
+    });
+
+    const consentUrl = new URL(consent.headers.get("location") ?? "", ORIGIN);
+
+    const approved = yield* call(auth, "/api/auth/oauth2/consent", {
+      body: JSON.stringify({
+        accept: true,
+        oauth_query: consentUrl.search.slice(1),
+      }),
+      cookie,
+    }).pipe(Effect.flatMap(jsonOf(Redirect)));
+
+    return yield* tokenRequest(auth, {
+      client_id,
+      code: new URL(approved.url).searchParams.get("code") ?? "",
+      code_verifier: verifier,
+      grant_type: "authorization_code",
+      redirect_uri: REDIRECT_URI,
+    }).pipe(Effect.flatMap(jsonOf(Tokens)));
+  });
+
 const connected = Effect.gen(function* connected() {
   const { auth, database, sent } = makeAuth();
   const { client_id } = yield* register(auth);
@@ -541,6 +568,37 @@ describe("MCP OAuth provider", () => {
         expect(yield* holderOf(auth, previous.access_token)).toBeNull();
         expect(
           (yield* refresh(auth, client_id, latest.refresh_token)).status
+        ).toBe(400);
+      })
+  );
+
+  it.effect(
+    "signing out revokes an idle connection behind a busier one from the same browser",
+    () =>
+      Effect.gen(function* signedOutWithIdleConnection() {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(T0);
+
+        const { auth, client_id, cookie, tokens } = yield* connected;
+        const busy = yield* register(auth);
+        let latest = yield* grant(auth, busy.client_id, cookie);
+
+        for (let hop = 1; hop <= 60; hop += 1) {
+          vi.setSystemTime(T0 + hop * 4 * 60 * 1000);
+          latest = yield* refresh(
+            auth,
+            busy.client_id,
+            latest.refresh_token
+          ).pipe(Effect.flatMap(jsonOf(Tokens)));
+        }
+
+        expect((yield* signOut(auth, cookie)).status).toBe(200);
+
+        expect(
+          (yield* refresh(auth, client_id, tokens.refresh_token)).status
+        ).toBe(400);
+        expect(
+          (yield* refresh(auth, busy.client_id, latest.refresh_token)).status
         ).toBe(400);
       })
   );
