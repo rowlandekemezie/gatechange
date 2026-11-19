@@ -27,6 +27,8 @@ const routePrefixes: readonly (readonly [
   ["/rpc", "rpc"],
   ["/mcp", "agent"],
   ["/.well-known/mcp.json", "backend"],
+  ["/.well-known/oauth-authorization-server", "backend"],
+  ["/.well-known/oauth-protected-resource", "backend"],
   ["/api/auth", "backend"],
   [UNSUBSCRIBE_PATH, "backend"],
   [STRIPE_WEBHOOK_PATH, "backend"],

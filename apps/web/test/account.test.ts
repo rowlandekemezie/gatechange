@@ -80,7 +80,10 @@ describe("account", () => {
     expect(
       step.commands.map(({ args, name }) => ({ args, name }))
     ).toStrictEqual([
-      { args: { email: "ada@example.com" }, name: "RequestLink" },
+      {
+        args: { email: "ada@example.com", returnPath: "/account" },
+        name: "RequestLink",
+      },
     ]);
     expect(step.model.signIn).toStrictEqual(
       SignInState.Sending({ email: "ada@example.com" })
@@ -168,7 +171,7 @@ describe("account", () => {
 
   it("opens the emailed confirm link as its own page that spends nothing on load", () => {
     expect(routeOfUrl(urlAt("/account/confirm?token=abc123"))).toStrictEqual(
-      Route.ConfirmSignIn({ token: "abc123" })
+      Route.ConfirmSignIn({ next: "/account", token: "abc123" })
     );
     expect(
       boardInit(flags, urlAt("/account/confirm?token=abc123")).commands?.map(
@@ -207,7 +210,7 @@ describe("account", () => {
 
         expect(replaced).toStrictEqual([[null, "", "/account/confirm"]]);
         expect(model.route).toStrictEqual(
-          Route.ConfirmSignIn({ token: "abc123" })
+          Route.ConfirmSignIn({ next: "/account", token: "abc123" })
         );
       })
   );

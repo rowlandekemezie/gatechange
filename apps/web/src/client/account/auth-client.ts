@@ -1,5 +1,6 @@
 import {
   Account,
+  ACCOUNT_PATH,
   SIGN_IN_EMAIL_CAPACITY_CODE,
 } from "@rat-stack/core/contracts";
 import type { SocialProviderValue } from "@rat-stack/core/contracts";
@@ -16,13 +17,19 @@ import type { LinkOutcomeValue, LinkPreviewValue } from "./model.js";
 
 const AUTH_PATH = "/api/auth";
 
-const RETURN_PATH = "/account";
+const CONSENT_PATH = "/oauth2/consent";
 
 const NamedLink = Schema.Struct({ email: Schema.String });
 
 const REFUSED_STATUS = 404;
 
 const SocialRedirect = Schema.Struct({ url: Schema.String });
+
+const ConsentRedirect = Schema.Struct({ url: Schema.String });
+
+const ConnectingClient = Schema.Struct({
+  client_name: Schema.optional(Schema.String),
+});
 
 const CurrentSession = Schema.NullOr(Schema.Struct({ user: Account }));
 
@@ -31,8 +38,6 @@ const CapacityRefusal = Schema.Struct({
 });
 
 const LIMITED_STATUS = 429;
-
-type AuthRequestBody = Readonly<Record<string, string>>;
 
 const linkOutcomeOf = (status: number): LinkOutcomeValue => {
   if (status === 200) {
@@ -55,7 +60,10 @@ const limitOutcomeOf = (response: HttpClientResponse.HttpClientResponse) =>
 const make = Effect.gen(function* makeAuthClient() {
   const http = yield* HttpClient.HttpClient;
 
-  const post = (path: string, body: AuthRequestBody) =>
+  const post = (
+    path: string,
+    body: Readonly<Record<string, string | boolean>>
+  ) =>
     http.execute(
       HttpClientRequest.post(`${AUTH_PATH}${path}`).pipe(
         HttpClientRequest.bodyJsonUnsafe(body)
@@ -63,6 +71,22 @@ const make = Effect.gen(function* makeAuthClient() {
     );
 
   return {
+    answerConnect: (request: string, accept: boolean) =>
+      post(CONSENT_PATH, { accept, oauth_query: request }).pipe(
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(ConsentRedirect)),
+        Effect.map(({ url }) => url)
+      ),
+    connectingClient: (clientId: string) =>
+      http
+        .get(`${AUTH_PATH}/oauth2/public-client`, {
+          urlParams: { client_id: clientId },
+        })
+        .pipe(
+          Effect.flatMap(HttpClientResponse.filterStatusOk),
+          Effect.flatMap(HttpClientResponse.schemaBodyJson(ConnectingClient)),
+          Effect.map(({ client_name }) => Option.fromNullishOr(client_name))
+        ),
     currentAccount: http.get(`${AUTH_PATH}/get-session`).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),
       Effect.flatMap(HttpClientResponse.schemaBodyJson(CurrentSession)),
@@ -87,11 +111,11 @@ const make = Effect.gen(function* makeAuthClient() {
           ),
           Effect.orElseSucceed(() => LinkPreview.Unknown())
         ),
-    requestLink: (email: string) =>
+    requestLink: (email: string, returnPath: string) =>
       post("/sign-in/magic-link", {
-        callbackURL: RETURN_PATH,
+        callbackURL: returnPath,
         email,
-        errorCallbackURL: RETURN_PATH,
+        errorCallbackURL: ACCOUNT_PATH,
       }).pipe(
         Effect.flatMap((response) =>
           response.status === LIMITED_STATUS
@@ -101,10 +125,10 @@ const make = Effect.gen(function* makeAuthClient() {
         Effect.orElseSucceed((): LinkOutcomeValue => "Failed")
       ),
     signOut: post("/sign-out", {}).pipe(Effect.asVoid),
-    socialRedirect: (provider: SocialProviderValue) =>
+    socialRedirect: (provider: SocialProviderValue, returnPath: string) =>
       post("/sign-in/social", {
-        callbackURL: RETURN_PATH,
-        errorCallbackURL: RETURN_PATH,
+        callbackURL: returnPath,
+        errorCallbackURL: ACCOUNT_PATH,
         provider,
       }).pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),

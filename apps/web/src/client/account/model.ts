@@ -39,6 +39,7 @@ export type LinkPreviewValue = typeof LinkPreview.Type;
 
 export const Model = Schema.Struct({
   link: LinkPreview,
+  returnPath: Schema.String,
   session: SessionState,
   signIn: SignInState,
   socialProviders: Schema.Array(SocialProvider),

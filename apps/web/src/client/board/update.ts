@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_PATH,
   regionGroups,
   roleLevels,
   seniorities,
@@ -21,6 +22,10 @@ import type { MessageValue as BillingMessageValue } from "../billing/message.js"
 import { isProMember, MembershipState } from "../billing/model.js";
 import type { ModelValue as BillingModelValue } from "../billing/model.js";
 import * as Billing from "../billing/update.js";
+import type { MessageValue as ConnectMessageValue } from "../connect/message.js";
+import { ConnectState } from "../connect/model.js";
+import type { ModelValue as ConnectModelValue } from "../connect/model.js";
+import * as Connect from "../connect/update.js";
 import type { ListingRouteValue } from "../listing.js";
 import { addressOf, boardUrl, Route, routeOfUrl } from "../route.js";
 import type { AccountNoticeValue, RouteValue } from "../route.js";
@@ -117,6 +122,36 @@ const foldConfirmEntered = (token: string) =>
   Update.foldChildStep({
     ...accountChild,
     update: Account.enteredConfirm(token),
+  });
+
+const foldAccountReturning = (returnPath: string) =>
+  Update.foldChildStep({
+    ...accountChild,
+    update: Account.returningTo(returnPath),
+  });
+
+const connectChild = {
+  read: (model: ModelValue) => Option.some(model.connect),
+  toParentMessage: (message: ConnectMessageValue) =>
+    Message.GotConnectMessage({ message }),
+  write: (model: ModelValue, connect: ConnectModelValue) =>
+    modifyFields(model, { connect: () => connect }),
+};
+
+const foldConnect = Update.foldChild({
+  ...connectChild,
+  update: Connect.update,
+});
+
+const foldConnectSignedIn = Update.foldChildStep({
+  ...connectChild,
+  update: Connect.signedIn,
+});
+
+const foldConnectEntered = (search: string) =>
+  Update.foldChildStep({
+    ...connectChild,
+    update: () => Connect.entered(search),
   });
 
 const savedSearchesChild = {
@@ -357,7 +392,27 @@ const isAwaitingListing = (model: ModelValue, route: ListingRouteValue) =>
   Schema.is(ListingState.Loading)(model.listing) &&
   Option.exists(listingRouteOf(model), (pending) => sameRoute(pending, route));
 
-const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
+const connectReturnPath = (model: ModelValue) =>
+  Schema.is(ConnectState.Ready)(model.connect.state)
+    ? model.connect.state.request.authorizePath
+    : ACCOUNT_PATH;
+
+const enteredConnect = (model: ModelValue, search: string): UpdateReturn =>
+  joined(
+    joined(
+      joined(foldConnectEntered(search)(model), (next) =>
+        foldAccountReturning(connectReturnPath(next))(next)
+      ),
+      (next) => enteredBilling(next, false)
+    ),
+    (next) => (isSignedIn(next) ? foldConnectSignedIn(next) : { model: next })
+  );
+
+const entered = (
+  model: ModelValue,
+  route: RouteValue,
+  search: string
+): UpdateReturn => {
   const routed = modifyFields(model, {
     agentTokens: (tokens) =>
       Schema.is(Route.Account)(model.route) && !Schema.is(Route.Account)(route)
@@ -382,6 +437,7 @@ const entered = (model: ModelValue, route: RouteValue): UpdateReturn => {
         commands: [ForgetSignInToken()],
         model: next,
       })),
+    Connect: () => enteredConnect(routed, search),
     Information: () => ({ model: routed }),
     Job: ({ id }) => enteredJob(routed, id),
     NotFound: () => ({ model: routed }),
@@ -399,7 +455,14 @@ const withStats = (step: UpdateReturn): UpdateReturn =>
 
 const arrivedAt = (model: ModelValue, url: Url): UpdateReturn => {
   const route = routeOfUrl(url);
-  const routed = withStats(entered(model, route));
+
+  const routed = withStats(
+    entered(
+      model,
+      route,
+      Option.getOrElse(url.search, () => "")
+    )
+  );
 
   const address = addressOf(url);
 
@@ -622,7 +685,12 @@ const movedShortlist = (model: ModelValue): UpdateReturn =>
 const followedBilling = (step: UpdateReturn): UpdateReturn =>
   SessionState.match<UpdateReturn>(step.model.account.session, {
     Checking: () => step,
-    SignedIn: () => joined(step, foldBillingStep(Billing.signedIn)),
+    SignedIn: () =>
+      joined(joined(step, foldBillingStep(Billing.signedIn)), (next) =>
+        Schema.is(Route.Connect)(next.route)
+          ? foldConnectSignedIn(next)
+          : { model: next }
+      ),
     SignedOut: () => ({
       ...step,
       model: modifyFields(step.model, {
@@ -705,6 +773,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
   const account = Account.init();
   const agentTokens = AgentTokens.init();
   const billing = Billing.init();
+  const connect = Connect.init();
   const savedSearches = SavedSearches.init();
 
   const routed = arrivedAt(
@@ -714,6 +783,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         agentTokens: agentTokens.model,
         awaitingEcho: [],
         billing: billing.model,
+        connect: connect.model,
         draftSearch: "",
         filters: defaultFilters,
         filtersOpen: false,
@@ -1012,6 +1082,8 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
         : { model },
     GotBillingMessage: ({ message: billingMessage }) =>
       followedEntitlement(model, foldBilling(model, billingMessage)),
+    GotConnectMessage: ({ message: connectMessage }) =>
+      foldConnect(model, connectMessage),
     GotSavedSearchesMessage: ({ message: savedSearchesMessage }) =>
       foldSavedSearches(model, savedSearchesMessage),
     SubmittedSearch: () =>

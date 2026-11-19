@@ -14,6 +14,7 @@ import { defineTaggedUnion } from "foldkit/schema";
 import { Model as AccountModel } from "../account/model.js";
 import { Model as AgentTokensModel } from "../agent-tokens/model.js";
 import { Model as BillingModel } from "../billing/model.js";
+import { Model as ConnectModel } from "../connect/model.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { Route } from "../route.js";
 import { Model as SavedSearchesModel } from "../saved-searches/model.js";
@@ -149,6 +150,7 @@ export const Model = Schema.Struct({
   agentTokens: AgentTokensModel,
   awaitingEcho: Schema.Array(Schema.String),
   billing: BillingModel,
+  connect: ConnectModel,
   draftSearch: Schema.String,
   filters: Filters,
   filtersOpen: Schema.Boolean,

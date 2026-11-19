@@ -145,6 +145,8 @@ const renderAccount = (
   );
 
 const unusedAuth = AuthClient.of({
+  answerConnect: () => Effect.die("unused auth"),
+  connectingClient: () => Effect.die("unused auth"),
   currentAccount: Effect.die("unused auth"),
   previewLink: () => Effect.die("unused auth"),
   requestLink: () => Effect.die("unused auth"),

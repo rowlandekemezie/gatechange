@@ -1,3 +1,4 @@
+import { ACCOUNT_PATH } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
@@ -47,16 +48,24 @@ export const init = (): UpdateReturn => ({
   commands: [FetchSession()],
   model: {
     link: LinkPreview.Checking(),
+    returnPath: ACCOUNT_PATH,
     session: SessionState.Checking(),
     signIn: editing(""),
     socialProviders: [],
   },
 });
 
-export const entered = (model: ModelValue): UpdateReturn =>
-  Schema.is(SessionState.SignedIn)(model.session)
-    ? { model }
-    : { commands: [FetchSignInOptions()], model };
+export const returningTo =
+  (returnPath: string) =>
+  (model: ModelValue): UpdateReturn => {
+    const returning = modifyFields(model, { returnPath: () => returnPath });
+
+    return Schema.is(SessionState.SignedIn)(model.session)
+      ? { model: returning }
+      : { commands: [FetchSignInOptions()], model: returning };
+  };
+
+export const entered = returningTo(ACCOUNT_PATH);
 
 export const enteredConfirm =
   (token: string) =>
@@ -82,7 +91,7 @@ const submitted = (model: ModelValue): UpdateReturn => {
   }
 
   return {
-    commands: [RequestLink({ email })],
+    commands: [RequestLink({ email, returnPath: model.returnPath })],
     model: modifyFields(model, {
       signIn: () => SignInState.Sending({ email }),
     }),
@@ -97,7 +106,7 @@ export const update = (
     ClickedRetryLinkCheck: ({ token }) => enteredConfirm(token)(model),
     ClickedSignOut: () => ({ commands: [SignOut()], model }),
     ClickedSocialSignIn: ({ provider }) => ({
-      commands: [StartSocialSignIn({ provider })],
+      commands: [StartSocialSignIn({ provider, returnPath: model.returnPath })],
       model,
     }),
     ClickedUseAnotherEmail: () => ({

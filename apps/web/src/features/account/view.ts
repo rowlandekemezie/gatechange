@@ -1,4 +1,7 @@
-import { MAGIC_LINK_TTL_MINUTES } from "@rat-stack/core/contracts";
+import {
+  ACCOUNT_PATH,
+  MAGIC_LINK_TTL_MINUTES,
+} from "@rat-stack/core/contracts";
 import type { SocialProviderValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Html, HtmlBuilder } from "foldkit/html";
@@ -22,7 +25,7 @@ interface AccountViewInputs {
   readonly notice: AccountNoticeValue;
 }
 
-const AUTH_RETURN_PATH = "/account";
+const AUTH_RETURN_PATH = ACCOUNT_PATH;
 
 const noticeText: Partial<Record<AccountNoticeValue, string>> = {
   LinkRefused:
@@ -179,6 +182,7 @@ const noticeNote = (
 
 const confirmForm = <M>(
   token: string,
+  next: string,
   label: string,
   h: HtmlBuilder<M>
 ): Html =>
@@ -186,11 +190,7 @@ const confirmForm = <M>(
     [h.Action("/api/auth/magic-link/verify"), h.Method("get")],
     [
       h.input([h.Type("hidden"), h.Name("token"), h.Value(token)]),
-      h.input([
-        h.Type("hidden"),
-        h.Name("callbackURL"),
-        h.Value(AUTH_RETURN_PATH),
-      ]),
+      h.input([h.Type("hidden"), h.Name("callbackURL"), h.Value(next)]),
       h.input([
         h.Type("hidden"),
         h.Name("errorCallbackURL"),
@@ -210,6 +210,7 @@ const browserNote = <M>(h: HtmlBuilder<M>): Html =>
 
 const namedLinkBody = <M>(
   token: string,
+  next: string,
   email: string,
   session: SessionStateValue,
   h: HtmlBuilder<M>
@@ -225,7 +226,19 @@ const namedLinkBody = <M>(
               [h.Class("account-lede")],
               [`You are already signed in as ${email}.`]
             ),
-            h.p([], [h.a([h.Href(AUTH_RETURN_PATH)], ["Go to your account"])]),
+            h.p(
+              [],
+              [
+                h.a(
+                  [h.Href(next)],
+                  [
+                    next === AUTH_RETURN_PATH
+                      ? "Go to your account"
+                      : "Continue",
+                  ]
+                ),
+              ]
+            ),
           ]
         : [
             h.p(
@@ -243,7 +256,7 @@ const namedLinkBody = <M>(
                 ),
               ]
             ),
-            confirmForm(token, `Switch to ${email}`, h),
+            confirmForm(token, next, `Switch to ${email}`, h),
             browserNote(h),
           ],
     SignedOut: () => [
@@ -253,12 +266,13 @@ const namedLinkBody = <M>(
           `This link signs you in as ${email}. If that is not your email address, close this page. The link works once.`,
         ]
       ),
-      confirmForm(token, "Finish signing in", h),
+      confirmForm(token, next, "Finish signing in", h),
       browserNote(h),
     ],
   });
 
 interface ConfirmViewInputs {
+  readonly next: string;
   readonly token: string;
 }
 
@@ -266,7 +280,7 @@ export const confirmSignInPage = defineView<
   ModelValue,
   MessageValue,
   ConfirmViewInputs
->(({ link, session }, { token }, h) =>
+>(({ link, session }, { next, token }, h) =>
   h.div(
     [h.Class("detail account")],
     [
@@ -275,7 +289,7 @@ export const confirmSignInPage = defineView<
         Checking: () => [
           h.p([h.Class("status"), h.Role("status")], ["Checking this link…"]),
         ],
-        Named: ({ email }) => namedLinkBody(token, email, session, h),
+        Named: ({ email }) => namedLinkBody(token, next, email, session, h),
         Refused: () => [
           h.p(
             [h.Class("sign-in-problem"), h.Role("alert")],
@@ -357,6 +371,10 @@ export const accountView = defineView<
         ]
       ),
   })
+);
+
+export const signInPanelView = defineView<ModelValue, MessageValue>(
+  (model, h) => h.div([h.Class("account")], [...signInPanel(model, h)])
 );
 
 export const accountTitle = (session: SessionStateValue): string =>

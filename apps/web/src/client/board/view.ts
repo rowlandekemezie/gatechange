@@ -13,6 +13,7 @@ import {
   accountTitle,
   accountView,
   confirmSignInPage,
+  signInPanelView,
 } from "../../features/account/view.js";
 import { agentTokensPanel } from "../../features/agent-tokens/view.js";
 import {
@@ -21,6 +22,7 @@ import {
   boardPage,
   boardTitle,
 } from "../../features/board/view.js";
+import { connectView } from "../../features/connect/view.js";
 import { siteHeader } from "../../features/header/view.js";
 import {
   informationMeta,
@@ -35,6 +37,7 @@ import {
   trackerNotices,
 } from "../../features/shortlist/view.js";
 import { SessionState } from "../account/model.js";
+import { ConnectState } from "../connect/model.js";
 import {
   boardUrl,
   canonicalPathOf,
@@ -193,15 +196,44 @@ export const view = (model: ModelValue, h: H): Document =>
             ),
           Board: () => boardPage(model, h),
           Company: () => listingPage(model, h),
-          ConfirmSignIn: ({ token }) =>
+          ConfirmSignIn: ({ next, token }) =>
             h.submodel({
               model: model.account,
               slotId: "confirm-sign-in",
               toParentMessage: (message) =>
                 Message.GotAccountMessage({ message }),
               view: confirmSignInPage,
-              viewInputs: { token },
+              viewInputs: { next, token },
             }),
+          Connect: () =>
+            h.div(
+              [h.Class("account-page")],
+              [
+                h.submodel({
+                  model: model.connect,
+                  slotId: "connect",
+                  toParentMessage: (message) =>
+                    Message.GotConnectMessage({ message }),
+                  view: connectView,
+                  viewInputs: {
+                    membership: model.billing.membership,
+                    session: model.account.session,
+                  },
+                }),
+                ...(Schema.is(SessionState.SignedOut)(model.account.session) &&
+                !Schema.is(ConnectState.Invalid)(model.connect.state)
+                  ? [
+                      h.submodel({
+                        model: model.account,
+                        slotId: "connect-sign-in",
+                        toParentMessage: (message) =>
+                          Message.GotAccountMessage({ message }),
+                        view: signInPanelView,
+                      }),
+                    ]
+                  : []),
+              ]
+            ),
           Information: ({ page }) => informationPage(page, h),
           Job: () => jobPage(model, h),
           NotFound: () => notFoundPage(model, h),
@@ -229,6 +261,7 @@ export const view = (model: ModelValue, h: H): Document =>
         Board: () => boardTitle(model),
         Company: () => listingTitle(model),
         ConfirmSignIn: () => "Finish signing in",
+        Connect: () => "Connect an app",
         Information: ({ page }) => informationMeta(page).title,
         Job: () => jobTitle(model),
         NotFound: () => "Page not found",
