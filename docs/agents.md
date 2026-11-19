@@ -20,6 +20,8 @@ ChatGPT custom connectors and other MCP clients that support OAuth can connect w
 
 The server publishes its protected resource metadata at `/.well-known/oauth-protected-resource`. The authorization server is `https://gatechange.dev/api/auth`, with its metadata at `/.well-known/oauth-authorization-server/api/auth`. Clients must use PKCE with `S256`. Access tokens last one hour. Refresh tokens last 30 days, and each refresh returns a new one.
 
+The connection keeps working after your Gate Change browser session ends on its own. Signing out on the browser where you allowed the connection ends it, and the app must ask you to connect again. Signing out on another browser leaves it connected.
+
 The Pro tools need an active Pro membership, the same as with an agent token. If Pro ends, the server answers 403 until you renew.
 
 ## What a token adds

@@ -39,6 +39,7 @@ const migratedDatabase = () => {
 
 const makeAuth = () => {
   const sent: MagicLinkRequest[] = [];
+  const database = migratedDatabase();
 
   const auth = betterAuth({
     ...authOptions({
@@ -52,11 +53,11 @@ const makeAuth = () => {
       },
       social: {},
     }),
-    database: migratedDatabase(),
+    database,
     secret: "test-secret-test-secret-test-secret-0",
   });
 
-  return { auth, sent };
+  return { auth, database, sent };
 };
 
 type Auth = ReturnType<typeof makeAuth>["auth"];
@@ -203,7 +204,7 @@ const tokenRequest = (auth: Auth, fields: Record<string, string>) =>
   });
 
 const connected = Effect.gen(function* connected() {
-  const { auth, sent } = makeAuth();
+  const { auth, database, sent } = makeAuth();
   const { client_id } = yield* register(auth);
   const { challenge, verifier } = yield* pkce;
   const cookie = yield* signIn(auth, sent, "member@example.com");
@@ -232,8 +233,29 @@ const connected = Effect.gen(function* connected() {
     redirect_uri: REDIRECT_URI,
   }).pipe(Effect.flatMap(jsonOf(Tokens)));
 
-  return { approved, auth, client_id, consentUrl, tokens };
+  return {
+    approved,
+    auth,
+    client_id,
+    consentUrl,
+    cookie,
+    database,
+    sent,
+    tokens,
+  };
 });
+
+const refresh = (auth: Auth, clientId: string, refreshToken: string) =>
+  tokenRequest(auth, {
+    client_id: clientId,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+
+const signOut = (auth: Auth, cookie: string) =>
+  call(auth, "/api/auth/sign-out", { body: "{}", cookie });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -391,6 +413,112 @@ describe("MCP OAuth provider", () => {
       vi.setSystemTime(T0 + (tokens.expires_in + 1) * 1000);
 
       expect(yield* holderOf(auth, tokens.access_token)).toBeNull();
+    })
+  );
+
+  it.effect(
+    "keeps the connection working after the browser session it was granted from expires",
+    () =>
+      Effect.gen(function* sessionExpired() {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(T0);
+
+        const { auth, client_id, database, tokens } = yield* connected;
+
+        database
+          .prepare("UPDATE session SET expiresAt = ?")
+          .run("2026-11-19T11:59:59.000Z");
+
+        expect(yield* holderOf(auth, tokens.access_token)).toMatchObject({
+          email: "member@example.com",
+        });
+
+        const refreshed = yield* refresh(
+          auth,
+          client_id,
+          tokens.refresh_token
+        ).pipe(Effect.flatMap(jsonOf(Tokens)));
+
+        expect(yield* holderOf(auth, refreshed.access_token)).toMatchObject({
+          email: "member@example.com",
+        });
+      })
+  );
+
+  it.effect(
+    "keeps the connection after an expired browser session is cleaned up",
+    () =>
+      Effect.gen(function* sessionCleanedUp() {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(T0);
+
+        const { auth, client_id, cookie, database, tokens } = yield* connected;
+
+        vi.setSystemTime(T0 + 8 * DAY_MS);
+
+        yield* call(auth, "/api/auth/get-session", { cookie });
+
+        expect(database.prepare("SELECT id FROM session").all()).toStrictEqual(
+          []
+        );
+
+        const refreshed = yield* refresh(
+          auth,
+          client_id,
+          tokens.refresh_token
+        ).pipe(Effect.flatMap(jsonOf(Tokens)));
+
+        expect(yield* holderOf(auth, refreshed.access_token)).toMatchObject({
+          email: "member@example.com",
+        });
+      })
+  );
+
+  it.effect(
+    "signing out of the browser that granted the connection revokes it",
+    () =>
+      Effect.gen(function* signedOut() {
+        const { auth, client_id, cookie, tokens } = yield* connected;
+
+        expect((yield* signOut(auth, cookie)).status).toBe(200);
+        expect(yield* holderOf(auth, tokens.access_token)).toBeNull();
+        expect(
+          (yield* refresh(auth, client_id, tokens.refresh_token)).status
+        ).toBe(400);
+      })
+  );
+
+  it.effect(
+    "signing out of the browser after a refresh revokes the refreshed tokens",
+    () =>
+      Effect.gen(function* signedOutAfterRefresh() {
+        const { auth, client_id, cookie, tokens } = yield* connected;
+
+        const refreshed = yield* refresh(
+          auth,
+          client_id,
+          tokens.refresh_token
+        ).pipe(Effect.flatMap(jsonOf(Tokens)));
+
+        yield* signOut(auth, cookie);
+
+        expect(yield* holderOf(auth, refreshed.access_token)).toBeNull();
+        expect(
+          (yield* refresh(auth, client_id, refreshed.refresh_token)).status
+        ).toBe(400);
+      })
+  );
+
+  it.effect("signing out of another browser leaves the connection", () =>
+    Effect.gen(function* otherBrowser() {
+      const { auth, sent, tokens } = yield* connected;
+      const other = yield* signIn(auth, sent, "member@example.com");
+
+      yield* signOut(auth, other);
+
+      expect(yield* holderOf(auth, tokens.access_token)).toMatchObject({
+        email: "member@example.com",
+      });
     })
   );
 });

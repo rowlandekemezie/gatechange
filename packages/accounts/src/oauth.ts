@@ -7,7 +7,7 @@ import {
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAUTH_REFRESH_TOKEN_PREFIX,
 } from "@rat-stack/core";
-import type { BetterAuthPlugin, DBAdapter } from "better-auth";
+import type { BetterAuthPlugin, DBAdapter, Session } from "better-auth";
 import {
   createAuthEndpoint,
   createAuthMiddleware,
@@ -21,9 +21,11 @@ export const MCP_SCOPE = "mcp";
 
 export const OAUTH_SCOPES = [MCP_SCOPE, "offline_access"];
 
+const TOKEN_PATH = "/oauth2/token";
+
 const RESOURCE_PATHS: ReadonlySet<string> = new Set([
   "/oauth2/authorize",
-  "/oauth2/token",
+  TOKEN_PATH,
 ]);
 
 const TokenRequest = Schema.Struct({
@@ -42,6 +44,18 @@ const ActiveToken = Schema.Struct({
 });
 
 const decodeActiveToken = Schema.decodeUnknownOption(ActiveToken);
+
+const RefreshableGrant = Schema.Struct({
+  access_token: Schema.String,
+  refresh_token: Schema.String,
+});
+
+const decodeRefreshableGrant = Schema.decodeUnknownOption(RefreshableGrant);
+
+interface RefreshTokenRow {
+  readonly id: string;
+  readonly revoked?: Date | null;
+}
 
 export interface TokenHolder {
   readonly email: string;
@@ -120,6 +134,44 @@ const oauthProviderPlugin = () =>
 
 type OAuthProviderPlugin = ReturnType<typeof oauthProvider>;
 
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
+const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
+  // @effect-diagnostics-next-line globalDate:off -- better-auth stamps its rows with the same wall clock.
+  const now = new Date();
+
+  if (session.expiresAt < now) {
+    return;
+  }
+
+  const granted = await adapter.findMany<RefreshTokenRow>({
+    model: "oauthRefreshToken",
+    where: [{ field: "sessionId", value: session.id }],
+  });
+
+  const refreshIds = granted.filter((row) => !row.revoked).map((row) => row.id);
+
+  if (refreshIds.length === 0) {
+    return;
+  }
+
+  const inIds = (field: string) => [
+    { field, operator: "in" as const, value: refreshIds },
+  ];
+
+  await Promise.all([
+    adapter.updateMany({
+      model: "oauthRefreshToken",
+      update: { revoked: now },
+      where: inIds("id"),
+    }),
+    adapter.updateMany({
+      model: "oauthAccessToken",
+      update: { revoked: now },
+      where: inIds("refreshId"),
+    }),
+  ]);
+};
+
 const tokenHolderEndpoint = (provider: OAuthProviderPlugin) =>
   createAuthEndpoint.serverOnly(
     { body: Schema.toStandardSchemaV1(TokenRequest), method: "POST" },
@@ -169,6 +221,34 @@ export const mcpOAuth = (): readonly [BetterAuthPlugin, McpResourcePlugin] => {
     {
       endpoints: { oauthTokenHolder: tokenHolderEndpoint(provider) },
       hooks: {
+        after: [
+          {
+            // @effect-diagnostics-next-line asyncFunction:off -- better-auth hooks are Promise-returning middleware.
+            handler: createAuthMiddleware(async (ctx) => {
+              const grant = decodeRefreshableGrant(ctx.context.returned);
+
+              if (Option.isNone(grant)) {
+                return;
+              }
+
+              const api = getOAuthProviderApi(ctx, provider.options);
+
+              const stored = await api.hashToken(
+                grant.value.access_token.slice(
+                  OAUTH_ACCESS_TOKEN_PREFIX.length
+                ),
+                "access_token"
+              );
+
+              await ctx.context.adapter.update({
+                model: "oauthAccessToken",
+                update: { sessionId: null },
+                where: [{ field: "token", value: stored }],
+              });
+            }),
+            matcher: (context) => context.path === TOKEN_PATH,
+          },
+        ],
         before: [
           {
             // @effect-diagnostics-next-line asyncFunction:off -- better-auth hooks are Promise-returning middleware.
@@ -183,6 +263,20 @@ export const mcpOAuth = (): readonly [BetterAuthPlugin, McpResourcePlugin] => {
         ],
       },
       id: "mcp-resource",
+      init: (context) => ({
+        options: {
+          databaseHooks: {
+            session: {
+              delete: {
+                // @effect-diagnostics-next-line asyncFunction:off -- better-auth database hooks are Promise-returning.
+                before: async (session) => {
+                  await revokeGrantsOf(context.adapter, session);
+                },
+              },
+            },
+          },
+        },
+      }),
     },
   ];
 };
