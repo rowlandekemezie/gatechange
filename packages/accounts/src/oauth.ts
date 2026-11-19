@@ -148,26 +148,28 @@ const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
     where: [{ field: "sessionId", value: session.id }],
   });
 
-  const refreshIds = granted.filter((row) => !row.revoked).map((row) => row.id);
+  const live = granted.filter((row) => !row.revoked).map((row) => row.id);
 
-  if (refreshIds.length === 0) {
+  if (live.length === 0) {
     return;
   }
-
-  const inIds = (field: string) => [
-    { field, operator: "in" as const, value: refreshIds },
-  ];
 
   await Promise.all([
     adapter.updateMany({
       model: "oauthRefreshToken",
       update: { revoked: now },
-      where: inIds("id"),
+      where: [{ field: "id", operator: "in", value: live }],
     }),
     adapter.updateMany({
       model: "oauthAccessToken",
       update: { revoked: now },
-      where: inIds("refreshId"),
+      where: [
+        {
+          field: "refreshId",
+          operator: "in",
+          value: granted.map((row) => row.id),
+        },
+      ],
     }),
   ]);
 };
@@ -240,11 +242,18 @@ export const mcpOAuth = (): readonly [BetterAuthPlugin, McpResourcePlugin] => {
                 "access_token"
               );
 
-              await ctx.context.adapter.update({
-                model: "oauthAccessToken",
-                update: { sessionId: null },
-                where: [{ field: "token", value: stored }],
-              });
+              try {
+                await ctx.context.adapter.update({
+                  model: "oauthAccessToken",
+                  update: { sessionId: null },
+                  where: [{ field: "token", value: stored }],
+                });
+              } catch (error) {
+                ctx.context.logger.warn(
+                  "oauth access token stays bound to its browser session",
+                  error
+                );
+              }
             }),
             matcher: (context) => context.path === TOKEN_PATH,
           },

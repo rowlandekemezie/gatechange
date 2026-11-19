@@ -502,6 +502,7 @@ describe("MCP OAuth provider", () => {
 
         yield* signOut(auth, cookie);
 
+        expect(yield* holderOf(auth, tokens.access_token)).toBeNull();
         expect(yield* holderOf(auth, refreshed.access_token)).toBeNull();
         expect(
           (yield* refresh(auth, client_id, refreshed.refresh_token)).status
