@@ -14,7 +14,17 @@ Pro members can create an agent token on their account page and pass it as a hea
 claude mcp add --transport http gate-change https://gatechange.dev/mcp --header "Authorization: Bearer <your-token>"
 ```
 
-A token raises the limit to 120 calls a minute. It also adds tools to save searches (`saveSearch`, `savedSearches`, `deleteSearch`) and to track applications (`trackJob`, `trackedJobs`, `noteTrackedJob`, `untrackJob`).
+## Connect ChatGPT or another OAuth client
+
+ChatGPT custom connectors and other MCP clients that support OAuth can connect without a token. Add `https://gatechange.dev/mcp` as the server URL and choose OAuth. The client registers itself, sends you to Gate Change to sign in, and asks you to allow the connection. It then calls the server as your account.
+
+The server publishes its protected resource metadata at `/.well-known/oauth-protected-resource`. The authorization server is `https://gatechange.dev/api/auth`, with its metadata at `/.well-known/oauth-authorization-server/api/auth`. Clients must use PKCE with `S256`. Access tokens last one hour. Refresh tokens last 30 days, and each refresh returns a new one.
+
+The Pro tools need an active Pro membership, the same as with an agent token. If Pro ends, the server answers 403 until you renew.
+
+## What a token adds
+
+An agent token or an OAuth connection raises the limit to 120 calls a minute. It also adds tools to save searches (`saveSearch`, `savedSearches`, `deleteSearch`) and to track applications (`trackJob`, `trackedJobs`, `noteTrackedJob`, `untrackJob`).
 
 ## What the tools return
 
