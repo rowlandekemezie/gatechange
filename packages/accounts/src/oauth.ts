@@ -134,6 +134,8 @@ const oauthProviderPlugin = () =>
 
 type OAuthProviderPlugin = ReturnType<typeof oauthProvider>;
 
+const NEWEST_GRANTS_REVOKED = 50;
+
 // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
 const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
   // @effect-diagnostics-next-line globalDate:off -- better-auth stamps its rows with the same wall clock.
@@ -144,22 +146,26 @@ const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
   }
 
   const granted = await adapter.findMany<RefreshTokenRow>({
+    limit: NEWEST_GRANTS_REVOKED,
     model: "oauthRefreshToken",
+    sortBy: { direction: "desc", field: "createdAt" },
     where: [{ field: "sessionId", value: session.id }],
   });
 
-  const live = granted.filter((row) => !row.revoked).map((row) => row.id);
-
-  if (live.length === 0) {
+  if (granted.length === 0) {
     return;
   }
 
+  const live = granted.filter((row) => !row.revoked).map((row) => row.id);
+
   await Promise.all([
-    adapter.updateMany({
-      model: "oauthRefreshToken",
-      update: { revoked: now },
-      where: [{ field: "id", operator: "in", value: live }],
-    }),
+    live.length === 0
+      ? Promise.resolve()
+      : adapter.updateMany({
+          model: "oauthRefreshToken",
+          update: { revoked: now },
+          where: [{ field: "id", operator: "in", value: live }],
+        }),
     adapter.updateMany({
       model: "oauthAccessToken",
       update: { revoked: now },
@@ -251,7 +257,7 @@ export const mcpOAuth = (): readonly [BetterAuthPlugin, McpResourcePlugin] => {
               } catch (error) {
                 ctx.context.logger.warn(
                   "oauth access token stays bound to its browser session",
-                  error
+                  error instanceof Error ? error.name : "unknown error"
                 );
               }
             }),

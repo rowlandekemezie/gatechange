@@ -510,6 +510,41 @@ describe("MCP OAuth provider", () => {
       })
   );
 
+  it.effect(
+    "signing out after more refreshes than one query can bind still revokes the connection",
+    () =>
+      Effect.gen(function* signedOutAfterManyRefreshes() {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(T0);
+
+        const { auth, client_id, cookie, database, tokens } = yield* connected;
+        let latest = tokens;
+        let previous = tokens;
+
+        for (let hop = 1; hop <= 120; hop += 1) {
+          vi.setSystemTime(T0 + hop * 4 * 60 * 1000);
+          previous = latest;
+          latest = yield* refresh(auth, client_id, latest.refresh_token).pipe(
+            Effect.flatMap(jsonOf(Tokens))
+          );
+        }
+
+        expect(
+          database
+            .prepare('SELECT COUNT(*) AS n FROM "oauthRefreshToken"')
+            .get()
+        ).toEqual({ n: 121 });
+
+        expect((yield* signOut(auth, cookie)).status).toBe(200);
+
+        expect(yield* holderOf(auth, latest.access_token)).toBeNull();
+        expect(yield* holderOf(auth, previous.access_token)).toBeNull();
+        expect(
+          (yield* refresh(auth, client_id, latest.refresh_token)).status
+        ).toBe(400);
+      })
+  );
+
   it.effect("signing out of another browser leaves the connection", () =>
     Effect.gen(function* otherBrowser() {
       const { auth, sent, tokens } = yield* connected;
