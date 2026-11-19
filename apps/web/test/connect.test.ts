@@ -1,15 +1,18 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Account } from "@rat-stack/core/contracts";
-import { Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
+import { renderToString } from "foldkit/experimental/server";
 import { fromString } from "foldkit/url";
 
 import { Message as AccountMessage } from "../src/client/account/message.js";
+import { SessionState } from "../src/client/account/model.js";
+import { application } from "../src/client/application.js";
 import { Message } from "../src/client/board/message.js";
 import { Preload } from "../src/client/board/model.js";
 import type { ModelValue } from "../src/client/board/model.js";
 import { init, update } from "../src/client/board/update.js";
 import { Message as ConnectMessage } from "../src/client/connect/message.js";
-import { ConnectState } from "../src/client/connect/model.js";
+import { ClientName, ConnectState } from "../src/client/connect/model.js";
 import { Route, routeOfUrl } from "../src/client/route.js";
 
 const ada = Schema.decodeSync(Account)({
@@ -85,6 +88,43 @@ const withSession = (step: Step, account: Option.Option<typeof ada>) =>
 
 const connectSent = (step: Step, message: typeof ConnectMessage.Type) =>
   sent(step, Message.GotConnectMessage({ message }));
+
+const consentTextFor = (name: string, redirectHost: string) =>
+  renderToString(
+    {
+      ...application,
+      init: (...args: Parameters<typeof application.init>) => {
+        const started = application.init(...args);
+
+        return {
+          ...started,
+          model: {
+            ...started.model,
+            account: {
+              ...started.model.account,
+              session: SessionState.SignedIn({ account: ada }),
+            },
+            connect: {
+              state: ConnectState.Ready({
+                client: ClientName.Named({ name }),
+                request: {
+                  authorizePath,
+                  clientId: "client-1",
+                  redirectHost,
+                  signed: signedSearch.toString(),
+                },
+              }),
+            },
+          },
+        };
+      },
+    },
+    { flags, url: `https://jobs.example${connectPath}` }
+  ).pipe(
+    Effect.map(({ html }) =>
+      html.replaceAll(/<[^>]+>/gu, " ").replaceAll(/\s+/gu, " ")
+    )
+  );
 
 const namesOf = (step: Step) => step.commands.map(({ name }) => name);
 
@@ -186,4 +226,18 @@ describe("connect an app", () => {
       ).toStrictEqual(Route.ConfirmSignIn({ next: "/account", token: "t1" }));
     }
   });
+
+  it.effect(
+    "names the app by its verified return host and marks its own name as unverified",
+    () =>
+      Effect.gen(function* consent() {
+        const text = yield* consentTextFor("ChatGPT", "attacker.example");
+
+        expect(text).toContain("Connect attacker.example to Gate Change");
+        expect(text).not.toContain("Connect ChatGPT");
+        expect(text).toContain("Returns to attacker.example");
+        expect(text).toContain("Calls itself ChatGPT");
+        expect(text).toContain("Gate Change has not checked it");
+      })
+  );
 });

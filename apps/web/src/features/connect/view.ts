@@ -22,13 +22,16 @@ interface ConnectViewInputs {
   readonly session: SessionStateValue;
 }
 
-const appNameOf = (client: ClientNameValue) =>
+const claimedNameOf = (client: ClientNameValue) =>
   ClientName.match<string>(client, {
-    Loading: () => "An app",
+    Loading: () => "Checking…",
     Named: ({ name }) => name,
-    NotAsked: () => "An app",
-    Unnamed: () => "An app",
+    NotAsked: () => "Checking…",
+    Unnamed: () => "No name given",
   });
+
+const connectTitle = (request: ConnectRequestValue) =>
+  `Connect ${request.redirectHost} to Gate Change`;
 
 const title = (h: HtmlBuilder<MessageValue>, text: string): Html =>
   h.h1([h.Class("detail-title")], [text]);
@@ -41,10 +44,18 @@ const passOf = (
   h.dl(
     [h.Class("connect-pass")],
     [
-      h.dt([], ["App"]),
-      h.dd([], [appNameOf(client)]),
       h.dt([], ["Returns to"]),
-      h.dd([], [request.redirectHost]),
+      h.dd([], [h.strong([], [request.redirectHost])]),
+      h.dt([], ["Calls itself"]),
+      h.dd([], [claimedNameOf(client)]),
+    ]
+  );
+
+const claimNote = (h: HtmlBuilder<MessageValue>): Html =>
+  h.p(
+    [h.Class("account-lede")],
+    [
+      "The app chose its own name, and Gate Change has not checked it. Allow only if the return address belongs to the app you started connecting from.",
     ]
   );
 
@@ -102,7 +113,7 @@ const consentBody = (
   request: ConnectRequestValue,
   answering?: boolean
 ): readonly Html[] => [
-  title(h, `Connect ${appNameOf(client)} to Gate Change`),
+  title(h, connectTitle(request)),
   h.p(
     [h.Class("account-lede")],
     [
@@ -110,6 +121,7 @@ const consentBody = (
     ]
   ),
   passOf(h, client, request),
+  claimNote(h),
   h.p([h.Class("account-email")], [`Signed in as ${email}`]),
   ...proNote(h, membership),
   answerButtons(h, answering),
@@ -134,8 +146,8 @@ const signedInBody = (
   ConnectState.match<readonly Html[]>(model.state, {
     Answering: ({ accept, client, request }) =>
       consentBody(h, email, membership, client, request, accept),
-    Failed: ({ client }) => [
-      title(h, `Connect ${appNameOf(client)} to Gate Change`),
+    Failed: ({ request }) => [
+      title(h, connectTitle(request)),
       h.p(
         [h.Class("sign-in-problem"), h.Role("alert")],
         [
