@@ -1,3 +1,4 @@
+import { mcpResourceOf, OAUTH_SCOPES } from "@rat-stack/accounts";
 import { toToolkit } from "@rat-stack/capability/toolkit";
 import {
   agentCapabilities,
@@ -10,6 +11,9 @@ import {
   freeAgentCapabilities,
   isPro,
   MCP_PATH,
+  OAUTH_ACCESS_TOKEN_PREFIX,
+  OAuthAccessTokens,
+  PROTECTED_RESOURCE_METADATA_PATH,
   secretHashOf,
   ServedSources,
   TOKEN_MCP_CALLS_PER_MINUTE,
@@ -40,7 +44,7 @@ export const MCP_SERVER_VERSION = "1.0.0";
 const MCP_PROTOCOLS = [McpProtocol.v2026_07_28] as const;
 
 const INSTRUCTIONS =
-  "Search open engineering leadership roles, from engineering managers to VPs, with listJobs, and read board health with boardStats. The board has no level above VP. A RemoteUnitedStates or RemoteCanada search also returns roles open across North America and worldwide, the same as the website. Listings from sources whose terms forbid agent access are left out, so the website can show more roles. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page to save searches and keep an application tracker.";
+  "Search open engineering leadership roles, from engineering managers to VPs, with listJobs, and read board health with boardStats. The board has no level above VP. A RemoteUnitedStates or RemoteCanada search also returns roles open across North America and worldwide, the same as the website. Listings from sources whose terms forbid agent access are left out, so the website can show more roles. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page, or by connecting an app such as ChatGPT through OAuth, to save searches and keep an application tracker.";
 
 export const agentToolkit = toToolkit(agentCapabilities);
 
@@ -85,8 +89,33 @@ export class AgentTokenRefused extends Data.TaggedError("AgentTokenRefused")<{
   readonly status: 401 | 403;
 }> {}
 
+const credentials = {
+  AgentToken: {
+    holderOf: (secret: string, _resource: string) =>
+      secretHashOf(secret).pipe(
+        Effect.flatMap((hash) =>
+          AgentTokenStore.use((store) => store.holderOf(hash))
+        )
+      ),
+    unknown:
+      "This agent token is unknown or revoked. Issue a new one on your account page, or drop the Authorization header to use the free tools.",
+  },
+  OAuth: {
+    holderOf: (secret: string, resource: string) =>
+      OAuthAccessTokens.use((tokens) => tokens.holderOf(secret, resource)),
+    unknown:
+      "This access token is unknown, expired or revoked. Reconnect your app to Gate Change, or drop the Authorization header to use the free tools.",
+  },
+} as const;
+
+const credentialOf = (secret: string) =>
+  credentials[
+    secret.startsWith(OAUTH_ACCESS_TOKEN_PREFIX) ? "OAuth" : "AgentToken"
+  ];
+
 export const agentViewerOf = Effect.fn("agentViewerOf")(function* agentViewerOf(
-  authorization: string | undefined
+  authorization: string | undefined,
+  origin: string
 ) {
   const secret = bearerSecretOf(authorization);
 
@@ -94,13 +123,16 @@ export const agentViewerOf = Effect.fn("agentViewerOf")(function* agentViewerOf(
     return Viewer.Anonymous();
   }
 
-  const hash = yield* secretHashOf(secret.value);
-  const holder = yield* AgentTokenStore.use((store) => store.holderOf(hash));
+  const credential = credentialOf(secret.value);
+
+  const holder = yield* credential.holderOf(
+    secret.value,
+    mcpResourceOf(origin)
+  );
 
   if (Option.isNone(holder)) {
     return yield* new AgentTokenRefused({
-      message:
-        "This agent token is unknown or revoked. Issue a new one on your account page, or drop the Authorization header to use the free tools.",
+      message: credential.unknown,
       status: 401,
     });
   }
@@ -122,14 +154,22 @@ const jsonRpcError = (status: number, message: string, headers = {}) =>
     { headers: { "cache-control": "private, no-store", ...headers }, status }
   );
 
-const refusalOf = (failure: AgentTokenRefused | JobStoreUnavailable) =>
+const originOf = (request: HttpServerRequest.HttpServerRequest) =>
+  new URL(request.originalUrl).origin;
+
+const refusalOf = (
+  origin: string,
+  failure: AgentTokenRefused | JobStoreUnavailable
+) =>
   Match.valueTags(failure, {
     AgentTokenRefused: ({ message, status }) =>
       jsonRpcError(
         status,
         message,
         status === 401
-          ? { "www-authenticate": 'Bearer error="invalid_token"' }
+          ? {
+              "www-authenticate": `Bearer error="invalid_token", resource_metadata="${origin}${PROTECTED_RESOURCE_METADATA_PATH}"`,
+            }
           : {}
       ),
     JobStoreUnavailable: () =>
@@ -143,9 +183,10 @@ const refusalOf = (failure: AgentTokenRefused | JobStoreUnavailable) =>
 export const serveMcp =
   <E, R>(mcpHttp: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
   (request: HttpServerRequest.HttpServerRequest) =>
-    agentViewerOf(request.headers.authorization).pipe(
+    agentViewerOf(request.headers.authorization, originOf(request)).pipe(
       Effect.matchEffect({
-        onFailure: (failure) => Effect.succeed(refusalOf(failure)),
+        onFailure: (failure) =>
+          Effect.succeed(refusalOf(originOf(request), failure)),
         onSuccess: (viewer) =>
           withStreamableHttpCompatibility(
             mcpHttp,
@@ -158,7 +199,12 @@ export const serveMcp =
 export const mcpDiscovery = (origin: string) => ({
   authentication: {
     description:
-      "Free tools need no token. Pro tools need a personal token from the account page, sent as Authorization: Bearer <token> on every request.",
+      "Free tools need no token. Pro tools need a personal token from the account page or an OAuth 2.1 access token, sent as Authorization: Bearer <token> on every request.",
+    oauth: {
+      authorizationServer: `${origin}/api/auth`,
+      protectedResourceMetadata: `${origin}${PROTECTED_RESOURCE_METADATA_PATH}`,
+      scopes: OAUTH_SCOPES,
+    },
     required: false,
     scheme: "bearer",
     tokens: `${origin}/account`,
@@ -184,7 +230,21 @@ export const mcpDiscovery = (origin: string) => ({
 export const serveMcpDiscovery = (
   request: HttpServerRequest.HttpServerRequest
 ) =>
-  HttpServerResponse.jsonUnsafe(
-    mcpDiscovery(new URL(request.originalUrl).origin),
-    { headers: { "access-control-allow-origin": "*" } }
-  );
+  HttpServerResponse.jsonUnsafe(mcpDiscovery(originOf(request)), {
+    headers: { "access-control-allow-origin": "*" },
+  });
+
+export const protectedResourceMetadata = (origin: string) => ({
+  authorization_servers: [`${origin}/api/auth`],
+  bearer_methods_supported: ["header"],
+  resource: mcpResourceOf(origin),
+  resource_name: "Gate Change",
+  scopes_supported: OAUTH_SCOPES,
+});
+
+export const serveProtectedResourceMetadata = (
+  request: HttpServerRequest.HttpServerRequest
+) =>
+  HttpServerResponse.jsonUnsafe(protectedResourceMetadata(originOf(request)), {
+    headers: { "access-control-allow-origin": "*" },
+  });

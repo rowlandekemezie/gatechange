@@ -1,6 +1,12 @@
 import { isAuthPath, respondAsViewer } from "@rat-stack/accounts";
 import { STRIPE_WEBHOOK_PATH } from "@rat-stack/billing";
-import { MCP_DISCOVERY_PATH, MCP_PATH, SITE_ORIGIN } from "@rat-stack/core";
+import {
+  AUTHORIZATION_SERVER_METADATA_PATH,
+  MCP_DISCOVERY_PATH,
+  MCP_PATH,
+  PROTECTED_RESOURCE_METADATA_PATH,
+  SITE_ORIGIN,
+} from "@rat-stack/core";
 import type { AccountStore, ViewerValue } from "@rat-stack/core";
 import { UNSUBSCRIBE_PATH } from "@rat-stack/digest-mailer";
 import { Effect } from "effect";
@@ -11,6 +17,11 @@ const pathOf = (url: string) => new URL(url, SITE_ORIGIN).pathname;
 const RPC_PATH = "/rpc";
 
 const BATCHED_RPC = /^\s*\[/u;
+
+const protectedResourcePaths: ReadonlySet<string> = new Set([
+  PROTECTED_RESOURCE_METADATA_PATH,
+  `${PROTECTED_RESOURCE_METADATA_PATH}${MCP_PATH}`,
+]);
 
 export interface Routes<Error, Context> {
   readonly accountStore: AccountStore["Service"];
@@ -23,6 +34,9 @@ export interface Routes<Error, Context> {
     request: HttpServerRequest.HttpServerRequest
   ) => Effect.Effect<HttpServerResponse.HttpServerResponse, Error, Context>;
   readonly mcpDiscovery: (
+    request: HttpServerRequest.HttpServerRequest
+  ) => HttpServerResponse.HttpServerResponse;
+  readonly protectedResourceMetadata: (
     request: HttpServerRequest.HttpServerRequest
   ) => HttpServerResponse.HttpServerResponse;
   readonly rpc: (
@@ -40,11 +54,18 @@ export const handleRoutes = <Error, Context>(routes: Routes<Error, Context>) =>
   Effect.gen(function* handle() {
     const request = yield* HttpServerRequest.HttpServerRequest;
 
-    if (isAuthPath(request.url)) {
+    const path = pathOf(request.url);
+
+    if (
+      isAuthPath(request.url) ||
+      path.startsWith(`${AUTHORIZATION_SERVER_METADATA_PATH}/`)
+    ) {
       return yield* routes.auth;
     }
 
-    const path = pathOf(request.url);
+    if (protectedResourcePaths.has(path)) {
+      return routes.protectedResourceMetadata(request);
+    }
 
     if (path === MCP_PATH) {
       return yield* routes.mcp(request);

@@ -8,6 +8,7 @@ import {
   freeAgentCapabilities,
   jobBoardContracts,
   JobStore,
+  OAuthAccessTokens,
   proAgentCapabilities,
   PostingFeeds,
   SavedSearchId,
@@ -26,7 +27,12 @@ import type {
 import { Array, Effect, Layer, Option, Schema } from "effect";
 import { HttpEffect, HttpRouter, HttpServerResponse } from "effect/http";
 
-import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "../src/mcp.js";
+import {
+  mcpAppLayer,
+  serveMcp,
+  serveMcpDiscovery,
+  serveProtectedResourceMetadata,
+} from "../src/mcp.js";
 import { handleRoutes } from "../src/route.js";
 import { migratedDatabase, storeOn } from "./sqlite-job-store.js";
 
@@ -41,6 +47,10 @@ const PRO_SECRET = "jobs_pat_pro";
 const OTHER_PRO_SECRET = "jobs_pat_other_pro";
 
 const FREE_SECRET = "jobs_pat_free";
+
+const OAUTH_PRO = "jobs_oat_pro";
+
+const OAUTH_FREE = "jobs_oat_free";
 
 const accountOf = (id: string): AccountValue =>
   Schema.decodeSync(Account)({ email: `${id}@example.com`, id, name: id });
@@ -270,6 +280,23 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
       })
     );
 
+    const oauthHolders = new Map<string, AccountValue>([
+      [OAUTH_PRO, pro],
+      [OAUTH_FREE, free],
+    ]);
+
+    const oauth = Layer.succeed(
+      OAuthAccessTokens,
+      OAuthAccessTokens.of({
+        holderOf: (token, resource) =>
+          Effect.succeed(
+            resource === `${ORIGIN}/mcp`
+              ? Option.fromNullishOr(oauthHolders.get(token))
+              : Option.none()
+          ),
+      })
+    );
+
     const mcpHttp = yield* HttpRouter.toHttpEffect(mcpAppLayer(stores));
 
     const accountStore: AccountStore["Service"] = {
@@ -283,9 +310,10 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
         auth: Effect.succeed(HttpServerResponse.text("auth")),
         mcp: (request) =>
           serveMcp(mcpHttp)(request).pipe(
-            Effect.provide(Layer.mergeAll(tokens, stores))
+            Effect.provide(Layer.mergeAll(tokens, oauth, stores))
           ),
         mcpDiscovery: serveMcpDiscovery,
+        protectedResourceMetadata: serveProtectedResourceMetadata,
         rpc: () => Effect.succeed(HttpServerResponse.text("rpc")),
         stripeWebhook: () => Effect.succeed(HttpServerResponse.text("stripe")),
         unsubscribe: () =>
@@ -314,6 +342,8 @@ const fixtureWith = (boardStore?: Layer.Layer<JobStore>) =>
 const fixture = fixtureWith();
 
 type Send = Effect.Success<typeof fixture>["send"];
+
+const RESOURCE_CHALLENGE = `Bearer error="invalid_token", resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource"`;
 
 const MCP_HEADERS = {
   accept: "application/json, text/event-stream",
@@ -1242,7 +1272,7 @@ describe("board over MCP", () => {
 
         expect(refused.status).toBe(401);
         expect(refused.headers.get("www-authenticate")).toBe(
-          'Bearer error="invalid_token"'
+          RESOURCE_CHALLENGE
         );
         expect(refused.message.error?.message).toContain("unknown or revoked");
       }).pipe(Effect.scoped)
@@ -1263,6 +1293,90 @@ describe("board over MCP", () => {
   );
 
   it.effect(
+    "takes a Pro member from an OAuth access token, the same as an agent token",
+    () =>
+      Effect.gen(function* oauthMember() {
+        const { savedBy, send } = yield* fixture;
+
+        const result = yield* client(send, `Bearer ${OAUTH_PRO}`).tool(
+          "saveSearch",
+          {
+            filters: {
+              regions: ["RemoteCanada"],
+              roles: ["Director"],
+              search: "",
+            },
+          }
+        );
+
+        expect(result.isError).toBe(false);
+        expect(savedBy).toStrictEqual(["user_pro"]);
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "refuses an unknown or expired OAuth token with 401 pointing at the resource metadata",
+    () =>
+      Effect.gen(function* oauthUnknown() {
+        const { send } = yield* fixture;
+
+        const refused = yield* client(send, "Bearer jobs_oat_expired").call(
+          "tools/list",
+          {}
+        );
+
+        expect(refused.status).toBe(401);
+        expect(refused.headers.get("www-authenticate")).toBe(
+          RESOURCE_CHALLENGE
+        );
+        expect(refused.message.error?.message).toContain(
+          "unknown, expired or revoked"
+        );
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "refuses an OAuth token whose holder is no longer Pro with 403",
+    () =>
+      Effect.gen(function* oauthLapsed() {
+        const { send } = yield* fixture;
+
+        const refused = yield* client(send, `Bearer ${OAUTH_FREE}`).call(
+          "tools/list",
+          {}
+        );
+
+        expect(refused.status).toBe(403);
+        expect(refused.headers.get("www-authenticate")).toBeNull();
+        expect(refused.message.error?.message).toContain("Pro has ended");
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "publishes protected resource metadata naming the MCP endpoint and the authorization server",
+    () =>
+      Effect.gen(function* resourceMetadata() {
+        const { send } = yield* fixture;
+
+        for (const path of [
+          "/.well-known/oauth-protected-resource",
+          "/.well-known/oauth-protected-resource/mcp",
+        ]) {
+          const response = yield* send(path);
+
+          expect(response.status).toBe(200);
+          expect(JSON.parse(response.text)).toStrictEqual({
+            authorization_servers: [`${ORIGIN}/api/auth`],
+            bearer_methods_supported: ["header"],
+            resource: `${ORIGIN}/mcp`,
+            resource_name: "Gate Change",
+            scopes_supported: ["mcp", "offline_access"],
+          });
+        }
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
     "describes the endpoint and every tool at /.well-known/mcp.json",
     () =>
       Effect.gen(function* discovery() {
@@ -1272,6 +1386,13 @@ describe("board over MCP", () => {
         const document = yield* Schema.decodeUnknownEffect(
           Schema.fromJsonString(
             Schema.Struct({
+              authentication: Schema.Struct({
+                oauth: Schema.Struct({
+                  authorizationServer: Schema.String,
+                  protectedResourceMetadata: Schema.String,
+                }),
+                scheme: Schema.String,
+              }),
               endpoint: Schema.String,
               protocolVersions: Schema.Array(Schema.String),
               rateLimits: Schema.Struct({
@@ -1304,6 +1425,13 @@ describe("board over MCP", () => {
             .map(({ name }) => name)
         ).toStrictEqual(["listJobs", "boardStats", "getJob"]);
         expect(document.tools).toHaveLength(10);
+        expect(document.authentication).toStrictEqual({
+          oauth: {
+            authorizationServer: `${ORIGIN}/api/auth`,
+            protectedResourceMetadata: `${ORIGIN}/.well-known/oauth-protected-resource`,
+          },
+          scheme: "bearer",
+        });
       }).pipe(Effect.scoped)
   );
 });
