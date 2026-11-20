@@ -7,7 +7,6 @@ import {
   companyRouter,
   InformationPage,
   informationRouter,
-  jobRouter,
   pricingRouter,
   roleRouter,
 } from "../client/route.js";
@@ -75,9 +74,6 @@ export const sitemapXml = (origin: string, jobs: readonly SitemapJobValue[]) =>
     urlEntry(origin, pricingRouter(), Option.none()),
     ...InformationPage.literals.map((page) =>
       urlEntry(origin, informationRouter(page), Option.none())
-    ),
-    ...jobs.map((job) =>
-      urlEntry(origin, jobRouter({ id: job.id }), Option.some(job.firstSeenAt))
     ),
     ...companyEntries(origin, jobs),
     ...roleEntries(origin, jobs),

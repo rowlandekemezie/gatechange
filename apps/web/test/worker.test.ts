@@ -858,7 +858,9 @@ describe("sitemap reads", () => {
     const { html } = await site.get(`${ORIGIN}/sitemap.xml`);
 
     expect(site.calls.backend).toBe(1);
-    expect(html.match(/\/jobs\//gu)).toHaveLength(sitemapRows.length);
+    expect(html.match(/\/companies\//gu)).toHaveLength(1);
+    expect(html).toContain("/roles/");
+    expect(html).not.toContain("/jobs/");
     expect(publicJobs).not.toHaveBeenCalled();
   });
 });

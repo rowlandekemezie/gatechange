@@ -902,9 +902,6 @@ describe("sitemap", () => {
       xml.split("\n").find((line) => line.includes(`${ORIGIN}${path}</loc>`));
 
     expect(resighted).toBe(xml);
-    expect(entryOf(jobRouter({ id: greenhouse.id }))).toContain(
-      `<lastmod>${isoOf(greenhouse.firstSeenAt)}</lastmod>`
-    );
     expect(entryOf("/companies/acme-robotics")).toContain(
       `<lastmod>${isoOf(newer.firstSeenAt)}</lastmod>`
     );
@@ -915,7 +912,7 @@ describe("sitemap", () => {
     expect(entryOf("/about")).not.toContain("<lastmod>");
   });
 
-  it("lists the board, every job, every company, and each role page with roles", () => {
+  it("lists the board, every company, and each role page with roles, and no single job", () => {
     const jobs = [
       greenhouse,
       remotive,
@@ -933,7 +930,6 @@ describe("sitemap", () => {
       ...(["About", "Privacy", "Terms", "Contact"] as const).map((page) =>
         Route.Information({ page })
       ),
-      ...jobs.map((job) => Route.Job({ id: job.id })),
       Route.Company({ slug: "acme-robotics" }),
       Route.Company({ slug: "zeta-sons" }),
       Route.Role({ place: "RemoteCanada", role: "Director" }),
