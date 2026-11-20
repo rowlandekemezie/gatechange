@@ -432,6 +432,9 @@ describe("edge routing", () => {
     "/rpc",
     "/api/auth/sign-in/magic-link",
     "/api/auth/get-session",
+    "/.well-known/oauth-authorization-server/api/auth",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
   ])("sends %s to the backend and nothing else", (path) =>
     Effect.gen(function* backendRoute() {
       const { get, seen } = edge();
@@ -534,7 +537,13 @@ describe("edge routing", () => {
 
   it("runs the Worker first for the MCP endpoint and its discovery document", () => {
     expect(workerFirstPaths).toStrictEqual(
-      expect.arrayContaining(["/mcp", "/.well-known/mcp.json"])
+      expect.arrayContaining([
+        "/mcp",
+        "/.well-known/mcp.json",
+        "/.well-known/oauth-authorization-server/*",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/*",
+      ])
     );
   });
 

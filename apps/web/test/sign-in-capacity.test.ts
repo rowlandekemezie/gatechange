@@ -19,7 +19,7 @@ const outcomeOf = (response: Response) =>
   Effect.gen(function* requestALink() {
     const { requestLink } = yield* AuthClient;
 
-    return yield* requestLink("ada@example.com");
+    return yield* requestLink("ada@example.com", "/account");
   }).pipe(
     Effect.provide(AuthClient.layer),
     Effect.provideService(

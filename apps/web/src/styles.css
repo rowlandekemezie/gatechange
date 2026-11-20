@@ -1932,3 +1932,28 @@ a {
     margin-bottom: 0.25rem;
   }
 }
+
+.connect-pass {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  max-width: 32rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--marigold);
+  background: var(--paper-raised);
+}
+
+.connect-pass dt {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.connect-pass dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}

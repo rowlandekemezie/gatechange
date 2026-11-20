@@ -24,6 +24,7 @@
     "pretest": "pnpm run --silent build"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "1.7.10",
     "@rat-stack/core": "workspace:*",
     "better-auth": "1.7.10",
     "effect": "4.0.0"

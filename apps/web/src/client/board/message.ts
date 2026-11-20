@@ -19,6 +19,7 @@ import { Url } from "foldkit/url";
 import { Message as AccountMessage } from "../account/message.js";
 import { Message as AgentTokensMessage } from "../agent-tokens/message.js";
 import { Message as BillingMessage } from "../billing/message.js";
+import { Message as ConnectMessage } from "../connect/message.js";
 import { Listing, ListingRoute } from "../listing.js";
 import { Message as SavedSearchesMessage } from "../saved-searches/message.js";
 import { AgeWindow, SalaryStep, Sort } from "./filters.js";
@@ -67,6 +68,7 @@ export const Message = defineMessageUnion({
   GotAccountMessage: { message: AccountMessage },
   GotAgentTokensMessage: { message: AgentTokensMessage },
   GotBillingMessage: { message: BillingMessage },
+  GotConnectMessage: { message: ConnectMessage },
   GotSavedSearchesMessage: { message: SavedSearchesMessage },
   SubmittedSearch: {},
   SucceededFetchIntel: { intel: CompanyIntel, slug: Schema.String },

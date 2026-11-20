@@ -37,18 +37,18 @@ export const PreviewLink = Command.define("PreviewLink", {
 });
 
 export const RequestLink = Command.define("RequestLink", {
-  args: { email: Schema.String },
-  execute: ({ email }) =>
-    AuthClient.use((auth) => auth.requestLink(email)).pipe(
+  args: { email: Schema.String, returnPath: Schema.String },
+  execute: ({ email, returnPath }) =>
+    AuthClient.use((auth) => auth.requestLink(email, returnPath)).pipe(
       Effect.map((outcome) => Message.CompletedRequestLink({ email, outcome }))
     ),
   messages: [Message.CompletedRequestLink],
 });
 
 export const StartSocialSignIn = Command.define("StartSocialSignIn", {
-  args: { provider: SocialProvider },
-  execute: ({ provider }) =>
-    AuthClient.use((auth) => auth.socialRedirect(provider)).pipe(
+  args: { provider: SocialProvider, returnPath: Schema.String },
+  execute: ({ provider, returnPath }) =>
+    AuthClient.use((auth) => auth.socialRedirect(provider, returnPath)).pipe(
       Effect.flatMap(load),
       Effect.match({
         onFailure: () => Message.FailedSocialSignIn({ provider }),

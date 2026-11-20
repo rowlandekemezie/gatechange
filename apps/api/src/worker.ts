@@ -11,6 +11,7 @@ import type { SocialCredentials } from "@rat-stack/accounts";
 import { stripeWebhookResponse } from "@rat-stack/billing";
 import { toRpc } from "@rat-stack/capability/rpc";
 import {
+  Account,
   AccountStore,
   AlertStore,
   Billing,
@@ -23,7 +24,9 @@ import {
   EnrichmentOutcome,
   INGEST_INTERVAL_MINUTES,
   isPullRequestStage,
+  JobStoreUnavailable,
   MAIL_HOSTNAME,
+  OAuthAccessTokens,
   postHogSetting,
   publicOriginOf,
   runDigests,
@@ -83,7 +86,12 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import { postHogCapture, privacySignalled, ServerEvent } from "./analytics.js";
 import type { ServerEventValue } from "./analytics.js";
-import { mcpAppLayer, serveMcp, serveMcpDiscovery } from "./mcp.js";
+import {
+  mcpAppLayer,
+  serveMcp,
+  serveMcpDiscovery,
+  serveProtectedResourceMetadata,
+} from "./mcp.js";
 import { guardPreviewAccess } from "./preview-access.js";
 import { handleRoutes } from "./route.js";
 import { stageConfig } from "./stage-config.js";
@@ -191,6 +199,9 @@ const socialCredentials = (prefix: string) =>
           })
     )
   );
+
+const hostHeadersOf = ({ host, protocol }: URL) =>
+  new Headers({ host, "x-forwarded-proto": protocol.slice(0, -1) });
 
 export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
   "JobsBackend",
@@ -519,8 +530,37 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
       )
     ).pipe(Effect.orDie);
 
+    const oauthAccessTokens = OAuthAccessTokens.of({
+      holderOf: (token, resource) =>
+        auth.api
+          .oauthTokenHolder({
+            body: { resource, token },
+            headers: hostHeadersOf(new URL(resource)),
+          })
+          .pipe(
+            Effect.flatMap((holder) =>
+              holder === null
+                ? Effect.succeedNone
+                : Schema.decodeEffect(Account)(holder).pipe(Effect.asSome)
+            ),
+            Effect.catchDefect(Effect.fail),
+            Effect.mapError(
+              (cause) =>
+                new JobStoreUnavailable({
+                  message: String(cause).slice(0, 500),
+                  operation: "oauthTokenHolder",
+                })
+            ),
+            Effect.tapError((failure) =>
+              Effect.logWarning("OAuth token lookup failed", failure.message)
+            ),
+            Effect.provide(RuntimeContext.RuntimeContext.phantom)
+          ),
+    });
+
     const agentAccessLayer = Layer.mergeAll(
       d1AgentTokenStoreLayer(client),
+      Layer.succeed(OAuthAccessTokens, oauthAccessTokens),
       billingLayer
     );
 
@@ -639,6 +679,7 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
       auth: auth.fetch,
       mcp,
       mcpDiscovery: serveMcpDiscovery,
+      protectedResourceMetadata: serveProtectedResourceMetadata,
       rpc: serveRpc,
       stripeWebhook,
       unsubscribe,

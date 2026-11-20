@@ -27,6 +27,7 @@ const handle = handleRoutes({
   mcp: (request) =>
     Effect.succeed(HttpServerResponse.text(`mcp:${request.method}`)),
   mcpDiscovery: () => HttpServerResponse.text("discovery"),
+  protectedResourceMetadata: () => HttpServerResponse.text("resource"),
   rpc: (viewer) =>
     Effect.succeed(HttpServerResponse.text(`rpc:${viewer._tag}`)),
   stripeWebhook: (request) =>
@@ -89,6 +90,26 @@ describe("backend routing", () => {
             ...crossSiteWithSession,
           })
         ).toEqual({ body: "auth", status: 200 });
+      })
+  );
+
+  it.effect(
+    "sends OAuth discovery to better-auth and the MCP resource metadata to its own handler",
+    () =>
+      Effect.gen(function* oauthDiscovery() {
+        expect(
+          yield* send("/.well-known/oauth-authorization-server/api/auth")
+        ).toEqual({ body: "auth", status: 200 });
+        expect(yield* send("/.well-known/oauth-protected-resource")).toEqual({
+          body: "resource",
+          status: 200,
+        });
+        expect(
+          yield* send("/.well-known/oauth-protected-resource/mcp")
+        ).toEqual({ body: "resource", status: 200 });
+        expect(
+          yield* send("/.well-known/oauth-protected-resource/elsewhere")
+        ).toEqual({ body: "", status: 404 });
       })
   );
 
@@ -285,6 +306,7 @@ describe("one call per /rpc POST", () => {
         auth: Effect.succeed(HttpServerResponse.text("auth")),
         mcp: () => Effect.succeed(HttpServerResponse.text("mcp")),
         mcpDiscovery: () => HttpServerResponse.text("discovery"),
+        protectedResourceMetadata: () => HttpServerResponse.text("resource"),
         rpc: () =>
           HttpServerRequest.HttpServerRequest.pipe(
             Effect.flatMap((request) => request.text),

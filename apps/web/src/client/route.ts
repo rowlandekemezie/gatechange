@@ -1,5 +1,7 @@
 import {
+  ACCOUNT_PATH,
   currencies,
+  returnPathOf,
   RoleLevel,
   roleLevels,
   seniorities,
@@ -69,7 +71,8 @@ export const Route = defineRouteUnion({
   Account: { notice: AccountNotice },
   Board: { filters: Filters },
   Company: { slug: CompanySlug },
-  ConfirmSignIn: { token: Schema.String },
+  ConfirmSignIn: { next: Schema.String, token: Schema.String },
+  Connect: {},
   Information: { page: InformationPage },
   Job: { id: Schema.NonEmptyString },
   NotFound: {},
@@ -312,11 +315,31 @@ export const accountRouter = pipe(
   mapTo(Route.Account)
 );
 
+const ConfirmParams = Schema.Struct({
+  next: Schema.optionalKey(Schema.String),
+  token: Schema.String,
+}).pipe(
+  Schema.decodeTo(
+    Schema.Struct({ next: Schema.String, token: Schema.String }),
+    SchemaTransformation.transform({
+      decode: ({ next, token }) => ({ next: returnPathOf(next), token }),
+      encode: ({ next, token }) =>
+        next === ACCOUNT_PATH ? { token } : { next, token },
+    })
+  )
+);
+
 export const confirmSignInRouter = pipe(
   literal("account"),
   slash(literal("confirm")),
-  query(Schema.Struct({ token: Schema.String })),
+  query(ConfirmParams),
   mapTo(Route.ConfirmSignIn)
+);
+
+export const connectRouter = pipe(
+  literal("account"),
+  slash(literal("connect")),
+  mapTo(Route.Connect)
 );
 
 export const pricingRouter = pipe(literal("pricing"), mapTo(Route.Pricing));
@@ -379,6 +402,7 @@ export const routeOfUrl = parseUrlWithFallback(
     pricingRouter,
     shortlistRouter,
     confirmSignInRouter,
+    connectRouter,
     accountRouter,
     boardRouter
   ),
@@ -393,6 +417,7 @@ export const canonicalPathOf = (route: RouteValue) =>
     Board: ({ filters }) => Option.some(boardUrl(filters)),
     Company: ({ slug }) => Option.some(companyRouter({ slug })),
     ConfirmSignIn: () => Option.none(),
+    Connect: () => Option.none(),
     Information: ({ page }) => Option.some(informationRouter(page)),
     Job: ({ id }) => Option.some(jobRouter({ id })),
     NotFound: () => Option.none(),

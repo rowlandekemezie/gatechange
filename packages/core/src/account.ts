@@ -4,6 +4,15 @@ import { Unauthorized } from "./unauthorized.js";
 
 export const MAGIC_LINK_TTL_MINUTES = 15;
 
+export const ACCOUNT_PATH = "/account";
+
+const RETURN_PATH = /^\/(?![/\\])[^\s\\]*$/u;
+
+export const returnPathOf = (raw: string | null | undefined): string =>
+  raw !== null && raw !== undefined && RETURN_PATH.test(raw)
+    ? raw
+    : ACCOUNT_PATH;
+
 export const SIGN_IN_EMAIL_CAPACITY_CODE = "SIGN_IN_EMAIL_CAPACITY";
 
 export const UNAUTHORIZED_MESSAGE =
