@@ -133,8 +133,8 @@ describe("company board registry", () => {
   });
 
   it.each([
-    [1000, "keeps"],
-    [1200, "misses"],
+    [1600, "keeps"],
+    [1800, "misses"],
   ] as const)(
     "with %i boards the default feeds per run %s the six hour refresh",
     (boards, outcome) => {
