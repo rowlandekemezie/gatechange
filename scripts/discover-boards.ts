@@ -54,6 +54,7 @@ type ProbeValue = Data.TaggedEnum<{
   Dead: { readonly board: CompanyBoardValue; readonly reason: string };
   Live: {
     readonly board: CompanyBoardValue;
+    readonly inRegion: readonly string[];
     readonly listed: number;
     readonly notElsewhere: number;
     readonly remoteOrBc: number;
@@ -92,6 +93,9 @@ const probe = (board: CompanyBoardValue) =>
 
         return Probe.Live({
           board,
+          inRegion: jobs.flatMap((job) =>
+            job.region === "Elsewhere" ? [] : [`${job.title} [${job.region}]`]
+          ),
           listed: postings.length,
           notElsewhere: jobs.filter((job) => job.region !== "Elsewhere").length,
           remoteOrBc: jobs.filter((job) => REMOTE_OR_BC.has(job.region)).length,
@@ -143,8 +147,9 @@ const lineOf = Probe.$match({
       "0",
       "0",
       reason.replaceAll(/\s+/gu, " "),
+      "",
     ].join("\t"),
-  Live: ({ board, listed, notElsewhere, remoteOrBc, roles }) =>
+  Live: ({ board, inRegion, listed, notElsewhere, remoteOrBc, roles }) =>
     [
       notElsewhere > 0 ? "verified" : "no-roles",
       board.ats,
@@ -154,6 +159,7 @@ const lineOf = Probe.$match({
       String(notElsewhere),
       String(remoteOrBc),
       String(listed),
+      inRegion.join(" | ").replaceAll(/\s+/gu, " "),
     ].join("\t"),
 });
 
@@ -185,7 +191,7 @@ const program = Effect.gen(function* discoverBoards() {
     `probing ${candidates.length} candidates serially as ${USER_AGENT}`
   );
   yield* Console.log(
-    "status\tats\tslug\tname\troles\tnotElsewhere\tremoteOrBc\tlisted"
+    "status\tats\tslug\tname\troles\tnotElsewhere\tremoteOrBc\tlisted\tinRegion"
   );
 
   for (const candidate of candidates) {
