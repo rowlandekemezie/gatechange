@@ -1,0 +1,9 @@
+name = "gate-verify"
+defaultTargets = ["GateVerify", "fixtures"]
+
+[[lean_lib]]
+name = "GateVerify"
+
+[[lean_exe]]
+name = "fixtures"
+root = "Main"

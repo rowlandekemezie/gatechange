@@ -1,0 +1,57 @@
+---
+title: "Buying Pro from two open tabs"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: bad
+    lg1: free
+    lg2: pro
+    lg3: Breaks ChargedForOneProAtMost
+    lg4: Path to the ChargedForOneProAtMost bug
+  }
+  class lg0 pink
+  class lg1 tan
+  class lg2 blue
+  class lg3 breaks
+  class lg4 bugPath
+  s0: Free, nothing paid
+  s1: Free, nothing paid, 1 Stripe checkout open
+  s2: Free, nothing paid, 2 Stripe checkouts open
+  s3: Free, paid once
+  s4: Free, paid once, 1 Stripe checkout open
+  s5: Pro, paid once
+  s6: Pro, paid once, 1 Stripe checkout open
+  s7: Free, paid twice
+  s8: Pro, paid twice
+  [*] --> s0
+  s0 --> s1: the member presses Upgrade in a tab
+  s1 --> s0: the member closes a checkout page
+  s1 --> s2: the member presses Upgrade in a tab
+  s1 --> s3: the member pays on a Stripe checkout page
+  s2 --> s1: the member closes a checkout page
+  s2 --> s4: the member pays on a Stripe checkout page
+  s3 --> s4: the member presses Upgrade in a tab
+  s3 --> s5: Stripe tells the site about the payment
+  s4 --> s3: the member closes a checkout page
+  s4 --> s6: Stripe tells the site about the payment
+  s4 --> s7: the member pays on a Stripe checkout page
+  s6 --> s5: the member closes a checkout page
+  s6 --> s8: the member pays on a Stripe checkout page
+  s7 --> s8: Stripe tells the site about the payment
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 tan
+  class s0 bugPath
+  class s1 tan
+  class s1 bugPath
+  class s2 tan
+  class s3 tan
+  class s3 bugPath
+  class s4 tan
+  class s4 bugPath
+  class s5 blue
+  class s6 blue
+  class s7 pink
+  class s7 breaks
+  class s7 bugPath
+  class s8 pink
+  class s8 breaks

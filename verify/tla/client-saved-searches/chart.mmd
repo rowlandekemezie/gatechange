@@ -1,0 +1,55 @@
+---
+title: "Saved searches: save, list and delete"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: fine
+    lg1: wrong
+    lg2: Breaks DeletedStaysGone or SavedNoteIsTrue
+    lg3: Path to the DeletedStaysGone or SavedNoteIsTrue bug
+  }
+  class lg0 teal
+  class lg1 orange
+  class lg2 breaks
+  class lg3 bugPath
+  s0: Idle
+  s1: Board says Saving
+  s2: Deleting a search
+  s3: Board says Saved
+  s4: Says Saved under filters that are not saved
+  s5: List shows a deleted search
+  s6: Board shows a save problem
+  [*] --> s0
+  s0 --> s1: you tap Email me new matches
+  s0 --> s2: you tap Delete
+  s1 --> s1: you change a filter or the server saves it
+  s2 --> s1: you tap Email me new matches
+  s2 --> s2: you open your account page or the server reads your list or the server deletes it
+  s1 --> s3: the save answers
+  s2 --> s0: the delete is confirmed
+  s3 --> s0: you change a filter
+  s1 --> s4: the save answers
+  s3 --> s2: you change a filter
+  s4 --> s1: you tap Email me new matches
+  s4 --> s0: you change a filter
+  s0 --> s5: the saved list arrives
+  s1 --> s6: the save answers
+  s1 --> s5: the saved list arrives
+  s5 --> s3: the save answers
+  s5 --> s0: the delete is confirmed or the saved list arrives
+  s3 --> s5: the saved list arrives
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 teal
+  class s0 bugPath
+  class s1 teal
+  class s1 bugPath
+  class s2 teal
+  class s2 bugPath
+  class s3 teal
+  class s4 orange
+  class s4 breaks
+  class s4 bugPath
+  class s5 orange
+  class s5 breaks
+  class s5 bugPath
+  class s6 teal

@@ -1,0 +1,42 @@
+---
+title: "A company board's roles across fetches"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: idle
+    lg1: saving
+  }
+  class lg0 blue
+  class lg1 orange
+  s0: Idle, no role open
+  s1: Saving a fetch, no role open
+  s2: Saving a fetch, 1 role open
+  s3: Idle, 1 role open
+  s4: Saving a fetch, 2 roles open
+  s5: Idle, 2 roles open
+  s6: Idle, no role open, some closed
+  s7: Saving a fetch, no role open, some closed
+  [*] --> s0
+  s0 --> s1: the board's feed answers
+  s1 --> s0: the database fails mid-save or roles the feed dropped are marked closed
+  s1 --> s2: a batch of roles is saved
+  s2 --> s3: the database fails mid-save or roles the feed dropped are marked closed
+  s2 --> s4: a batch of roles is saved
+  s3 --> s2: the board's feed answers
+  s4 --> s5: roles the feed dropped are marked closed or the database fails mid-save
+  s2 --> s6: roles the feed dropped are marked closed
+  s5 --> s4: the board's feed answers
+  s6 --> s7: the board's feed answers
+  s6 --> s0: a day passes and closed roles are removed
+  s4 --> s3: roles the feed dropped are marked closed
+  s4 --> s6: roles the feed dropped are marked closed
+  s7 --> s6: the database fails mid-save or roles the feed dropped are marked closed
+  s7 --> s2: a batch of roles is saved
+  class s0 blue
+  class s1 orange
+  class s2 orange
+  class s3 blue
+  class s4 orange
+  class s5 blue
+  class s6 blue
+  class s7 orange

@@ -1,0 +1,51 @@
+---
+title: "Signing out while an AI assistant refreshes its connection"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: bad
+    lg1: in
+    lg2: leaving
+    lg3: out
+    lg4: Breaks SignOutEndsEveryConnection
+    lg5: Path to the SignOutEndsEveryConnection bug
+  }
+  class lg0 pink
+  class lg1 blue
+  class lg2 orange
+  class lg3 tan
+  class lg4 breaks
+  class lg5 bugPath
+  s0: Signed in, assistant connected
+  s1: Signed in, assistant swapping its key
+  s2: Signing out, assistant connected
+  s3: Signing out, assistant swapping its key
+  s4: Signing out, assistant cut off
+  s5: Signed out, assistant cut off
+  s6: Signed out, assistant connected
+  [*] --> s0
+  s0 --> s1: the assistant trades in its old key
+  s0 --> s2: you press Sign out (connections looked up)
+  s1 --> s0: the assistant gets its new key
+  s1 --> s3: you press Sign out (connections looked up)
+  s2 --> s3: the assistant trades in its old key
+  s2 --> s4: the found connections are cut
+  s3 --> s2: the assistant gets its new key
+  s4 --> s5: your session ends
+  s2 --> s2: the found connections are cut
+  s3 --> s5: your session ends
+  s2 --> s6: your session ends
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 blue
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 orange
+  class s2 bugPath
+  class s3 orange
+  class s3 bugPath
+  class s4 orange
+  class s5 tan
+  class s6 pink
+  class s6 breaks
+  class s6 bugPath

@@ -1,0 +1,68 @@
+---
+title: "Shortlist across sign-in, the move offer and sign-out"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: in
+    lg1: out
+    lg2: start
+    lg3: Breaks BrowserListShown or MovingOnlyWhileMoving or NoBrowserJobLost
+    lg4: Path to the BrowserListShown or MovingOnlyWhileMoving or NoBrowserJobLost bug
+  }
+  class lg0 blue
+  class lg1 purple
+  class lg2 tan
+  class lg3 breaks
+  class lg4 bugPath
+  s0: Page open, checking sign-in
+  s1: Signed out, reading browser list
+  s2: Signed in, tracker loading
+  s3: Signed out, browser list shown
+  s4: Offer: move browser jobs?
+  s5: Moving browser jobs
+  s6: Signed in, tracker shown
+  s7: Signed out, page shows fewer jobs than the browser has
+  s8: Signed out, browser job lost
+  s9: Moving... stuck
+  [*] --> s0
+  s0 --> s1: the sign-in check says signed out
+  s0 --> s2: the sign-in check says signed in
+  s1 --> s3: the page reads the browser list
+  s0 --> s3: the sign-in check says signed out
+  s2 --> s1: you sign out
+  s2 --> s4: the tracker list arrives
+  s4 --> s1: you sign out
+  s4 --> s5: you tap Move them
+  s2 --> s6: the save is confirmed
+  s3 --> s7: the tracker list arrives
+  s5 --> s1: you sign out
+  s5 --> s6: the move finishes
+  s5 --> s4: the move fails
+  s5 --> s5: you save a job
+  s6 --> s1: you sign out
+  s7 --> s8: you save a job in the browser
+  s5 --> s9: the move finishes or the move fails
+  s9 --> s1: you sign out
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 tan
+  class s0 bugPath
+  class s1 purple
+  class s1 bugPath
+  class s2 blue
+  class s2 bugPath
+  class s3 purple
+  class s3 bugPath
+  class s4 blue
+  class s4 bugPath
+  class s5 blue
+  class s5 bugPath
+  class s6 blue
+  class s7 purple
+  class s7 breaks
+  class s7 bugPath
+  class s8 purple
+  class s8 breaks
+  class s8 bugPath
+  class s9 blue
+  class s9 breaks
+  class s9 bugPath

@@ -1,0 +1,54 @@
+---
+title: "Agent tokens: create, reveal the secret once, revoke"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: account
+    lg1: away
+    lg2: Breaks EverySecretShown
+    lg3: Path to the EverySecretShown bug
+  }
+  class lg0 blue
+  class lg1 tan
+  class lg2 breaks
+  class lg3 bugPath
+  s0: Account page
+  s1: Creating token
+  s2: Left the account page
+  s3: Secret shown once
+  s4: Left the page, a secret was never shown
+  s5: Token exists, its secret was never shown
+  s6: Create refused (limit)
+  [*] --> s0
+  s0 --> s1: you tap Create token
+  s0 --> s2: you leave the account page
+  s1 --> s2: you leave the account page
+  s2 --> s0: you come back
+  s1 --> s3: the new token reaches the page
+  s2 --> s2: the server makes the token
+  s3 --> s1: you tap Create token
+  s3 --> s2: you leave the account page
+  s2 --> s4: the new token reaches the page
+  s0 --> s5: the new token reaches the page
+  s4 --> s5: you come back
+  s5 --> s4: you leave the account page
+  s1 --> s5: the new token reaches the page
+  s3 --> s5: the new token reaches the page
+  s1 --> s6: the new token reaches the page
+  s6 --> s1: you tap Create token
+  s6 --> s2: you leave the account page
+  s6 --> s5: the new token reaches the page
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 blue
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 tan
+  class s2 bugPath
+  class s3 blue
+  class s4 tan
+  class s4 breaks
+  class s4 bugPath
+  class s5 blue
+  class s5 breaks
+  class s6 blue

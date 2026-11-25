@@ -1,0 +1,69 @@
+---
+title: "Two quick stage moves on a tracked job"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: saving
+    lg1: settled
+    lg2: wrong
+    lg3: Breaks FailureIsAnnounced or SettledCardMatchesServer
+    lg4: Path to the FailureIsAnnounced or SettledCardMatchesServer bug
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 breaks
+  class lg4 bugPath
+  s0: Settled, card says Saved
+  s1: Saving one move
+  s2: Saving two moves
+  s3: Settled, card says Applied
+  s4: Settled, card says Interviewing
+  s5: Settled with error banner, card says Saved
+  s6: Settled with error banner, card says Applied
+  s7: Settled, card says Interviewing but saved as Applied
+  s8: Settled, card says Saved but saved as Applied
+  s9: Settled, card says Applied but saved as Interviewing
+  s10: Settled with error banner, card says Interviewing
+  s11: Settled, card says Saved but saved as Interviewing
+  [*] --> s0
+  s0 --> s1: you pick a new stage
+  s1 --> s2: you pick a new stage
+  s1 --> s3: a reply reaches the page
+  s2 --> s2: the server saves a request or a reply reaches the page
+  s1 --> s4: a reply reaches the page
+  s3 --> s2: you pick a new stage
+  s4 --> s2: you pick a new stage
+  s1 --> s5: a reply reaches the page
+  s2 --> s10: a failure reaches the page or a reply reaches the page
+  s2 --> s5: a failure reaches the page or a reply reaches the page
+  s2 --> s7: a reply reaches the page
+  s2 --> s8: a reply reaches the page
+  s2 --> s4: a reply reaches the page
+  s2 --> s0: a reply reaches the page
+  s2 --> s6: a failure reaches the page or a reply reaches the page
+  s2 --> s3: a reply reaches the page
+  s2 --> s9: a reply reaches the page
+  s2 --> s11: a reply reaches the page
+  s5 --> s2: you pick a new stage
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 teal
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 blue
+  class s2 bugPath
+  class s3 teal
+  class s4 teal
+  class s5 teal
+  class s6 teal
+  class s7 orange
+  class s7 breaks
+  class s8 orange
+  class s8 breaks
+  class s8 bugPath
+  class s9 orange
+  class s9 breaks
+  class s10 teal
+  class s11 orange
+  class s11 breaks
