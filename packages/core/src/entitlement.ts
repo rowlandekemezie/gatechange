@@ -21,12 +21,25 @@ export const BillingInterval = Schema.Literals([
 
 export type BillingIntervalValue = typeof BillingInterval.Type;
 
+const Cents = Schema.Int.check(Schema.isGreaterThan(0));
+
+export const firstPeriodBelowPrice = Schema.makeFilter(
+  (offer: {
+    readonly amountCents: number;
+    readonly firstPeriodCents?: number;
+  }) =>
+    offer.firstPeriodCents === undefined ||
+    offer.firstPeriodCents < offer.amountCents ||
+    "firstPeriodCents must be below amountCents"
+);
+
 export const PlanOffer = Schema.Struct({
-  amountCents: Schema.Int.check(Schema.isGreaterThan(0)),
+  amountCents: Cents,
+  firstPeriodCents: Schema.optionalKey(Cents),
   interval: BillingInterval,
   intervalCount: Schema.Int.check(Schema.isGreaterThan(0)),
   plan: Plan,
-});
+}).check(firstPeriodBelowPrice);
 
 export type PlanOfferValue = typeof PlanOffer.Type;
 
