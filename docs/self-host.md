@@ -105,6 +105,6 @@ Email is optional. Skip this section if GitHub or Google sign-in is enough for y
 
 A sender on a name that is not onboarded fails with `E_SENDER_DOMAIN_NOT_AVAILABLE`.
 
-## Why there is no deploy button
+## Why the deploy button links here
 
-A "Deploy to Cloudflare" button cannot deploy this app. The button deploys one Worker from a directory that builds with no workspace dependencies. This app is two Workers joined by a service binding, and both depend on workspace packages.
+A "Deploy to Cloudflare" button cannot deploy this app. The button deploys one Worker from a directory that builds with no workspace dependencies. This app is two Workers joined by a service binding, and both depend on workspace packages. The Deploy to Cloudflare badge in the README links to [Deploy](#deploy) instead. `pnpm self-host` deploys the whole app.

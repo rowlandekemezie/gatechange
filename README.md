@@ -1,8 +1,8 @@
 # Gate Change
 
-A job board for engineering leaders: engineering managers, directors, heads of engineering and VPs of engineering. It lists roles that are remote in Canada, remote in the US, or based in Vancouver and British Columbia.
+[Gate Change](https://gatechange.dev) is a job board for engineering leaders: engineering managers, directors, heads of engineering and VPs of engineering. It lists roles that are remote in Canada, remote in the US, or based in Vancouver and British Columbia.
 
-Site: <https://gatechange.dev>
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](docs/self-host.md#deploy)
 
 ![Gate Change: your next move is on the board](apps/web/public/og.png)
 
