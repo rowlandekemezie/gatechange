@@ -49,6 +49,28 @@ const dollars = (cents: number) =>
 const cadenceOf = ({ interval, intervalCount }: PlanOfferValue) =>
   intervalCount === 1 ? interval : `${intervalCount} ${interval}s`;
 
+const everyPeriod = (offer: PlanOfferValue) =>
+  offer.intervalCount === 1
+    ? `a ${offer.interval}`
+    : `every ${cadenceOf(offer)}`;
+
+export const firstPeriodOffer = (offer: PlanOfferValue) =>
+  Option.map(
+    Option.fromNullishOr(offer.firstPeriodCents),
+    (cents) =>
+      `${dollars(cents)} for your first ${cadenceOf(offer)}, then ${dollars(offer.amountCents)} ${everyPeriod(offer)}`
+  );
+
+const firstPeriodNote = <M>(
+  h: HtmlBuilder<M>,
+  offer: PlanOfferValue,
+  className: string
+): readonly Html[] =>
+  Option.match(firstPeriodOffer(offer), {
+    onNone: () => [],
+    onSome: (text) => [h.p([h.Class(className)], [text])],
+  });
+
 const DAYS: Record<BillingIntervalValue, number> = {
   day: 1,
   month: 30.4375,
@@ -103,13 +125,13 @@ const featureList = <M>(h: HtmlBuilder<M>, items: readonly string[]) =>
 
 const headlineOffer = (model: ModelValue) => Array.head(plansOnSale(model));
 
-const proPrice = <M>(model: ModelValue, h: HtmlBuilder<M>): Html =>
+const proPrice = <M>(model: ModelValue, h: HtmlBuilder<M>): readonly Html[] =>
   Option.match(headlineOffer(model), {
     onNone: () =>
       Schema.is(PlansState.Loaded)(model.plans)
-        ? h.p([h.Class("price-card-price price-card-soon")], ["Coming soon"])
-        : h.empty,
-    onSome: (offer) =>
+        ? [h.p([h.Class("price-card-price price-card-soon")], ["Coming soon"])]
+        : [],
+    onSome: (offer) => [
       h.p(
         [h.Class("price-card-price")],
         [
@@ -117,6 +139,8 @@ const proPrice = <M>(model: ModelValue, h: HtmlBuilder<M>): Html =>
           h.span([h.Class("price-card-cadence")], [` / ${cadenceOf(offer)}`]),
         ]
       ),
+      ...firstPeriodNote(h, offer, "price-card-intro"),
+    ],
   });
 
 const priceCard = <M>(
@@ -171,7 +195,7 @@ export const pricingSummary = <M>(model: ModelValue, h: HtmlBuilder<M>) =>
       ]),
       priceCard(h, "summary-pro", true, [
         cardName(h, "summary-pro", "Pro"),
-        proPrice(model, h),
+        ...proPrice(model, h),
         h.p(
           [h.Class("price-card-copy")],
           [
@@ -250,6 +274,7 @@ const planCard = (
                 ` / ${cadenceOf(offer)}`,
               ]
             ),
+            ...firstPeriodNote(h, offer, "plan-intro"),
           ]),
       ...(saving.percent > 0
         ? [
@@ -297,7 +322,7 @@ const planOffers = (
         h.p(
           [h.Class("tier-note")],
           [
-            "Stripe handles payment. Cancel any time from the billing portal, and Pro stays on until the end of the period you paid for. A week that has started is not refunded unless you ask and we agree. Prices in US dollars.",
+            "Stripe handles payment. Cancel any time from the billing portal, and Pro stays on until the end of the period you paid for. A billing period that has started is not refunded unless you ask and we agree. Prices in US dollars.",
           ]
         ),
       ];
@@ -328,7 +353,7 @@ export const pricingPage = defineView<
           ]),
           priceCard(h, "tier-pro", true, [
             cardName(h, "tier-pro", "Pro"),
-            proPrice(model, h),
+            ...proPrice(model, h),
             h.p([h.Class("price-card-copy")], ["Everything in Free, plus:"]),
             featureList(h, proFeatures),
             h.p(

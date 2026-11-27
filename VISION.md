@@ -31,7 +31,7 @@ Free, forever, with or without an account:
 - The application tracker.
 - A weekly email digest of a saved search.
 
-Pro has one plan, Pro Weekly, at 5 USD a week:
+Pro has one plan on sale, Pro Monthly, at 7.99 USD a month with the first month at 4.99 USD. Pro Weekly, at 5 USD a week, is off sale and kept for its subscribers. Pro includes:
 
 - Instant alerts when a new listing matches a saved search.
 - Salary and seniority filters.

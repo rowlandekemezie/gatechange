@@ -10,6 +10,7 @@ export interface CheckoutSessionRequest {
   readonly cancel_url: string;
   readonly client_reference_id: string;
   readonly customer: string;
+  readonly discounts?: { coupon: string }[];
   readonly line_items: { price: string; quantity: number }[];
   readonly managed_payments: { enabled: boolean };
   readonly metadata: Record<string, string>;
@@ -31,6 +32,7 @@ export interface PortalSessionRequest {
 }
 
 export interface SalePrice {
+  readonly couponId: Option.Option<Effect.Effect<string>>;
   readonly offer: PlanOfferValue;
   readonly priceId: Effect.Effect<string>;
 }
@@ -53,6 +55,7 @@ export interface StripeSessions<E> {
 export const checkoutSessionRequest = (
   request: CheckoutRequest,
   price: string,
+  coupon: Option.Option<string>,
   siteOrigin: string
 ): CheckoutSessionRequest => {
   const metadata = { account_id: request.account.id };
@@ -61,6 +64,10 @@ export const checkoutSessionRequest = (
     cancel_url: new URL("/pricing", siteOrigin).href,
     client_reference_id: request.account.id,
     customer: request.customer,
+    ...Option.match(coupon, {
+      onNone: () => ({}),
+      onSome: (id) => ({ discounts: [{ coupon: id }] }),
+    }),
     line_items: [{ price, quantity: 1 }],
     managed_payments: { enabled: false },
     metadata,
@@ -120,10 +127,11 @@ export const makeBilling = <E>(sessions: StripeSessions<E>) =>
         );
 
         const price = yield* sale.priceId;
+        const coupon = yield* Effect.transposeOption(sale.couponId);
 
         const session = yield* sessions
           .createCheckout(
-            checkoutSessionRequest(request, price, sessions.siteOrigin)
+            checkoutSessionRequest(request, price, coupon, sessions.siteOrigin)
           )
           .pipe(Effect.catch(unavailable("checkout")));
 

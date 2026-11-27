@@ -1,7 +1,11 @@
-import { INSTANT_SENDS_PER_MEMBER_PER_DAY, PlanOffer } from "@rat-stack/core";
+import {
+  firstPeriodBelowPrice,
+  INSTANT_SENDS_PER_MEMBER_PER_DAY,
+  PlanOffer,
+} from "@rat-stack/core";
 import type { PlanOfferValue } from "@rat-stack/core";
 import * as Stripe from "alchemy/Stripe";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { BILLING_EVENTS, STRIPE_WEBHOOK_PATH } from "./webhook.js";
 
@@ -15,7 +19,7 @@ const ProPlanFields = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(1))
   ),
   onSale: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-});
+}).check(firstPeriodBelowPrice);
 
 const proPlanKeys = new Set(Object.keys(ProPlanFields.fields));
 
@@ -49,19 +53,13 @@ export const proPlansOf = (
 ): readonly ProPlanSettingValue[] => (setting === "" ? [] : setting);
 
 const offerOf = ({
-  amountCents,
-  interval,
-  intervalCount,
-  plan,
-}: ProPlanSettingValue): PlanOfferValue => ({
-  amountCents,
-  interval,
-  intervalCount,
-  plan,
-});
+  onSale: _onSale,
+  ...offer
+}: ProPlanSettingValue): PlanOfferValue => offer;
 
 export const priceBook = <Id>(
   prices: readonly {
+    readonly couponId: Option.Option<Id>;
     readonly priceId: Id;
     readonly setting: ProPlanSettingValue;
   }[]
@@ -69,8 +67,8 @@ export const priceBook = <Id>(
   entitled: prices.map(
     ({ priceId, setting }) => [priceId, setting.plan] as const
   ),
-  onSale: prices.flatMap(({ priceId, setting }) =>
-    setting.onSale ? [{ offer: offerOf(setting), priceId }] : []
+  onSale: prices.flatMap(({ couponId, priceId, setting }) =>
+    setting.onSale ? [{ couponId, offer: offerOf(setting), priceId }] : []
   ),
 });
 
@@ -88,6 +86,17 @@ const proPrice = (product: Stripe.Product, setting: ProPlanSettingValue) =>
     unitAmount: setting.amountCents,
   });
 
+const firstPeriodCoupon = (setting: ProPlanSettingValue) =>
+  setting.firstPeriodCents === undefined || !setting.onSale
+    ? Effect.succeed(Option.none())
+    : Stripe.Coupon(`Pro${setting.plan}FirstPeriodCoupon`, {
+        amountOff: setting.amountCents - setting.firstPeriodCents,
+        currency: "usd",
+        duration: "once",
+        metadata: { plan: setting.plan },
+        name: `Pro ${setting.plan} first ${setting.interval}`,
+      }).pipe(Effect.map(Option.some));
+
 export const ProCatalog = (
   siteOrigin: string,
   settings: readonly ProPlanSettingValue[]
@@ -100,9 +109,11 @@ export const ProCatalog = (
 
     const prices = yield* Effect.all(
       settings.map((setting) =>
-        proPrice(product, setting).pipe(
-          Effect.map((price) => ({ price, setting }))
-        )
+        Effect.all({
+          coupon: firstPeriodCoupon(setting),
+          price: proPrice(product, setting),
+          setting: Effect.succeed(setting),
+        })
       )
     );
 

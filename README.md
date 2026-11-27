@@ -14,7 +14,7 @@
 - Tracks your applications and emails you new matches.
 - Connects to your agent over MCP.
 
-The board is free. The free tier has every listing, search and filters, an application tracker, and a weekly email digest for each saved search. Pro costs $5 a week. It adds instant email alerts, salary and seniority filters, company intel, and agent tokens. Pro never hides a listing. Every listing is public.
+The board is free. The free tier has every listing, search and filters, an application tracker, and a weekly email digest for each saved search. Pro costs $7.99 a month, and the first month costs $4.99. It adds instant email alerts, salary and seniority filters, company intel, and agent tokens. Pro never hides a listing. Every listing is public.
 
 ## Use it with your agent
 

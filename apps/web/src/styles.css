@@ -1358,6 +1358,11 @@ a {
   font-size: 2rem;
 }
 
+.price-card-intro {
+  margin: 0;
+  font-weight: 600;
+}
+
 .price-card-copy {
   margin: 0;
   color: var(--ink-soft);
@@ -1408,6 +1413,7 @@ a {
 }
 
 .tier-note,
+.plan-intro,
 .plan-saving,
 .plan-note {
   margin: 0.25rem 0 0.5rem;

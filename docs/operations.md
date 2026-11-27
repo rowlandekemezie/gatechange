@@ -45,10 +45,12 @@ Prod sells Pro by default, so the deploy also needs `PRO_PLANS`, a live Stripe k
 Pro is sold through Stripe. Production billing needs these settings:
 
 - `BILLING_ENABLED=true`.
-- `PRO_PLANS`, a JSON array with one entry per Stripe Price. Production sells one plan: `[{"plan":"Weekly","amountCents":500,"interval":"week"}]`.
+- `PRO_PLANS`, a JSON array with one entry per Stripe Price. Production sells Monthly at $7.99 with a $4.99 first month, and keeps the archived Weekly plan for its subscribers: `[{"plan":"Weekly","amountCents":500,"interval":"week","onSale":false},{"plan":"Monthly","amountCents":799,"interval":"month","firstPeriodCents":499}]`.
 - `STRIPE_RESTRICTED_KEY`, an `rk_live_` restricted key with write access to Checkout Sessions, Customers and the Customer portal only. The `prod` deploy refuses `BILLING_ENABLED` without it. Other stages accept only test keys.
 
-Never drop or reprice a plan that has subscribers. To change a price, add a plan with a new name and set `onSale` to `false` on the old one. Existing subscribers renew on the archived price and keep Pro. `.env.example` describes each variable in full.
+Never drop or reprice a plan that has subscribers. To change a price, add a plan with a new name and set `onSale` to `false` on the old one. Existing subscribers renew on the archived price and keep Pro.
+
+An optional `firstPeriodCents` sets the price of a plan's first billing period. It must be above 0 and below `amountCents`. The deploy makes a Stripe Coupon named `Pro<plan>FirstPeriodCoupon` for `amountCents - firstPeriodCents` off, once, and Checkout for that plan applies it. Stripe then bills the full price from the second period. The pricing page shows both prices. Changing `firstPeriodCents` replaces the coupon and does not change what current subscribers pay. Remove the field to end the offer. `.env.example` describes each variable in full.
 
 ## Persistent preview
 

@@ -20,6 +20,7 @@ import {
   billingChangeOf,
   PAST_DUE_GRACE_SECONDS,
   makeBilling,
+  priceBook,
   signatureHeader,
   signPayload,
   verifiedChange,
@@ -50,6 +51,7 @@ const sandbox: EventTerms = {
 const endpoint: StripeEndpoint = { ...sandbox, secret };
 
 const monthlyOnSale = {
+  couponId: Option.none(),
   offer: {
     amountCents: 1900,
     interval: "month",
@@ -305,6 +307,65 @@ describe("Stripe events to billing changes", () => {
   );
 
   it.effect(
+    "keeps Pro for an archived weekly price and grants the monthly plan whose first invoice was discounted",
+    () =>
+      Effect.gen(function* discountedMonthly() {
+        const book = priceBook([
+          {
+            couponId: Option.none(),
+            priceId: "price_sandbox_weekly",
+            setting: {
+              amountCents: 500,
+              interval: "week",
+              intervalCount: 1,
+              onSale: false,
+              plan: "Weekly",
+            },
+          },
+          {
+            couponId: Option.some("coupon_first_month"),
+            priceId: SANDBOX_MONTHLY,
+            setting: {
+              amountCents: 799,
+              firstPeriodCents: 499,
+              interval: "month",
+              intervalCount: 1,
+              onSale: true,
+              plan: "Monthly",
+            },
+          },
+        ]);
+
+        const terms: EventTerms = {
+          livemode: false,
+          prices: new Map(book.entitled),
+        };
+
+        const discounted = created.replaceAll(
+          '"discounts":[]',
+          '"discounts":["di_first_month"]'
+        );
+
+        const changes = yield* Effect.all([
+          changeOf(discounted, terms),
+          changeOf(
+            created.replaceAll(SANDBOX_MONTHLY, "price_sandbox_weekly"),
+            terms
+          ),
+        ]);
+
+        expect(discounted).toContain('"discounts":["di_first_month"]');
+        expect(
+          changes.map((change) =>
+            Predicate.isTagged(change, "ApplySubscription")
+              ? change.subscription.plan
+              : null
+          )
+        ).toEqual(["Monthly", "Weekly"]);
+      })
+  );
+
+  it.effect(
     "ignores a subscription whose only price is not one of this stage's Pro prices",
     () =>
       Effect.gen(function* foreignPrice() {
@@ -433,6 +494,7 @@ describe("checkout session request", () => {
     const request = checkoutSessionRequest(
       { account: ada, customer: "cus_TestAda", plan: "Yearly" },
       "price_yearly",
+      Option.none(),
       "https://jobs.example"
     );
 

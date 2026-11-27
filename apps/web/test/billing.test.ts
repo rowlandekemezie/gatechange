@@ -33,7 +33,7 @@ import {
 } from "../src/client/board/update.js";
 import { boardUrl, Route, routeOfUrl } from "../src/client/route.js";
 import { edgeRouteOf } from "../src/edge-routes.js";
-import { savingOf } from "../src/features/pricing/view.js";
+import { firstPeriodOffer, savingOf } from "../src/features/pricing/view.js";
 
 const ORIGIN = "https://jobs.example";
 
@@ -521,6 +521,64 @@ describe("billing pages", () => {
       }
     )
   );
+
+  it.effect(
+    "tells pricing and home visitors the first month's price before the monthly price",
+    () =>
+      Effect.gen(function* firstMonth() {
+        const introMonthly: readonly PlanOfferValue[] = [
+          {
+            amountCents: 799,
+            firstPeriodCents: 499,
+            interval: "month",
+            intervalCount: 1,
+            plan: "Monthly",
+          },
+        ];
+
+        const pages = [
+          yield* renderAs(
+            "/pricing",
+            SessionState.SignedIn({ account: ada }),
+            Option.some(free),
+            introMonthly
+          ),
+          yield* renderAs("/", SessionState.SignedOut(), Option.none(), [
+            ...introMonthly,
+          ]),
+          yield* renderAs("/pricing", SessionState.SignedOut(), Option.none()),
+        ];
+
+        const [pricing = "", home = "", noIntro = ""] = pages.map(textOf);
+
+        expect(pricing).toContain(
+          "Pro $7.99 / month $4.99 for your first month, then $7.99 a month"
+        );
+        expect(pricing).toContain("Upgrade to Pro");
+        expect(pricing).toContain(
+          "A billing period that has started is not refunded"
+        );
+        expect(pricing).not.toMatch(/A week that has started/u);
+        expect(home).toContain(
+          "$4.99 for your first month, then $7.99 a month"
+        );
+        expect(noIntro).not.toContain("for your first");
+      })
+  );
+
+  it("words a first period that spans several intervals", () => {
+    expect(
+      firstPeriodOffer({
+        amountCents: 2000,
+        firstPeriodCents: 1000,
+        interval: "month",
+        intervalCount: 3,
+        plan: "Quarterly",
+      })
+    ).toEqual(
+      Option.some("$10 for your first 3 months, then $20 every 3 months")
+    );
+  });
 
   it.effect(
     "says Pro is coming soon with no checkout when the site sells no plans",

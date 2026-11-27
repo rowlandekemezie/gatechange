@@ -100,7 +100,7 @@ const pages = {
         heading: "Accounts and Pro",
         paragraphs: [
           "Browsing listings is public. Keep account sign-in links and agent tokens private, and use account features only for data you are entitled to manage. Do not try to access another person's tracker or bypass service limits.",
-          "Pro features and prices are described on the pricing page. Checkout shows the price and billing interval before payment. Review subscription status and cancellation through the account's billing controls. If you cancel, Pro stays on until the end of the period you paid for. A week that has started is not refunded unless you ask and we agree. Deleting a saved search is separate from cancelling a subscription.",
+          "Pro features and prices are described on the pricing page. Checkout shows the price and billing interval before payment. Review subscription status and cancellation through the account's billing controls. If you cancel, Pro stays on until the end of the period you paid for. A billing period that has started is not refunded unless you ask and we agree. Deleting a saved search is separate from cancelling a subscription.",
         ],
       },
       {

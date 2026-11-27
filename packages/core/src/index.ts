@@ -99,6 +99,7 @@ export {
   Entitlement,
   entitlementOf,
   EventVersion,
+  firstPeriodBelowPrice,
   FREE,
   FreeEntitlement,
   GRANTING_STATUSES,

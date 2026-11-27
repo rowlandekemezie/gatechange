@@ -10,7 +10,10 @@ import {
   proPlansOf,
   ProPlansSetting,
 } from "../src/index.js";
-import type { ProPlanSettingValue } from "../src/index.js";
+import type {
+  CheckoutSessionRequest,
+  ProPlanSettingValue,
+} from "../src/index.js";
 
 describe("Pro product shown on Checkout", () => {
   it("names the shipped Pro alerts, filters and company intel", () => {
@@ -62,6 +65,25 @@ describe("PRO_PLANS setting", () => {
     ]).toEqual([Option.none(), Option.none(), Option.none()]);
   });
 
+  it("reads a first-period price below the plan price", () => {
+    expect(
+      decodePlans(
+        '[{"plan":"Weekly","amountCents":500,"interval":"week","onSale":false},{"plan":"Monthly","amountCents":799,"interval":"month","firstPeriodCents":499}]'
+      ).pipe(Option.map((plans) => plans.map((plan) => plan.firstPeriodCents)))
+    ).toEqual(Option.some([undefined, 499]));
+  });
+
+  it.each(["0", "-1", "799", "900", "4.5", '"499"'])(
+    "refuses a first-period price of %s against a 799 cent plan",
+    (cents) => {
+      expect(
+        decodePlans(
+          `[{"plan":"Monthly","amountCents":799,"interval":"month","firstPeriodCents":${cents}}]`
+        )
+      ).toEqual(Option.none());
+    }
+  );
+
   it("refuses a misspelt key instead of keeping the plan on sale", () => {
     expect(
       decodePlans(
@@ -90,8 +112,12 @@ const retiredMonthly: ProPlanSettingValue = {
 describe("priceBook", () => {
   it("keeps Pro for a retired monthly price while only the weekly plan is on sale", () => {
     const book = priceBook([
-      { priceId: "price_weekly", setting: weekly },
-      { priceId: "price_monthly", setting: retiredMonthly },
+      { couponId: Option.none(), priceId: "price_weekly", setting: weekly },
+      {
+        couponId: Option.none(),
+        priceId: "price_monthly",
+        setting: retiredMonthly,
+      },
     ]);
 
     expect(book.entitled).toEqual([
@@ -100,6 +126,7 @@ describe("priceBook", () => {
     ]);
     expect(book.onSale).toEqual([
       {
+        couponId: Option.none(),
         offer: {
           amountCents: 500,
           interval: "week",
@@ -118,28 +145,57 @@ const ada = Schema.decodeSync(Account)({
   name: "Ada",
 });
 
-const billingSelling = (checkouts: string[]) =>
+const introMonthly: ProPlanSettingValue = {
+  amountCents: 799,
+  firstPeriodCents: 499,
+  interval: "month",
+  intervalCount: 1,
+  onSale: true,
+  plan: "Monthly",
+};
+
+const billingSelling = (
+  checkouts: CheckoutSessionRequest[],
+  plans: readonly {
+    readonly couponId: Option.Option<string>;
+    readonly priceId: string;
+    readonly setting: ProPlanSettingValue;
+  }[] = [
+    { couponId: Option.none(), priceId: "price_weekly", setting: weekly },
+    {
+      couponId: Option.none(),
+      priceId: "price_monthly",
+      setting: retiredMonthly,
+    },
+  ]
+) =>
   makeBilling({
     createCheckout: (request) =>
       Effect.sync(() => {
-        checkouts.push(request.line_items[0]?.price ?? "");
+        checkouts.push(request);
 
         return { url: "https://pay.example" };
       }),
     createCustomer: () => Effect.succeed({ id: "cus_ada" }),
     createPortal: () => Effect.succeed({ url: "https://portal.example" }),
-    onSale: priceBook([
-      { priceId: Effect.succeed("price_weekly"), setting: weekly },
-      { priceId: Effect.succeed("price_monthly"), setting: retiredMonthly },
-    ]).onSale,
+    onSale: priceBook(
+      plans.map(({ couponId, priceId, setting }) => ({
+        couponId: couponId.pipe(Option.map((id) => Effect.succeed(id))),
+        priceId: Effect.succeed(priceId),
+        setting,
+      }))
+    ).onSale,
     portalConfiguration: Effect.succeed("bpc_1"),
     siteOrigin: "https://jobs.example",
   });
 
+const pricesOf = (checkouts: readonly CheckoutSessionRequest[]) =>
+  checkouts.map((request) => request.line_items[0]?.price);
+
 describe("checkout with configured plans", () => {
   it.effect("checks out the weekly price and lists only the weekly offer", () =>
     Effect.gen(function* weeklyCheckout() {
-      const checkouts: string[] = [];
+      const checkouts: CheckoutSessionRequest[] = [];
       const billing = billingSelling(checkouts);
 
       yield* billing.checkout({
@@ -148,14 +204,14 @@ describe("checkout with configured plans", () => {
         plan: "Weekly",
       });
 
-      expect(checkouts).toEqual(["price_weekly"]);
+      expect(pricesOf(checkouts)).toEqual(["price_weekly"]);
       expect(billing.plans.map(({ plan }) => plan)).toEqual(["Weekly"]);
     })
   );
 
   it.effect("refuses a retired plan without opening a Stripe checkout", () =>
     Effect.gen(function* retiredCheckout() {
-      const checkouts: string[] = [];
+      const checkouts: CheckoutSessionRequest[] = [];
 
       const failure = yield* billingSelling(checkouts)
         .checkout({ account: ada, customer: "cus_ada", plan: "Monthly" })
@@ -164,6 +220,48 @@ describe("checkout with configured plans", () => {
       expect(failure._tag).toBe("BillingUnavailable");
       expect(checkouts).toEqual([]);
     })
+  );
+
+  it.effect(
+    "takes the first-period coupon off the intro plan's checkout only and lists its first-period price",
+    () =>
+      Effect.gen(function* introCheckout() {
+        const checkouts: CheckoutSessionRequest[] = [];
+
+        const billing = billingSelling(checkouts, [
+          { couponId: Option.none(), priceId: "price_weekly", setting: weekly },
+          {
+            couponId: Option.some("coupon_monthly_first"),
+            priceId: "price_monthly",
+            setting: introMonthly,
+          },
+        ]);
+
+        yield* billing.checkout({
+          account: ada,
+          customer: "cus_ada",
+          plan: "Monthly",
+        });
+        yield* billing.checkout({
+          account: ada,
+          customer: "cus_ada",
+          plan: "Weekly",
+        });
+
+        expect(
+          checkouts.map((request) => [
+            request.line_items[0]?.price,
+            "discounts" in request ? request.discounts : "none",
+          ])
+        ).toEqual([
+          ["price_monthly", [{ coupon: "coupon_monthly_first" }]],
+          ["price_weekly", "none"],
+        ]);
+        expect(billing.plans.map((offer) => offer.firstPeriodCents)).toEqual([
+          undefined,
+          499,
+        ]);
+      })
   );
 
   it("sells nothing when billing is off", () => {

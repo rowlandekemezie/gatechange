@@ -60,9 +60,15 @@ export const stripeBilling = Effect.fn("stripeBilling")(function* stripeBilling(
 
   const book = priceBook(
     yield* Effect.all(
-      catalog.prices.map(({ price, setting }) =>
+      catalog.prices.map(({ coupon, price, setting }) =>
         Effect.gen(function* catalogPrice() {
-          return { priceId: yield* price.id, setting };
+          return {
+            couponId: Option.isSome(coupon)
+              ? Option.some(yield* coupon.value.id)
+              : Option.none(),
+            priceId: yield* price.id,
+            setting,
+          };
         })
       )
     )
