@@ -1133,25 +1133,20 @@ describe("board over MCP", () => {
         expect(textOf(result)).toBe(UNAUTHORIZED_MESSAGE);
         expect(anonymous.savedBy).toStrictEqual([]);
 
-        for (const [secret, status] of [
-          ["jobs_pat_revoked", 401],
-          [FREE_SECRET, 403],
-        ] as const) {
-          const refused = yield* legacyRequest(
-            "initialize",
-            {
-              capabilities: {},
-              clientInfo: { name: "test", version: "1" },
-              protocolVersion: "2025-11-25",
-            },
-            null,
-            1,
-            { authorization: `Bearer ${secret}` }
-          );
+        const refused = yield* legacyRequest(
+          "initialize",
+          {
+            capabilities: {},
+            clientInfo: { name: "test", version: "1" },
+            protocolVersion: "2025-11-25",
+          },
+          null,
+          1,
+          { authorization: "Bearer jobs_pat_revoked" }
+        );
 
-          expect(refused.status).toBe(status);
-          expect(refused.savedBy).toStrictEqual([]);
-        }
+        expect(refused.status).toBe(401);
+        expect(refused.savedBy).toStrictEqual([]);
       })
   );
 
@@ -1278,18 +1273,52 @@ describe("board over MCP", () => {
       }).pipe(Effect.scoped)
   );
 
-  it.effect("refuses a token whose holder is no longer Pro with 403", () =>
-    Effect.gen(function* lapsed() {
-      const { send } = yield* fixture;
+  it.effect(
+    "serves the free tools to a token holder without Pro, over an agent token or OAuth",
+    () =>
+      Effect.gen(function* freeHolder() {
+        const { send } = yield* fixture;
 
-      const refused = yield* client(send, `Bearer ${FREE_SECRET}`).call(
-        "tools/list",
-        {}
-      );
+        for (const secret of [FREE_SECRET, OAUTH_FREE]) {
+          const listed = yield* client(send, `Bearer ${secret}`).tool(
+            "listJobs",
+            listQuery
+          );
 
-      expect(refused.status).toBe(403);
-      expect(refused.message.error?.message).toContain("Pro has ended");
-    }).pipe(Effect.scoped)
+          expect(listed.isError).toBe(false);
+          expect(JSON.stringify(listed.structuredContent)).toContain("g:1");
+        }
+      }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "answers a Pro tool for a holder without Pro with a tool error naming Pro and the pricing page",
+    () =>
+      Effect.gen(function* freeHolderPro() {
+        const { savedBy, send } = yield* fixture;
+
+        for (const secret of [FREE_SECRET, OAUTH_FREE]) {
+          const holder = client(send, `Bearer ${secret}`);
+
+          for (const result of [
+            yield* holder.tool("saveSearch", {
+              filters: {
+                regions: ["RemoteCanada"],
+                roles: ["Director"],
+                search: "",
+              },
+            }),
+            yield* holder.tool("trackedJobs", {}),
+          ]) {
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toContain("Gate Change Pro");
+            expect(textOf(result)).toContain(`${ORIGIN}/pricing`);
+            expect(textOf(result)).not.toBe(UNAUTHORIZED_MESSAGE);
+          }
+        }
+
+        expect(savedBy).toStrictEqual([]);
+      }).pipe(Effect.scoped)
   );
 
   it.effect(
@@ -1332,23 +1361,6 @@ describe("board over MCP", () => {
         expect(refused.message.error?.message).toContain(
           "unknown, expired or revoked"
         );
-      }).pipe(Effect.scoped)
-  );
-
-  it.effect(
-    "refuses an OAuth token whose holder is no longer Pro with 403",
-    () =>
-      Effect.gen(function* oauthLapsed() {
-        const { send } = yield* fixture;
-
-        const refused = yield* client(send, `Bearer ${OAUTH_FREE}`).call(
-          "tools/list",
-          {}
-        );
-
-        expect(refused.status).toBe(403);
-        expect(refused.headers.get("www-authenticate")).toBeNull();
-        expect(refused.message.error?.message).toContain("Pro has ended");
       }).pipe(Effect.scoped)
   );
 
