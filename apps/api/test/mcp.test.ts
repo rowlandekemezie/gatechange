@@ -374,7 +374,18 @@ const ToolResult = Schema.Struct({
 });
 
 const ToolList = Schema.Struct({
-  tools: Schema.Array(Schema.Struct({ name: Schema.String })),
+  tools: Schema.Array(
+    Schema.Struct({
+      annotations: Schema.optional(
+        Schema.Struct({
+          destructiveHint: Schema.optional(Schema.Boolean),
+          readOnlyHint: Schema.optional(Schema.Boolean),
+          title: Schema.optional(Schema.String),
+        })
+      ),
+      name: Schema.String,
+    })
+  ),
 });
 
 const requestMeta = {
@@ -520,6 +531,32 @@ describe("board over MCP", () => {
           expect(tools.tools.map(({ name }) => name).toSorted()).toStrictEqual(
             agentCapabilities.map(({ contract }) => contract.name).toSorted()
           );
+
+          expect(
+            tools.tools
+              .filter(({ annotations }) => annotations?.title === undefined)
+              .map(({ name }) => name)
+          ).toStrictEqual([]);
+          expect(
+            tools.tools
+              .filter(({ annotations }) => annotations?.readOnlyHint === true)
+              .map(({ name }) => name)
+              .toSorted()
+          ).toStrictEqual([
+            "boardStats",
+            "getJob",
+            "listJobs",
+            "savedSearches",
+            "trackedJobs",
+          ]);
+          expect(
+            tools.tools
+              .filter(
+                ({ annotations }) => annotations?.destructiveHint === true
+              )
+              .map(({ name }) => name)
+              .toSorted()
+          ).toStrictEqual(["deleteSearch", "untrackJob"]);
 
           const called = yield* legacyRequest(
             "tools/call",
