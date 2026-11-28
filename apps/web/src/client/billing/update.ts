@@ -16,7 +16,7 @@ import {
 import { Message } from "./message.js";
 import type { MessageValue } from "./message.js";
 import { BillingAction, MembershipState, PlansState } from "./model.js";
-import type { ModelValue } from "./model.js";
+import type { BillingActionValue, ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
 
@@ -24,6 +24,7 @@ export const CHECKOUT_POLLS = 15;
 
 const initial: ModelValue = {
   action: BillingAction.Idle(),
+  generation: 0,
   membership: MembershipState.Unknown(),
   plans: PlansState.Loading(),
   pollsLeft: 0,
@@ -37,7 +38,7 @@ export const init = (): UpdateReturn => ({
 export const signedIn = (model: ModelValue): UpdateReturn =>
   Schema.is(MembershipState.Unknown)(model.membership)
     ? {
-        commands: [FetchMembership()],
+        commands: [FetchMembership({ generation: model.generation })],
         model: modifyFields(model, {
           membership: () => MembershipState.Loading(),
         }),
@@ -46,8 +47,13 @@ export const signedIn = (model: ModelValue): UpdateReturn =>
 
 export const signedOut = (model: ModelValue): ModelValue => ({
   ...initial,
+  generation: model.generation + 1,
   plans: model.plans,
 });
+
+const isAtRest = (action: BillingActionValue) =>
+  Schema.is(BillingAction.Idle)(action) ||
+  Schema.is(BillingAction.Problem)(action);
 
 export const entered = (
   model: ModelValue,
@@ -56,9 +62,11 @@ export const entered = (
     isSignedIn,
   }: { readonly afterCheckout: boolean; readonly isSignedIn: boolean }
 ): UpdateReturn => ({
-  commands: isSignedIn ? [FetchMembership()] : [],
+  commands: isSignedIn
+    ? [FetchMembership({ generation: model.generation })]
+    : [],
   model: modifyFields(model, {
-    action: () => BillingAction.Idle(),
+    action: (action) => (isAtRest(action) ? BillingAction.Idle() : action),
     pollsLeft: () => (afterCheckout ? CHECKOUT_POLLS : 0),
   }),
 });
@@ -81,7 +89,9 @@ const fetched = (
       const keepWaiting = model.pollsLeft > 0 && !isPro(membership.entitlement);
 
       return {
-        commands: keepWaiting ? [PollMembership()] : [],
+        commands: keepWaiting
+          ? [PollMembership({ generation: model.generation })]
+          : [],
         model: modifyFields(model, {
           membership: () => MembershipState.Loaded({ membership }),
           pollsLeft: (left) => (keepWaiting ? left - 1 : 0),
@@ -96,14 +106,14 @@ export const update = (
 ): UpdateReturn =>
   Message.match<UpdateReturn>(message, {
     ClickedChoosePlan: ({ plan }) =>
-      Schema.is(BillingAction.Redirecting)(model.action)
-        ? { model }
-        : {
+      isAtRest(model.action)
+        ? {
             commands: [StartCheckout({ plan })],
             model: modifyFields(model, {
               action: () => BillingAction.Redirecting(),
             }),
-          },
+          }
+        : { model },
     ClickedManageBilling: () =>
       Schema.is(BillingAction.Redirecting)(model.action)
         ? { model }
@@ -113,7 +123,8 @@ export const update = (
               action: () => BillingAction.Redirecting(),
             }),
           },
-    CompletedFetchMembership: ({ membership }) => fetched(model, membership),
+    CompletedFetchMembership: ({ generation, membership }) =>
+      generation === model.generation ? fetched(model, membership) : { model },
     CompletedFetchPlans: ({ plans }) => ({
       model: modifyFields(model, { plans: () => PlansState.Loaded({ plans }) }),
     }),

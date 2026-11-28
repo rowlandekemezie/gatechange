@@ -32,6 +32,7 @@ export type BillingActionValue = typeof BillingAction.Type;
 
 export const Model = Schema.Struct({
   action: BillingAction,
+  generation: Schema.Finite,
   membership: MembershipState,
   plans: PlansState,
   pollsLeft: Schema.Finite,

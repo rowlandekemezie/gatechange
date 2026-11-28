@@ -19,7 +19,7 @@ import {
 const choose = billing(BillingMessage.ClickedChoosePlan({ plan: "Monthly" }));
 
 describe("Billing model replay", () => {
-  it.fails("NoProBadgeSignedOut: a membership reply that lands after sign-out does not bring back the Pro badge", () => {
+  it("NoProBadgeSignedOut: a membership reply that lands after sign-out does not bring back the Pro badge", () => {
     const ready = sentAll(started("/pricing"), [signedIn]);
 
     expect(named(ready.commands, "FetchMembership")).toHaveLength(1);
@@ -29,7 +29,7 @@ describe("Billing model replay", () => {
     expect(isProMember(out.model.billing)).toBe(false);
   });
 
-  it.fails("OneCheckoutAtATime: leaving Pricing and coming back while Stripe opens does not start a second checkout", () => {
+  it("OneCheckoutAtATime: leaving Pricing and coming back while Stripe opens does not start a second checkout", () => {
     const path = walked(started("/pricing"), [
       signedIn,
       membershipArrives(free),

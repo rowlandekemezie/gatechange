@@ -278,6 +278,7 @@ const intelFetches = (step: Step) =>
 const membershipLoaded = (membership: MembershipValue) =>
   Message.GotBillingMessage({
     message: BillingMessage.CompletedFetchMembership({
+      generation: 0,
       membership: Option.some(membership),
     }),
   });

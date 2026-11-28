@@ -168,7 +168,6 @@ test("MovingOnlyWhileMoving: saving a job during the move leaves the Move button
 test("billing: a membership reply after sign-out shows no Pro badge", async ({
   browser,
 }) => {
-  knownBug();
   const name = "billing";
   const page = await newPage(browser);
 
