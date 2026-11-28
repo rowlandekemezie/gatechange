@@ -60,7 +60,6 @@ export const AnalyticsEvent = defineTaggedUnion({
   },
   SearchSubmitted: { queryLength: Schema.Finite },
   ShowMore: {},
-  SigninCompleted: {},
   SignupStarted: { method: Schema.String },
 });
 
@@ -87,7 +86,6 @@ export const eventNames: Readonly<Record<AnalyticsEventValue["_tag"], string>> =
     SearchNoResults: "search_no_results",
     SearchSubmitted: "search_submitted",
     ShowMore: "show_more",
-    SigninCompleted: "signin_completed",
     SignupStarted: "signup_started",
   };
 
@@ -278,14 +276,7 @@ const sessionCalls = (
   const { session } = after.account;
 
   if (isSignedIn(session) && !isSignedIn(before)) {
-    const completed =
-      Schema.is(SessionState.SignedOut)(before) ||
-      Schema.is(Route.ConfirmSignIn)(after.route);
-
-    return [
-      AnalyticsCall.Identify({ userId: session.account.id }),
-      ...(completed ? [track(AnalyticsEvent.SigninCompleted())] : []),
-    ];
+    return [AnalyticsCall.Identify({ userId: session.account.id })];
   }
 
   if (isSignedIn(before) && !isSignedIn(session)) {

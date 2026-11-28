@@ -289,8 +289,15 @@ export const dashboards: readonly DashboardSpec[] = [
         name: "Launch: Sign-ups started by method",
       },
       {
+        ...breakdownOf(total("signup_completed"), "method"),
+        description:
+          "New accounts, by method. The server sends this when better-auth creates the account.",
+        name: "Launch: Sign-ups completed by method",
+      },
+      {
         ...trendOf(total("signin_completed")),
-        description: "Completed sign-ins per day.",
+        description:
+          "Finished sign-ins per day, new and returning. The server sends this when better-auth creates a session.",
         name: "Launch: Sign-ins completed",
       },
     ],

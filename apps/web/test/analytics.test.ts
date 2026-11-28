@@ -144,7 +144,6 @@ describe("analytics events", () => {
 
     expect(signIn.calls).toStrictEqual([
       AnalyticsCall.Identify({ userId: ada.id }),
-      AnalyticsCall.Track({ event: AnalyticsEvent.SigninCompleted() }),
     ]);
     expect(JSON.stringify(signIn.calls)).not.toContain(ada.email);
 

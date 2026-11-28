@@ -39,10 +39,21 @@ import {
   respondAsViewer,
   viewerOfRequest,
 } from "../src/index.js";
-import type { AuthSettings, MagicLinkRequest } from "../src/index.js";
+import type {
+  AuthMilestone,
+  AuthSettings,
+  MagicLinkRequest,
+} from "../src/index.js";
 import { SendEmailError } from "./fixtures/send-email-error.js";
 
 const ORIGIN = "http://localhost:1337";
+
+const recording = (reached: AuthMilestone[]): Partial<AuthSettings> => ({
+  // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits Promise-returning hooks.
+  reached: async (milestone) => {
+    await Promise.resolve(reached.push(milestone));
+  },
+});
 
 const LOCAL_HOSTS: SiteHosts = {
   allowedHosts: ["localhost:*"],
@@ -142,13 +153,15 @@ const makeAuth = (
   database: DatabaseSync = migratedDatabase(),
   mailer: Mailer = () => true,
   magicLinkDailySendLimit = 900,
-  extraPlugins: readonly BetterAuthPlugin[] = []
+  extraPlugins: readonly BetterAuthPlugin[] = [],
+  overrides: Partial<AuthSettings> = {}
 ) => {
   const sent: MagicLinkRequest[] = [];
 
   const options = authOptions({
     ...settings(sent, hosts, mailer),
     magicLinkDailySendLimit,
+    ...overrides,
   });
 
   const auth = betterAuth({
@@ -363,6 +376,183 @@ describe("magic link sign-in", () => {
 
         expect(cookieOf(reused)).not.toContain("session_token=");
         expect(reused.headers.get("location")).toContain("error=");
+      })
+  );
+
+  it.effect(
+    "reports a new account's sign-up and every finished sign-in, by method, to the server",
+    () =>
+      Effect.gen(function* milestones() {
+        const reached: AuthMilestone[] = [];
+
+        const { auth, sent } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          900,
+          [],
+          recording(reached)
+        );
+
+        const signIn = (index: number) =>
+          Effect.gen(function* signInOnce() {
+            yield* requestLink(auth, "ada@example.com");
+
+            return yield* call(
+              auth,
+              pathOf(sent[index]?.url ?? ""),
+              CONFIRM_FORM
+            );
+          });
+
+        const first = yield* signIn(0);
+        const session = yield* sessionOf(auth, cookieOf(first));
+        const account = session?.user.id ?? "";
+
+        expect(account).not.toBe("");
+        expect(reached.map(({ kind, method }) => [kind, method])).toStrictEqual(
+          [
+            ["SignedUp", "email"],
+            ["SignedIn", "email"],
+          ]
+        );
+        expect(
+          reached.every((milestone) => milestone.account === account)
+        ).toBe(true);
+        expect(reached[0]?.headers["cf-connecting-ip"]).toBe("203.0.113.7");
+
+        yield* signIn(1);
+
+        expect(reached.map(({ kind }) => kind)).toStrictEqual([
+          "SignedUp",
+          "SignedIn",
+          "SignedIn",
+        ]);
+        expect(JSON.stringify(reached)).not.toContain("ada@example.com");
+      })
+  );
+
+  it.effect("finishes the sign-in when reporting the milestone fails", () =>
+    Effect.gen(function* reporterDown() {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { auth, sent } = makeAuth(
+        LOCAL_HOSTS,
+        migratedDatabase(),
+        () => true,
+        900,
+        [],
+        {
+          // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits Promise-returning hooks.
+          reached: async () => {
+            await Promise.reject(new Error("analytics down"));
+          },
+        }
+      );
+
+      yield* requestLink(auth, "ada@example.com");
+
+      const verified = yield* call(
+        auth,
+        pathOf(sent[0]?.url ?? ""),
+        CONFIRM_FORM
+      );
+
+      expect(verified.headers.get("location")).toBe(`${ORIGIN}/account`);
+      expect((yield* sessionOf(auth, cookieOf(verified)))?.user.email).toBe(
+        "ada@example.com"
+      );
+    })
+  );
+
+  it.effect(
+    "names the provider when a GitHub sign-in creates the account",
+    () =>
+      Effect.gen(function* githubSignUp() {
+        const reached: AuthMilestone[] = [];
+
+        const { auth } = makeAuth(
+          LOCAL_HOSTS,
+          migratedDatabase(),
+          () => true,
+          900,
+          [],
+          {
+            ...recording(reached),
+            social: { github: { clientId: "id", clientSecret: "secret" } },
+          }
+        );
+
+        const started = yield* call(auth, "/api/auth/sign-in/social", {
+          body: JSON.stringify({ callbackURL: "/account", provider: "github" }),
+        });
+
+        const { url } = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(Schema.Struct({ url: Schema.String }))
+        )(yield* textOf(started));
+
+        const state = new URL(url).searchParams.get("state") ?? "";
+
+        const provider = new Map<string, unknown>([
+          [
+            "github.com/login/oauth/access_token",
+            {
+              access_token: "gho_test",
+              scope: "read:user,user:email",
+              token_type: "bearer",
+            },
+          ],
+          [
+            "api.github.com/user/emails",
+            [
+              {
+                email: "grace@example.com",
+                primary: true,
+                verified: true,
+                visibility: "private",
+              },
+            ],
+          ],
+          [
+            "api.github.com/user",
+            {
+              avatar_url: "",
+              email: null,
+              id: 42,
+              login: "grace",
+              name: "Grace",
+            },
+          ],
+        ]);
+
+        // @effect-diagnostics-next-line asyncFunction:off -- better-auth calls the global fetch as a Promise.
+        vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+          const target = new URL(
+            input instanceof Request ? input.url : String(input)
+          );
+
+          const body = provider.get(`${target.host}${target.pathname}`);
+
+          return await Promise.resolve(
+            body === undefined
+              ? new Response("not stubbed", { status: 404 })
+              : Response.json(body)
+          );
+        });
+
+        const finished = yield* call(
+          auth,
+          `/api/auth/callback/github?code=test-code&state=${state}`,
+          { cookie: cookieOf(started) }
+        );
+
+        expect(finished.headers.get("location")).toBe("/account");
+        expect(reached.map(({ kind, method }) => [kind, method])).toStrictEqual(
+          [
+            ["SignedUp", "github"],
+            ["SignedIn", "github"],
+          ]
+        );
       })
   );
 

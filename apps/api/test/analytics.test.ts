@@ -6,6 +6,7 @@ import { vi } from "vitest";
 
 import {
   captureBodyOf,
+  milestoneEvent,
   postHogCapture,
   privacySignalled,
   ServerEvent,
@@ -96,6 +97,44 @@ describe("server analytics", () => {
       event: "email_unsubscribed",
       properties: {},
     });
+  });
+
+  it("counts a finished sign-up and sign-in by method under the account id", () => {
+    const milestone = {
+      account: "user_ada",
+      headers: { "cf-connecting-ip": "203.0.113.7" },
+      method: "github",
+    };
+
+    expect(
+      Option.map(milestoneEvent({ ...milestone, kind: "SignedUp" }), (event) =>
+        captureBodyOf(KEY, event)
+      )
+    ).toStrictEqual(
+      Option.some({
+        api_key: KEY,
+        distinct_id: "user_ada",
+        event: "signup_completed",
+        properties: { method: "github" },
+      })
+    );
+    expect(
+      Option.map(
+        milestoneEvent({ ...milestone, kind: "SignedIn", method: "email" }),
+        (event) => captureBodyOf(KEY, event).event
+      )
+    ).toStrictEqual(Option.some("signin_completed"));
+  });
+
+  it("sends no sign-in milestone when the browser asks not to be tracked", () => {
+    expect(
+      milestoneEvent({
+        account: "user_ada",
+        headers: { "sec-gpc": "1" },
+        kind: "SignedUp",
+        method: "email",
+      })
+    ).toStrictEqual(Option.none());
   });
 
   it("sees Do Not Track and Global Privacy Control on a request", () => {

@@ -136,7 +136,6 @@ Properties never carry an email, a token, a search string, or a job title. Use c
 | `pricing_viewed` | browser | The pricing page is entered | none | `routeEvents`, `events.ts` |
 | `search_submitted` | browser | A search is submitted | `query_length` | `messageEvents`, `events.ts` |
 | `show_more` | browser | `ClickedLoadMore` | none | `messageEvents`, `events.ts` |
-| `signin_completed` | browser | A session appears after a signed-out state or on the confirm page | none | `sessionCalls`, `events.ts` |
 | `signup_started` | browser | A sign-in is submitted or a social provider is chosen | `method` | `accountEvents`, `events.ts` |
 | `saved_search_created` | browser | `CompletedSaveSearch` with outcome `Saved` | none | `savedSearchEvents`, `events.ts` |
 | `instant_alerts_changed` | browser | `CompletedSetInstantAlerts`, the server-confirmed value | `enabled`: boolean | `billingEvents`, `events.ts` |
@@ -148,6 +147,8 @@ Properties never carry an email, a token, a search string, or a job title. Use c
 | `read_rate_limited` | browser | A `/rpc` request answers 429 in a real browser. One event per request | none | `checkedHttp`, `board/queries.ts` |
 | `mcp_tool_called` | server | An MCP `tools/call` completes | `tool` | `trackedMcpHttp`, `apps/api/src/worker.ts` |
 | `subscription_activated` | server | Stripe links a customer. Sent as the account, with a person profile | none | `stripeWebhook`, `apps/api/src/worker.ts` |
+| `signup_completed` | server | better-auth creates an account, from a magic link or a social callback. Sent as the account, with no person profile, unless the request carries `DNT: 1` or `Sec-GPC: 1` | `method`: `email`, `github`, `google` | `milestoneEvent`, `apps/api/src/analytics.ts` |
+| `signin_completed` | server | better-auth creates a session, for a new or a returning account. Same identity and privacy rules as `signup_completed` | `method` | `milestoneEvent`, `apps/api/src/analytics.ts` |
 | `digest_sent` | server | The digest cron sent at least one email. Sent as `jobs-api` | `count` | digest cron, `apps/api/src/worker.ts` |
 | `email_unsubscribed` | server | A `POST /unsubscribe` succeeds, unless the request carries `DNT: 1` or `Sec-GPC: 1`. Sent as the account, with no person profile. A repeat POST sends it again | none | `unsubscribe`, `apps/api/src/worker.ts` |
 
