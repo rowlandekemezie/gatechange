@@ -195,7 +195,7 @@ describe("Lean fixtures match the TypeScript rules", () => {
     }
   });
 
-  it("fingerprintOf gives the Lean fingerprint, collisions included", () => {
+  it("fingerprintOf gives the Lean fingerprint, former collisions included", () => {
     for (const { company, fingerprint, title } of fixtures.fingerprints) {
       expect(fingerprintOf({ company, title })).toBe(fingerprint);
     }

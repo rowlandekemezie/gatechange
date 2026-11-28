@@ -154,6 +154,7 @@
         "j-0002",
         "j-0005",
         "j-0003",
+        "j-0001",
         "j-0000"
       ]
     },
@@ -253,7 +254,14 @@
           "company": "株式会社メルカリ"
         }
       ],
-      "relevanceOrder": ["j-0023", "j-0022", "j-0025", "j-0024", "j-0020"]
+      "relevanceOrder": [
+        "j-0023",
+        "j-0022",
+        "j-0025",
+        "j-0021",
+        "j-0024",
+        "j-0020"
+      ]
     },
     {
       "rows": [
@@ -314,7 +322,14 @@
           "company": "株式会社メルカリ"
         }
       ],
-      "relevanceOrder": ["j-0030", "j-0033", "j-0036", "j-0031", "j-0035"]
+      "relevanceOrder": [
+        "j-0030",
+        "j-0033",
+        "j-0036",
+        "j-0034",
+        "j-0031",
+        "j-0035"
+      ]
     },
     {
       "rows": [
@@ -488,7 +503,7 @@
           "company": "Acme"
         }
       ],
-      "relevanceOrder": ["j-0093", "j-0090", "j-0092"]
+      "relevanceOrder": ["j-0091", "j-0093", "j-0090", "j-0092"]
     },
     {
       "rows": [
@@ -646,6 +661,7 @@
         "j-0144",
         "j-0141",
         "j-0140",
+        "j-0142",
         "j-0145",
         "j-0147"
       ]
@@ -738,7 +754,14 @@
           "company": "ソニー株式会社"
         }
       ],
-      "relevanceOrder": ["j-0164", "j-0161", "j-0163", "j-0160", "j-0165"]
+      "relevanceOrder": [
+        "j-0164",
+        "j-0166",
+        "j-0161",
+        "j-0163",
+        "j-0160",
+        "j-0165"
+      ]
     },
     {
       "rows": [
@@ -996,7 +1019,7 @@
           "company": "Acme"
         }
       ],
-      "relevanceOrder": ["j-0205", "j-0203", "j-0200"]
+      "relevanceOrder": ["j-0202", "j-0205", "j-0203", "j-0200", "j-0204"]
     },
     {
       "rows": [
@@ -1327,6 +1350,7 @@
       ],
       "relevanceOrder": [
         "j-0306",
+        "j-0301",
         "j-0307",
         "j-0305",
         "j-0302",
@@ -2559,7 +2583,14 @@
           "company": "acme"
         }
       ],
-      "relevanceOrder": ["j-0545", "j-0544", "j-0541", "j-0542", "j-0540"]
+      "relevanceOrder": [
+        "j-0543",
+        "j-0545",
+        "j-0544",
+        "j-0541",
+        "j-0542",
+        "j-0540"
+      ]
     },
     {
       "rows": [
@@ -2794,7 +2825,14 @@
           "company": "acme"
         }
       ],
-      "relevanceOrder": ["j-0580", "j-0584", "j-0583", "j-0582", "j-0585"]
+      "relevanceOrder": [
+        "j-0580",
+        "j-0584",
+        "j-0583",
+        "j-0582",
+        "j-0585",
+        "j-0586"
+      ]
     },
     {
       "rows": [
@@ -2866,6 +2904,7 @@
       "relevanceOrder": [
         "j-0590",
         "j-0595",
+        "j-0594",
         "j-0591",
         "j-0596",
         "j-0592",
@@ -2882,7 +2921,7 @@
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "acme|engineeringmanagerc",
+      "fingerprint": "acme|engineeringmanagerc++",
       "company": "Acme"
     },
     {
@@ -2917,7 +2956,7 @@
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "acmeinc|engineeringmanagerc",
+      "fingerprint": "acmeinc|engineeringmanagerc++",
       "company": "Acme Inc."
     },
     {
@@ -2952,7 +2991,7 @@
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "acme|engineeringmanagerc",
+      "fingerprint": "acme|engineeringmanagerc++",
       "company": "acme"
     },
     {
@@ -2982,37 +3021,37 @@
     },
     {
       "title": "Engineering Manager",
-      "fingerprint": "acme|labs|engineeringmanager",
+      "fingerprint": "acmelabs|engineeringmanager",
       "company": "Acme | Labs"
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "acme|labs|engineeringmanagerc",
+      "fingerprint": "acmelabs|engineeringmanagerc++",
       "company": "Acme | Labs"
     },
     {
       "title": "Engineering Manager, C",
-      "fingerprint": "acme|labs|engineeringmanagerc",
+      "fingerprint": "acmelabs|engineeringmanagerc",
       "company": "Acme | Labs"
     },
     {
       "title": "Labs | Engineering Manager",
-      "fingerprint": "acme|labs|labs|engineeringmanager",
+      "fingerprint": "acmelabs|labs|engineeringmanager",
       "company": "Acme | Labs"
     },
     {
       "title": "Director of Engineering",
-      "fingerprint": "acme|labs|directorofengineering",
+      "fingerprint": "acmelabs|directorofengineering",
       "company": "Acme | Labs"
     },
     {
       "title": "VP, Engineering",
-      "fingerprint": "acme|labs|vpengineering",
+      "fingerprint": "acmelabs|vpengineering",
       "company": "Acme | Labs"
     },
     {
       "title": "Head of Platform Engineering",
-      "fingerprint": "acme|labs|headofplatformengineering",
+      "fingerprint": "acmelabs|headofplatformengineering",
       "company": "Acme | Labs"
     },
     {
@@ -3022,7 +3061,7 @@
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "acme|engineeringmanagerc",
+      "fingerprint": "acme|engineeringmanagerc++",
       "company": "Acme"
     },
     {
@@ -3052,72 +3091,72 @@
     },
     {
       "title": "Engineering Manager",
-      "fingerprint": "|engineeringmanager",
+      "fingerprint": "株式会社メルカリ|engineeringmanager",
       "company": "株式会社メルカリ"
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "|engineeringmanagerc",
+      "fingerprint": "株式会社メルカリ|engineeringmanagerc++",
       "company": "株式会社メルカリ"
     },
     {
       "title": "Engineering Manager, C",
-      "fingerprint": "|engineeringmanagerc",
+      "fingerprint": "株式会社メルカリ|engineeringmanagerc",
       "company": "株式会社メルカリ"
     },
     {
       "title": "Labs | Engineering Manager",
-      "fingerprint": "|labs|engineeringmanager",
+      "fingerprint": "株式会社メルカリ|labs|engineeringmanager",
       "company": "株式会社メルカリ"
     },
     {
       "title": "Director of Engineering",
-      "fingerprint": "|directorofengineering",
+      "fingerprint": "株式会社メルカリ|directorofengineering",
       "company": "株式会社メルカリ"
     },
     {
       "title": "VP, Engineering",
-      "fingerprint": "|vpengineering",
+      "fingerprint": "株式会社メルカリ|vpengineering",
       "company": "株式会社メルカリ"
     },
     {
       "title": "Head of Platform Engineering",
-      "fingerprint": "|headofplatformengineering",
+      "fingerprint": "株式会社メルカリ|headofplatformengineering",
       "company": "株式会社メルカリ"
     },
     {
       "title": "Engineering Manager",
-      "fingerprint": "|engineeringmanager",
+      "fingerprint": "ソニー株式会社|engineeringmanager",
       "company": "ソニー株式会社"
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "|engineeringmanagerc",
+      "fingerprint": "ソニー株式会社|engineeringmanagerc++",
       "company": "ソニー株式会社"
     },
     {
       "title": "Engineering Manager, C",
-      "fingerprint": "|engineeringmanagerc",
+      "fingerprint": "ソニー株式会社|engineeringmanagerc",
       "company": "ソニー株式会社"
     },
     {
       "title": "Labs | Engineering Manager",
-      "fingerprint": "|labs|engineeringmanager",
+      "fingerprint": "ソニー株式会社|labs|engineeringmanager",
       "company": "ソニー株式会社"
     },
     {
       "title": "Director of Engineering",
-      "fingerprint": "|directorofengineering",
+      "fingerprint": "ソニー株式会社|directorofengineering",
       "company": "ソニー株式会社"
     },
     {
       "title": "VP, Engineering",
-      "fingerprint": "|vpengineering",
+      "fingerprint": "ソニー株式会社|vpengineering",
       "company": "ソニー株式会社"
     },
     {
       "title": "Head of Platform Engineering",
-      "fingerprint": "|headofplatformengineering",
+      "fingerprint": "ソニー株式会社|headofplatformengineering",
       "company": "ソニー株式会社"
     },
     {
@@ -3127,7 +3166,7 @@
     },
     {
       "title": "Engineering Manager, C++",
-      "fingerprint": "globex|engineeringmanagerc",
+      "fingerprint": "globex|engineeringmanagerc++",
       "company": "Globex"
     },
     {
@@ -3157,13 +3196,33 @@
     },
     {
       "title": "Directeur, Engineering",
-      "fingerprint": "socitgnrale|directeurengineering",
+      "fingerprint": "sociétégénérale|directeurengineering",
       "company": "Société Générale"
     },
     {
       "title": "Head of   Engineering!",
-      "fingerprint": "zrichre|headofengineering",
+      "fingerprint": "zürichre|headofengineering",
       "company": "Zürich  Re"
+    },
+    {
+      "title": "Engineering Manager | Platform",
+      "fingerprint": "grüns|engineeringmanager|platform",
+      "company": "Grüns"
+    },
+    {
+      "title": "Engineering Manager, C#",
+      "fingerprint": "acme|engineeringmanagerc#",
+      "company": "Acme"
+    },
+    {
+      "title": "VP Engineering",
+      "fingerprint": "acmecloud|vpengineering",
+      "company": "Acme|Cloud"
+    },
+    {
+      "title": "VP | Engineering",
+      "fingerprint": "acmecloud|vp|engineering",
+      "company": "Acme Cloud"
     }
   ],
   "feeds": [

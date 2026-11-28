@@ -697,7 +697,7 @@ it.effect(
         );
 
         expect(counts).toStrictEqual([
-          { company_slug: "acme-cloud", count: 2, first_seen_at: NOW - 3 },
+          { company_slug: "acme-cloud", count: 1, first_seen_at: NOW - 3 },
           { company_slug: "acmecloud", count: 1, first_seen_at: NOW - 1 },
         ]);
         const store = yield* JobStore;
@@ -710,7 +710,7 @@ it.effect(
           (yield* store.companyRecords("acme-cloud", NOW)).open.map(
             (role) => role.company
           )
-        ).toStrictEqual(["Acme Cloud", "Acme|Cloud"]);
+        ).toStrictEqual(["Acme Cloud"]);
       }).pipe(Effect.provide(layer));
     })
 );

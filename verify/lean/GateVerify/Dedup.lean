@@ -5,10 +5,20 @@ kept where `duplicate_rank = 1`) and `fingerprintOf` in `packages/core/src/job-s
 -/
 namespace GateVerify.Dedup
 
-def keepChar (c : Char) : Bool := c.isLower || c.isDigit || c == '|'
+/-- Letters and digits in any script, plus `+` and `#`. Lean has no Unicode tables, so every
+non-ASCII code point stands in for a letter or digit here. The TypeScript applies NFKC and keeps
+`\p{L}`, `\p{M}` and `\p{N}`; the drift fixtures use only lowercase letters outside ASCII. -/
+def isWord (c : Char) : Bool := c.isLower || c.isDigit || c == '+' || c == '#' || c.val > 127
 
+def cleanCompany (s : String) : List Char := (s.toList.map Char.toLower).filter isWord
+
+/-- The title also keeps `|`, so a plain ASCII role keeps the key the first rule gave it. -/
+def cleanTitle (s : String) : List Char :=
+  (s.toList.map Char.toLower).filter fun c => isWord c || c == '|'
+
+/-- The company part never holds `|`, so the first `|` splits the key back into its two parts. -/
 def fingerprint (company title : String) : String :=
-  String.ofList (((company ++ "|" ++ title).toList.map Char.toLower).filter keepChar)
+  String.ofList (cleanCompany company ++ '|' :: cleanTitle title)
 
 def sourcePriority : String → Nat
   | "Greenhouse" | "Lever" | "Ashby" | "Workable" | "SmartRecruiters" => 0
@@ -158,53 +168,145 @@ theorem dedup_prefers_board {l : List Row} {m k : Row} (hm : m ∈ dedup l) (hk 
   simp only [before, Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff] at this
   omega
 
-/-! ## Counterexamples: `fingerprintOf` merges distinct roles
+/-! ## The first rule merged distinct roles
 
-The partition key is the only notion of "same role". Two cases make distinct roles share it.
+`legacyFingerprint` is the rule before the fix: lowercase `company|title` and keep only ASCII
+letters, digits and `|`. Three kinds of input made distinct roles share its key.
 -/
 
-/-- The `|` separator also survives inside names, so company and title can trade text. -/
-theorem separator_collision :
-    fingerprint "Acme | Labs" "Engineering Manager" = fingerprint "Acme" "Labs | Engineering Manager" := by
+def legacyKeep (c : Char) : Bool := c.isLower || c.isDigit || c == '|'
+
+def legacyFingerprint (company title : String) : String :=
+  String.ofList (((company ++ "|" ++ title).toList.map Char.toLower).filter legacyKeep)
+
+/-- The `|` separator also survived inside names, so company and title could trade text. -/
+theorem legacy_separator_collision :
+    legacyFingerprint "Acme | Labs" "Engineering Manager" =
+      legacyFingerprint "Acme" "Labs | Engineering Manager" := by
   decide
 
-/-- Every non-ASCII letter is stripped, so two companies written in another script look identical. -/
-theorem non_latin_collision :
-    fingerprint "株式会社メルカリ" "Engineering Manager" = fingerprint "ソニー株式会社" "Engineering Manager" := by
+/-- Every non-ASCII letter was stripped, so two companies written in another script looked identical. -/
+theorem legacy_non_latin_collision :
+    legacyFingerprint "株式会社メルカリ" "Engineering Manager" =
+      legacyFingerprint "ソニー株式会社" "Engineering Manager" := by
   decide
 
-/-- Symbols in a title are stripped, so a C++ role and a C role are one role. -/
-theorem symbol_collision :
-    fingerprint "Acme" "Engineering Manager, C++" = fingerprint "Acme" "Engineering Manager, C" := by
+/-- Symbols in a title were stripped, so a C++ role and a C role were one role. -/
+theorem legacy_symbol_collision :
+    legacyFingerprint "Acme" "Engineering Manager, C++" =
+      legacyFingerprint "Acme" "Engineering Manager, C" := by
   decide
 
 def collisionRows : List Row :=
   [⟨1, "Greenhouse", "株式会社メルカリ", "Engineering Manager", 10⟩,
    ⟨2, "Ashby", "ソニー株式会社", "Engineering Manager", 20⟩]
 
-theorem distinct_role_dropped : (dedup collisionRows).length = 1 := by decide
+def legacyKeeps (l : List Row) (j : Row) : Bool :=
+  !(l.any fun k =>
+    decide (legacyFingerprint k.company k.title = legacyFingerprint j.company j.title) && before k j)
 
-/-! ## Proposed fix: key on the cleaned pair, keeping every letter -/
-
-def keepCharFixed (c : Char) : Bool := c.isLower || c.isDigit || c == '+' || c == '#' || c.val > 127
-
-def clean (s : String) : List Char := (s.toList.map Char.toLower).filter keepCharFixed
-
-def fingerprintFixed (company title : String) : List Char × List Char := (clean company, clean title)
-
-theorem fixed_separates_collisions :
-    fingerprintFixed "Acme | Labs" "Engineering Manager" ≠ fingerprintFixed "Acme" "Labs | Engineering Manager" ∧
-    fingerprintFixed "株式会社メルカリ" "Engineering Manager" ≠ fingerprintFixed "ソニー株式会社" "Engineering Manager" ∧
-    fingerprintFixed "Acme" "Engineering Manager, C++" ≠ fingerprintFixed "Acme" "Engineering Manager, C" := by
+/-- Under the first rule the collapse kept one of the two companies and hid the other's role. -/
+theorem legacy_drops_distinct_role : (collisionRows.filter (legacyKeeps collisionRows)).length = 1 := by
   decide
 
-theorem fixed_injective_on_cleaned {c₁ t₁ c₂ t₂ : String}
-    (h : clean c₁ ≠ clean c₂ ∨ clean t₁ ≠ clean t₂) :
-    fingerprintFixed c₁ t₁ ≠ fingerprintFixed c₂ t₂ := by
-  intro heq
-  simp only [fingerprintFixed, Prod.mk.injEq] at heq
-  rcases h with h | h
-  · exact h heq.1
-  · exact h heq.2
+/-! ## The fixed rule keeps every distinction -/
+
+theorem fixed_separates_collisions :
+    fingerprint "Acme | Labs" "Engineering Manager" ≠ fingerprint "Acme" "Labs | Engineering Manager" ∧
+    fingerprint "株式会社メルカリ" "Engineering Manager" ≠ fingerprint "ソニー株式会社" "Engineering Manager" ∧
+    fingerprint "Acme" "Engineering Manager, C++" ≠ fingerprint "Acme" "Engineering Manager, C" := by
+  decide
+
+theorem distinct_roles_kept : (dedup collisionRows).length = 2 := by decide
+
+theorem pipe_not_mem_cleanCompany (s : String) : '|' ∉ cleanCompany s := by
+  intro h
+  have := (List.mem_filter.mp h).2
+  revert this
+  decide
+
+theorem split_at_pipe :
+    ∀ {a a' b b' : List Char}, '|' ∉ a → '|' ∉ a' → a ++ '|' :: b = a' ++ '|' :: b' → a = a' ∧ b = b'
+  | [], [], _, _, _, _, h => by simpa using h
+  | [], c :: _, _, _, _, h', h => by
+      simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
+      exact absurd (h.1 ▸ List.mem_cons_self) h'
+  | c :: _, [], _, _, ha, _, h => by
+      simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
+      exact absurd (h.1 ▸ List.mem_cons_self) ha
+  | c :: a, c' :: a', _, _, ha, ha', h => by
+      simp only [List.cons_append, List.cons.injEq] at h
+      obtain ⟨rfl, h⟩ := h
+      have := split_at_pipe (fun m => ha (List.mem_cons_of_mem _ m))
+        (fun m => ha' (List.mem_cons_of_mem _ m)) h
+      exact ⟨by rw [this.1], this.2⟩
+
+/-- Two roles share a key exactly when their cleaned companies match and their cleaned titles match.
+So the collapse merges only listings of one role, never roles that differ in any letter, digit,
+`+` or `#` of either part. -/
+theorem fingerprint_eq_iff {c₁ t₁ c₂ t₂ : String} :
+    fingerprint c₁ t₁ = fingerprint c₂ t₂ ↔
+      cleanCompany c₁ = cleanCompany c₂ ∧ cleanTitle t₁ = cleanTitle t₂ := by
+  constructor
+  · intro h
+    have h' := congrArg String.toList h
+    simp only [fingerprint, String.toList_ofList] at h'
+    exact split_at_pipe (pipe_not_mem_cleanCompany _) (pipe_not_mem_cleanCompany _) h'
+  · rintro ⟨h1, h2⟩
+    simp only [fingerprint, h1, h2]
+
+/-! ## Plain ASCII roles keep their key
+
+Rows already in D1 carry the first rule's key. For a company and title written in ASCII without
+`+` or `#`, and a company without `|`, the fixed rule gives the same key, so those rows need no
+rewrite on deploy.
+-/
+
+def plainChar (c : Char) : Bool := decide (c.toNat < 128) && c != '+' && c != '#'
+
+theorem plain_company_char :
+    ∀ n, n < 128 → plainChar (Char.ofNat n) = true → Char.ofNat n ≠ '|' →
+      legacyKeep (Char.ofNat n).toLower = isWord (Char.ofNat n).toLower := by
+  decide
+
+theorem plain_title_char :
+    ∀ n, n < 128 → plainChar (Char.ofNat n) = true →
+      legacyKeep (Char.ofNat n).toLower =
+        (isWord (Char.ofNat n).toLower || (Char.ofNat n).toLower == '|') := by
+  decide
+
+theorem plain_lt {c : Char} (h : plainChar c = true) : c.toNat < 128 := by
+  simp only [plainChar, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h.1.1
+
+theorem fingerprint_eq_legacy {company title : String}
+    (hc : ∀ c ∈ company.toList, plainChar c = true ∧ c ≠ '|')
+    (ht : ∀ c ∈ title.toList, plainChar c = true) :
+    fingerprint company title = legacyFingerprint company title := by
+  unfold fingerprint legacyFingerprint cleanCompany cleanTitle
+  congr 1
+  simp only [String.toList_append, List.map_append, List.filter_append]
+  have hcomp : (company.toList.map Char.toLower).filter isWord =
+      (company.toList.map Char.toLower).filter legacyKeep := by
+    apply List.filter_congr
+    intro x hx
+    obtain ⟨c, hcm, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨hp, hpipe⟩ := hc c hcm
+    have := plain_company_char c.toNat (plain_lt hp) (by rw [Char.ofNat_toNat]; exact hp)
+      (by rw [Char.ofNat_toNat]; exact hpipe)
+    rw [Char.ofNat_toNat] at this
+    exact this.symm
+  have htitle : (title.toList.map Char.toLower).filter (fun c => isWord c || c == '|') =
+      (title.toList.map Char.toLower).filter legacyKeep := by
+    apply List.filter_congr
+    intro x hx
+    obtain ⟨c, hcm, rfl⟩ := List.mem_map.mp hx
+    have hp := ht c hcm
+    have := plain_title_char c.toNat (plain_lt hp) (by rw [Char.ofNat_toNat]; exact hp)
+    rw [Char.ofNat_toNat] at this
+    exact this.symm
+  have hsep : ("|" : String).toList = ['|'] := by decide
+  rw [hcomp, htitle, hsep]
+  simp [legacyKeep, Char.toLower]
 
 end GateVerify.Dedup

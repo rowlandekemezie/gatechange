@@ -468,7 +468,7 @@ ON CONFLICT (id) DO UPDATE SET
     ]
   );
 
-export const sightingStatement = (job: Sighted, seenAt: number): SqlStatement =>
+const sightingStatement = (job: Sighted, seenAt: number): SqlStatement =>
   statement(
     `INSERT INTO job_history (fingerprint, first_seen_at, last_seen_at, last_seen_feed, sightings, reposts)
 VALUES (?, MIN(COALESCE((SELECT MIN(first_seen_at) FROM jobs WHERE fingerprint = ?), ?), ?), ?, ?, 1, 0)
@@ -562,7 +562,7 @@ ON CONFLICT (company_slug, fingerprint) DO UPDATE SET
     ]
   );
 
-export const intelSightingStatements = (
+const intelSightingStatements = (
   job: Sighted,
   seenAt: number
 ): readonly SqlStatement[] =>
@@ -571,6 +571,40 @@ export const intelSightingStatements = (
   )
     ? [reopenIntelStatement(job, seenAt), seenIntelStatement(job, seenAt)]
     : [];
+
+const asciiFingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
+  `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
+
+const rekeyHistoryStatements = (job: Sighted): readonly SqlStatement[] => {
+  const previous = asciiFingerprintOf(job);
+  const current = fingerprintOf(job);
+  const slug = Option.getOrElse(companySlugOf(job.company), () => "");
+
+  return previous === current
+    ? []
+    : [
+        statement(
+          `UPDATE job_history SET fingerprint = ?
+WHERE fingerprint = ? AND NOT EXISTS (SELECT 1 FROM job_history WHERE fingerprint = ?)`,
+          [current, previous, current]
+        ),
+        statement(
+          `UPDATE intel_history SET fingerprint = ?
+WHERE company_slug = ? AND fingerprint = ?
+  AND NOT EXISTS (SELECT 1 FROM intel_history WHERE company_slug = ? AND fingerprint = ?)`,
+          [current, slug, previous, slug, current]
+        ),
+      ];
+};
+
+export const sightingStatements = (
+  job: Sighted,
+  seenAt: number
+): readonly SqlStatement[] => [
+  ...rekeyHistoryStatements(job),
+  sightingStatement(job, seenAt),
+  ...intelSightingStatements(job, seenAt),
+];
 
 export const historyStatement = (job: Pick<JobValue, "company" | "title">) =>
   statement(

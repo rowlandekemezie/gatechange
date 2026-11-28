@@ -67,8 +67,15 @@ export interface ListingHistory {
 
 export type Sighted = Pick<JobValue, "company" | "feed" | "postedAt" | "title">;
 
+const companyNoise = /[^\p{L}\p{M}\p{N}+#]+/gu;
+
+const titleNoise = /[^\p{L}\p{M}\p{N}+#|]+/gu;
+
+const fingerprintPart = (text: string, noise: RegExp) =>
+  text.normalize("NFKC").toLowerCase().replaceAll(noise, "");
+
 export const fingerprintOf = (job: Pick<JobValue, "company" | "title">) =>
-  `${job.company}|${job.title}`.toLowerCase().replaceAll(/[^a-z0-9|]+/gu, "");
+  `${fingerprintPart(job.company, companyNoise)}|${fingerprintPart(job.title, titleNoise)}`;
 
 export const daysOpen = (firstSeenAt: number, now: number) =>
   Math.max(0, Math.floor((now - firstSeenAt) / DAY_MILLIS));

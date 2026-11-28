@@ -97,7 +97,9 @@ def listingCase (base : Nat) (g : Lcg) : Json × Lcg := Id.run do
 
 def fingerprintCases : List (String × String) :=
   (companies.flatMap fun c => titles.map fun t => (c, t)) ++
-  [("Société Générale", "Directeur, Engineering"), ("Zürich  Re", "Head of   Engineering!")]
+  [("Société Générale", "Directeur, Engineering"), ("Zürich  Re", "Head of   Engineering!"),
+   ("Grüns", "Engineering Manager | Platform"), ("Acme", "Engineering Manager, C#"),
+   ("Acme|Cloud", "VP Engineering"), ("Acme Cloud", "VP | Engineering")]
 
 def ids : List String :=
   ["greenhouse:acme:4012345", "lever:globex:9f1c2d3e-aaaa", "hackernews:who-is-hiring-november-2026:41234567",

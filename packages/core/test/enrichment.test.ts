@@ -2192,9 +2192,15 @@ describe("enrichListing", () => {
     "a defect in the guards records a final Malformed skip instead of failing the queue handler",
     () =>
       Effect.gen(function* guardDefect() {
+        const keyedText = new Set([boardJob.company, boardJob.title]);
+
         const normalize = vi
           .spyOn(String.prototype, "normalize")
-          .mockImplementation(() => {
+          .mockImplementation(function normalizeOrThrow(this: string) {
+            if (keyedText.has(this)) {
+              return this;
+            }
+
             throw new Error("guard defect");
           });
 

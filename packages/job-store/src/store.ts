@@ -42,7 +42,6 @@ import {
   feedSucceededStatement,
   findJobStatement,
   historyStatement,
-  intelSightingStatements,
   lastRunStatement,
   listJobsStatement,
   heldListingsStatement,
@@ -62,7 +61,7 @@ import {
   BOARD_MODEL_PREFIX,
   saveBoardFactsStatement,
   saveEnrichmentStatement,
-  sightingStatement,
+  sightingStatements,
   sitemapJobsStatement,
   TOP_COMPANIES,
   trackedSinceStatement,
@@ -607,10 +606,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
             "recordSightings",
             pipe(
               chunk,
-              Array.flatMap((listing) => [
-                sightingStatement(listing, seenAt),
-                ...intelSightingStatements(listing, seenAt),
-              ])
+              Array.flatMap((listing) => sightingStatements(listing, seenAt))
             )
           ),
         { discard: true }
@@ -633,8 +629,7 @@ export const makeJobStore = Effect.gen(function* makeJobStore() {
           Array.map(
             Array.flatMap((job) => [
               upsertJobStatement(job),
-              sightingStatement(job, seenAt),
-              ...intelSightingStatements(job, seenAt),
+              ...sightingStatements(job, seenAt),
             ])
           )
         );
