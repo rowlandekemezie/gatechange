@@ -26,6 +26,7 @@ export {
 } from "./request-viewer.js";
 
 export type {
+  AuthMilestone,
   AuthSettings,
   MagicLinkRequest,
   SocialCredentials,

@@ -84,7 +84,12 @@ import {
 } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
-import { postHogCapture, privacySignalled, ServerEvent } from "./analytics.js";
+import {
+  milestoneEvent,
+  postHogCapture,
+  privacySignalled,
+  ServerEvent,
+} from "./analytics.js";
 import type { ServerEventValue } from "./analytics.js";
 import {
   mcpAppLayer,
@@ -495,6 +500,26 @@ export default class JobsBackend extends Cloudflare.Worker<JobsBackend>()(
       ...authOptions({
         hosts,
         magicLinkDailySendLimit,
+        // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits Promise-returning database hooks.
+        reached: async (milestone) => {
+          await runPromise(
+            Effect.logInfo("auth milestone", {
+              kind: milestone.kind,
+              method: milestone.method,
+            }).pipe(
+              Effect.andThen(
+                Option.match(milestoneEvent(milestone), {
+                  onNone: () => Effect.void,
+                  onSome: (event) =>
+                    capture(event).pipe(
+                      Effect.timeout("1 second"),
+                      Effect.ignore
+                    ),
+                })
+              )
+            )
+          );
+        },
         // @effect-diagnostics-next-line asyncFunction:off -- better-auth awaits a Promise-returning sender.
         sendMagicLink: async (request) => {
           await runPromise(

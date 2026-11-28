@@ -72,6 +72,7 @@ const scenarios = [
   "analytics-anonymous",
   "analytics-identity",
   "analytics-events",
+  "analytics-signup",
 ] as const;
 
 type Scenario = (typeof scenarios)[number];
@@ -558,6 +559,18 @@ const latestLink = () => {
   const [link] = MAGIC_LINK.exec(readFileSync(newest ?? "", "utf-8")) ?? [];
 
   return link ?? fail(`no magic link in ${newest ?? mailOutbox}`);
+};
+
+const AUTH_MILESTONE =
+  /auth milestone\n.*\{ kind: '(?<kind>\w+)', method: '(?<method>\w+)' \}/gu;
+
+const authMilestones = () => {
+  const log =
+    values.log ?? fail("--log is required for the analytics-signup scenario");
+
+  return [...readFileSync(log, "utf-8").matchAll(AUTH_MILESTONE)].map(
+    ({ groups }) => `${groups?.kind ?? ""} ${groups?.method ?? ""}`
+  );
 };
 
 const DIGEST_SENT =
@@ -1492,6 +1505,62 @@ const run = async () => {
         personProfile: first.properties.$process_person_profile === true,
         step: "signed-in reload with the session answer held back 2000ms",
       });
+    },
+    "analytics-signup": async () => {
+      const before = authMilestones().length;
+
+      await signIn();
+
+      const started = await wireEvent("signup_started");
+
+      const firstVisit = await waitFor("the sign-up milestones", async () => {
+        await sleep(0);
+
+        const fresh = authMilestones().slice(before);
+
+        return fresh.length >= 2 ? fresh : undefined;
+      });
+
+      if (firstVisit.join(",") !== "SignedUp email,SignedIn email") {
+        throw new Error(`first sign-in reported ${firstVisit.join("; ")}`);
+      }
+
+      await signOut();
+
+      const returning = authMilestones().length;
+
+      await signIn();
+
+      const again = await waitFor(
+        "the returning sign-in milestone",
+        async () => {
+          await sleep(0);
+
+          const fresh = authMilestones().slice(returning);
+
+          return fresh.length > 0 ? fresh : undefined;
+        }
+      );
+
+      await sleep(500);
+
+      if (authMilestones().slice(returning).join(",") !== "SignedIn email") {
+        throw new Error(`returning sign-in reported ${again.join("; ")}`);
+      }
+
+      if (wire.bodies.some((body) => body.includes(values.email))) {
+        throw new Error(`the wire carried ${values.email}`);
+      }
+
+      steps.push(
+        {
+          distinctId: started.distinct_id,
+          properties: { method: started.properties.method ?? "" },
+          step: started.event,
+        },
+        { events: firstVisit, step: "new account milestones" },
+        { events: again, step: "returning account milestones" }
+      );
     },
   };
 
