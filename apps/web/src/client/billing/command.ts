@@ -37,26 +37,32 @@ const redirectTo = <E extends Failure>(
     })
   );
 
-const fetched = (delay: Duration.Duration) =>
+const fetched = (delay: Duration.Duration, generation: number) =>
   Effect.sleep(delay).pipe(
     Effect.andThen(JobQueries.use((queries) => queries.membership)),
     Effect.match({
       onFailure: () =>
-        Message.CompletedFetchMembership({ membership: Option.none() }),
+        Message.CompletedFetchMembership({
+          generation,
+          membership: Option.none(),
+        }),
       onSuccess: (membership) =>
         Message.CompletedFetchMembership({
+          generation,
           membership: Option.some(membership),
         }),
     })
   );
 
 export const FetchMembership = Command.define("FetchMembership", {
-  execute: fetched(Duration.zero),
+  args: { generation: Schema.Finite },
+  execute: ({ generation }) => fetched(Duration.zero, generation),
   messages: [Message.CompletedFetchMembership],
 });
 
 export const PollMembership = Command.define("PollMembership", {
-  execute: fetched(Duration.seconds(2)),
+  args: { generation: Schema.Finite },
+  execute: ({ generation }) => fetched(Duration.seconds(2), generation),
   messages: [Message.CompletedFetchMembership],
 });
 

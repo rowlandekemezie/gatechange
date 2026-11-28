@@ -14,7 +14,7 @@ export const TokensState = defineTaggedUnion({
 export const IssueState = defineTaggedUnion({
   Idle: {},
   Issued: { secret: Schema.String },
-  Issuing: {},
+  Issuing: { generation: Schema.Finite },
   Refused: { problem: IssueProblem },
 });
 

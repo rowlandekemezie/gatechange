@@ -6,7 +6,9 @@
 (* entered (30), submitted (44), the generation gate (59),                 *)
 (* ClickedRevokeToken (67), CompletedIssueToken (86),                      *)
 (* CompletedRevokeToken (101), FailedIssueToken (115); model.ts canIssue   *)
-(* (38); board/update.ts entered (416) invalidates on leaving Account.     *)
+(* (38); board/update.ts entered (416) calls left on leaving Account,     *)
+(* which keeps an Issuing request and its generation. A reply that lands  *)
+(* while away is held off screen and shown once on return.                *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets
 
@@ -15,7 +17,9 @@ Cap == 2
 VARIABLES
   route,     \* "account" or "board"
   gen,       \* agentTokens.generation
-  issue,     \* "Idle", "Issuing", "Issued", "Refused"
+  issue,     \* "Idle", "Issuing", "Issued", "Held", "Refused"
+  issueGen,  \* the generation the Issuing request was sent in
+  held,      \* the token whose secret is held off screen, 0 for none
   server,    \* tokens on the server
   revealed,  \* tokens whose secret the page showed
   next,      \* next token id
@@ -25,10 +29,11 @@ VARIABLES
   listed,    \* tokens listed on the page
   steps
 
-vars == <<route, gen, issue, server, revealed, next, issues, revokes, revoking, listed, steps>>
+vars == <<route, gen, issue, issueGen, held, server, revealed, next, issues, revokes, revoking, listed, steps>>
 
 Init ==
-  /\ route = "account" /\ gen = 1 /\ issue = "Idle" /\ server = {}
+  /\ route = "account" /\ gen = 1 /\ issue = "Idle" /\ issueGen = 0 /\ held = 0
+  /\ server = {}
   /\ revealed = {} /\ next = 1 /\ issues = {} /\ revokes = {}
   /\ revoking = {} /\ listed = {} /\ steps = 0
 
@@ -36,9 +41,9 @@ Tick == steps < 4 /\ steps' = steps + 1
 
 ReaderCreates ==
   /\ Tick /\ route = "account" /\ issue # "Issuing"
-  /\ issue' = "Issuing"
+  /\ issue' = "Issuing" /\ issueGen' = gen
   /\ issues' = issues \cup {[gen |-> gen, n |-> steps, phase |-> "sent", id |-> 0]}
-  /\ UNCHANGED <<route, gen, server, revealed, next, revokes, revoking, listed>>
+  /\ UNCHANGED <<route, gen, held, server, revealed, next, revokes, revoking, listed>>
 
 ServerIssues ==
   \E r \in issues :
@@ -48,24 +53,27 @@ ServerIssues ==
               /\ issues' = (issues \ {r}) \cup {[r EXCEPT !.phase = "ok", !.id = next]}
          ELSE /\ issues' = (issues \ {r}) \cup {[r EXCEPT !.phase = "limit"]}
               /\ UNCHANGED <<server, next>>
-    /\ UNCHANGED <<route, gen, issue, revealed, revokes, revoking, listed, steps>>
+    /\ UNCHANGED <<route, gen, issue, issueGen, held, revealed, revokes, revoking, listed, steps>>
 
 IssueAnswers ==
   \E r \in issues :
     /\ r.phase \in {"ok", "limit"} /\ issues' = issues \ {r}
-    /\ IF route = "account" /\ r.gen = gen /\ issue = "Issuing"
+    /\ IF r.gen = issueGen /\ issue = "Issuing"
          THEN IF r.phase = "ok"
-                THEN /\ issue' = "Issued" /\ revealed' = revealed \cup {r.id}
-                     /\ listed' = listed \cup {r.id}
-                ELSE /\ issue' = "Refused" /\ UNCHANGED <<revealed, listed>>
-         ELSE UNCHANGED <<issue, revealed, listed>>
-    /\ UNCHANGED <<route, gen, server, next, revokes, revoking, steps>>
+                THEN IF route = "account"
+                       THEN /\ issue' = "Issued" /\ revealed' = revealed \cup {r.id}
+                            /\ listed' = listed \cup {r.id} /\ UNCHANGED held
+                       ELSE /\ issue' = "Held" /\ held' = r.id
+                            /\ UNCHANGED <<revealed, listed>>
+                ELSE /\ issue' = "Refused" /\ UNCHANGED <<revealed, listed, held>>
+         ELSE UNCHANGED <<issue, revealed, listed, held>>
+    /\ UNCHANGED <<route, gen, issueGen, server, next, revokes, revoking, steps>>
 
 ReaderRevokes(id) ==
   /\ Tick /\ route = "account" /\ id \in listed /\ id \notin revoking
   /\ revoking' = revoking \cup {id}
   /\ revokes' = revokes \cup {[gen |-> gen, id |-> id]}
-  /\ UNCHANGED <<route, gen, issue, server, revealed, next, issues, listed>>
+  /\ UNCHANGED <<route, gen, issue, issueGen, held, server, revealed, next, issues, listed>>
 
 RevokeAnswers ==
   \E r \in revokes :
@@ -73,18 +81,23 @@ RevokeAnswers ==
     /\ IF route = "account" /\ r.gen = gen /\ r.id \in revoking
          THEN revoking' = revoking \ {r.id} /\ listed' = listed \ {r.id}
          ELSE UNCHANGED <<revoking, listed>>
-    /\ UNCHANGED <<route, gen, issue, revealed, next, issues, steps>>
+    /\ UNCHANGED <<route, gen, issue, issueGen, held, revealed, next, issues, steps>>
 
 ReaderLeaves ==
   /\ Tick /\ route = "account" /\ route' = "board" /\ gen' = gen + 1
-  /\ issue' = "Idle" /\ revoking' = {} /\ listed' = {}
-  /\ UNCHANGED <<server, revealed, next, issues, revokes>>
+  /\ issue' = IF issue = "Issuing" THEN "Issuing" ELSE "Idle"
+  /\ revoking' = {} /\ listed' = {}
+  /\ UNCHANGED <<issueGen, held, server, revealed, next, issues, revokes>>
 
 \* entered: fetch the list again; the fetch is folded into the step.
+\* A held secret goes on screen; an Issuing request keeps waiting.
 ReaderComesBack ==
   /\ route = "board" /\ route' = "account" /\ gen' = gen + 1
-  /\ issue' = "Idle" /\ revoking' = {} /\ listed' = server
-  /\ UNCHANGED <<server, revealed, next, issues, revokes, steps>>
+  /\ issue' = IF issue = "Held" THEN "Issued" ELSE issue
+  /\ revealed' = IF issue = "Held" THEN revealed \cup {held} ELSE revealed
+  /\ held' = 0
+  /\ revoking' = {} /\ listed' = server
+  /\ UNCHANGED <<issueGen, server, next, issues, revokes, steps>>
 
 Done == issues = {} /\ revokes = {} /\ UNCHANGED vars
 
@@ -95,13 +108,13 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
-TypeOK == issue \in {"Idle", "Issuing", "Issued", "Refused"}
+TypeOK == issue \in {"Idle", "Issuing", "Issued", "Held", "Refused"}
 
 Issued == {r \in issues : r.phase = "ok"}
 
 \* Every token the server made had its secret shown, or is still on its way.
 EverySecretShown ==
-  \A id \in server : id \in revealed \/ \E r \in Issued : r.id = id
+  \A id \in server : id \in revealed \/ id = held \/ \E r \in Issued : r.id = id
 
 \* A double tap on Create sends one request, never two, for one page visit.
 OneCreateAtATime == \A a, b \in issues : a.gen = b.gen => a = b

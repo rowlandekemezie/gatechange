@@ -416,7 +416,7 @@ const entered = (
   const routed = modifyFields(model, {
     agentTokens: (tokens) =>
       Schema.is(Route.Account)(model.route) && !Schema.is(Route.Account)(route)
-        ? AgentTokens.invalidated(tokens)
+        ? AgentTokens.left(tokens)
         : tokens,
     route: () => route,
   });
@@ -1077,7 +1077,7 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
       return followedEntitlement(model, followedSession(refreshed));
     },
     GotAgentTokensMessage: ({ message: agentTokensMessage }) =>
-      isSignedIn(model) && Schema.is(Route.Account)(model.route)
+      isSignedIn(model)
         ? foldAgentTokens(model, agentTokensMessage)
         : { model },
     GotBillingMessage: ({ message: billingMessage }) =>

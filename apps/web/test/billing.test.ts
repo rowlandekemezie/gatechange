@@ -166,12 +166,18 @@ describe("billing updates", () => {
 
     const stillFree = update(
       waiting,
-      Message.CompletedFetchMembership({ membership: Option.some(free) })
+      Message.CompletedFetchMembership({
+        generation: 0,
+        membership: Option.some(free),
+      })
     );
 
     const nowPro = update(
       stillFree.model,
-      Message.CompletedFetchMembership({ membership: Option.some(pro) })
+      Message.CompletedFetchMembership({
+        generation: 0,
+        membership: Option.some(pro),
+      })
     );
 
     expect([commandNames(stillFree), stillFree.model.pollsLeft]).toEqual([
@@ -184,12 +190,18 @@ describe("billing updates", () => {
   it("gives up polling after the last try and keeps the plan it already showed", () => {
     const last = update(
       { ...loaded(free), pollsLeft: 1 },
-      Message.CompletedFetchMembership({ membership: Option.some(free) })
+      Message.CompletedFetchMembership({
+        generation: 0,
+        membership: Option.some(free),
+      })
     );
 
     const failed = update(
       last.model,
-      Message.CompletedFetchMembership({ membership: Option.none() })
+      Message.CompletedFetchMembership({
+        generation: 0,
+        membership: Option.none(),
+      })
     );
 
     expect(commandNames(last)).toEqual(["PollMembership"]);
@@ -256,6 +268,7 @@ describe("billing updates", () => {
         reason === "membership"
           ? BoardMessage.GotBillingMessage({
               message: Message.CompletedFetchMembership({
+                generation: 0,
                 membership: Option.some(free),
               }),
             })
@@ -310,6 +323,7 @@ describe("billing updates", () => {
         signedIn.model,
         BoardMessage.GotBillingMessage({
           message: Message.CompletedFetchMembership({
+            generation: 0,
             membership: Option.some(pro),
           }),
         })
@@ -319,6 +333,7 @@ describe("billing updates", () => {
         confirmed.model,
         BoardMessage.GotBillingMessage({
           message: Message.CompletedFetchMembership({
+            generation: 0,
             membership: Option.some(pro),
           }),
         })
@@ -388,6 +403,7 @@ describe("billing updates", () => {
 
     expect(signedOut.model.billing).toEqual({
       ...init().model,
+      generation: 1,
       plans: PlansState.Loaded({ plans: offers }),
     });
   });

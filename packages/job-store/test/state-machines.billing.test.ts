@@ -139,7 +139,7 @@ const pressUpgrade = (world: ReturnType<typeof checkoutWorld>) =>
   );
 
 describe("server-billing-webhook model replay", () => {
-  it.effect.fails(
+  it.effect(
     "AccountShowsLatestChange: a resume in the same second as the cancel leaves Pro renewing",
     () =>
       withBilling(

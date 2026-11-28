@@ -5,7 +5,9 @@ Events == {"created", "cancel", "resume"}
 
 RealOrder == [created |-> 0, cancel |-> 1, resume |-> 2]
 Second == [created |-> 0, cancel |-> 1, resume |-> 1]
-Rank == [created |-> 0, cancel |-> 1, resume |-> 1]
+\* A resume carries previous_attributes showing the cancel it undoes, so it
+\* ranks above a plain update (packages/billing/src/webhook.ts rankOf).
+Rank == [created |-> 0, cancel |-> 1, resume |-> 2]
 Renews == [created |-> TRUE, cancel |-> FALSE, resume |-> TRUE]
 
 VARIABLES idRank, delivered, stored

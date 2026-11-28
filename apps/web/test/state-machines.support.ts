@@ -191,6 +191,7 @@ export const pro: MembershipValue = {
 export const membershipArrives = (membership: MembershipValue) =>
   billing(
     BillingMessage.CompletedFetchMembership({
+      generation: 0,
       membership: Option.some(membership),
     })
   );
