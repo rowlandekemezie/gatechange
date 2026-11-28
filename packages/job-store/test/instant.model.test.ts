@@ -18,6 +18,7 @@ import type {
   Digest,
   DigestPlan,
   DigestReceipt,
+  JobStoreUnavailable,
   JobValue,
   SubscriptionStatusValue,
 } from "@rat-stack/core";
@@ -355,6 +356,9 @@ describe("instant alerts", () => {
       withStores(
         Effect.gen(function* claimCap() {
           yield* addMember(pro);
+          yield* AlertStore.use((store) =>
+            store.setInstantAlerts(pro, true, NOW - DAY_MILLIS)
+          );
 
           const claims = yield* AlertStore.use((store) =>
             Effect.forEach(Array.range(0, 7), (index) =>
@@ -439,6 +443,78 @@ describe("instant alerts", () => {
               .map((at) => `at${at}`)
               .toReversed()
           );
+        }),
+        sent
+      );
+    }
+  );
+});
+
+const changingBeforeClaim = (
+  change: (
+    store: typeof AlertStore.Service
+  ) => Effect.Effect<void, JobStoreUnavailable>
+) =>
+  Layer.effect(
+    AlertStore,
+    Effect.gen(function* interleaved() {
+      const real = yield* AlertStore;
+
+      return AlertStore.of({
+        ...real,
+        claimDigest: (cadence, account, periodStart, now, dailyLimit) =>
+          change(real).pipe(
+            Effect.andThen(
+              real.claimDigest(cadence, account, periodStart, now, dailyLimit)
+            )
+          ),
+      });
+    })
+  );
+
+describe("instant alerts changed during a send", () => {
+  it.effect(
+    "an unsubscribe that lands before the claim stops the alert",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* unsubscribeMidSend() {
+          yield* setUp;
+
+          const receipt = yield* runInstantAlerts(PLAN, NOW).pipe(
+            Effect.provide(
+              changingBeforeClaim((store) => store.unsubscribe(pro, NOW))
+            )
+          );
+
+          expect(sent).toEqual([]);
+          expect(receipt.sent).toBe(0);
+        }),
+        sent
+      );
+    }
+  );
+
+  it.effect(
+    "switching instant alerts off before the claim stops the alert",
+    () => {
+      const sent: Digest[] = [];
+
+      return withStores(
+        Effect.gen(function* switchedOffMidSend() {
+          yield* setUp;
+
+          const receipt = yield* runInstantAlerts(PLAN, NOW).pipe(
+            Effect.provide(
+              changingBeforeClaim((store) =>
+                store.setInstantAlerts(pro, false, NOW)
+              )
+            )
+          );
+
+          expect(sent).toEqual([]);
+          expect(receipt.sent).toBe(0);
         }),
         sent
       );

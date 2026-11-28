@@ -27,7 +27,7 @@ RunRechecksMember(p) ==
 
 RunClaimsSend(p) ==
   /\ pc[p] = "checked"
-  /\ IF row[p[2]] = "none" /\ Cardinality(Claimed) < Cap
+  /\ IF row[p[2]] = "none" /\ Cardinality(Claimed) < Cap /\ ~(p[2] = "m1" /\ unsub)
        THEN /\ row' = [row EXCEPT ![p[2]] = "claimed"]
             /\ pc' = [pc EXCEPT ![p] = "claimed"]
             /\ mailedAfterUnsub' = (mailedAfterUnsub \/ (p[2] = "m1" /\ unsub))

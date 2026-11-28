@@ -112,6 +112,8 @@ export const makeAlertStore = Effect.gen(function* makeAlertStore() {
 SELECT ?, ?, 'Claimed', ?
 WHERE (SELECT COUNT(*) FROM instant_sends WHERE claimed_at >= ?) < ?
   AND (SELECT COUNT(*) FROM instant_sends WHERE account_id = ? AND claimed_at > ?) < ?
+  AND EXISTS (SELECT 1 FROM instant_alerts WHERE account_id = ?)
+  AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes WHERE account_id = ?)
 ON CONFLICT (account_id, window_start) DO NOTHING`,
                 [
                   account,
@@ -122,6 +124,8 @@ ON CONFLICT (account_id, window_start) DO NOTHING`,
                   account,
                   now - DAY_MILLIS,
                   INSTANT_SENDS_PER_MEMBER_PER_DAY,
+                  account,
+                  account,
                 ]
               )
             : statement(
@@ -129,6 +133,7 @@ ON CONFLICT (account_id, window_start) DO NOTHING`,
 SELECT ?, ?, 'Claimed', ?
 WHERE (SELECT COUNT(*) FROM alert_sends WHERE claimed_at >= ?) < ?
   AND (SELECT COUNT(*) FROM alert_sends WHERE account_id = ? AND claimed_at > ?) < ?
+  AND NOT EXISTS (SELECT 1 FROM alert_unsubscribes WHERE account_id = ?)
 ON CONFLICT (account_id, period_start) DO NOTHING`,
                 [
                   account,
@@ -139,6 +144,7 @@ ON CONFLICT (account_id, period_start) DO NOTHING`,
                   account,
                   now - WEEK_MILLIS,
                   RECIPIENT_SENDS_PER_WEEK,
+                  account,
                 ]
               ),
         ])

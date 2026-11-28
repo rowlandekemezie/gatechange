@@ -129,7 +129,7 @@ const unsubscribingBeforeClaim = (member: AccountIdValue) =>
   );
 
 describe("server-digest-send model replay", () => {
-  it.effect.fails(
+  it.effect(
     "NoSendReservedAfterUnsubscribe: an unsubscribe that lands after the recheck stops the digest",
     () =>
       withStores(
