@@ -5,6 +5,7 @@ export {
   currentMember,
   MAGIC_LINK_TTL_MINUTES,
   ACCOUNT_PATH,
+  PRICING_PATH,
   returnPathOf,
   SIGN_IN_EMAIL_CAPACITY_CODE,
   SignInOptions,

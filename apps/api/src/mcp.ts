@@ -13,6 +13,7 @@ import {
   MCP_PATH,
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAuthAccessTokens,
+  PRICING_PATH,
   PROTECTED_RESOURCE_METADATA_PATH,
   secretHashOf,
   ServedSources,
@@ -44,7 +45,7 @@ export const MCP_SERVER_VERSION = "1.0.0";
 const MCP_PROTOCOLS = [McpProtocol.v2026_07_28] as const;
 
 const INSTRUCTIONS =
-  "Search open engineering leadership roles, from engineering managers to VPs, with listJobs, and read board health with boardStats. The board has no level above VP. A RemoteUnitedStates or RemoteCanada search also returns roles open across North America and worldwide, the same as the website. Listings from sources whose terms forbid agent access are left out, so the website can show more roles. Every listing links to its original posting; send applicants there. Pro members connect with a personal token from their account page, or by connecting an app such as ChatGPT through OAuth, to save searches and keep an application tracker.";
+  "Search open engineering leadership roles, from engineering managers to VPs, with listJobs, and read board health with boardStats. The board has no level above VP. A RemoteUnitedStates or RemoteCanada search also returns roles open across North America and worldwide, the same as the website. Listings from sources whose terms forbid agent access are left out, so the website can show more roles. Every listing links to its original posting; send applicants there. listJobs, getJob and boardStats are free for everyone. The saved search and tracker tools (saveSearch, savedSearches, deleteSearch, trackJob, trackedJobs, noteTrackedJob, untrackJob) need Gate Change Pro. Pro members connect with a personal token from their account page, or by connecting an app such as ChatGPT or Claude through OAuth. An account without Pro can still connect and use the free tools; its Pro tool calls return an error that names the pricing page.";
 
 export const agentToolkit = toToolkit(agentCapabilities);
 
@@ -86,7 +87,6 @@ export const mcpAppLayer = <E, R>(stores: Layer.Layer<AgentStores, E, R>) =>
 
 export class AgentTokenRefused extends Data.TaggedError("AgentTokenRefused")<{
   readonly message: string;
-  readonly status: 401 | 403;
 }> {}
 
 const credentials = {
@@ -131,21 +131,12 @@ export const agentViewerOf = Effect.fn("agentViewerOf")(function* agentViewerOf(
   );
 
   if (Option.isNone(holder)) {
-    return yield* new AgentTokenRefused({
-      message: credential.unknown,
-      status: 401,
-    });
+    return yield* new AgentTokenRefused({ message: credential.unknown });
   }
 
-  if (!isPro(yield* entitlementOfAccount(holder.value.id))) {
-    return yield* new AgentTokenRefused({
-      message:
-        "Pro has ended for this token's account. Renew Pro to use the Pro tools, or drop the Authorization header to use the free tools.",
-      status: 403,
-    });
-  }
-
-  return Viewer.Member({ account: holder.value });
+  return isPro(yield* entitlementOfAccount(holder.value.id))
+    ? Viewer.Member({ account: holder.value })
+    : Viewer.FreeHolder({ pricing: `${origin}${PRICING_PATH}` });
 });
 
 const jsonRpcError = (status: number, message: string, headers = {}) =>
@@ -162,16 +153,10 @@ const refusalOf = (
   failure: AgentTokenRefused | JobStoreUnavailable
 ) =>
   Match.valueTags(failure, {
-    AgentTokenRefused: ({ message, status }) =>
-      jsonRpcError(
-        status,
-        message,
-        status === 401
-          ? {
-              "www-authenticate": `Bearer error="invalid_token", resource_metadata="${origin}${PROTECTED_RESOURCE_METADATA_PATH}"`,
-            }
-          : {}
-      ),
+    AgentTokenRefused: ({ message }) =>
+      jsonRpcError(401, message, {
+        "www-authenticate": `Bearer error="invalid_token", resource_metadata="${origin}${PROTECTED_RESOURCE_METADATA_PATH}"`,
+      }),
     JobStoreUnavailable: () =>
       jsonRpcError(
         503,
@@ -199,7 +184,7 @@ export const serveMcp =
 export const mcpDiscovery = (origin: string) => ({
   authentication: {
     description:
-      "Free tools need no token. Pro tools need a personal token from the account page or an OAuth 2.1 access token, sent as Authorization: Bearer <token> on every request.",
+      "Free tools need no token. Pro tools need a personal token from the account page or an OAuth 2.1 access token, sent as Authorization: Bearer <token> on every request, and an account with Pro. A token for an account without Pro serves the free tools, and each Pro tool call returns an error that links to the pricing page.",
     oauth: {
       authorizationServer: `${origin}/api/auth`,
       protectedResourceMetadata: `${origin}${PROTECTED_RESOURCE_METADATA_PATH}`,

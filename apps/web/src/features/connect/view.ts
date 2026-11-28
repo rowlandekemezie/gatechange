@@ -69,8 +69,8 @@ const proNote = (
         h.p(
           [h.Class("sign-in-problem"), h.Role("alert")],
           [
-            "Your account does not have Pro. The app can connect, but Gate Change will refuse its requests until you ",
-            h.a([h.Href(pricingRouter())], ["subscribe to Pro"]),
+            "Your account does not have Pro. The app can connect and search the board, but saved searches and the tracker need Pro. ",
+            h.a([h.Href(pricingRouter())], ["See Pro"]),
             ".",
           ]
         ),

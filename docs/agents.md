@@ -22,11 +22,13 @@ The server publishes its protected resource metadata at `/.well-known/oauth-prot
 
 The connection keeps working after your Gate Change browser session ends on its own. Signing out on the browser where you allowed the connection ends it, and the app must ask you to connect again. Signing out on another browser leaves it connected.
 
-The Pro tools need an active Pro membership, the same as with an agent token. If Pro ends, the server answers 403 until you renew.
+Any Gate Change account can connect. Without Pro, the connection serves the free tools, and each Pro tool call returns a tool error that says the tool needs Gate Change Pro and links to `https://gatechange.dev/pricing`. The same applies to an agent token whose account no longer has Pro. Once the account has Pro again, the same connection serves the Pro tools.
+
+An unknown, expired or revoked token gets `401` with a `www-authenticate` header that points at the protected resource metadata, so the client can connect again.
 
 ## What a token adds
 
-An agent token or an OAuth connection raises the limit to 120 calls a minute. It also adds tools to save searches (`saveSearch`, `savedSearches`, `deleteSearch`) and to track applications (`trackJob`, `trackedJobs`, `noteTrackedJob`, `untrackJob`).
+An agent token or an OAuth connection raises the limit to 120 calls a minute, with or without Pro. For an account with Pro, it also adds tools to save searches (`saveSearch`, `savedSearches`, `deleteSearch`) and to track applications (`trackJob`, `trackedJobs`, `noteTrackedJob`, `untrackJob`).
 
 ## What the tools return
 

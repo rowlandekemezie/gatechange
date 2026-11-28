@@ -63,6 +63,7 @@ const viewerIsPro = CurrentViewer.pipe(
   Effect.flatMap((viewer) =>
     Viewer.$match(viewer, {
       Anonymous: () => Effect.succeed(false),
+      FreeHolder: () => Effect.succeed(false),
       Member: ({ account: member }) =>
         entitlementOfAccount(member.id).pipe(Effect.map(isPro)),
     })
