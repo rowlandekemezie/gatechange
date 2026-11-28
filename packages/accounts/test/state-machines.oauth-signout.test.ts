@@ -27,6 +27,7 @@ interface Latch {
 interface Gate {
   readonly after?: Latch;
   readonly before?: Latch;
+  readonly entered?: Latch;
 }
 
 type Gates = (sql: string) => Gate;
@@ -63,24 +64,31 @@ const runOn = (
 };
 
 const gatedD1 = (database: DatabaseSync, gates: { current: Gates }) => {
+  // @effect-diagnostics-next-line asyncFunction:off -- D1 statements are Promise-based.
+  const through = async <A>(sql: string, run: () => A) => {
+    const gate = gates.current(sql);
+
+    if (gate.entered !== undefined) {
+      gate.entered.open = true;
+    }
+
+    while (gate.before !== undefined && !gate.before.open) {
+      // oxlint-disable-next-line no-await-in-loop -- The gate holds this statement until the other request reaches its step in the model's path.
+      await nextMacrotask();
+    }
+
+    const result = run();
+
+    if (gate.after !== undefined) {
+      gate.after.open = true;
+    }
+
+    return result;
+  };
+
   const statementOf = (sql: string, values: readonly SQLInputValue[]) => ({
     // @effect-diagnostics-next-line asyncFunction:off -- D1 statements are Promise-based.
-    all: async () => {
-      const gate = gates.current(sql);
-
-      while (gate.before !== undefined && !gate.before.open) {
-        // oxlint-disable-next-line no-await-in-loop -- The gate holds this statement until the other request reaches its step in the model's path.
-        await nextMacrotask();
-      }
-
-      const result = runOn(database, sql, values);
-
-      if (gate.after !== undefined) {
-        gate.after.open = true;
-      }
-
-      return result;
-    },
+    all: async () => await through(sql, () => runOn(database, sql, values)),
     bind: (...bound: SQLInputValue[]) => statementOf(sql, bound),
     sql,
     values,
@@ -90,23 +98,23 @@ const gatedD1 = (database: DatabaseSync, gates: { current: Gates }) => {
     // @effect-diagnostics-next-line asyncFunction:off -- D1 batches are Promise-based.
     batch: async (
       statements: readonly { sql: string; values: readonly SQLInputValue[] }[]
-    ) => {
-      await Promise.resolve();
-      database.exec("BEGIN");
+    ) =>
+      await through(statements.map(({ sql }) => sql).join(";\n"), () => {
+        database.exec("BEGIN");
 
-      try {
-        const results = statements.map(({ sql, values }) =>
-          runOn(database, sql, values)
-        );
+        try {
+          const results = statements.map(({ sql, values }) =>
+            runOn(database, sql, values)
+          );
 
-        database.exec("COMMIT");
+          database.exec("COMMIT");
 
-        return results;
-      } catch (error) {
-        database.exec("ROLLBACK");
-        throw error;
-      }
-    },
+          return results;
+        } catch (error) {
+          database.exec("ROLLBACK");
+          throw error;
+        }
+      }),
     // @effect-diagnostics-next-line asyncFunction:off -- D1 exec is Promise-based.
     exec: async (sql: string) => {
       await Promise.resolve();
@@ -340,8 +348,7 @@ const isGrantLookup = (sql: string) =>
     'where ("oauthRefreshToken"."sessionId" = ? and "oauthRefreshToken"."revoked" is null)'
   );
 
-const isSessionDelete = (sql: string) =>
-  sql.startsWith('delete from "session"');
+const isSessionDelete = (sql: string) => /delete from "session"/iu.test(sql);
 
 const liveRefreshTokens = (database: DatabaseSync) =>
   database
@@ -359,12 +366,12 @@ describe("server-oauth-signout model replay", () => {
           yield* connected;
 
         const rotated = latch();
-        const grantsRead = latch();
+        const signOutStarted = latch();
         const newKeyStored = latch();
 
         gates.current = (sql) => {
           if (isNewRefreshToken(sql)) {
-            return { before: grantsRead };
+            return { before: signOutStarted };
           }
 
           if (isNewAccessToken(sql)) {
@@ -375,15 +382,12 @@ describe("server-oauth-signout model replay", () => {
             return { after: rotated };
           }
 
-          if (isGrantLookup(sql)) {
-            return {
-              after: grantsRead,
-              before: rotated,
-            };
+          if (isSessionDelete(sql)) {
+            return { before: newKeyStored, entered: signOutStarted };
           }
 
-          if (isSessionDelete(sql)) {
-            return { before: newKeyStored };
+          if (isGrantLookup(sql)) {
+            return { after: signOutStarted, before: rotated };
           }
 
           return {};
@@ -407,6 +411,55 @@ describe("server-oauth-signout model replay", () => {
         expect(yield* holderOf(auth, fresh.access_token)).toBeNull();
         expect(
           (yield* refresh(auth, client_id, fresh.refresh_token)).status
+        ).toBe(400);
+        expect(liveRefreshTokens(database)).toEqual({ n: 0 });
+      })
+  );
+
+  it.effect(
+    "SignOutEndsEveryConnection: a refresh that stored its refresh token but not its access token when sign-out lands gets no new key",
+    () =>
+      Effect.gen(function* halfMintedRefresh() {
+        const { auth, client_id, cookie, database, gates, tokens } =
+          yield* connected;
+
+        const newRefreshStored = latch();
+        const sessionGone = latch();
+
+        gates.current = (sql) => {
+          if (isNewRefreshToken(sql)) {
+            return { after: newRefreshStored };
+          }
+
+          if (isSessionDelete(sql)) {
+            return { after: sessionGone, before: newRefreshStored };
+          }
+
+          if (isGrantLookup(sql)) {
+            return { before: newRefreshStored };
+          }
+
+          if (isNewAccessToken(sql)) {
+            return { before: sessionGone };
+          }
+
+          return {};
+        };
+
+        const [refreshed, signedOut] = yield* Effect.all(
+          [
+            refresh(auth, client_id, tokens.refresh_token),
+            signOut(auth, cookie),
+          ],
+          { concurrency: 2 }
+        );
+
+        gates.current = openGates;
+
+        expect(signedOut.status).toBe(200);
+        expect(refreshed.status).not.toBe(200);
+        expect(
+          (yield* refresh(auth, client_id, tokens.refresh_token)).status
         ).toBe(400);
         expect(liveRefreshTokens(database)).toEqual({ n: 0 });
       })
@@ -445,16 +498,16 @@ describe("server-oauth-signout model replay", () => {
             return { after: rotated };
           }
 
+          if (isSessionDelete(sql)) {
+            return { after: sessionGone, before: rotated };
+          }
+
           if (isGrantLookup(sql)) {
             return { before: rotated };
           }
 
           if (isNewRefreshToken(sql)) {
             return { before: sessionGone };
-          }
-
-          if (isSessionDelete(sql)) {
-            return { after: sessionGone };
           }
 
           return {};
