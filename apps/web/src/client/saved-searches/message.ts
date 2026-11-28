@@ -20,9 +20,10 @@ export const Message = defineMessageUnion({
   ClickedSaveSearch: { filters: SearchFilters },
   CompletedDeleteSearch: { id: SavedSearchId, ok: Schema.Boolean },
   CompletedFetchSearches: {
+    revision: Schema.Finite,
     searches: Schema.Option(Schema.Array(SavedSearch)),
   },
-  CompletedSaveSearch: { outcome: SaveOutcome },
+  CompletedSaveSearch: { filters: SearchFilters, outcome: SaveOutcome },
 });
 
 export type MessageValue = typeof Message.Type;

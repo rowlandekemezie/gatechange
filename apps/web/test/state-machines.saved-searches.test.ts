@@ -34,7 +34,10 @@ const ss = (message: SavedMessageValue) =>
   Message.GotSavedSearchesMessage({ message });
 
 const listed = ss(
-  SavedMessage.CompletedFetchSearches({ searches: Option.some([saved]) })
+  SavedMessage.CompletedFetchSearches({
+    revision: 0,
+    searches: Option.some([saved]),
+  })
 );
 
 const idsOf = (searches: typeof SearchesState.Type) =>
@@ -43,7 +46,7 @@ const idsOf = (searches: typeof SearchesState.Type) =>
     : [];
 
 describe("SavedSearches model replay", () => {
-  it.fails("DeletedStaysGone: a list read before the delete does not bring the deleted search back", () => {
+  it("DeletedStaysGone: a list read before the delete does not bring the deleted search back", () => {
     const revisit = walked(started("/account"), [
       signedIn,
       listed,
@@ -62,12 +65,17 @@ describe("SavedSearches model replay", () => {
     expect(idsOf(done.model.savedSearches.searches)).toStrictEqual([]);
   });
 
-  it.fails("SavedNoteIsTrue: changing filters while saving does not say Saved under the new filters", () => {
+  it("SavedNoteIsTrue: changing filters while saving does not say Saved under the new filters", () => {
     const done = sentAll(started("/"), [
       signedIn,
       ss(SavedMessage.ClickedSaveSearch({ filters: saved.filters })),
       Message.ToggledRole({ role: "Director" }),
-      ss(SavedMessage.CompletedSaveSearch({ outcome: "Saved" })),
+      ss(
+        SavedMessage.CompletedSaveSearch({
+          filters: saved.filters,
+          outcome: "Saved",
+        })
+      ),
     ]);
 
     expect(done.model.savedSearches.save).not.toStrictEqual(SaveState.Saved());
@@ -77,7 +85,12 @@ describe("SavedSearches model replay", () => {
     const done = sentAll(started("/"), [
       signedIn,
       ss(SavedMessage.ClickedSaveSearch({ filters: saved.filters })),
-      ss(SavedMessage.CompletedSaveSearch({ outcome: "AtLimit" })),
+      ss(
+        SavedMessage.CompletedSaveSearch({
+          filters: saved.filters,
+          outcome: "AtLimit",
+        })
+      ),
     ]);
 
     expect(Schema.is(SaveState.Failed)(done.model.savedSearches.save)).toBe(

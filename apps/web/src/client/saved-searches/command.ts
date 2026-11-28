@@ -1,5 +1,5 @@
 import { SavedSearchId, SearchFilters } from "@rat-stack/core/contracts";
-import { Effect, Option, Predicate } from "effect";
+import { Effect, Option, Predicate, Schema } from "effect";
 import { Command } from "foldkit";
 
 import { JobQueries } from "../board/queries.js";
@@ -15,14 +15,19 @@ const outcomeOf = (failure: { readonly _tag: string }): SaveOutcomeValue => {
 };
 
 export const FetchSearches = Command.define("FetchSearches", {
-  execute: JobQueries.use((queries) => queries.savedSearches).pipe(
-    Effect.match({
-      onFailure: () =>
-        Message.CompletedFetchSearches({ searches: Option.none() }),
-      onSuccess: (searches) =>
-        Message.CompletedFetchSearches({ searches: Option.some(searches) }),
-    })
-  ),
+  args: { revision: Schema.Finite },
+  execute: ({ revision }) =>
+    JobQueries.use((queries) => queries.savedSearches).pipe(
+      Effect.match({
+        onFailure: () =>
+          Message.CompletedFetchSearches({ revision, searches: Option.none() }),
+        onSuccess: (searches) =>
+          Message.CompletedFetchSearches({
+            revision,
+            searches: Option.some(searches),
+          }),
+      })
+    ),
   messages: [Message.CompletedFetchSearches],
 });
 
@@ -32,8 +37,9 @@ export const SaveSearch = Command.define("SaveSearch", {
     JobQueries.use((queries) => queries.saveSearch(filters)).pipe(
       Effect.match({
         onFailure: (failure) =>
-          Message.CompletedSaveSearch({ outcome: outcomeOf(failure) }),
-        onSuccess: () => Message.CompletedSaveSearch({ outcome: "Saved" }),
+          Message.CompletedSaveSearch({ filters, outcome: outcomeOf(failure) }),
+        onSuccess: () =>
+          Message.CompletedSaveSearch({ filters, outcome: "Saved" }),
       })
     ),
   messages: [Message.CompletedSaveSearch],

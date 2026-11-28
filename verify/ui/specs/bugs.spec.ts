@@ -236,7 +236,6 @@ test("agent tokens: leaving while a token is created still shows its secret on r
 test("saved searches: a list read before a delete does not bring the search back", async ({
   browser,
 }) => {
-  knownBug();
   const name = "saved-searches";
   const email = freshEmail(name);
   const page = await newPage(browser);
@@ -278,7 +277,6 @@ test("saved searches: a list read before a delete does not bring the search back
 test("saved note: changing filters while saving does not say Saved under the new filters", async ({
   browser,
 }) => {
-  knownBug();
   const name = "saved-note";
   const page = await newPage(browser);
 

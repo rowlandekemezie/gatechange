@@ -76,7 +76,10 @@ const saveCompleted = (outcome: "AtLimit" | "Saved") =>
   step(
     modelAt("/"),
     Message.GotSavedSearchesMessage({
-      message: SavedSearchesMessage.CompletedSaveSearch({ outcome }),
+      message: SavedSearchesMessage.CompletedSaveSearch({
+        filters: { regions: ["RemoteCanada"], roles: ["Director"], search: "" },
+        outcome,
+      }),
     })
   ).calls;
 

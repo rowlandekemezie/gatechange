@@ -1,12 +1,15 @@
+import { SearchFilters } from "@rat-stack/core/contracts";
+import type { SearchFiltersValue } from "@rat-stack/core/contracts";
 import { Option, Schema } from "effect";
 import type { Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 
+import type { FiltersValue } from "../board/filters.js";
 import type { JobQueries } from "../board/queries.js";
 import { DeleteSearch, FetchSearches, SaveSearch } from "./command.js";
 import { Message } from "./message.js";
 import type { MessageValue, SaveOutcomeValue } from "./message.js";
-import { SaveState, SearchesState } from "./model.js";
+import { SaveState, SearchesState, searchFiltersOf } from "./model.js";
 import type { ModelValue } from "./model.js";
 
 type UpdateReturn = Update.Return<ModelValue, MessageValue, JobQueries>;
@@ -21,22 +24,31 @@ const failureText: Record<Exclude<SaveOutcomeValue, "Saved">, string> = {
 export const init = (): UpdateReturn => ({
   model: {
     deleting: [],
+    revision: 0,
     save: SaveState.Idle(),
     searches: SearchesState.NotAsked(),
   },
 });
 
 export const entered = (model: ModelValue): UpdateReturn => ({
-  commands: [FetchSearches()],
+  commands: [FetchSearches({ revision: model.revision })],
   model: Schema.is(SearchesState.Loaded)(model.searches)
     ? model
     : modifyFields(model, { searches: () => SearchesState.Loading() }),
 });
 
-export const filtersChanged = (model: ModelValue): ModelValue =>
-  Schema.is(SaveState.Saving)(model.save)
-    ? model
-    : modifyFields(model, { save: () => SaveState.Idle() });
+const sameSearch = Schema.toEquivalence(SearchFilters);
+
+const isSaving = (model: ModelValue, filters: SearchFiltersValue) =>
+  Schema.is(SaveState.Saving)(model.save) &&
+  sameSearch(model.save.filters, filters);
+
+export const filtersChanged =
+  (filters: FiltersValue) =>
+  (model: ModelValue): ModelValue =>
+    Option.exists(searchFiltersOf(filters), (next) => isSaving(model, next))
+      ? model
+      : modifyFields(model, { save: () => SaveState.Idle() });
 
 export const update = (
   model: ModelValue,
@@ -52,11 +64,14 @@ export const update = (
         ? { model }
         : {
             commands: [SaveSearch({ filters })],
-            model: modifyFields(model, { save: () => SaveState.Saving() }),
+            model: modifyFields(model, {
+              save: () => SaveState.Saving({ filters }),
+            }),
           },
     CompletedDeleteSearch: ({ id, ok }) => ({
       model: modifyFields(model, {
         deleting: (ids) => ids.filter((pending) => pending !== id),
+        revision: (revision) => (ok ? revision + 1 : revision),
         searches: (state) =>
           ok && Schema.is(SearchesState.Loaded)(state)
             ? SearchesState.Loaded({
@@ -65,21 +80,30 @@ export const update = (
             : state,
       }),
     }),
-    CompletedFetchSearches: ({ searches }) => ({
+    CompletedFetchSearches: ({ revision, searches }) =>
+      revision === model.revision
+        ? {
+            model: modifyFields(model, {
+              searches: () =>
+                Option.match(searches, {
+                  onNone: () => SearchesState.Failed(),
+                  onSome: (found) => SearchesState.Loaded({ searches: found }),
+                }),
+            }),
+          }
+        : { commands: [FetchSearches({ revision: model.revision })], model },
+    CompletedSaveSearch: ({ filters, outcome }) => ({
       model: modifyFields(model, {
-        searches: () =>
-          Option.match(searches, {
-            onNone: () => SearchesState.Failed(),
-            onSome: (found) => SearchesState.Loaded({ searches: found }),
-          }),
-      }),
-    }),
-    CompletedSaveSearch: ({ outcome }) => ({
-      model: modifyFields(model, {
-        save: () =>
-          outcome === "Saved"
+        revision: (revision) => (outcome === "Saved" ? revision + 1 : revision),
+        save: (save) => {
+          if (!isSaving(model, filters)) {
+            return save;
+          }
+
+          return outcome === "Saved"
             ? SaveState.Saved()
-            : SaveState.Failed({ message: failureText[outcome] }),
+            : SaveState.Failed({ message: failureText[outcome] });
+        },
         searches: (state) =>
           outcome === "Saved" ? SearchesState.NotAsked() : state,
       }),

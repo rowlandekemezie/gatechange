@@ -1,4 +1,8 @@
-import { regionGroups, SavedSearch } from "@rat-stack/core/contracts";
+import {
+  regionGroups,
+  SavedSearch,
+  SearchFilters,
+} from "@rat-stack/core/contracts";
 import { Array, Option, pipe, Schema } from "effect";
 import { defineTaggedUnion } from "foldkit/schema";
 
@@ -16,13 +20,14 @@ export const SaveState = defineTaggedUnion({
   Failed: { message: Schema.String },
   Idle: {},
   Saved: {},
-  Saving: {},
+  Saving: { filters: SearchFilters },
 });
 
 export type SaveStateValue = typeof SaveState.Type;
 
 export const Model = Schema.Struct({
   deleting: Schema.Array(Schema.String),
+  revision: Schema.Finite,
   save: SaveState,
   searches: SearchesState,
 });

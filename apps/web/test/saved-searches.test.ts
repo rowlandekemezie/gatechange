@@ -99,9 +99,17 @@ describe("saved searches", () => {
   });
 
   it("explains a refused save and lets the member try again after a filter change", () => {
-    const refused = update(
+    const saving = update(
       init().model,
-      Message.CompletedSaveSearch({ outcome: "AtLimit" })
+      Message.ClickedSaveSearch({ filters: saved.filters })
+    ).model;
+
+    const refused = update(
+      saving,
+      Message.CompletedSaveSearch({
+        filters: saved.filters,
+        outcome: "AtLimit",
+      })
     ).model;
 
     expect(Schema.is(SaveState.Failed)(refused.save)).toBe(true);
