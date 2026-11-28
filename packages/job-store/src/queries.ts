@@ -33,8 +33,6 @@ import type { SqlStatement, SqlValue } from "./sql-executor.js";
 
 export const UPSERT_CHUNK = 40;
 
-export const FEED_STATE_LIMIT = 5000;
-
 export const placeholders = (count: number) =>
   Array.from({ length: count }, () => "?").join(", ");
 
@@ -677,8 +675,7 @@ ON CONFLICT (key) DO UPDATE SET
   );
 
 export const feedStatesStatement = statement(
-  `SELECT key, last_attempt_at, last_success_at, last_error, consecutive_failures
-FROM feeds ORDER BY key LIMIT ${FEED_STATE_LIMIT}`
+  "SELECT key, last_attempt_at, last_success_at, last_error, consecutive_failures FROM feeds"
 );
 
 export const claimIngestStatement = (startedAt: number, heldUntil: number) =>

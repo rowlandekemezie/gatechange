@@ -357,12 +357,16 @@ theorem every_due_feed_is_fetched {catalog : List Feed} (hn : (catalog.map (·.k
   have hpos : 0 < catalog.length := List.length_pos_of_mem hf
   omega
 
-/-! ## Counterexample: the state read is capped at `FEED_STATE_LIMIT` rows by key
+/-! ## Counterexample: the state read used to be capped at 5,000 rows by key
 
-`feedStatesStatement` reads `feeds ORDER BY key LIMIT 5000`, and `feeds` keeps rows of feeds
-that left the catalog. Once the table holds more rows than the cap, a catalog feed whose key sorts
-past the cap reads as never attempted, sorts first, and is fetched on every run. With more such
-feeds than `limit`, the rest of the catalog is never fetched again. Here the cap is 1, the limit is 1, and `rows` is listed in key order so `take` is the `ORDER BY key LIMIT`.
+`feedStatesStatement` used to read `feeds ORDER BY key LIMIT 5000`, and `feeds` keeps rows of
+feeds that left the catalog. Once the table held more rows than the cap, a catalog feed whose key
+sorted past the cap read as never attempted, sorted first, and was fetched on every run. With more
+such feeds than `limit`, the rest of the catalog was never fetched again. Here the cap is 1, the
+limit is 1, and `rows` is listed in key order so `take` is the `ORDER BY key LIMIT`.
+
+The read now returns every row, which is `exactView` below: the full `States` that
+`every_due_feed_is_fetched` assumes, so the refresh bound holds for the code again.
 -/
 
 def truncatedView (rows : List (String × FeedState)) (cap : Nat) : States :=

@@ -248,3 +248,59 @@ describe("server-feed-replacement model replay", () => {
       )
   );
 });
+
+const THREE_HOURS = 3 * 60 * 60_000;
+
+const lateFeed = (key: string): FeedRef => ({
+  company: Option.none(),
+  coverage: "Complete",
+  key,
+  minIntervalMinutes: 180,
+  source: "Greenhouse",
+});
+
+describe("server-feed-state model replay", () => {
+  it.effect(
+    "EveryDueFeedIsFetched: feeds whose keys sort after 5,000 other feed rows still take turns",
+    () =>
+      withStore(
+        Effect.gen(function* manyFeedRows() {
+          const sql = yield* SqlExecutor;
+          const fetched: string[] = [];
+          const catalog = [lateFeed("zz:a"), lateFeed("zz:b")];
+
+          yield* sql.batch("seedFeeds", [
+            statement(
+              `WITH RECURSIVE n (i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 4999)
+INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
+SELECT printf('departed:%04d', i), 0, 0, NULL, 0 FROM n`
+            ),
+            statement(
+              `INSERT INTO feeds (key, last_attempt_at, last_success_at, last_error, consecutive_failures)
+VALUES ('zz:a', 0, 0, NULL, 0), ('zz:b', 0, 0, NULL, 0)`
+            ),
+          ]);
+
+          for (const run of [1, 2, 3, 4]) {
+            yield* TestClock.setTime(THREE_HOURS * run);
+            yield* runIngest(plan).pipe(
+              Effect.provideService(
+                PostingFeeds,
+                PostingFeeds.of({
+                  catalog,
+                  fetch: (feed) =>
+                    Effect.sync(() => {
+                      fetched.push(feed.key);
+
+                      return [];
+                    }),
+                })
+              )
+            );
+          }
+
+          expect(fetched).toEqual(["zz:a", "zz:b", "zz:a", "zz:b"]);
+        })
+      )
+  );
+});
