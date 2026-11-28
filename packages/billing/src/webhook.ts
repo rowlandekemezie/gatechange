@@ -174,11 +174,45 @@ const Envelope = Schema.Struct({
   type: Schema.String,
 });
 
+const PreviousAttributes = Schema.Struct({
+  cancel_at: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+  cancel_at_period_end: Schema.optionalKey(Schema.Boolean),
+});
+
 const SubscriptionEvent = Schema.Struct({
   ...Envelope.fields,
-  data: Schema.Struct({ object: SubscriptionObject }),
+  data: Schema.Struct({
+    object: SubscriptionObject,
+    previous_attributes: Schema.optionalKey(PreviousAttributes),
+  }),
   type: SubscriptionEventType,
 });
+
+const isCancelling = (state: {
+  readonly cancel_at?: number | null;
+  readonly cancel_at_period_end?: boolean;
+}) =>
+  state.cancel_at_period_end === true ||
+  (state.cancel_at !== undefined && state.cancel_at !== null);
+
+const EVENT_RANK = {
+  "customer.subscription.created": 0,
+  "customer.subscription.deleted": 3,
+  "customer.subscription.updated": 1,
+} as const;
+
+const resumes = (event: typeof SubscriptionEvent.Type) => {
+  const before = event.data.previous_attributes;
+
+  return (
+    before !== undefined &&
+    isCancelling(before) &&
+    !isCancelling(event.data.object)
+  );
+};
+
+const rankOf = (event: typeof SubscriptionEvent.Type) =>
+  EVENT_RANK[event.type] + (resumes(event) ? 1 : 0);
 
 const CheckoutEvent = Schema.Struct({
   ...Envelope.fields,
@@ -274,7 +308,7 @@ const subscriptionChangeOf = Effect.fn("subscriptionChangeOf")(
         version: {
           created: event.created,
           eventId: event.id,
-          rank: SubscriptionEventType.literals.indexOf(event.type),
+          rank: rankOf(event),
         },
       },
     });
