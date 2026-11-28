@@ -1,5 +1,7 @@
 # Use it with your agent
 
+The account page has a "Connect your AI" panel at `/account#connect-ai`. It has install links for Claude, Cursor and VS Code, short steps for ChatGPT, and the Claude Code command. The links are built in `apps/web/src/features/connect-ai/view.ts`. The Claude link prefills its custom connector dialog through URL parameters that Anthropic does not document, so change it there if it stops working.
+
 Add the MCP server to Claude Code:
 
 ```sh

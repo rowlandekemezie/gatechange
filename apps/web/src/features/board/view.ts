@@ -59,6 +59,7 @@ import {
   roleRouter,
 } from "../../client/route.js";
 import { addServerCommandOf } from "../agent-tokens/view.js";
+import { connectAiHref } from "../connect-ai/view.js";
 import { pricingSummary } from "../pricing/view.js";
 import { saveSearchControl } from "../saved-searches/view.js";
 
@@ -530,9 +531,10 @@ export const boardAfterword = (
               h.p(
                 [],
                 [
-                  "Let your agent watch the board. Connect over MCP and ask Claude Code, Cursor or any MCP client which roles fit you. No key needed to start; Pro agent tokens get higher limits.",
+                  "Let your agent watch the board. Connect over MCP and ask Claude, ChatGPT, Cursor or any MCP client which roles fit you. No key needed to start; Pro agent tokens get higher limits.",
                 ]
               ),
+              h.p([], [h.a([h.Href(connectAiHref)], ["Connect your AI app"])]),
             ]
           ),
           h.pre(

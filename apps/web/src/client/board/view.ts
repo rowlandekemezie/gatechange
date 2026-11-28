@@ -22,6 +22,7 @@ import {
   boardPage,
   boardTitle,
 } from "../../features/board/view.js";
+import { connectAiPanel } from "../../features/connect-ai/view.js";
 import { connectView } from "../../features/connect/view.js";
 import { siteHeader } from "../../features/header/view.js";
 import {
@@ -52,6 +53,11 @@ import type { MessageValue } from "./message.js";
 import type { ModelValue } from "./model.js";
 
 type H = HtmlBuilder<MessageValue>;
+
+const copyingOf = (model: ModelValue) => ({
+  copied: model.copied,
+  onCopy: (text: string) => Message.ClickedCopy({ text }),
+});
 
 const notFoundPage = (model: ModelValue, h: H): Html =>
   h.div(
@@ -179,6 +185,7 @@ export const view = (model: ModelValue, h: H): Document =>
                           Message.GotSavedSearchesMessage({ message }),
                         view: savedSearchesPanel,
                       }),
+                      connectAiPanel(model.origin, copyingOf(model), h),
                       h.submodel({
                         model: model.agentTokens,
                         slotId: "agent-tokens",
@@ -191,7 +198,7 @@ export const view = (model: ModelValue, h: H): Document =>
                         },
                       }),
                     ]
-                  : []),
+                  : [connectAiPanel(model.origin, copyingOf(model), h)]),
               ]
             ),
           Board: () => boardPage(model, h),

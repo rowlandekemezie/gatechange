@@ -180,6 +180,21 @@ const forgetStoredShortlist = Effect.try(() => {
   window.localStorage.removeItem(SHORTLIST_KEY);
 }).pipe(Effect.ignore);
 
+export const CopyText = Command.define("CopyText", {
+  args: { text: Schema.String },
+  execute: ({ text }) =>
+    Effect.tryPromise(
+      // @effect-diagnostics-next-line asyncFunction:off -- The Clipboard API is Promise-based.
+      async () => {
+        await navigator.clipboard.writeText(text);
+      }
+    ).pipe(
+      Effect.as(Message.CompletedCopy({ text })),
+      Effect.orElseSucceed(() => Message.FailedCopy())
+    ),
+  messages: [Message.CompletedCopy, Message.FailedCopy],
+});
+
 export const ReadShortlist = Command.define("ReadShortlist", {
   execute: Effect.sync(() =>
     Message.CompletedReadShortlist({ marks: storedShortlist() })

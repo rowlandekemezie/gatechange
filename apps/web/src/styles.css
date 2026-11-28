@@ -1193,6 +1193,60 @@ a {
   overflow-wrap: anywhere;
 }
 
+.connect-ai {
+  max-width: var(--measure);
+  margin: 2rem 0 0;
+  scroll-margin-top: 1rem;
+}
+
+.connect-ai h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.connect-ai h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.connect-ai-apps {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.connect-ai-app {
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.connect-ai-install {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.25rem;
+  text-decoration: none;
+}
+
+.connect-ai-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.connect-ai-copy pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .agent-tokens {
   max-width: var(--measure);
   margin: 2rem 0 0;
