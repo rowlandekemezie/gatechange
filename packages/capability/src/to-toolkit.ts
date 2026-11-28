@@ -86,7 +86,12 @@ const toTool = ({ contract }: AnyCapability) => {
         contract.needsApproval
       );
 
-  return tool
+  const titled =
+    contract.title === undefined
+      ? tool
+      : tool.annotate(Tool.Title, contract.title);
+
+  return titled
     .annotate(Tool.Readonly, contract.annotations.readOnly)
     .annotate(Tool.Destructive, contract.annotations.destructive)
     .annotate(Tool.Idempotent, contract.annotations.idempotent)

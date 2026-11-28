@@ -73,6 +73,7 @@ export interface Contract<
 > {
   readonly _tag: "Contract";
   readonly name: Name;
+  readonly title: string | undefined;
   readonly description: string;
   readonly input: Input;
   readonly output: Output;
@@ -179,6 +180,7 @@ export interface DefineContractOptions<
   NeedsApproval extends boolean = false,
   Http extends HttpRoute | undefined = undefined,
 > {
+  readonly title?: string | undefined;
   readonly description: string;
   readonly input: Input;
   readonly output: Output;
@@ -254,6 +256,7 @@ export function defineContract(
     name,
     needsApproval: options.needsApproval ?? false,
     output: options.output,
+    title: options.title,
   });
 }
 

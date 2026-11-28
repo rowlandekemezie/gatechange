@@ -268,6 +268,7 @@ export const listJobsContract = defineContract("listJobs", {
   failure: JobStoreUnavailable,
   input: JobQuery,
   output: JobPage,
+  title: "List jobs",
 });
 
 export { CompanyJobs, COMPANY_LISTING_ROWS } from "./company-jobs.js";
@@ -290,6 +291,7 @@ export const boardStatsContract = defineContract("boardStats", {
   failure: JobStoreUnavailable,
   input: Schema.Struct({}),
   output: BoardStats,
+  title: "Board stats",
 });
 
 export const sitemapJobsContract = defineContract("sitemapJobs", {
@@ -308,6 +310,7 @@ export const getJobContract = defineContract("getJob", {
   failure: JobStoreUnavailable,
   input: Schema.Struct({ id: Schema.NonEmptyString }),
   output: Schema.OptionFromNullOr(JobDetail),
+  title: "Get job",
 });
 
 export const accountContract = defineContract("account", {
@@ -335,6 +338,7 @@ export const saveSearchContract = defineContract("saveSearch", {
   failure: Schema.Union([Unauthorized, JobStoreUnavailable, SavedSearchLimit]),
   input: Schema.Struct({ filters: SearchFilters }),
   output: SavedSearch,
+  title: "Save search",
 });
 
 export const savedSearchesContract = defineContract("savedSearches", {
@@ -343,6 +347,7 @@ export const savedSearchesContract = defineContract("savedSearches", {
   failure: MemberStoreFailure,
   input: Schema.Struct({}),
   output: Schema.Array(SavedSearch),
+  title: "Saved searches",
 });
 
 export const deleteSearchContract = defineContract("deleteSearch", {
@@ -352,6 +357,7 @@ export const deleteSearchContract = defineContract("deleteSearch", {
   failure: MemberStoreFailure,
   input: Schema.Struct({ id: SavedSearchId }),
   output: Schema.Void,
+  title: "Delete saved search",
 });
 
 const TrackerFailure = Schema.Union([Unauthorized, JobStoreUnavailable]);
@@ -373,6 +379,7 @@ export const trackedJobsContract = defineContract("trackedJobs", {
   failure: TrackerFailure,
   input: Schema.Struct({}),
   output: TrackedJobs,
+  title: "Tracked jobs",
 });
 
 export const trackJobContract = defineContract("trackJob", {
@@ -382,6 +389,7 @@ export const trackJobContract = defineContract("trackJob", {
   failure: TrackerAddFailure,
   input: TrackOrMoveRequest,
   output: TrackedJobs,
+  title: "Track job",
 });
 
 export const importShortlistContract = defineContract("importShortlist", {
@@ -404,6 +412,7 @@ export const noteTrackedJobContract = defineContract("noteTrackedJob", {
   ]),
   input: Schema.Struct({ ...TrackedJobKey.fields, notes: Notes }),
   output: TrackedJobs,
+  title: "Note on tracked job",
 });
 
 export const untrackJobContract = defineContract("untrackJob", {
@@ -413,6 +422,7 @@ export const untrackJobContract = defineContract("untrackJob", {
   failure: TrackerFailure,
   input: TrackedJobKey,
   output: TrackedJobs,
+  title: "Untrack job",
 });
 
 const BillingLink = Schema.Struct({ url: Schema.NonEmptyString });
