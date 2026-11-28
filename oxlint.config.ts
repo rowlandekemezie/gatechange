@@ -43,6 +43,7 @@ export default defineConfig({
     "!.claude/skills/verify/scripts/*.ts",
     "scripts/hooks/**",
     "tools/oxlint/anti-slop/**",
+    "verify/ui/**",
   ],
   jsPlugins: [
     { name: "foldkit", specifier: "@foldkit/oxlint-plugin" },
