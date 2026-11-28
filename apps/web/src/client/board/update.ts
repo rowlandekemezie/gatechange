@@ -33,6 +33,7 @@ import type { MessageValue as SavedSearchesMessageValue } from "../saved-searche
 import type { ModelValue as SavedSearchesModelValue } from "../saved-searches/model.js";
 import * as SavedSearches from "../saved-searches/update.js";
 import {
+  CopyText,
   FetchCompanyIntel,
   FetchJob,
   FetchJobs,
@@ -784,6 +785,7 @@ export const init = (flags: FlagsValue, url: Url): UpdateReturn => {
         awaitingEcho: [],
         billing: billing.model,
         connect: connect.model,
+        copied: Option.none(),
         draftSearch: "",
         filters: defaultFilters,
         filtersOpen: false,
@@ -895,6 +897,7 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     ClickedAnySeniority: () =>
       navigatedTo(model, { ...model.filters, seniorities: [] }),
     ClickedClearMark: ({ id }) => unmarked(model, id),
+    ClickedCopy: ({ text }) => ({ commands: [CopyText({ text })], model }),
     ClickedFilters: () => ({
       model: modifyFields(model, { filtersOpen: (isOpen) => !isOpen }),
     }),
@@ -973,6 +976,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
             })
           ),
       }),
+    CompletedCopy: ({ text }) => ({
+      model: modifyFields(model, { copied: () => Option.some(text) }),
+    }),
     CompletedForgetSignInToken: () => ({ model }),
     CompletedNavigation: () => ({ model }),
     CompletedReadShortlist: ({ marks }) => ({
@@ -991,6 +997,9 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     },
     CompletedTrackAnalytics: () => ({ model }),
     CompletedWriteShortlist: () => ({ model }),
+    FailedCopy: () => ({
+      model: modifyFields(model, { copied: () => Option.none() }),
+    }),
     FailedFetchIntel: ({ locked, slug }) => ({
       model: isAwaitingIntel(model, slug)
         ? modifyFields(model, {

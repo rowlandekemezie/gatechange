@@ -151,6 +151,7 @@ export const Model = Schema.Struct({
   awaitingEcho: Schema.Array(Schema.String),
   billing: BillingModel,
   connect: ConnectModel,
+  copied: Schema.Option(Schema.String),
   draftSearch: Schema.String,
   filters: Filters,
   filtersOpen: Schema.Boolean,
