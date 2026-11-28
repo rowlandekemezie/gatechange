@@ -35,6 +35,18 @@ const cardHeading = (page: Page) =>
     .locator("section.day", { has: page.locator("li.tracked") })
     .locator(".day-heading");
 
+const trackRequests = (page: Page) => {
+  let count = 0;
+
+  page.on("request", (request) => {
+    if ((request.postData() ?? "").includes('"tag":"trackJob"')) {
+      count += 1;
+    }
+  });
+
+  return () => count;
+};
+
 const signedInPro = async (page: Page, slug: string) => {
   const email = freshEmail(slug);
 
@@ -50,7 +62,6 @@ const signedInPro = async (page: Page, slug: string) => {
 test("tracker-session: a tracker reply after sign-out keeps the browser shortlist", async ({
   browser,
 }) => {
-  knownBug();
   const name = "tracker-session";
   const page = await newPage(browser);
 
@@ -89,7 +100,6 @@ test("tracker-session: a tracker reply after sign-out keeps the browser shortlis
 test("tracker-changes: two quick stage picks end with the card matching the server", async ({
   browser,
 }) => {
-  knownBug();
   const name = "tracker-changes";
   const page = await newPage(browser);
 
@@ -104,15 +114,17 @@ test("tracker-changes: two quick stage picks end with the card matching the serv
   await expect(cardHeading(page)).toHaveText(/^Saved/u);
 
   const slow = await hold(page, "trackJob", { mode: "request" });
+  const sent = trackRequests(page);
   const picker = page.locator("li.tracked select");
   await picker.selectOption("Applied");
   await slow.reached;
-  const fast = rpcReply(page, "trackJob");
   await picker.selectOption("Interviewing");
-  await fast;
   await page.waitForTimeout(2000);
+  expect(sent(), "the second pick waits for the first to answer").toBe(1);
   slow.release();
   await slow.settled;
+  await expect.poll(sent).toBe(2);
+  await expect(cardHeading(page)).toHaveText(/^Interviewing/u);
   await page.waitForTimeout(500);
   await shot(page, `${name}-1-settled`);
   const shown = (await cardHeading(page).textContent()) ?? "";
@@ -130,7 +142,6 @@ test("tracker-changes: two quick stage picks end with the card matching the serv
 test("MovingOnlyWhileMoving: saving a job during the move leaves the Move buttons usable", async ({
   browser,
 }) => {
-  knownBug();
   const name = "moving-only-while-moving";
   const page = await newPage(browser);
 
@@ -152,10 +163,10 @@ test("MovingOnlyWhileMoving: saving a job during the move leaves the Move button
   await waitForBoard(page);
   const tracked = rpcReply(page, "trackJob");
   await saveRow(page, 1);
-  await tracked;
   await goNav(page, /^Shortlist/u);
   move.release();
   await move.settled;
+  await tracked;
   await page.waitForTimeout(1000);
   await shot(page, `${name}-2-settled`);
 

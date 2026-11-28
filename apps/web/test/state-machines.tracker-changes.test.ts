@@ -26,10 +26,8 @@ const loaded = () => {
 };
 
 describe("TrackerChanges model replay", () => {
-  it.fails("SettledCardMatchesServer and FailureIsAnnounced: two quick moves answered out of order end on the stage the server kept", () => {
-    const ready = loaded();
-
-    const applied = sentAll(ready, [
+  it("SettledCardMatchesServer and FailureIsAnnounced: two quick moves go to the server one at a time and end on the stage it kept", () => {
+    const applied = sentAll(loaded(), [
       Message.ChangedStage({ jobId: oldJob.id, stage: "Applied" }),
     ]);
 
@@ -41,7 +39,10 @@ describe("TrackerChanges model replay", () => {
 
     const interviewingRevision = interviewing.model.trackerRevision;
 
-    const path = walked(interviewing, [
+    expect(named(applied.commands, "SendTrackerChange")).toHaveLength(1);
+    expect(named(interviewing.commands, "SendTrackerChange")).toHaveLength(0);
+
+    const firstAnswered = walked(interviewing, [
       Message.SucceededTrackerChange({
         jobs: [trackedOf(oldJob, "Interviewing")],
         revision: interviewingRevision,
@@ -52,10 +53,29 @@ describe("TrackerChanges model replay", () => {
       }),
     ]);
 
-    const shown = stageOf(path.last.model, oldJob.id);
-    const reloads = named(path.last.commands, "SyncTracker").length > 0;
+    expect(named(firstAnswered.all, "SendTrackerChange")).toMatchObject([
+      {
+        args: {
+          change: { job: { stage: "Interviewing" } },
+          revision: interviewingRevision,
+        },
+      },
+    ]);
+    expect(stageOf(firstAnswered.last.model, oldJob.id)).toStrictEqual(
+      Option.some("Interviewing")
+    );
 
-    expect(reloads || Option.contains(shown, "Applied")).toBe(true);
+    const settled = sentAll(firstAnswered.last, [
+      Message.SucceededTrackerChange({
+        jobs: [trackedOf(oldJob, "Interviewing")],
+        revision: interviewingRevision,
+      }),
+    ]);
+
+    expect(stageOf(settled.model, oldJob.id)).toStrictEqual(
+      Option.some("Interviewing")
+    );
+    expect(settled.model.tracker).toMatchObject({ writes: [] });
   });
 
   it("holds: replies in order settle on the last stage the server saved", () => {

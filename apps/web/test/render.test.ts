@@ -519,6 +519,7 @@ const renderRemoteTracker = (jobs: readonly TrackedJobValue[]) =>
               loaded: true,
               offer: ImportOffer.None(),
               problem: Option.none(),
+              writes: [],
             }),
           },
         };

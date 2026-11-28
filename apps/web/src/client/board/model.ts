@@ -119,6 +119,28 @@ export const ImportOffer = defineTaggedUnion({
 
 export type ImportOfferValue = typeof ImportOffer.Type;
 
+export const TrackerChange = defineTaggedUnion({
+  Note: { jobId: Schema.String, notes: Schema.String },
+  Track: { job: TrackOrMoveRequest },
+  Untrack: { jobId: Schema.String },
+});
+
+export type TrackerChangeValue = typeof TrackerChange.Type;
+
+export const TrackerWrite = defineTaggedUnion({
+  Change: { change: TrackerChange },
+  Import: {},
+});
+
+export type TrackerWriteValue = typeof TrackerWrite.Type;
+
+export const QueuedWrite = Schema.Struct({
+  revision: Schema.Finite,
+  write: TrackerWrite,
+});
+
+export type QueuedWriteValue = typeof QueuedWrite.Type;
+
 export const TrackerState = defineTaggedUnion({
   Local: {},
   Remote: {
@@ -127,6 +149,7 @@ export const TrackerState = defineTaggedUnion({
     loaded: Schema.Boolean,
     offer: ImportOffer,
     problem: Schema.Option(Schema.String),
+    writes: Schema.Array(QueuedWrite),
   },
 });
 
@@ -136,14 +159,6 @@ export type RemoteTrackerValue = Extract<
   TrackerStateValue,
   { readonly _tag: "Remote" }
 >;
-
-export const TrackerChange = defineTaggedUnion({
-  Note: { jobId: Schema.String, notes: Schema.String },
-  Track: { job: TrackOrMoveRequest },
-  Untrack: { jobId: Schema.String },
-});
-
-export type TrackerChangeValue = typeof TrackerChange.Type;
 
 export const Model = Schema.Struct({
   account: AccountModel,

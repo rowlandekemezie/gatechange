@@ -54,6 +54,7 @@ export const unloadedTracker = TrackerState.Remote({
   loaded: false,
   offer: ImportOffer.None(),
   problem: Option.none(),
+  writes: [],
 });
 
 const withoutJob = (

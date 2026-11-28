@@ -74,6 +74,7 @@ import {
   StatsState,
   TrackerChange,
   TrackerState,
+  TrackerWrite,
 } from "./model.js";
 import type {
   FlagsValue,
@@ -82,8 +83,10 @@ import type {
   MarkKindValue,
   ModelValue,
   PreloadValue,
+  QueuedWriteValue,
   RemoteTrackerValue,
   TrackerChangeValue,
+  TrackerWriteValue,
 } from "./model.js";
 import type { JobQueries } from "./queries.js";
 import {
@@ -541,25 +544,44 @@ const synced = (model: ModelValue): UpdateReturn => {
   };
 };
 
+const writeCommand = ({ revision, write }: QueuedWriteValue) =>
+  TrackerWrite.match(write, {
+    Change: ({ change }) => SendTrackerChange({ change, revision }),
+    Import: () => ImportStoredShortlist({ revision }),
+  });
+
+const queuedWrite = (
+  model: ModelValue,
+  shown: RemoteTrackerValue,
+  write: TrackerWriteValue
+): UpdateReturn => {
+  const queued = { revision: model.trackerRevision + 1, write };
+
+  return {
+    commands: Array.isReadonlyArrayEmpty(shown.writes)
+      ? [writeCommand(queued)]
+      : [],
+    model: modifyFields(model, {
+      tracker: () =>
+        TrackerState.Remote({ ...shown, writes: [...shown.writes, queued] }),
+      trackerRevision: () => queued.revision,
+    }),
+  };
+};
+
 const sentChange = (
   model: ModelValue,
   tracker: RemoteTrackerValue,
   change: TrackerChangeValue
-): UpdateReturn => {
-  const revision = model.trackerRevision + 1;
-
-  return {
-    commands: [SendTrackerChange({ change, revision })],
-    model: modifyFields(model, {
-      tracker: () =>
-        changedTracker(
-          TrackerState.Remote({ ...tracker, problem: Option.none() }),
-          change
-        ),
-      trackerRevision: () => revision,
-    }),
-  };
-};
+): UpdateReturn =>
+  queuedWrite(
+    model,
+    changedTracker(
+      TrackerState.Remote({ ...tracker, problem: Option.none() }),
+      change
+    ),
+    TrackerWrite.Change({ change })
+  );
 
 const marked = (
   model: ModelValue,
@@ -619,24 +641,56 @@ const withTrackedJob = (
 const isCurrentRevision = (model: ModelValue, revision: number) =>
   revision === model.trackerRevision;
 
-const withServerTracker = (
+interface FinishedWrite {
+  readonly commands: readonly ReturnType<typeof writeCommand>[];
+  readonly tracker: RemoteTrackerValue;
+}
+
+const finishedWrite = (
   model: ModelValue,
-  revision: number,
-  jobs: RemoteTrackerValue["jobs"]
-): UpdateReturn => ({
-  model: pipe(
+  revision: number
+): Option.Option<FinishedWrite> =>
+  pipe(
     remoteOf(model),
-    Option.filter(() => isCurrentRevision(model, revision)),
-    Option.match({
-      onNone: () => model,
-      onSome: (tracker) =>
-        modifyFields(model, {
-          tracker: () =>
-            TrackerState.Remote({ ...tracker, adding: [], jobs, loaded: true }),
-        }),
+    Option.filter((tracker) =>
+      Option.exists(
+        Array.head(tracker.writes),
+        (head) => head.revision === revision
+      )
+    ),
+    Option.map((tracker) => {
+      const rest = tracker.writes.slice(1);
+
+      return {
+        commands: pipe(
+          Array.head(rest),
+          Option.map(writeCommand),
+          Option.toArray
+        ),
+        tracker: TrackerState.Remote({ ...tracker, writes: rest }),
+      };
     })
-  ),
-});
+  );
+
+const withServerJobs = (
+  tracker: RemoteTrackerValue,
+  jobs: RemoteTrackerValue["jobs"]
+): RemoteTrackerValue =>
+  Array.reduce(
+    tracker.writes,
+    TrackerState.Remote({ ...tracker, adding: [], jobs, loaded: true }),
+    (shown, { write }) =>
+      TrackerWrite.match(write, {
+        Change: ({ change }) => changedTracker(shown, change),
+        Import: () => shown,
+      })
+  );
+
+const withTracker = (model: ModelValue, tracker: RemoteTrackerValue) =>
+  modifyFields(model, { tracker: () => TrackerState.Remote(tracker) });
+
+const withServerList = (model: ModelValue, tracker: RemoteTrackerValue) =>
+  modifyFields(withTracker(model, tracker), { marks: () => [] });
 
 const withTrackerProblem = (model: ModelValue, message: string): ModelValue =>
   Option.match(remoteOf(model), {
@@ -664,22 +718,23 @@ const withOffer = (
 const movedShortlist = (model: ModelValue): UpdateReturn =>
   pipe(
     remoteOf(model),
-    Option.map(({ offer }) => offer),
-    Option.filter(Schema.is(ImportOffer.Asking)),
-    Option.match({
-      onNone: () => ({ model }),
-      onSome: ({ count }) => {
-        const revision = model.trackerRevision + 1;
-
-        return {
-          commands: [ImportStoredShortlist({ revision })],
-          model: modifyFields(
-            withOffer(model, () => ImportOffer.Moving({ count })),
-            { trackerRevision: () => revision }
-          ),
-        };
-      },
-    })
+    Option.flatMap((tracker) =>
+      pipe(
+        Option.some(tracker.offer),
+        Option.filter(Schema.is(ImportOffer.Asking)),
+        Option.map(({ count }) =>
+          queuedWrite(
+            model,
+            TrackerState.Remote({
+              ...tracker,
+              offer: ImportOffer.Moving({ count }),
+            }),
+            TrackerWrite.Import()
+          )
+        )
+      )
+    ),
+    Option.getOrElse(() => ({ model }))
   );
 
 const followedBilling = (step: UpdateReturn): UpdateReturn =>
@@ -978,17 +1033,35 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
     CompletedReadShortlist: ({ marks }) => ({
       model: modifyFields(model, { marks: () => marks }),
     }),
-    CompletedSyncTracker: ({ jobs, revision, waiting }) => {
-      const cleared = modifyFields(model, { marks: () => [] });
-
-      return withServerTracker(
-        isCurrentRevision(model, revision)
-          ? withOffer(cleared, (offer) => offerAfterSync(offer, waiting))
-          : cleared,
-        revision,
-        jobs
-      );
-    },
+    CompletedSyncTracker: ({ jobs, revision, waiting }) =>
+      Option.match(finishedWrite(model, revision), {
+        onNone: () =>
+          Schema.is(TrackerState.Local)(model.tracker)
+            ? { commands: [ReadShortlist()], model }
+            : {
+                model: pipe(
+                  remoteOf(model),
+                  Option.filter(() => isCurrentRevision(model, revision)),
+                  Option.match({
+                    onNone: () => model,
+                    onSome: (tracker) =>
+                      withServerList(model, {
+                        ...withServerJobs(tracker, jobs),
+                        offer: Schema.is(ImportOffer.Moving)(tracker.offer)
+                          ? tracker.offer
+                          : offerAfterSync(tracker.offer, waiting),
+                      }),
+                  })
+                ),
+              },
+        onSome: ({ commands, tracker }) => ({
+          commands,
+          model: withServerList(model, {
+            ...withServerJobs(tracker, jobs),
+            offer: offerAfterSync(tracker.offer, waiting),
+          }),
+        }),
+      }),
     CompletedTrackAnalytics: () => ({ model }),
     CompletedWriteShortlist: () => ({ model }),
     FailedFetchIntel: ({ locked, slug }) => ({
@@ -1030,18 +1103,36 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
           : model,
     }),
     FailedFetchStats: () => ({ model }),
-    FailedSyncTracker: ({ message: failure, revision }) => ({
-      model: isCurrentRevision(model, revision)
-        ? withOffer(withTrackerProblem(model, failure), offerAfterFailure)
-        : model,
-    }),
-    FailedTrackerChange: ({ message: failure, revision }) => {
-      const flagged = withTrackerProblem(model, failure);
+    FailedSyncTracker: ({ message: failure, revision }) =>
+      Option.match(finishedWrite(model, revision), {
+        onNone: () => ({
+          model: isCurrentRevision(model, revision)
+            ? withTrackerProblem(model, failure)
+            : model,
+        }),
+        onSome: ({ commands, tracker }) => ({
+          commands,
+          model: withTracker(model, {
+            ...tracker,
+            offer: offerAfterFailure(tracker.offer),
+            problem: Option.some(failure),
+          }),
+        }),
+      }),
+    FailedTrackerChange: ({ message: failure, revision }) =>
+      Option.match(finishedWrite(model, revision), {
+        onNone: () => ({ model }),
+        onSome: ({ commands, tracker }) => {
+          const flagged = withTracker(model, {
+            ...tracker,
+            problem: Option.some(failure),
+          });
 
-      return isCurrentRevision(model, revision)
-        ? synced(flagged)
-        : { model: flagged };
-    },
+          return Array.isReadonlyArrayEmpty(tracker.writes)
+            ? synced(flagged)
+            : { commands, model: flagged };
+        },
+      }),
     GotAccountMessage: ({ message: accountMessage }) => {
       const taken = foldAccount(model, accountMessage);
       const previous = model.account.session;
@@ -1163,7 +1254,13 @@ const handled = (model: ModelValue, message: MessageValue): UpdateReturn =>
       model: modifyFields(model, { stats: () => StatsState.Loaded({ stats }) }),
     }),
     SucceededTrackerChange: ({ jobs, revision }) =>
-      withServerTracker(model, revision, jobs),
+      Option.match(finishedWrite(model, revision), {
+        onNone: () => ({ model }),
+        onSome: ({ commands, tracker }) => ({
+          commands,
+          model: withTracker(model, withServerJobs(tracker, jobs)),
+        }),
+      }),
     ToggledProFilters: ({ isOpen }) => ({
       model: modifyFields(model, { proFiltersOpen: () => isOpen }),
     }),

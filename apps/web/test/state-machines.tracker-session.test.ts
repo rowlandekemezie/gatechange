@@ -6,6 +6,7 @@ import { ImportOffer, TrackerState } from "../src/client/board/model.js";
 import {
   lastWrittenShortlist,
   markOf,
+  named,
   newJob,
   oldJob,
   sentAll,
@@ -53,7 +54,7 @@ const lateSyncAfterSignOut = () => {
 };
 
 describe("TrackerSession model replay", () => {
-  it.fails("MovingOnlyWhileMoving: saving a job during the move does not leave Moving stuck", () => {
+  it("MovingOnlyWhileMoving: saving a job during the move does not leave Moving stuck", () => {
     const moving = sentAll(offered(), [Message.ClickedMoveShortlist()]);
     const importRevision = moving.model.trackerRevision;
 
@@ -78,14 +79,14 @@ describe("TrackerSession model replay", () => {
     });
   });
 
-  it.fails("BrowserListShown: a tracker list arriving after sign-out keeps the browser shortlist on screen", () => {
+  it("BrowserListShown: a tracker list arriving after sign-out keeps the browser shortlist on screen", () => {
     const late = lateSyncAfterSignOut();
 
     expect(Schema.is(TrackerState.Local)(late.model.tracker)).toBe(true);
     expect(late.model.marks).toStrictEqual(browserList);
   });
 
-  it.fails("NoBrowserJobLost: saving in the browser after that late reply keeps the earlier browser job", () => {
+  it("NoBrowserJobLost: saving in the browser after that late reply keeps the earlier browser job", () => {
     const path = walked(lateSyncAfterSignOut(), [
       Message.ClickedMark({ job: newJob, kind: "Saved" }),
     ]);
@@ -93,6 +94,23 @@ describe("TrackerSession model replay", () => {
     const marks = lastWrittenShortlist(path.all);
 
     expect(marks.map((mark) => mark.id)).toContain(oldJob.id);
+  });
+
+  it("BrowserListShown after a move that lands after sign-out: the page reads the browser list again", () => {
+    const moving = sentAll(offered(), [Message.ClickedMoveShortlist()]);
+
+    const landed = sentAll(moving, [
+      ...signOut,
+      Message.CompletedReadShortlist({ marks: browserList }),
+      Message.CompletedSyncTracker({
+        jobs: [trackedOf(oldJob, "Saved")],
+        revision: moving.model.trackerRevision,
+        waiting: 0,
+      }),
+    ]);
+
+    expect(Schema.is(TrackerState.Local)(landed.model.tracker)).toBe(true);
+    expect(named(landed.commands, "ReadShortlist")).toHaveLength(1);
   });
 
   it("holds TrackerSettles: a save sent before the first sync answers still ends Loading", () => {
