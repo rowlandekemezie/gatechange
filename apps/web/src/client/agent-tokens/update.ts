@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect";
+import { Option, Predicate, Schema } from "effect";
 import type { Update } from "foldkit";
 import { modifyFields } from "foldkit/struct";
 
@@ -27,6 +27,18 @@ export const invalidated = (model: ModelValue): ModelValue => ({
   generation: model.generation + 1,
 });
 
+export const left = (model: ModelValue): ModelValue => ({
+  ...invalidated(model),
+  issue: Schema.is(IssueState.Issuing)(model.issue)
+    ? model.issue
+    : IssueState.Idle(),
+});
+
+const carriedIssue = (model: ModelValue) =>
+  model.active && !Schema.is(IssueState.Issuing)(model.issue)
+    ? IssueState.Idle()
+    : model.issue;
+
 export const entered = (model: ModelValue): UpdateReturn => {
   const generation = model.generation + 1;
 
@@ -36,6 +48,7 @@ export const entered = (model: ModelValue): UpdateReturn => {
       ...initial,
       active: true,
       generation,
+      issue: carriedIssue(model),
       tokens: TokensState.Loading(),
     },
   };
@@ -47,19 +60,33 @@ const submitted = (model: ModelValue): UpdateReturn =>
         onNone: () => ({ model }),
         onSome: (label) => ({
           commands: [IssueToken({ generation: model.generation, label })],
-          model: modifyFields(model, { issue: () => IssueState.Issuing() }),
+          model: modifyFields(model, {
+            issue: () => IssueState.Issuing({ generation: model.generation }),
+          }),
         }),
       })
     : { model };
+
+const isIssueReply = (message: MessageValue) =>
+  Predicate.isTagged(message, "CompletedIssueToken") ||
+  Predicate.isTagged(message, "FailedIssueToken");
+
+const answersIssue = (model: ModelValue, message: MessageValue) =>
+  isIssueReply(message) &&
+  Schema.is(IssueState.Issuing)(model.issue) &&
+  "generation" in message &&
+  message.generation === model.issue.generation;
+
+const isCurrent = (model: ModelValue, message: MessageValue) =>
+  model.active &&
+  !isIssueReply(message) &&
+  (!("generation" in message) || message.generation === model.generation);
 
 export const update = (
   model: ModelValue,
   message: MessageValue
 ): UpdateReturn => {
-  if (
-    !model.active ||
-    ("generation" in message && message.generation !== model.generation)
-  ) {
+  if (!answersIssue(model, message) && !isCurrent(model, message)) {
     return { model };
   }
 
@@ -92,7 +119,12 @@ export const update = (
               tokens: (state) =>
                 Schema.is(TokensState.Loaded)(state)
                   ? TokensState.Loaded({
-                      tokens: [issued.token, ...state.tokens],
+                      tokens: [
+                        issued.token,
+                        ...state.tokens.filter(
+                          (token) => token.id !== issued.token.id
+                        ),
+                      ],
                     })
                   : state,
             }),

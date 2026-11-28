@@ -536,7 +536,9 @@ for (const boundary of boundaries) {
           agentTokens: {
             ...after.agentTokens,
             active: true,
-            issue: IssueState.Issuing(),
+            issue: IssueState.Issuing({
+              generation: after.agentTokens.generation,
+            }),
             revoking: [laptop.id],
             tokens: TokensState.Loaded({ tokens: [laptop] }),
           },

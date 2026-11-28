@@ -3,7 +3,7 @@ import { Option } from "effect";
 
 import { Message as TokensMessage } from "../src/client/agent-tokens/message.js";
 import type { MessageValue as TokensMessageValue } from "../src/client/agent-tokens/message.js";
-import { IssueState } from "../src/client/agent-tokens/model.js";
+import { IssueState, TokensState } from "../src/client/agent-tokens/model.js";
 import { Message } from "../src/client/board/message.js";
 import {
   leftTo,
@@ -55,7 +55,7 @@ const issuing = () =>
   ]);
 
 describe("AgentTokens model replay", () => {
-  it.fails("EverySecretShown: leaving the account page while a token is created still shows its secret on return", () => {
+  it("EverySecretShown: leaving the account page while a token is created still shows its secret on return", () => {
     const sent = issuing();
     const issuedFor = generationOf(sent);
 
@@ -74,6 +74,32 @@ describe("AgentTokens model replay", () => {
 
     expect(relisted.model.agentTokens.issue).toStrictEqual(
       IssueState.Issued({ secret: SECRET })
+    );
+  });
+
+  it("EverySecretShown: coming back before the token is created shows its secret once and lists it once", () => {
+    const sent = issuing();
+    const issuedFor = generationOf(sent);
+
+    const back = listedOn(sentAll(sent, [leftTo("/"), leftTo("/account")]), [
+      ci,
+      laptop,
+    ]);
+
+    const shown = sentAll(back, [
+      at(
+        TokensMessage.CompletedIssueToken({
+          generation: issuedFor,
+          issued: { secret: SECRET, token: ci },
+        })
+      ),
+    ]);
+
+    expect(shown.model.agentTokens.issue).toStrictEqual(
+      IssueState.Issued({ secret: SECRET })
+    );
+    expect(shown.model.agentTokens.tokens).toStrictEqual(
+      TokensState.Loaded({ tokens: [ci, laptop] })
     );
   });
 

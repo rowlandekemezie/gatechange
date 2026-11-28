@@ -4,6 +4,7 @@ interface Issue {
 }
 
 interface Vars {
+  readonly held: number;
   readonly issue: string;
   readonly issues: readonly Issue[];
   readonly revealed: readonly number[];
@@ -17,6 +18,7 @@ const lostSecret = (v: Vars) =>
   v.server.some(
     (id) =>
       !v.revealed.includes(id) &&
+      v.held !== id &&
       !v.issues.some((r) => r.phase === "ok" && r.id === id)
   );
 

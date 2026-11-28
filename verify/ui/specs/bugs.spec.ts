@@ -194,7 +194,6 @@ test("billing: a membership reply after sign-out shows no Pro badge", async ({
 test("agent tokens: leaving while a token is created still shows its secret on return", async ({
   browser,
 }) => {
-  knownBug();
   const name = "agent-tokens";
   const page = await newPage(browser);
 
