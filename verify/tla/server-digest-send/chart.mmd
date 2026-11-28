@@ -1,0 +1,34 @@
+---
+title: "Weekly digest for a member who unsubscribes during a send run"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: bad
+    lg1: off
+    lg2: on
+    lg3: Breaks NoSendReservedAfterUnsubscribe
+    lg4: Path to the NoSendReservedAfterUnsubscribe bug
+  }
+  class lg0 pink
+  class lg1 tan
+  class lg2 blue
+  class lg3 breaks
+  class lg4 bugPath
+  s0: Member subscribed, no digest yet
+  s1: Member subscribed, no digest yet, picked for this run
+  s2: Member unsubscribed, no digest yet, picked for this run
+  s3: Member unsubscribed, no digest yet, digest about to go out
+  [*] --> s0
+  s0 --> s1: the run checks the member is still subscribed
+  s1 --> s2: the member clicks Unsubscribe
+  s2 --> s3: the run reserves this week's send
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 blue
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 tan
+  class s2 bugPath
+  class s3 pink
+  class s3 breaks
+  class s3 bugPath

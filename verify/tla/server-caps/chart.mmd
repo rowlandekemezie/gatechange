@@ -1,0 +1,25 @@
+---
+title: "Agent tokens issued from several tabs at once (cap shown as 2)"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: full
+    lg1: room
+  }
+  class lg0 orange
+  class lg1 blue
+  s0: Tokens under the cap, requests in flight
+  s1: Tokens at the cap, requests in flight
+  s2: Tokens at the cap, all answered
+  s3: Tokens under the cap, all answered
+  [*] --> s0
+  s0 --> s1: a new token is issued
+  s1 --> s0: the member revokes a token
+  s1 --> s2: a request is refused at the cap
+  s0 --> s2: a new token is issued
+  s2 --> s3: the member revokes a token
+  s0 --> s3: a new token is issued
+  class s0 blue
+  class s1 orange
+  class s2 orange
+  class s3 blue

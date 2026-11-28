@@ -1,0 +1,37 @@
+---
+title: "Board list across filter changes and Show more"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: loading
+    lg1: shown
+  }
+  class lg0 blue
+  class lg1 teal
+  s0: Spinner
+  s1: List shown
+  s2: Could not load, Retry
+  s3: Old list dimmed, new one loading
+  s4: List shown, loading more
+  s5: List shown, more failed
+  [*] --> s0
+  s0 --> s1: a list reply arrives
+  s0 --> s2: a list reply arrives
+  s1 --> s3: you change a filter
+  s1 --> s4: you tap Show more
+  s2 --> s0: you tap Retry or you change a filter
+  s3 --> s2: a list reply arrives
+  s3 --> s1: a list reply arrives
+  s4 --> s5: a Show more reply arrives
+  s4 --> s3: you change a filter
+  s4 --> s1: a Show more reply arrives
+  s5 --> s4: you tap Show more
+  s5 --> s3: you change a filter
+  s5 --> s1: a Show more reply arrives
+  s1 --> s5: a Show more reply arrives
+  class s0 blue
+  class s1 teal
+  class s2 blue
+  class s3 blue
+  class s4 teal
+  class s5 teal

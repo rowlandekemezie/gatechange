@@ -1,0 +1,20 @@
+---
+title: "Two cron runs and the ingest lease"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: busy
+    lg1: idle
+  }
+  class lg0 blue
+  class lg1 tan
+  s0: No run active, lease free
+  s1: One run updating the board, lease held
+  s2: No run active, lease free, cron done
+  [*] --> s0
+  s0 --> s1: the cron fires and takes the lease
+  s1 --> s0: the run finishes and frees the lease or time passes
+  s1 --> s2: time passes or the run finishes and frees the lease
+  class s0 tan
+  class s1 blue
+  class s2 tan

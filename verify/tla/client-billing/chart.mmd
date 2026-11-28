@@ -1,0 +1,59 @@
+---
+title: "Pro badge and checkout across sign-out"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: in
+    lg1: out
+    lg2: start
+    lg3: Breaks NoProBadgeSignedOut
+    lg4: Breaks OneCheckoutAtATime in some cases
+    lg5: Path to the NoProBadgeSignedOut or OneCheckoutAtATime bug
+  }
+  class lg0 blue
+  class lg1 purple
+  class lg2 tan
+  class lg3 breaks
+  class lg4 mayBreak
+  class lg5 bugPath
+  s0: Checking sign-in, Pricing link
+  s1: Signed in, plan loading
+  s2: Signed out, Pricing link
+  s3: Signed in, Upgrade button
+  s4: Signed in, Pro badge
+  s5: Signed out, Upgrade button
+  s6: Signed out, Pro badge
+  s7: Signed in, Upgrade button, opening Stripe
+  [*] --> s0
+  s0 --> s1: the sign-in check says signed in
+  s1 --> s2: you sign out
+  s1 --> s3: your plan arrives
+  s1 --> s4: your plan arrives
+  s2 --> s5: your plan arrives
+  s2 --> s6: your plan arrives
+  s3 --> s2: you sign out
+  s3 --> s7: you click a plan
+  s4 --> s2: you sign out
+  s7 --> s3: you open your account page or checkout fails to start
+  s7 --> s2: you sign out
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  classDef mayBreak fill:#fff3e6,stroke:#e8730c,stroke-width:2.5px,color:#b85a06
+  class s0 tan
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 purple
+  class s2 mayBreak
+  class s2 bugPath
+  class s3 blue
+  class s3 mayBreak
+  class s3 bugPath
+  class s4 blue
+  class s5 purple
+  class s5 mayBreak
+  class s6 purple
+  class s6 breaks
+  class s6 bugPath
+  class s7 blue
+  class s7 mayBreak
+  class s7 bugPath

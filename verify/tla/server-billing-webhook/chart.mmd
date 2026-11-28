@@ -1,0 +1,41 @@
+---
+title: "Pro renewal shown on the account page as Stripe events arrive"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: bad
+    lg1: free
+    lg2: pro
+    lg3: Breaks AccountShowsLatestChange
+    lg4: Path to the AccountShowsLatestChange bug
+  }
+  class lg0 pink
+  class lg1 tan
+  class lg2 blue
+  class lg3 breaks
+  class lg4 bugPath
+  s0: No Pro yet
+  s1: Pro, shown as ending, events still arriving
+  s2: Pro, shown as renewing, events still arriving
+  s3: Pro, shown as ending, every event in
+  s4: Pro, shown as renewing, every event in
+  [*] --> s0
+  s0 --> s1: Stripe sends "member cancelled"
+  s0 --> s2: Stripe sends "subscription started" or Stripe sends "member resumed, same second"
+  s1 --> s2: Stripe sends "member resumed, same second"
+  s1 --> s1: Stripe sends "member resumed, same second"
+  s2 --> s1: Stripe sends "member cancelled"
+  s1 --> s4: Stripe sends "member resumed, same second"
+  s1 --> s3: Stripe sends "subscription started" or Stripe sends "member resumed, same second"
+  s2 --> s4: Stripe sends "subscription started" or Stripe sends "member cancelled"
+  s2 --> s3: Stripe sends "member cancelled"
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 tan
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 blue
+  class s3 pink
+  class s3 breaks
+  class s3 bugPath
+  class s4 blue
