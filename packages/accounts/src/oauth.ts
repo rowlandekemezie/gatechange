@@ -7,7 +7,12 @@ import {
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAUTH_REFRESH_TOKEN_PREFIX,
 } from "@rat-stack/core";
-import type { BetterAuthPlugin, DBAdapter, Session } from "better-auth";
+import type {
+  BetterAuthOptions,
+  BetterAuthPlugin,
+  DBAdapter,
+  Session,
+} from "better-auth";
 import {
   createAuthEndpoint,
   createAuthMiddleware,
@@ -51,11 +56,6 @@ const RefreshableGrant = Schema.Struct({
 });
 
 const decodeRefreshableGrant = Schema.decodeUnknownOption(RefreshableGrant);
-
-interface RefreshTokenRow {
-  readonly id: string;
-  readonly revoked?: Date | null;
-}
 
 export interface TokenHolder {
   readonly email: string;
@@ -134,10 +134,90 @@ const oauthProviderPlugin = () =>
 
 type OAuthProviderPlugin = ReturnType<typeof oauthProvider>;
 
-const NEWEST_GRANTS_REVOKED = 50;
+interface Statement {
+  readonly sql: string;
+  readonly values: readonly string[];
+}
 
-// @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
-const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
+type RunAtomically = (statements: readonly Statement[]) => Promise<void>;
+
+type DatabaseOption = BetterAuthOptions["database"];
+
+interface D1RunResult {
+  readonly success: boolean;
+}
+
+interface D1BoundStatement {
+  readonly run: () => Promise<D1RunResult>;
+}
+
+interface D1Binding {
+  readonly batch: (
+    statements: readonly D1BoundStatement[]
+  ) => Promise<readonly D1RunResult[]>;
+  readonly prepare: (sql: string) => {
+    readonly bind: (...values: readonly string[]) => D1BoundStatement;
+  };
+}
+
+interface SyncRunResult {
+  readonly changes: number | bigint;
+}
+
+interface SyncSqlite {
+  readonly prepare: (sql: string) => {
+    readonly run: (...values: readonly string[]) => SyncRunResult;
+  };
+}
+
+const atomicRunnerOf = (database: DatabaseOption): RunAtomically => {
+  if (database !== undefined && "batch" in database) {
+    // SAFETY: better-auth picks its D1 dialect for any database with batch, exec and prepare, and D1Binding names the calls made here.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- better-auth's database union names driver types this package does not install.
+    const d1 = database as D1Binding;
+
+    // @effect-diagnostics-next-line asyncFunction:off -- D1 batches are Promise-based.
+    return async (statements) => {
+      await d1.batch(
+        statements.map(({ sql, values }) => d1.prepare(sql).bind(...values))
+      );
+    };
+  }
+
+  if (database !== undefined && "exec" in database && "prepare" in database) {
+    // SAFETY: a database with exec and prepare and no batch is a synchronous SQLite driver, whose prepared statements run with positional values.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- better-auth's database union names driver types this package does not install.
+    const sqlite = database as SyncSqlite;
+
+    // @effect-diagnostics-next-line asyncFunction:off -- better-auth's database hooks await a Promise.
+    return async (statements) => {
+      await Promise.resolve();
+
+      for (const { sql, values } of statements) {
+        sqlite.prepare(sql).run(...values);
+      }
+    };
+  }
+
+  throw new TypeError(
+    "mcp-resource needs a D1 binding or a node:sqlite database to end connections on sign-out"
+  );
+};
+
+const endConnectionsOf = (sessionId: string, now: Date): Statement[] => [
+  {
+    sql: 'UPDATE "oauthAccessToken" SET "revoked" = ?1 WHERE "revoked" IS NULL AND "refreshId" IN (SELECT "id" FROM "oauthRefreshToken" WHERE "sessionId" = ?2)',
+    values: [now.toISOString(), sessionId],
+  },
+  {
+    sql: 'UPDATE "oauthRefreshToken" SET "revoked" = ?1 WHERE "sessionId" = ?2 AND "revoked" IS NULL',
+    values: [now.toISOString(), sessionId],
+  },
+  { sql: 'DELETE FROM "session" WHERE "id" = ?1', values: [sessionId] },
+];
+
+// @effect-diagnostics-next-line asyncFunction:off -- better-auth database hooks are Promise-returning.
+const signOutOf = async (runAtomically: RunAtomically, session: Session) => {
   // @effect-diagnostics-next-line globalDate:off -- better-auth stamps its rows with the same wall clock.
   const now = new Date();
 
@@ -145,41 +225,7 @@ const revokeGrantsOf = async (adapter: DBAdapter, session: Session) => {
     return;
   }
 
-  const ofSession = { field: "sessionId", value: session.id };
-
-  const [live, recent] = await Promise.all([
-    adapter.findMany<RefreshTokenRow>({
-      limit: NEWEST_GRANTS_REVOKED,
-      model: "oauthRefreshToken",
-      where: [ofSession, { field: "revoked", value: null }],
-    }),
-    adapter.findMany<RefreshTokenRow>({
-      limit: NEWEST_GRANTS_REVOKED,
-      model: "oauthRefreshToken",
-      sortBy: { direction: "desc", field: "createdAt" },
-      where: [ofSession],
-    }),
-  ]);
-
-  const liveIds = live.map((row) => row.id);
-  const recentIds = recent.map((row) => row.id);
-
-  // @effect-diagnostics-next-line asyncFunction:off -- better-auth's adapter is Promise-based.
-  const revokeWhereIn = async (model: string, field: string, ids: string[]) => {
-    if (ids.length > 0) {
-      await adapter.updateMany({
-        model,
-        update: { revoked: now },
-        where: [{ field, operator: "in", value: ids }],
-      });
-    }
-  };
-
-  await Promise.all([
-    revokeWhereIn("oauthRefreshToken", "id", liveIds),
-    revokeWhereIn("oauthAccessToken", "refreshId", liveIds),
-    revokeWhereIn("oauthAccessToken", "refreshId", recentIds),
-  ]);
+  await runAtomically(endConnectionsOf(session.id, now));
 };
 
 const tokenHolderEndpoint = (provider: OAuthProviderPlugin) =>
@@ -280,20 +326,24 @@ export const mcpOAuth = (): readonly [BetterAuthPlugin, McpResourcePlugin] => {
         ],
       },
       id: "mcp-resource",
-      init: (context) => ({
-        options: {
-          databaseHooks: {
-            session: {
-              delete: {
-                // @effect-diagnostics-next-line asyncFunction:off -- better-auth database hooks are Promise-returning.
-                before: async (session) => {
-                  await revokeGrantsOf(context.adapter, session);
+      init: (context) => {
+        const runAtomically = atomicRunnerOf(context.options.database);
+
+        return {
+          options: {
+            databaseHooks: {
+              session: {
+                delete: {
+                  // @effect-diagnostics-next-line asyncFunction:off -- better-auth database hooks are Promise-returning.
+                  before: async (session) => {
+                    await signOutOf(runAtomically, session);
+                  },
                 },
               },
             },
           },
-        },
-      }),
+        };
+      },
     },
   ];
 };

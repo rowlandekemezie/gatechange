@@ -343,11 +343,6 @@ const isRotation = (sql: string) =>
   sql.startsWith('update "oauthRefreshToken"') &&
   sql.includes('"oauthRefreshToken"."revoked" is null');
 
-const isGrantLookup = (sql: string) =>
-  sql.includes(
-    'where ("oauthRefreshToken"."sessionId" = ? and "oauthRefreshToken"."revoked" is null)'
-  );
-
 const isSessionDelete = (sql: string) => /delete from "session"/iu.test(sql);
 
 const liveRefreshTokens = (database: DatabaseSync) =>
@@ -358,14 +353,13 @@ const liveRefreshTokens = (database: DatabaseSync) =>
     .get();
 
 describe("server-oauth-signout model replay", () => {
-  it.effect.fails(
+  it.effect(
     "SignOutEndsEveryConnection: sign-out ends a connection that refreshes while sign-out looks up grants",
     () =>
       Effect.gen(function* racedSignOut() {
         const { auth, client_id, cookie, database, gates, tokens } =
           yield* connected;
 
-        const rotated = latch();
         const signOutStarted = latch();
         const newKeyStored = latch();
 
@@ -378,16 +372,8 @@ describe("server-oauth-signout model replay", () => {
             return { after: newKeyStored };
           }
 
-          if (isRotation(sql)) {
-            return { after: rotated };
-          }
-
           if (isSessionDelete(sql)) {
             return { before: newKeyStored, entered: signOutStarted };
-          }
-
-          if (isGrantLookup(sql)) {
-            return { after: signOutStarted, before: rotated };
           }
 
           return {};
@@ -433,10 +419,6 @@ describe("server-oauth-signout model replay", () => {
 
           if (isSessionDelete(sql)) {
             return { after: sessionGone, before: newRefreshStored };
-          }
-
-          if (isGrantLookup(sql)) {
-            return { before: newRefreshStored };
           }
 
           if (isNewAccessToken(sql)) {
@@ -500,10 +482,6 @@ describe("server-oauth-signout model replay", () => {
 
           if (isSessionDelete(sql)) {
             return { after: sessionGone, before: rotated };
-          }
-
-          if (isGrantLookup(sql)) {
-            return { before: rotated };
           }
 
           if (isNewRefreshToken(sql)) {
